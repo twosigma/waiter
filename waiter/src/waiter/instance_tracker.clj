@@ -24,33 +24,33 @@
 
   (handle-instances-event! [this {:keys [new-failed-instances]}]
     (let [{:keys [clock handler-state]} this
-          {:keys [recent-id->failed-instance-date-cache]} @handler-state]
+          {:keys [id->failed-date-cache]} @handler-state]
       (log/info "default failed-instance handler received new new-failed-instances" {:new-failed-instances new-failed-instances})
       (swap! handler-state assoc :last-error-time (clock))
       (doseq [inst new-failed-instances]
-        (cu/cache-put! recent-id->failed-instance-date-cache (:id inst) (clock)))))
+        (cu/cache-put! id->failed-date-cache (:id inst) (clock)))))
 
   (state [this include-flags]
     (let [{:keys [handler-state]} this
-          {:keys [last-error-time recent-id->failed-instance-date-cache]} @handler-state]
+          {:keys [last-error-time id->failed-date-cache]} @handler-state]
       (cond-> {:last-error-time last-error-time
-               :supported-include-params ["recent-id->failed-instance-date"]
+               :supported-include-params ["id->failed-date"]
                :type "DefaultInstanceFailureHandler"}
-              (contains? include-flags "recent-id->failed-instance-date")
-              (assoc :recent-id->failed-instance-date (reduce
-                                                        (fn [transformed-map [id value]]
-                                                          (assoc transformed-map id (:data value)))
-                                                        {}
-                                                        (cu/cache->map recent-id->failed-instance-date-cache)))))))
+              (contains? include-flags "id->failed-date")
+              (assoc :id->failed-date (reduce
+                                        (fn [transformed-map [id value]]
+                                          (assoc transformed-map id (:data value)))
+                                        {}
+                                        (cu/cache->map id->failed-date-cache)))))))
 
 (defn create-instance-failure-event-handler
   [{:keys [clock config]}]
   {:pre [(-> config :recent-failed-instance-cache :threshold pos-int?)
          (-> config :recent-failed-instance-cache :ttl pos-int?)]}
   (let [{:keys [recent-failed-instance-cache]} config
-        recent-id->failed-instance-date-cache (cu/cache-factory recent-failed-instance-cache)
+        id->failed-date-cache (cu/cache-factory recent-failed-instance-cache)
         handler-state (atom {:last-error-time nil
-                             :recent-id->failed-instance-date-cache recent-id->failed-instance-date-cache})]
+                             :id->failed-date-cache id->failed-date-cache})]
     (DefaultInstanceFailureHandler. clock handler-state)))
 
 (defn start-instance-tracker

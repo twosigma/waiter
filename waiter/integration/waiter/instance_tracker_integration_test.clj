@@ -66,13 +66,13 @@
               (let [{:keys [failed-instances]} (:instances (service-settings router-url service-id :cookies cookies))]
                 (log/info "The failed instances should be tracked by the instance-tracker" {:failed-instances failed-instances})
                 (is (pos? (count failed-instances)))
-                (let [query-params "include=instance-failure-handler&include=recent-id->failed-instance-date"
+                (let [query-params "include=instance-failure-handler&include=id->failed-date"
                       {{:keys [last-update-time]
-                        {:keys [last-error-time recent-id->failed-instance-date type]} :instance-failure-handler} :state}
+                        {:keys [last-error-time id->failed-date type]} :instance-failure-handler} :state}
                       (get-instance-tracker-state router-url
                                                   :cookies cookies
                                                   :query-params query-params)
-                      default-event-handler-ids (set (keys recent-id->failed-instance-date))]
+                      default-event-handler-ids (set (keys id->failed-date))]
                   (is (t/before? start-time (du/str-to-date last-update-time)))
                   (when (= type "DefaultInstanceFailureHandler")
                     ; assert failed instances are tracked by DefaultInstanceFailureHandler cache of new failed instances
