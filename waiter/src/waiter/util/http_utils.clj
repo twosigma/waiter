@@ -26,7 +26,7 @@
   (:import (java.net URI)
            (java.util ArrayList)
            (org.apache.commons.codec.binary Base64)
-           (org.eclipse.jetty.client HttpClient WWWAuthenticationProtocolHandler)
+           (org.eclipse.jetty.client HttpClient HttpProxy ProxyConfiguration WWWAuthenticationProtocolHandler)
            (org.eclipse.jetty.client.api Authentication$Result Request)
            (org.eclipse.jetty.http HttpField HttpHeader)
            (org.eclipse.jetty.http2.client HTTP2Client)
@@ -131,7 +131,7 @@
 
 (defn ^HttpClient http-client-factory
   "Creates a HttpClient."
-  [{:keys [clear-content-decoders conn-timeout socket-timeout user-agent]
+  [{:keys [clear-content-decoders conn-timeout proxy-url proxy-spnego-auth socket-timeout user-agent]
     :or {clear-content-decoders true}
     :as config}]
   (let [^HttpClient client
@@ -147,6 +147,15 @@
     (.setUserAgentField client
                         (when-not (str/blank? user-agent)
                           (HttpField. HttpHeader/USER_AGENT (str user-agent))))
+    (when proxy-url
+      (let [proxy-uri (URI. proxy-url)
+            configured-proxy (HttpProxy. (.getHost proxy-uri) (.getPort proxy-uri))
+            ^ProxyConfiguration proxy-config (.getProxyConfiguration client)
+            proxies (.getProxies proxy-config)]
+        (.add proxies configured-proxy)
+        (when proxy-spnego-auth
+          (let [auth-store (.getAuthenticationStore client)]
+            (.addAuthenticationResult auth-store (spnego-proxy-authentication proxy-uri))))))
     client))
 
 (defn- prepare-http2-transport
