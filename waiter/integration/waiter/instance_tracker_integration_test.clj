@@ -42,43 +42,42 @@
 
 (deftest ^:parallel ^:integration-fast ^:resource-heavy test-instance-tracker-failing-instance
   (testing-using-waiter-url
-    (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")]
-
-      ; TODO: When instance tracking becomes more reliable in multi router scenarios this test should not be
-      ; on the same router
+    (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
+          routers (routers waiter-url)
+          router-urls (vals routers)]
       (testing "new failing instances appear in instance-tracker state on same router"
         (let [start-time (t/now)
-              router-url (rand-router-url waiter-url)
               {:keys [service-id] :as response}
               (make-request-with-debug-info
                 {:x-waiter-cmd "invalidcmd34sdfadsve"
                  :x-waiter-name (rand-name)}
-                #(make-kitchen-request router-url % :cookies cookies))]
+                #(make-kitchen-request waiter-url % :cookies cookies))]
           (with-service-cleanup
             service-id
             (assert-response-status response http-503-service-unavailable)
+            ; wait for all routers to have positive number of failed instances
             (is (wait-for
-                  (fn []
-                    (let [{:keys [failed-instances]} (:instances (service-settings router-url service-id :cookies cookies))]
-                      (pos? (count failed-instances))))))
-            (let [{:keys [failed-instances]} (:instances (service-settings router-url service-id :cookies cookies))]
-              (log/info "The failed instances should be tracked by the instance-tracker" {:failed-instances failed-instances})
-              (is (pos? (count failed-instances)))
-              (let [query-params "include=instance-failure-handler&include=recent-id->failed-instance-date&include=id->failed-instance"
-                    {{:keys [id->failed-instance]
-                      {:keys [last-error-time recent-id->failed-instance-date type]} :instance-failure-handler} :state}
-                    (get-instance-tracker-state router-url
-                                                :cookies cookies
-                                                :query-params query-params)
-                    daemon-failed-ids (set (keys id->failed-instance))
-                    default-event-handler-ids (set (keys recent-id->failed-instance-date))]
-                ; assert failed instances are tracked by daemon
-                (doseq [{:keys [id]} failed-instances]
-                  (is (contains? daemon-failed-ids
-                                 (keyword id)))
-                  ; assert failed instances are tracked by DefaultInstanceFailureHandler cache of new failed instances
+                  (fn every-router-has-failed-instances? []
+                    (every? (fn has-failed-instances? [router-url]
+                              (let [{:keys [failed-instances]} (:instances (service-settings router-url service-id :cookies cookies))]
+                                (pos? (count failed-instances))))
+                            router-urls))))
+            (doseq [router-url router-urls]
+              (let [{:keys [failed-instances]} (:instances (service-settings router-url service-id :cookies cookies))]
+                (log/info "The failed instances should be tracked by the instance-tracker" {:failed-instances failed-instances})
+                (is (pos? (count failed-instances)))
+                (let [query-params "include=instance-failure-handler&include=recent-id->failed-instance-date"
+                      {{:keys [last-update-time]
+                        {:keys [last-error-time recent-id->failed-instance-date type]} :instance-failure-handler} :state}
+                      (get-instance-tracker-state router-url
+                                                  :cookies cookies
+                                                  :query-params query-params)
+                      default-event-handler-ids (set (keys recent-id->failed-instance-date))]
+                  (is (t/before? start-time (du/str-to-date last-update-time)))
                   (when (= type "DefaultInstanceFailureHandler")
-                    (is (contains? default-event-handler-ids
-                                   (keyword id)))))
-                ; assert that the error time is recent
-                (is (t/before? start-time (du/str-to-date last-error-time)))))))))))
+                    ; assert failed instances are tracked by DefaultInstanceFailureHandler cache of new failed instances
+                    (doseq [{:keys [id]} failed-instances]
+                      (is (contains? default-event-handler-ids
+                                     (keyword id))))
+                    ; assert that the error time is recent
+                    (is (t/before? start-time (du/str-to-date last-error-time)))))))))))))
