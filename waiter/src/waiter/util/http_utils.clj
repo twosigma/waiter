@@ -26,7 +26,7 @@
   (:import (java.net URI)
            (java.util ArrayList)
            (org.apache.commons.codec.binary Base64)
-           (org.eclipse.jetty.client HttpClient WWWAuthenticationProtocolHandler)
+           (org.eclipse.jetty.client HttpClient HttpProxy ProxyConfiguration WWWAuthenticationProtocolHandler)
            (org.eclipse.jetty.client.api Authentication$Result Request)
            (org.eclipse.jetty.http HttpField HttpHeader)
            (org.eclipse.jetty.http2.client HTTP2Client)
@@ -38,9 +38,10 @@
 
 (def ^Base64 base64 (Base64.))
 
-(defn spnego-authentication
-  "Returns an Authentication$Result for endpoint which will use SPNEGO to generate an Authorization header"
-  [^URI endpoint]
+(defn create-spnego-authentication-result-factory
+  "Returns an Authentication$Result for an endpoint which will use SPNEGO to generate the header value for the
+  provided authorization header field."
+  [^URI endpoint auth-header-field]
   (reify Authentication$Result
     (getURI [_] endpoint)
 
@@ -53,9 +54,19 @@
               _ (.requestMutualAuth gss-context true)
               token (.initSecContext gss-context (make-array Byte/TYPE 0) 0 0)
               header (str "Negotiate " (String. (.encode base64 token)))]
-          (.header request HttpHeader/AUTHORIZATION header))
+          (.header request auth-header-field header))
         (catch Exception e
           (log/warn e "failure during spnego authentication"))))))
+
+(defn spnego-authentication
+  "Returns an Authentication$Result for endpoint which will use SPNEGO to generate an Authorization header"
+  [^URI endpoint]
+  (create-spnego-authentication-result-factory endpoint HttpHeader/AUTHORIZATION))
+
+(defn spnego-proxy-authentication
+  "Returns an Authentication$Result for endpoint which will use SPNEGO to generate a Proxy-Authorization header"
+  [^URI endpoint]
+  (create-spnego-authentication-result-factory endpoint HttpHeader/PROXY_AUTHORIZATION))
 
 (defn status-2XX?
   "Returns true if the status is in the range [200, 299]."
@@ -120,7 +131,7 @@
 
 (defn ^HttpClient http-client-factory
   "Creates a HttpClient."
-  [{:keys [clear-content-decoders conn-timeout socket-timeout user-agent]
+  [{:keys [clear-content-decoders conn-timeout proxy-url proxy-spnego-auth socket-timeout user-agent]
     :or {clear-content-decoders true}
     :as config}]
   (let [^HttpClient client
@@ -136,6 +147,15 @@
     (.setUserAgentField client
                         (when-not (str/blank? user-agent)
                           (HttpField. HttpHeader/USER_AGENT (str user-agent))))
+    (when proxy-url
+      (let [proxy-uri (URI. proxy-url)
+            configured-proxy (HttpProxy. (.getHost proxy-uri) (.getPort proxy-uri))
+            ^ProxyConfiguration proxy-config (.getProxyConfiguration client)
+            proxies (.getProxies proxy-config)]
+        (.add proxies configured-proxy)
+        (when proxy-spnego-auth
+          (let [auth-store (.getAuthenticationStore client)]
+            (.addAuthenticationResult auth-store (spnego-proxy-authentication proxy-uri))))))
     client))
 
 (defn- prepare-http2-transport
