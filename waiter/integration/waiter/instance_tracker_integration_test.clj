@@ -60,10 +60,10 @@
             (is (wait-for
                   (fn []
                     (let [{:keys [failed-instances]} (:instances (service-settings router-url service-id :cookies cookies))]
-                      (< 0 (count failed-instances))))))
+                      (pos? (count failed-instances))))))
             (let [{:keys [failed-instances]} (:instances (service-settings router-url service-id :cookies cookies))]
               (log/info "The failed instances should be tracked by the instance-tracker" {:failed-instances failed-instances})
-              (is (< 0 (count failed-instances)))
+              (is (pos? (count failed-instances)))
               (let [query-params "include=instance-failure-handler&include=recent-id->failed-instance-date&include=id->failed-instance"
                     {{:keys [id->failed-instance]
                       {:keys [last-error-time recent-id->failed-instance-date type]} :instance-failure-handler} :state}
