@@ -45,7 +45,7 @@
     (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
           routers (routers waiter-url)
           router-urls (vals routers)]
-      (testing "new failing instances appear in instance-tracker state on same router"
+      (testing "new failing instances appear in instance-tracker state on all routers"
         (let [start-time (t/now)
               {:keys [service-id] :as response}
               (make-request-with-debug-info
