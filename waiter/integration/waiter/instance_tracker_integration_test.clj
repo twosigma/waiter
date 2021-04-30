@@ -4,7 +4,9 @@
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [waiter.status-codes :refer :all]
-            [waiter.util.client-tools :refer :all]))
+            [waiter.util.client-tools :refer :all]
+            [waiter.util.date-utils :as du]
+            [clj-time.core :as t]))
 
 (defn- get-instance-tracker-state
   [waiter-url & {:keys [cookies keywordize-keys query-params]
@@ -45,7 +47,8 @@
       ; TODO: When instance tracking becomes more reliable in multi router scenarios this test should not be
       ; on the same router
       (testing "new failing instances appear in instance-tracker state on same router"
-        (let [router-url (rand-router-url waiter-url)
+        (let [start-time (t/now)
+              router-url (rand-router-url waiter-url)
               {:keys [service-id] :as response}
               (make-request-with-debug-info
                 {:x-waiter-cmd "invalidcmd34sdfadsve"
@@ -63,7 +66,7 @@
               (is (< 0 (count failed-instances)))
               (let [query-params "include=instance-failure-handler&include=recent-id->failed-instance-date&include=id->failed-instance"
                     {{:keys [id->failed-instance]
-                      {:keys [type recent-id->failed-instance-date]} :instance-failure-handler} :state}
+                      {:keys [last-error-time recent-id->failed-instance-date type]} :instance-failure-handler} :state}
                     (get-instance-tracker-state router-url
                                                 :cookies cookies
                                                 :query-params query-params)
@@ -76,5 +79,6 @@
                   ; assert failed instances are tracked by DefaultInstanceFailureHandler cache of new failed instances
                   (when (= type "DefaultInstanceFailureHandler")
                     (is (contains? default-event-handler-ids
-                                   (keyword id)))))))))))))
-
+                                   (keyword id)))))
+                ; assert that the error time is recent
+                (is (t/before? start-time (du/str-to-date last-error-time)))))))))))
