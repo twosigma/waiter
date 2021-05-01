@@ -10,7 +10,7 @@
 ; Events are being handled by all routers in a cluster for resiliency
 (defprotocol InstanceEventHandler
 
-  (handle-instances-event! [this instances]
+  (handle-instances-event! [this instances-event]
     "handles the instances event")
 
   (state [this include-flags]
@@ -110,8 +110,8 @@
                             (assoc current-state :id->failed-instance id->failed-instance')))
 
                         query-chan
-                        (let [{:keys [response-chan]} msg]
-                          (async/put! response-chan (query-state-fn))
+                        (let [{:keys [include-flags response-chan]} msg]
+                          (async/put! response-chan (query-state-fn include-flags))
                           current-state))]
                   (if next-state
                     (recur (assoc next-state :last-update-time (clock)))
