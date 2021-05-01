@@ -73,8 +73,10 @@
                                                   (s/required-key :output-buffer-size) schema/positive-int
                                                   (s/required-key :queue-timeout-ms) schema/positive-int
                                                   (s/required-key :streaming-timeout-ms) schema/positive-int}
-   (s/required-key :instance-tracker-config) {(s/required-key :instance-failure-handler) {:kind s/Keyword
-                                                                                          s/Keyword schema/require-symbol-factory-fn}}
+   (s/required-key :instance-tracker-config) {(s/required-key :instance-failure-handler) (s/constrained
+                                                                                           {:kind s/Keyword
+                                                                                            s/Keyword schema/require-symbol-factory-fn}
+                                                                                           schema/contains-kind-sub-map?)}
    (s/required-key :kv-config) schema/kv-store-config
    (s/optional-key :messages) {s/Keyword s/Str}
    (s/required-key :metric-group-mappings) schema/valid-metric-group-mappings
