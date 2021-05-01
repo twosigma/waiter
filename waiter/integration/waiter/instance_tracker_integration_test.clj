@@ -49,12 +49,12 @@
         (let [start-time (t/now)
               {:keys [service-id] :as response}
               (make-request-with-debug-info
-                {:x-waiter-cmd "invalidcmd34sdfadsve"
+                {:x-kitchen-delay-ms 5000
                  :x-waiter-name (rand-name)}
-                #(make-kitchen-request waiter-url % :cookies cookies))]
+                #(make-kitchen-request waiter-url % :cookies cookies :path "/die"))]
           (with-service-cleanup
             service-id
-            (assert-response-status response http-503-service-unavailable)
+            (assert-response-status response #{http-502-bad-gateway http-503-service-unavailable})
             ; wait for all routers to have positive number of failed instances
             (is (wait-for
                   (fn every-router-has-failed-instances? []
