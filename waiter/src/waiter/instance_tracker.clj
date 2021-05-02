@@ -1,8 +1,8 @@
 (ns waiter.instance-tracker
   (:require [clojure.core.async :as async]
-            [clojure.set :as set]
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
+            [plumbing.core :as pc]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
             [waiter.util.cache-utils :as cu]))
@@ -37,11 +37,7 @@
                :supported-include-params ["id->failed-date"]
                :type "DefaultInstanceFailureHandler"}
               (contains? include-flags "id->failed-date")
-              (assoc :id->failed-date (reduce
-                                        (fn [transformed-map [id value]]
-                                          (assoc transformed-map id (:data value)))
-                                        {}
-                                        (cu/cache->map id->failed-date-cache)))))))
+              (assoc :id->failed-date (pc/map-vals :data (cu/cache->map id->failed-date-cache)))))))
 
 (defn create-instance-failure-event-handler
   [{:keys [clock config]}]
@@ -49,8 +45,8 @@
          (-> config :recent-failed-instance-cache :ttl pos-int?)]}
   (let [{:keys [recent-failed-instance-cache]} config
         id->failed-date-cache (cu/cache-factory recent-failed-instance-cache)
-        handler-state (atom {:last-error-time nil
-                             :id->failed-date-cache id->failed-date-cache})]
+        handler-state (atom {:id->failed-date-cache id->failed-date-cache
+                             :last-error-time nil})]
     (DefaultInstanceFailureHandler. clock handler-state)))
 
 (defn start-instance-tracker

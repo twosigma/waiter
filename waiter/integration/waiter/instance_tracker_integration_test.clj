@@ -1,12 +1,12 @@
 (ns waiter.instance-tracker-integration-test
-  (:require [clojure.set :as set]
+  (:require [clj-time.core :as t]
+            [clojure.set :as set]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
-            [waiter.util.date-utils :as du]
-            [clj-time.core :as t]))
+            [waiter.util.date-utils :as du]))
 
 (defn- get-instance-tracker-state
   [waiter-url & {:keys [cookies keywordize-keys query-params]
@@ -26,10 +26,8 @@
       (testing "no query parameters provides the default state fields"
         (let [{{:keys [supported-include-params] :as state} :state} (get-instance-tracker-state waiter-url :cookies cookies)
               default-state-fields #{:last-update-time :supported-include-params}]
-          (is (= (set (keys state))
-                 default-state-fields))
-          (is (= (set supported-include-params)
-                 #{"id->failed-instance" "instance-failure-handler"}))))
+          (is (= (set (keys state)) default-state-fields) (str state))
+          (is (= (set supported-include-params) #{"id->failed-instance" "instance-failure-handler"}) (str state))))
 
       (testing "InstanceEventHandler provides default state fields"
         (let [query-params "include=instance-failure-handler"
@@ -37,8 +35,9 @@
                                                :cookies cookies
                                                :query-params query-params)
               default-inst-event-handler-state-fields #{:last-error-time :supported-include-params :type}]
-          (is (set/superset? (set (keys (get-in body [:state :instance-failure-handler] #{"!@#!@#14132"})))
-                             default-inst-event-handler-state-fields)))))))
+          (is (set/superset? (set (keys (get-in body [:state :instance-failure-handler])))
+                             default-inst-event-handler-state-fields)
+              (str body)))))))
 
 (deftest ^:parallel ^:integration-fast ^:resource-heavy test-instance-tracker-failing-instance
   (testing-using-waiter-url
@@ -50,11 +49,13 @@
               {:keys [service-id] :as response}
               (make-request-with-debug-info
                 {:x-kitchen-delay-ms 5000
+                 :x-kitchen-die-after-ms 6000
                  :x-waiter-name (rand-name)}
-                #(make-kitchen-request waiter-url % :cookies cookies :path "/die"))]
+                #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
           (with-service-cleanup
             service-id
-            (assert-response-status response #{http-502-bad-gateway http-503-service-unavailable})
+            (assert-response-status response http-200-ok)
+            (assert-backend-response response)
             ; wait for all routers to have positive number of failed instances
             (is (wait-for
                   (fn every-router-has-failed-instances? []
