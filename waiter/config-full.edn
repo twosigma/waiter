@@ -1040,6 +1040,17 @@
                        ;; flagged as never-passed-health-checks upon failure
                        :failed-check-threshold 5}
 
+ ;; Configure event maintainer that handles internal events to be sent externally
+ :instance-tracker-config {
+                           ;; component that handles new instance failures
+                           :instance-failure-handler {:kind :default
+                                                      :default {:factory-fn 'waiter.instance-tracker/create-instance-failure-event-handler
+                                                                :config {
+                                                                         ;; configuration for recent-failed-instance-cache
+                                                                         ;; the cache is used for integration and debugging purposes
+                                                                         :recent-failed-instance-cache {:threshold 5000
+                                                                                                        :ttl 900000}}}}}
+
  :token-config {
                 ;; Define the calculator that compute the root assigned to a token when they are created.
                 :cluster-calculator {;; :kind :configured create a calculator that looks up the cluster name using a configured map.

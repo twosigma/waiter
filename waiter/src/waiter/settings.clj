@@ -73,6 +73,10 @@
                                                   (s/required-key :output-buffer-size) schema/positive-int
                                                   (s/required-key :queue-timeout-ms) schema/positive-int
                                                   (s/required-key :streaming-timeout-ms) schema/positive-int}
+   (s/required-key :instance-tracker-config) {(s/required-key :instance-failure-handler) (s/constrained
+                                                                                           {:kind s/Keyword
+                                                                                            s/Keyword schema/require-symbol-factory-fn}
+                                                                                           schema/contains-kind-sub-map?)}
    (s/required-key :kv-config) schema/kv-store-config
    (s/optional-key :messages) {s/Keyword s/Str}
    (s/required-key :metric-group-mappings) schema/valid-metric-group-mappings
@@ -306,6 +310,10 @@
                                  :output-buffer-size 4096 ;; 4 KiB
                                  :queue-timeout-ms 300000
                                  :streaming-timeout-ms 20000}
+   :instance-tracker-config {:instance-failure-handler {:kind :default
+                                                        :default {:factory-fn 'waiter.instance-tracker/create-instance-failure-event-handler
+                                                                  :config {:recent-failed-instance-cache {:threshold 5000
+                                                                                                          :ttl 900000}}}}}
    :kv-config {:kind :zk
                :zk {:factory-fn 'waiter.kv/new-zk-kv-store
                     :sync-timeout-ms 2000}

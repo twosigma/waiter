@@ -120,13 +120,14 @@
 (defn- settings-with-bogus-factory-fn
   "Returns a settings map with the given key's :kind
   sub-map containing a bogus (non-symbol) :factory-fn"
-  [k]
+  [& k]
   (let [$ (load-full-settings)]
-    (assoc-in $ [k (get-in $ [k :kind]) :factory-fn] "not-a-symbol")))
+    (assoc-in $ (concat k [(get-in $ (concat k [:kind])) :factory-fn]) "not-a-symbol")))
 
 (deftest test-factory-fn-should-be-symbol
   (is (some? (s/check settings-schema (settings-with-bogus-factory-fn :cors-config))))
   (is (some? (s/check settings-schema (settings-with-bogus-factory-fn :entitlement-config))))
+  (is (some? (s/check settings-schema (settings-with-bogus-factory-fn :instance-tracker-config :instance-failure-handler))))
   (is (some? (s/check settings-schema (settings-with-bogus-factory-fn :kv-config))))
   (is (some? (s/check settings-schema (settings-with-bogus-factory-fn :password-store-config))))
   (is (some? (s/check settings-schema (settings-with-bogus-factory-fn :scheduler-config))))
@@ -134,13 +135,14 @@
 
 (defn- settings-with-missing-kind-sub-map
   "Returns a settings map with the given key's :kind sub-map removed"
-  [k]
+  [& k]
   (let [$ (load-full-settings)]
-    (update-in $ [k] #(dissoc % (get-in $ [k :kind])))))
+    (update-in $ k #(dissoc % (get-in $ (concat k [:kind]))))))
 
 (deftest test-kind-sub-map-should-be-present
   (is (some? (s/check settings-schema (settings-with-missing-kind-sub-map :cors-config))))
   (is (some? (s/check settings-schema (settings-with-missing-kind-sub-map :entitlement-config))))
+  (is (some? (s/check settings-schema (settings-with-missing-kind-sub-map :instance-tracker-config :instance-failure-handler))))
   (is (some? (s/check settings-schema (settings-with-missing-kind-sub-map :kv-config))))
   (is (some? (s/check settings-schema (settings-with-missing-kind-sub-map :password-store-config))))
   (is (some? (s/check settings-schema (settings-with-missing-kind-sub-map :scheduler-config))))
