@@ -122,6 +122,7 @@
    (s/optional-key "https-redirect") s/Bool
    (s/optional-key "maintenance") {(s/required-key "message") (s/constrained s/Str #(<= 1 (count %) 512))}
    (s/optional-key "owner") schema/non-empty-string
+   (s/optional-key "sharing-mode") (s/pred #(contains? #{"legacy" "exclusive"} %) 'valid-sharing-mode?)
    (s/optional-key "stale-timeout-mins") (s/both s/Int (s/pred #(<= 0 % (t/in-minutes (t/hours 4))) 'at-most-4-hours))
    s/Str s/Any})
 
@@ -162,7 +163,7 @@
 (def ^:const system-metadata-keys #{"cluster" "deleted" "last-update-time" "last-update-user" "previous" "root"})
 
 ; keys allowed in user metadata for tokens, these need to be distinct from service description keys
-(def ^:const user-metadata-keys #{"cors-rules" "editor" "fallback-period-secs" "https-redirect" "maintenance" "owner" "stale-timeout-mins"})
+(def ^:const user-metadata-keys #{"cors-rules" "editor" "fallback-period-secs" "https-redirect" "maintenance" "owner" "sharing-mode" "stale-timeout-mins"})
 
 ; keys allowed in metadata for tokens, these need to be distinct from service description keys
 (def ^:const token-metadata-keys (set/union system-metadata-keys user-metadata-keys))
@@ -478,8 +479,8 @@
        (assoc parameter-key# (do ~error-message-body)))))
 
 (defn validate-user-metadata-schema
-  "Validates provided user-metadata of a token and throws an error with user readable validation issues."
-  [user-metadata]
+  "Validates provided user-metadata and service-parameter-template of a token and throws an error with user readable validation issues."
+  [user-metadata service-parameter-template]
   (try
     (s/validate user-metadata-schema user-metadata)
     (catch Exception _
@@ -507,10 +508,21 @@
                                            "owner must be a non-empty string")
                                          (attach-error-message-for-parameter
                                            parameter->issues
+                                           :sharing-mode
+                                           "sharing-mode must be one of legacy or exclusive")
+                                         (attach-error-message-for-parameter
+                                           parameter->issues
                                            :stale-timeout-mins
                                            "stale-timeout-mins must be an integer between 0 and 240 (inclusive)"))]
         (throw (ex-info (str "Validation failed for token:\n" (str/join "\n" (vals parameter->error-message)))
-                        {:failed-check (str parameter->issues) :status http-400-bad-request :log-level :warn}))))))
+                        {:failed-check (str parameter->issues) :status http-400-bad-request :log-level :warn})))))
+
+  ;; validate environment in sharing mode
+  (let [{:strs [env]} service-parameter-template
+        {:strs [sharing-mode]} user-metadata]
+    (when (and (= "exclusive" sharing-mode) (contains? env "WAITER_CONFIG_TOKEN"))
+      (throw (ex-info "Service environment cannot contain WAITER_CONFIG_TOKEN when sharing-mode is exclusive."
+                      {:status http-400-bad-request :log-level :warn})))))
 
 (defn validate-schema
   "Validates the provided service description template.
@@ -996,7 +1008,11 @@
   [attach-service-defaults-fn attach-token-defaults-fn token-sequence token->token-data]
   (let [merged-token-data (attach-token-defaults-fn
                             (token-sequence->merged-data token->token-data token-sequence))
-        service-description-template (select-keys merged-token-data service-parameter-keys)
+        exclusive-mode? (= "exclusive" (get merged-token-data "sharing-mode"))
+        service-description-template (cond-> (select-keys merged-token-data service-parameter-keys)
+                                       ;; each unique token permutation will create a unique service
+                                       ;; leverage WAITER_CONFIG_ prefixed environment variables being allowed
+                                       exclusive-mode? (assoc-in ["env" "WAITER_CONFIG_TOKEN"] (str/join "," token-sequence)))
         source-tokens (mapv #(source-tokens-entry % (token->token-data %)) token-sequence)]
     {:fallback-period-secs (get merged-token-data "fallback-period-secs")
      :service-description-template service-description-template

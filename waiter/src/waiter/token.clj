@@ -473,7 +473,7 @@
       (throw (ex-info (str "No parameters provided for " token) {:status http-400-bad-request :log-level :warn})))
     (sd/validate-token token)
     (validate-service-description-fn new-service-parameter-template)
-    (sd/validate-user-metadata-schema new-user-metadata)
+    (sd/validate-user-metadata-schema new-user-metadata new-service-parameter-template)
     (let [unknown-keys (-> new-token-data
                            keys
                            set

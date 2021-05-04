@@ -782,7 +782,7 @@
 (defn environment
   "Returns a new environment variable map with some basic variables added in"
   [service-id {:strs [concurrency-level cpus env mem run-as-user]} service-id->password-fn home-path]
-  (merge env
+  (merge (dissoc env "WAITER_CONFIG_TOKEN")
          {"HOME" home-path
           "LOGNAME" run-as-user
           "USER" run-as-user
@@ -792,7 +792,9 @@
           "WAITER_MEM_MB" (str mem)
           "WAITER_PASSWORD" (service-id->password-fn service-id)
           "WAITER_SERVICE_ID" service-id
-          "WAITER_USERNAME" "waiter"}))
+          "WAITER_USERNAME" "waiter"}
+         (when-let [waiter-token (get env "WAITER_CONFIG_TOKEN")]
+           {"WAITER_TOKEN" waiter-token})))
 
 ;; Support for tracking service instance launching time stats
 
