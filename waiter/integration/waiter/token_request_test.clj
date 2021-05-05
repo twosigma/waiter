@@ -1865,7 +1865,7 @@
         (finally
           (delete-token-and-assert waiter-url token))))))
 
-(deftest ^:parallel ^:integration-fast test-sharing-mode-validation
+(deftest ^:parallel ^:integration-fast test-service-mapping-validation
   (testing-using-waiter-url
     (let [service-name (rand-name)
           token (create-token-name waiter-url ".")
@@ -1878,18 +1878,18 @@
                                      :token token
                                      :version "version-1"))]
 
-      (testing "invalid sharing-mode value"
-        (let [{:keys [body] :as response} (post-token waiter-url (assoc token-description :sharing-mode "on"))]
+      (testing "invalid service-mapping value"
+        (let [{:keys [body] :as response} (post-token waiter-url (assoc token-description :service-mapping "on"))]
           (assert-response-status response http-400-bad-request)
           (is (str/includes? (str body) "Validation failed for token"))
-          (is (str/includes? (str body) "sharing-mode must be one of legacy or exclusive"))))
+          (is (str/includes? (str body) "service-mapping must be one of legacy or exclusive"))))
 
-      (testing "invalid env in exclusive sharing-mode"
-        (let [{:keys [body] :as response} (post-token waiter-url (assoc token-description :env {"WAITER_CONFIG_TOKEN" token} :sharing-mode "exclusive"))]
+      (testing "invalid env in exclusive service-mapping"
+        (let [{:keys [body] :as response} (post-token waiter-url (assoc token-description :env {"WAITER_CONFIG_TOKEN" token} :service-mapping "exclusive"))]
           (assert-response-status response http-400-bad-request)
-          (is (str/includes? (str body) "Service environment cannot contain WAITER_CONFIG_TOKEN when sharing-mode is exclusive")))))))
+          (is (str/includes? (str body) "Service environment cannot contain WAITER_CONFIG_TOKEN when service-mapping is exclusive")))))))
 
-(deftest ^:parallel ^:integration-fast test-sharing-mode-legacy
+(deftest ^:parallel ^:integration-fast test-service-mapping-legacy
   (testing-using-waiter-url
     (let [service-name (rand-name)
           token-1 (create-token-name waiter-url ".")
@@ -1900,7 +1900,7 @@
                                      :name (str service-name "-v1")
                                      :permitted-user "*"
                                      :run-as-user (retrieve-username)
-                                     :sharing-mode "legacy"
+                                     :service-mapping "legacy"
                                      :version "version-1"))]
       (try
         (assert-response-status (post-token waiter-url (assoc token-description :token token-1)) http-200-ok)
@@ -1925,7 +1925,7 @@
         (finally
           (delete-token-and-assert waiter-url token-1))))))
 
-(deftest ^:parallel ^:integration-fast test-sharing-mode-exclusive
+(deftest ^:parallel ^:integration-fast test-service-mapping-exclusive
   (testing-using-waiter-url
     (let [service-name (rand-name)
           token-1 (create-token-name waiter-url ".")
@@ -1936,7 +1936,7 @@
                                      :name (str service-name "-v1")
                                      :permitted-user "*"
                                      :run-as-user (retrieve-username)
-                                     :sharing-mode "exclusive"
+                                     :service-mapping "exclusive"
                                      :version "version-1"))]
       (try
         (assert-response-status (post-token waiter-url (assoc token-description :token token-1)) http-200-ok)

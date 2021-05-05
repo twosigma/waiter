@@ -133,7 +133,7 @@
                           "https-redirect" true
                           "maintenance" {"message" "test-message"}
                           "owner" "jane.doe"
-                          "sharing-mode" "legacy"
+                          "service-mapping" "legacy"
                           "stale-timeout-mins" 15}]
     (is (nil? (s/check user-metadata-schema {})))
 
@@ -157,8 +157,8 @@
     (is (s/check user-metadata-schema (assoc basic-parameters "owner" "")))
     (is (s/check user-metadata-schema (assoc basic-parameters "owner" 1)))
 
-    (is (s/check user-metadata-schema (assoc basic-parameters "sharing-mode" "")))
-    (is (s/check user-metadata-schema (assoc basic-parameters "sharing-mode" "on")))
+    (is (s/check user-metadata-schema (assoc basic-parameters "service-mapping" "")))
+    (is (s/check user-metadata-schema (assoc basic-parameters "service-mapping" "on")))
 
     (is (s/check user-metadata-schema (assoc basic-parameters "stale-timeout-mins" "")))
     (is (s/check user-metadata-schema (assoc basic-parameters "stale-timeout-mins" "foo")))
@@ -181,7 +181,7 @@
                           "https-redirect" true
                           "maintenance" {"message" "test-message"}
                           "owner" "jane.doe"
-                          "sharing-mode" "legacy"
+                          "service-mapping" "legacy"
                           "stale-timeout-mins" 15}]
 
     (try
@@ -189,13 +189,13 @@
       (catch Throwable th
         (is false (str "Exception was thrown: " th))))
 
-    (testing "testing invalid sharing-mode"
+    (testing "testing invalid service-mapping"
       (run-validate-user-metadata-schema-test
-        (assoc basic-parameters "sharing-mode" "on") {}
-        "sharing-mode must be one of legacy or exclusive")
+        (assoc basic-parameters "service-mapping" "on") {}
+        "service-mapping must be one of legacy or exclusive")
       (run-validate-user-metadata-schema-test
-        (assoc basic-parameters "sharing-mode" "exclusive") {"env" {"WAITER_CONFIG_TOKEN" "foo"}}
-        "Service environment cannot contain WAITER_CONFIG_TOKEN when sharing-mode is exclusive."))))
+        (assoc basic-parameters "service-mapping" "exclusive") {"env" {"WAITER_CONFIG_TOKEN" "foo"}}
+        "Service environment cannot contain WAITER_CONFIG_TOKEN when service-mapping is exclusive."))))
 
 (deftest test-retrieve-token-from-service-description-or-hostname
   (let [test-cases (list
@@ -319,7 +319,7 @@
                                 (str/includes? token "proser") (assoc "profile" "service")
                                 (str/includes? token "proweb") (assoc "profile" "webapp")
                                 (str/includes? token "run") (assoc "run-as-user" "ruser")
-                                (str/includes? token "shrexc") (assoc "sharing-mode" "exclusive"))
+                                (str/includes? token "shrexc") (assoc "service-mapping" "exclusive"))
                               {}))
         build-source-tokens (fn [& tokens]
                               (mapv (fn [token] (source-tokens-entry token (create-token-data token))) tokens))]
@@ -791,7 +791,7 @@
                                      :token-authentication-disabled false,
                                      :token-preauthorized true,
                                      :token-sequence ["test-token-run-proser"]}}
-                         {:name "prepare-service-description-sources:sharing-mode:exclusive"
+                         {:name "prepare-service-description-sources:service-mapping:exclusive"
                           :waiter-headers {"x-waiter-token" "test-token-shrexc"}
                           :passthrough-headers {}
                           :expected {:fallback-period-secs 300
