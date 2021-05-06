@@ -1976,7 +1976,7 @@
           token-2 (create-token-name waiter-url ".")
           token-description (retrieve-service-mapping-parameters service-name "invalid")]
       (try
-        (let [token-parameters (-> token-description (dissoc :cmd :cmd-type) (assoc :service-mapping "legacy" :token token-1))
+        (let [token-parameters (-> token-description (dissoc :cmd :cmd-type :version) (assoc :service-mapping "legacy" :token token-1))
               response (post-token waiter-url token-parameters)]
           (assert-response-status response http-200-ok))
         (try
