@@ -1889,19 +1889,36 @@
           (assert-response-status response http-400-bad-request)
           (is (str/includes? (str body) "Service environment cannot contain WAITER_CONFIG_TOKEN when service-mapping is exclusive")))))))
 
+(defn- retrieve-service-mapping-parameters
+  "Retrieves the common parameters used by the service-mapping tests."
+  [service-name service-mapping]
+  (-> (kitchen-request-headers :prefix "")
+    (assoc :fallback-period-secs 300
+           :idle-timeout-mins 2
+           :name (str service-name "-v1")
+           :permitted-user "*"
+           :run-as-user (retrieve-username)
+           :service-mapping service-mapping
+           :version "version-1")))
+
+(defmacro assert-service-mapping-response
+  "Encapsulates common assertions for service-mapping on an /environment response for a kitchen service."
+  [waiter-url service-id response-body token-value]
+  `(let [waiter-url# ~waiter-url
+         service-id# ~service-id
+         body# ~response-body
+         token-value# ~token-value]
+     (is (= service-id# (-> body# (try-parse-json) (get "WAITER_SERVICE_ID"))) body#)
+     (is (= token-value# (-> body# (try-parse-json) (get "WAITER_TOKEN"))) body#)
+     (let [service-desc# (service-id->service-description waiter-url# service-id#)]
+       (is (= token-value# (get-in service-desc# [:env :WAITER_CONFIG_TOKEN])) (str service-desc#)))))
+
 (deftest ^:parallel ^:integration-fast test-service-mapping-legacy
   (testing-using-waiter-url
     (let [service-name (rand-name)
           token-1 (create-token-name waiter-url ".")
           token-2 (create-token-name waiter-url ".")
-          token-description (-> (kitchen-request-headers :prefix "")
-                              (assoc :fallback-period-secs 300
-                                     :idle-timeout-mins 2
-                                     :name (str service-name "-v1")
-                                     :permitted-user "*"
-                                     :run-as-user (retrieve-username)
-                                     :service-mapping "legacy"
-                                     :version "version-1"))]
+          token-description (retrieve-service-mapping-parameters service-name "legacy")]
       (try
         (assert-response-status (post-token waiter-url (assoc token-description :token token-1)) http-200-ok)
         (try
@@ -1918,26 +1935,18 @@
                       (make-request-with-debug-info {:x-waiter-token token} #(make-request waiter-url "/environment" :headers %))]
                   (assert-response-status response http-200-ok)
                   (is (= service-id-1 (:service-id response)))
-                  (is (= service-id-1 (-> body (try-parse-json) (get "WAITER_SERVICE_ID"))) (str body))
-                  (is (nil? (-> body (try-parse-json) (get "WAITER_TOKEN"))) (str body))))))
+                  (assert-service-mapping-response waiter-url service-id-1 (str body) nil)))))
           (finally
             (delete-token-and-assert waiter-url token-2)))
         (finally
           (delete-token-and-assert waiter-url token-1))))))
 
-(deftest ^:parallel ^:integration-fast test-service-mapping-exclusive
+(deftest ^:parallel ^:integration-fast test-service-mapping-exclusive-single-token
   (testing-using-waiter-url
     (let [service-name (rand-name)
           token-1 (create-token-name waiter-url ".")
           token-2 (create-token-name waiter-url ".")
-          token-description (-> (kitchen-request-headers :prefix "")
-                              (assoc :fallback-period-secs 300
-                                     :idle-timeout-mins 2
-                                     :name (str service-name "-v1")
-                                     :permitted-user "*"
-                                     :run-as-user (retrieve-username)
-                                     :service-mapping "exclusive"
-                                     :version "version-1"))]
+          token-description (retrieve-service-mapping-parameters service-name "exclusive")]
       (try
         (assert-response-status (post-token waiter-url (assoc token-description :token token-1)) http-200-ok)
         (try
@@ -1954,10 +1963,49 @@
                       (make-request-with-debug-info {:x-waiter-token token} #(make-request waiter-url "/environment" :headers %))]
                   (assert-response-status response http-200-ok)
                   (is (= service-id (:service-id response)))
-                  (is (= service-id (-> body (try-parse-json) (get "WAITER_SERVICE_ID"))) (str body))
-                  (is (= token (-> body (try-parse-json) (get "WAITER_TOKEN"))) (str body))
-                  (let [service-desc (service-id->service-description waiter-url service-id)]
-                    (is (= token (get-in service-desc [:env :WAITER_CONFIG_TOKEN])) (str service-desc)))))))
+                  (assert-service-mapping-response waiter-url service-id (str body) token)))))
+          (finally
+            (delete-token-and-assert waiter-url token-2)))
+        (finally
+          (delete-token-and-assert waiter-url token-1))))))
+
+(deftest ^:parallel ^:integration-fast test-service-mapping-exclusive-multi-token
+  (testing-using-waiter-url
+    (let [service-name (rand-name)
+          token-1 (create-token-name waiter-url ".")
+          token-2 (create-token-name waiter-url ".")
+          token-description (retrieve-service-mapping-parameters service-name "invalid")]
+      (try
+        (let [token-parameters (-> token-description (dissoc :cmd :cmd-type) (assoc :service-mapping "legacy" :token token-1))
+              response (post-token waiter-url token-parameters)]
+          (assert-response-status response http-200-ok))
+        (try
+          (let [token-parameters (-> token-description (dissoc :cpus :mem) (assoc :service-mapping "exclusive" :token token-2))
+                response (post-token waiter-url token-parameters)]
+            (assert-response-status response http-200-ok))
+
+          (let [request-token-1 (str token-1 "," token-2)
+                request-token-2 (str token-2 "," token-1)
+                service-id-1 (retrieve-service-id waiter-url {:x-waiter-token request-token-1})
+                service-id-2 (retrieve-service-id waiter-url {:x-waiter-token request-token-2})]
+            (is (not= service-id-1 service-id-2))
+
+
+            (let [{:keys [body service-id] :as response}
+                  (make-request-with-debug-info {:x-waiter-token request-token-1} #(make-request waiter-url "/environment" :headers %))]
+              (with-service-cleanup
+                service-id
+                (is (= service-id-1 service-id))
+                (assert-response-status response http-200-ok)
+                (assert-service-mapping-response waiter-url service-id (str body) request-token-1)))
+
+            (let [{:keys [body service-id] :as response}
+                  (make-request-with-debug-info {:x-waiter-token request-token-2} #(make-request waiter-url "/environment" :headers %))]
+              (with-service-cleanup
+                service-id
+                (is (= service-id-2 service-id))
+                (assert-response-status response http-200-ok)
+                (assert-service-mapping-response waiter-url service-id (str body) nil))))
           (finally
             (delete-token-and-assert waiter-url token-2)))
         (finally
