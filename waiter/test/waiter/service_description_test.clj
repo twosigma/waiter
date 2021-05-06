@@ -126,6 +126,77 @@
     (is (s/check service-description-schema (assoc basic-description "termination-grace-period-secs" -1)))
     (is (s/check service-description-schema (assoc basic-description "termination-grace-period-secs" (t/in-seconds (t/minutes 6)))))))
 
+(deftest test-user-metadata-schema
+  (let [basic-parameters {"cors-rules" []
+                          "editor" "john.doe"
+                          "fallback-period-secs" 150
+                          "https-redirect" true
+                          "maintenance" {"message" "test-message"}
+                          "owner" "jane.doe"
+                          "service-mapping" "legacy"
+                          "stale-timeout-mins" 15}]
+    (is (nil? (s/check user-metadata-schema {})))
+
+    (is (nil? (s/check user-metadata-schema basic-parameters)))
+
+    (is (s/check user-metadata-schema (assoc basic-parameters "cors-rules" [{"methods" ["GET"]}])))
+
+    (is (s/check user-metadata-schema (assoc basic-parameters "editor" "")))
+    (is (s/check user-metadata-schema (assoc basic-parameters "editor" 1)))
+
+    (is (s/check user-metadata-schema (assoc basic-parameters "fallback-period-secs" "")))
+    (is (s/check user-metadata-schema (assoc basic-parameters "fallback-period-secs" "foo")))
+    (is (s/check user-metadata-schema (assoc basic-parameters "fallback-period-secs" -1)))
+
+    (is (s/check user-metadata-schema (assoc basic-parameters "https-redirect" "true")))
+    (is (s/check user-metadata-schema (assoc basic-parameters "https-redirect" "false")))
+
+    (is (s/check user-metadata-schema (assoc basic-parameters "maintenance" {})))
+    (is (s/check user-metadata-schema (assoc basic-parameters "maintenance" {"message" ""})))
+
+    (is (s/check user-metadata-schema (assoc basic-parameters "owner" "")))
+    (is (s/check user-metadata-schema (assoc basic-parameters "owner" 1)))
+
+    (is (s/check user-metadata-schema (assoc basic-parameters "service-mapping" "")))
+    (is (s/check user-metadata-schema (assoc basic-parameters "service-mapping" "on")))
+
+    (is (s/check user-metadata-schema (assoc basic-parameters "stale-timeout-mins" "")))
+    (is (s/check user-metadata-schema (assoc basic-parameters "stale-timeout-mins" "foo")))
+    (is (s/check user-metadata-schema (assoc basic-parameters "stale-timeout-mins" -1)))))
+
+(defmacro run-validate-user-metadata-schema-test
+  [user-metadata service-parameter-template error-message]
+  `(let [error-message# ~error-message]
+     (try
+       (validate-user-metadata-schema ~user-metadata ~service-parameter-template)
+       (is false "Fail as exception was not thrown!")
+       (catch ExceptionInfo ex#
+         (let [actual-error-message# (.getMessage ex#)]
+           (is (str/includes? (str actual-error-message#) (str error-message#)) (str actual-error-message#)))))))
+
+(deftest test-validate-user-metadata-schema
+  (let [basic-parameters {"cors-rules" []
+                          "editor" "john.doe"
+                          "fallback-period-secs" 150
+                          "https-redirect" true
+                          "maintenance" {"message" "test-message"}
+                          "owner" "jane.doe"
+                          "service-mapping" "legacy"
+                          "stale-timeout-mins" 15}]
+
+    (try
+      (validate-user-metadata-schema basic-parameters {})
+      (catch Throwable th
+        (is false (str "Exception was thrown: " th))))
+
+    (testing "testing invalid service-mapping"
+      (run-validate-user-metadata-schema-test
+        (assoc basic-parameters "service-mapping" "on") {}
+        "service-mapping must be one of legacy or exclusive")
+      (run-validate-user-metadata-schema-test
+        (assoc basic-parameters "service-mapping" "exclusive") {"env" {"WAITER_CONFIG_TOKEN" "foo"}}
+        "Service environment cannot contain WAITER_CONFIG_TOKEN when service-mapping is exclusive."))))
+
 (deftest test-retrieve-token-from-service-description-or-hostname
   (let [test-cases (list
                      {:name "retrieve-token-from-service-description-or-hostname:missing-token"
@@ -247,7 +318,8 @@
                                 (str/includes? token "per") (assoc "permitted-user" "puser")
                                 (str/includes? token "proser") (assoc "profile" "service")
                                 (str/includes? token "proweb") (assoc "profile" "webapp")
-                                (str/includes? token "run") (assoc "run-as-user" "ruser"))
+                                (str/includes? token "run") (assoc "run-as-user" "ruser")
+                                (str/includes? token "shrexc") (assoc "service-mapping" "exclusive"))
                               {}))
         build-source-tokens (fn [& tokens]
                               (mapv (fn [token] (source-tokens-entry token (create-token-data token))) tokens))]
@@ -719,6 +791,20 @@
                                      :token-authentication-disabled false,
                                      :token-preauthorized true,
                                      :token-sequence ["test-token-run-proser"]}}
+                         {:name "prepare-service-description-sources:service-mapping:exclusive"
+                          :waiter-headers {"x-waiter-token" "test-token-shrexc"}
+                          :passthrough-headers {}
+                          :expected {:fallback-period-secs 300
+                                     :headers {}
+                                     :service-description-template {"cmd" "token-user"
+                                                                    "env" {"WAITER_CONFIG_TOKEN" "test-token-shrexc"}
+                                                                    "name" "test-token-shrexc"
+                                                                    "version" "token"}
+                                     :source-tokens (build-source-tokens "test-token-shrexc")
+                                     :token->token-data {"test-token-shrexc" (create-token-data "test-token-shrexc")}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false
+                                     :token-sequence ["test-token-shrexc"]}}
                          )]
         (doseq [{:keys [expected name passthrough-headers waiter-headers]} test-cases]
           (testing (str "Test " name)
@@ -2033,7 +2119,7 @@
        (catch ExceptionInfo ex#
          (let [exception-data# (ex-data ex#)
                actual-error-message# (:friendly-error-message exception-data#)]
-           (is (str/includes? (str actual-error-message#) (str error-message#))))))))
+           (is (str/includes? (str actual-error-message#) (str error-message#)) (str actual-error-message#)))))))
 
 (deftest test-validate-schema
   (let [valid-description {"cpus" 1
