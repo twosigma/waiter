@@ -26,6 +26,7 @@
             [metrics.timers :as timers]
             [qbits.jet.client.http :as http]
             [qbits.jet.servlet :as servlet]
+            [ring.middleware.ssl :as ssl]
             [waiter.async-request :as async-req]
             [waiter.auth.authentication :as auth]
             [waiter.correlation-id :as cid]
@@ -969,7 +970,7 @@
                                      (assoc :content-length 0)
                                      (update :headers assoc
                                              "accept" health-check-accept-header
-                                             "content-length" 0)))
+                                             "content-length" "0")))
             output-stream (ByteArrayOutputStream.)
             servlet-output-stream (proxy [ServletOutputStream] []
                                     (close [] (.close output-stream))
@@ -996,9 +997,11 @@
                                                               :port-index health-check-port-index}
                                  :request-method :get
                                  :uri health-check-url))
-            response-ch (process-request-handler-fn new-request)
+            pr-response (process-request-handler-fn new-request)
             timeout-ch (async/timeout idle-timeout-ms)
-            [response source-ch] (async/alts! [response-ch timeout-ch] :priority true)
+            [response source-ch] (if (au/chan? pr-response)
+                                   (async/alts! [pr-response timeout-ch] :priority true)
+                                   [pr-response nil])
             {:keys [body] :as health-check-response} (cond-> response
                                                        (au/chan? response) (async/<!))
             body-str (cond
@@ -1009,7 +1012,10 @@
         (async/close! ctrl-ch)
         (-> health-check-response
           (assoc :body body-str
-                 :result (if (= source-ch timeout-ch) :timed-out :received-response))))
+                 :result (cond
+                           (and (nil? source-ch) (utils/waiter-generated-response? health-check-response)) :waiter-response
+                           (= source-ch timeout-ch) :timed-out
+                           :else :received-response))))
       (catch Exception ex
         (utils/exception->response ex request)))))
 
@@ -1046,12 +1052,17 @@
               service-state (if exclude-service-state
                               {:result :excluded
                                :service-id service-id}
-                              (fa/<? (service-state-fn service-id (:result ping-response))))]
+                              (fa/<? (service-state-fn service-id (:result ping-response))))
+              redirect-ping? (ru/redirect-response? ping-response)
+              redirect-response (when redirect-ping?
+                                  (ssl/ssl-redirect-response request {}))]
           (merge
             (dissoc ping-response [:body :error-chan :headers :request :result :status :trailers])
             (utils/clj->json-response
               {:ping-response (select-keys ping-response [:body :headers :result :status])
                :service-description core-service-description
-               :service-state service-state}))))
+               :service-state service-state}
+              :headers (if redirect-ping? (:headers redirect-response) {})
+              :status (if redirect-ping? (:status redirect-response) http-200-ok)))))
       (catch Exception ex
         (utils/exception->response ex request)))))
