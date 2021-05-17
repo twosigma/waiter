@@ -311,7 +311,7 @@
         request-cookies (cond->> cookie-header
                           (not (string? cookie-header)) (str/join ";"))
         num-challenge-cookies (count
-                                (filter #(str/starts-with? % oidc-challenge-cookie-prefix)
+                                (filter #(str/starts-with? (str/trim %) oidc-challenge-cookie-prefix)
                                         (str/split (str request-cookies) #";")))]
     (log/info "request has" num-challenge-cookies "oidc challenge cookies")
     (> num-challenge-cookies num-allowed)))
