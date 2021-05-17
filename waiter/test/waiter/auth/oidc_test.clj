@@ -649,3 +649,36 @@
                  waiter-hostnames #{"www.w8r.com"}
                  request {:headers {"host" "www.w8r.com:1234"}}]
              (oidc-enabled-request-handler oidc-authenticator waiter-hostnames request))))))
+
+(deftest test-too-many-oidc-challenge-cookies?
+  (do
+    (is (false? (too-many-oidc-challenge-cookies? {:headers {}} 5)))
+    (is (false? (too-many-oidc-challenge-cookies? {:headers {}} 1))))
+
+  (let [cookie-str nil]
+    (is (false? (too-many-oidc-challenge-cookies? {:headers {"cookie" cookie-str}} 5)))
+    (is (false? (too-many-oidc-challenge-cookies? {:headers {"cookie" cookie-str}} 1))))
+
+  (let [cookie-str (str "x-waiter-oidc-686a606d67e7-5552e3d7aaebbc55=711134; "
+                        "x-waiter-oidc-686a606e00f9-3dccebb78eface1c=946674;"
+                        "x-waiter-oidc-686a606e37da-65a4f87426059a9d=372715; "
+                        "x-waiter-oidc-686a606e6b18-74129cbcad01cec1=720194;")]
+    (is (false? (too-many-oidc-challenge-cookies? {:headers {"cookie" cookie-str}} 20)))
+    (is (false? (too-many-oidc-challenge-cookies? {:headers {"cookie" cookie-str}} 15)))
+    (is (false? (too-many-oidc-challenge-cookies? {:headers {"cookie" cookie-str}} 10)))
+    (is (false? (too-many-oidc-challenge-cookies? {:headers {"cookie" cookie-str}} 5)))
+    (is (false? (too-many-oidc-challenge-cookies? {:headers {"cookie" cookie-str}} 1))))
+
+  (let [cookie-str (str "x-waiter-oidc-challenge-686a606d67e7-5552e3d7aaebbc55=711134; "
+                        "x-waiter-oidc-challenge-686a606e00f9-3dccebb78eface1c=946674;"
+                        "x-waiter-oidc-challenge-686a606e37da-65a4f87426059a9d=372715; "
+                        "foo-686a606e6b18-74129cbcad01cec1=720194;"
+                        "x-waiter-oidc-challenge-686a606e6b18-74129cbcad01cec1=720194;"
+                        "x-waiter-oidc-challenge-686a606e9a04-72eb37c791e7aaa7=770096; "
+                        "x-waiter-oidc-challenge-686a606ec949-10123587124d0942=786236;"
+                        "bar-686a606ec949-10123587124d0942=786236;")]
+    (is (false? (too-many-oidc-challenge-cookies? {:headers {"cookie" cookie-str}} 20)))
+    (is (false? (too-many-oidc-challenge-cookies? {:headers {"cookie" cookie-str}} 15)))
+    (is (false? (too-many-oidc-challenge-cookies? {:headers {"cookie" cookie-str}} 6)))
+    (is (true? (too-many-oidc-challenge-cookies? {:headers {"cookie" cookie-str}} 5)))
+    (is (true? (too-many-oidc-challenge-cookies? {:headers {"cookie" cookie-str}} 1)))))

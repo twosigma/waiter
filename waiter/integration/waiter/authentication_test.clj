@@ -547,7 +547,7 @@
                              "accept-redirect" "yes"
                              "cookie" (->> (range oidc-num-challenge-cookies-allowed-in-request)
                                         (map #(str "x-waiter-oidc-challenge-" % "=v" %))
-                                        (str/join ";"))
+                                        (str/join "; "))
                              "host" waiter-token
                              "x-forwarded-proto" "https"}
             port (waiter-settings-port waiter-url)
