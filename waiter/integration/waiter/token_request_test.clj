@@ -1092,39 +1092,41 @@
             url (URL. (str "http://" waiter-url))
             endpoint "/request-info"
             ping-endpoint "/waiter-ping"]
-        (doseq [request-method [:get :post]]
-          (let [redirect-status-code (if (= :get request-method) http-301-moved-permanently http-307-temporary-redirect)]
-            (testing "https redirects"
-              (let [token-response (post-token waiter-url token-description)]
+        (doseq [[request-method redirect-status-code]
+                [[:get http-301-moved-permanently]
+                 [:post http-307-temporary-redirect]]]
+          (testing "https redirects"
+            (let [token-response (post-token waiter-url token-description)]
+              (assert-response-status token-response http-200-ok))
+
+            (testing (str (name request-method) " request")
+              (let [{:keys [headers] :as response}
+                    (make-request waiter-url endpoint :headers request-headers :method request-method)]
+                (assert-response-status response redirect-status-code)
+                (assert-waiter-response response)
+                (is (= (str "https://" (.getHost url) endpoint) (get headers "location")))))
+
+            (testing (str (name request-method) " /waiter-ping request")
+              (let [{:keys [body headers] :as response}
+                    (make-request waiter-url ping-endpoint :headers request-headers :method request-method)]
+                (assert-response-status response redirect-status-code)
+                (assert-waiter-response response)
+                (is (= (str "https://" (.getHost url) ping-endpoint) (get headers "location")))
+                (let [ping-body-json (try-parse-json body)]
+                  (is (str/blank? (get ping-body-json "body")))
+                  (is (= "waiter-response" (get-in ping-body-json ["ping-response" "result"])))
+                  (is (= http-301-moved-permanently (get-in ping-body-json ["ping-response" "status"])))
+                  (is (false? (get-in ping-body-json ["service-state" "exists?"])))
+                  (is (false? (get-in ping-body-json ["service-state" "healthy?"])))
+                  (is (= "Inactive" (get-in ping-body-json ["service-state" "status"]))))))
+
+            (testing (str (name request-method) " /waiter-ping incomplete service description")
+              (let [token-response (post-token waiter-url (dissoc token-description :cpus))]
                 (assert-response-status token-response http-200-ok))
 
-              (testing (str (name request-method) " request")
-                (let [{:keys [headers] :as response}
-                      (make-request waiter-url endpoint :headers request-headers :method request-method)]
-                  (assert-response-status response redirect-status-code)
-                  (assert-waiter-response response)
-                  (is (= (str "https://" (.getHost url) endpoint) (get headers "location")))))
-
-              (testing (str (name request-method) " /waiter-ping request")
-                (let [{:keys [body headers] :as response}
-                      (make-request waiter-url ping-endpoint :headers request-headers :method request-method)]
-                  (assert-response-status response redirect-status-code)
-                  (assert-waiter-response response)
-                  (is (= (str "https://" (.getHost url) ping-endpoint) (get headers "location")))
-                  (let [ping-body-json (try-parse-json body)]
-                    (is (str/blank? (get ping-body-json "body")))
-                    (is (= "waiter-response" (get-in ping-body-json ["ping-response" "result"])))
-                    (is (false? (get-in ping-body-json ["service-state" "exists?"])))
-                    (is (false? (get-in ping-body-json ["service-state" "healthy?"])))
-                    (is (= "Inactive" (get-in ping-body-json ["service-state" "status"]))))))
-
-              (testing (str (name request-method) " /waiter-ping incomplete service description")
-                (let [token-response (post-token waiter-url (dissoc token-description :cpus))]
-                  (assert-response-status token-response http-200-ok))
-
-                (let [response (make-request waiter-url ping-endpoint :headers request-headers :method request-method)]
-                  (assert-response-status response http-400-bad-request)
-                  (assert-waiter-response response)))))))
+              (let [response (make-request waiter-url ping-endpoint :headers request-headers :method request-method)]
+                (assert-response-status response http-400-bad-request)
+                (assert-waiter-response response))))))
 
       (delete-token-and-assert waiter-url token))))
 
@@ -1477,6 +1479,7 @@
               (is (= "waiter.Maintenance" (str (get-in ping-response-body-json ["waiter-error" "details" "error-class"]))))
               (is (str/includes? (str (get-in ping-response-body-json ["waiter-error" "message"])) custom-maintenance-message))
               (is (= "waiter-response" (get-in ping-body-json ["ping-response" "result"])))
+              (is (= http-503-service-unavailable (get-in ping-body-json ["ping-response" "status"])))
               (is (false? (get-in ping-body-json ["service-state" "exists?"])))
               (is (false? (get-in ping-body-json ["service-state" "healthy?"])))
               (is (= "Inactive" (get-in ping-body-json ["service-state" "status"]))))))
