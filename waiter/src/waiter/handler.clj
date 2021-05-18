@@ -334,8 +334,9 @@
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
-  [entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url service-id->service-description-fn
-   service-id->metrics-fn service-id->references-fn service-id->source-tokens-entries-fn request]
+  [entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+   service-id->service-description-fn service-id->metrics-fn service-id->references-fn service-id->source-tokens-entries-fn
+   token->token-hash request]
   (let [{:keys [all-available-service-ids service-id->healthy-instances service-id->unhealthy-instances] :as global-state} (query-state-fn)]
     (let [{:strs [run-as-user token token-version] :as request-params} (-> request ru/query-params-request :query-params)
           service-description-filter-predicate (query-params->service-description-filter-predicate request-params)
@@ -370,11 +371,13 @@
                                             (utils/param-contains? request-params "include" "effective-parameters"))
           include-references? (utils/param-contains? request-params "include" "references")
           include-healthy-instances? (utils/param-contains? request-params "include" "healthy-instances")
+          include-token-fallback? (utils/param-contains? request-params "include" "token-fallback")
           response-data (map
                           (fn service-id->service-info [service-id]
                             (let [scaling-state (retrieve-scaling-state query-autoscaler-state-fn service-id)
                                   core-service-description (service-id->service-description-fn service-id :effective? false)
                                   source-tokens-entries (service-id->source-tokens-entries-fn service-id)
+                                  current-for-tokens (descriptor/get-current-for-tokens source-tokens-entries token->token-hash)
                                   instance-counts-map (retrieve-instance-counts service-id)
                                   instance-count (reduce + (vals instance-counts-map))
                                   effective-service-description (service-id->service-description-fn service-id :effective? true)
@@ -389,6 +392,8 @@
                                  :service-description core-service-description
                                  :status (service/retrieve-service-status-label service-id global-state)
                                  :url (prepend-waiter-url (str "/apps/" service-id))}
+                                (seq current-for-tokens)
+                                (assoc :current-for-tokens current-for-tokens)
                                 include-effective-parameters?
                                 (assoc :effective-parameters effective-service-description)
                                 include-healthy-instances?
@@ -400,7 +405,9 @@
                                 scaling-state
                                 (assoc :scaling-state scaling-state)
                                 (seq source-tokens-entries)
-                                (assoc :source-tokens source-tokens-entries))))
+                                (assoc :source-tokens source-tokens-entries)
+                                include-token-fallback?
+                                (merge (retrieve-token-based-fallback-fn service-id current-for-tokens)))))
                           viewable-service-ids)]
       (utils/clj->streaming-json-response response-data))))
 
@@ -484,24 +491,12 @@
      :failed-instances (get service-id->failed-instances service-id)
      :killed-instances (get service-id->killed-instances service-id)}))
 
-(defn- get-current-for-tokens
-  [source-token-entries token->token-hash]
-  (reduce (fn [acc source-tokens]
-            (let [current-for-tokens (map (fn [{:strs [token version]}]
-                                            (let [current-version (token->token-hash token)]
-                                              (= version current-version)))
-                                          source-tokens)]
-              (if (every? true? current-for-tokens)
-                (into acc (map (fn [t] (get t "token")) source-tokens))
-                acc)))
-          []
-          source-token-entries))
-
 (defn- get-service-handler
   "Returns details about the service such as the service description, metrics, instances, etc."
   [router-id service-id core-service-description kv-store generate-log-url-fn make-inter-router-requests-fn
    service-id->service-description-fn service-id->source-tokens-entries-fn service-id->references-fn
-   query-state-fn query-autoscaler-state-fn service-id->metrics-fn token->token-hash request]
+   query-state-fn query-autoscaler-state-fn service-id->metrics-fn token->token-hash retrieve-token-based-fallback-fn
+   request]
   (let [global-state (query-state-fn)
         service-instance-maps (try
                                 (let [process-instances-fn
@@ -551,10 +546,11 @@
                                   (catch Exception e
                                     (log/error e "Error in retrieving service suspended state for" service-id)))
         source-tokens-entries (service-id->source-tokens-entries-fn service-id)
-        current-for-tokens (get-current-for-tokens source-tokens-entries token->token-hash)
+        current-for-tokens (descriptor/get-current-for-tokens source-tokens-entries token->token-hash)
         include-effective-parameters? (or (utils/request-flag request-params "effective-parameters")
                                           (utils/param-contains? request-params "include" "effective-parameters"))
         include-references? (utils/param-contains? request-params "include" "references")
+        include-token-fallback? (utils/param-contains? request-params "include" "token-fallback")
         service-metrics (get (service-id->metrics-fn) service-id)
         last-request-time (get service-metrics "last-request-time")
         scaling-state (retrieve-scaling-state query-autoscaler-state-fn service-id)
@@ -566,6 +562,8 @@
                             :resource-usage resource-usage
                             :router-id router-id
                             :status (service/retrieve-service-status-label service-id global-state)}
+                     (seq current-for-tokens)
+                     (assoc :current-for-tokens current-for-tokens)
                      (and (not-empty core-service-description) include-effective-parameters?)
                      (assoc :effective-parameters effective-service-description)
                      (not-empty service-instance-maps)
@@ -589,8 +587,8 @@
                      (assoc :service-suspended-state service-suspended-state)
                      (seq source-tokens-entries)
                      (assoc :source-tokens source-tokens-entries)
-                     (seq current-for-tokens)
-                     (assoc :current-for-tokens current-for-tokens))]
+                     include-token-fallback?
+                     (merge (retrieve-token-based-fallback-fn service-id current-for-tokens)))]
     (utils/clj->streaming-json-response result-map)))
 
 (defn service-handler
@@ -600,7 +598,8 @@
      :get returns details about the service such as the service description, metrics, instances, etc."
   [router-id service-id scheduler kv-store allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-fn
    service-id->service-description-fn service-id->source-tokens-entries-fn service-id->references-fn query-state-fn
-   query-autoscaler-state-fn service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash fallback-state-atom request]
+   query-autoscaler-state-fn service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash fallback-state-atom
+   retrieve-token-based-fallback-fn request]
   (try
     (when-not service-id
       (throw (ex-info "Missing service-id" {:log-level :info :status http-400-bad-request})))
@@ -613,8 +612,8 @@
           :get (get-service-handler router-id service-id core-service-description kv-store generate-log-url-fn
                                     make-inter-router-requests-fn service-id->service-description-fn
                                     service-id->source-tokens-entries-fn service-id->references-fn
-                                    query-state-fn query-autoscaler-state-fn
-                                    service-id->metrics-fn token->token-hash request))))
+                                    query-state-fn query-autoscaler-state-fn service-id->metrics-fn token->token-hash
+                                    retrieve-token-based-fallback-fn request))))
     (catch Exception ex
       (utils/exception->response ex request))))
 

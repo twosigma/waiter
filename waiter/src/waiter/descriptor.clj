@@ -457,3 +457,41 @@
       (assoc final-fallback-state
         :service-id service-id
         :status (retrieve-service-status-label-fn service-id)))))
+
+(defn get-current-for-tokens
+  "Retrieves the set of tokens whose latest version matches that provided in the source tokens info."
+  [source-token-entries token->token-hash]
+  (reduce (fn [acc source-tokens]
+            (let [current-for-tokens (map (fn [{:strs [token version]}]
+                                            (let [current-version (token->token-hash token)]
+                                              (= version current-version)))
+                                          source-tokens)]
+              (if (every? true? current-for-tokens)
+                (into acc (map (fn [t] (get t "token")) source-tokens))
+                acc)))
+          #{}
+          source-token-entries))
+
+(defn retrieve-token-based-fallback
+  "Retrieves the fallback service data, in a map of form {:token-fallback {:service-id ...}}, if a fallback service
+   that can be accessed using only the token and no other special `x-waiter-` request headers should be used for the
+   provided service. Returns `nil` if no such fallback service exists."
+  [request->descriptor-fn service-id->service-description-fn service-id current-for-tokens]
+  (try
+    (when (= 1 (count current-for-tokens))
+      (let [current-token (first current-for-tokens)
+            {:strs [run-as-user]} (service-id->service-description-fn service-id :effective? true)
+            pseudo-request {:authorization/user run-as-user
+                            ;; we do not know env from request headers and cannot support parameterized services
+                            :headers {"x-waiter-token" current-token}
+                            :request-time (t/now)}
+            ;; rely on fallback resolution logic for service discovery
+            {:keys [descriptor latest-descriptor]} (request->descriptor-fn pseudo-request)
+            request-service-id (:service-id descriptor)
+            latest-service-id (:service-id latest-descriptor)]
+        (when (and (= service-id latest-service-id)
+                   (not= request-service-id latest-service-id))
+          {:token-fallback {:service-id request-service-id}})))
+    (catch Throwable th
+      (log/error th "error in computing token-based fallback for" service-id)
+      nil)))

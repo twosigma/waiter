@@ -1178,3 +1178,56 @@
         (is (= (:service-id service-state) service-id))
         (is (true? (:exists? service-state)))
         (is (false? (:healthy? service-state)))))))
+
+(deftest test-get-current-for-tokens
+  (let [token->token-hash #(str % ".v2")
+        make-entry (fn [t v] {"token" t "version" (str t "." v)})]
+    (is (= #{}
+           (get-current-for-tokens nil token->token-hash)))
+    (is (= #{}
+           (get-current-for-tokens [] token->token-hash)))
+    (is (= #{}
+           (get-current-for-tokens [[(make-entry "t1" "v1")]] token->token-hash)))
+    (is (= #{"t1"}
+           (get-current-for-tokens [[(make-entry "t1" "v2")]] token->token-hash)))
+    (is (= #{}
+           (get-current-for-tokens [[(make-entry "t1" "v1") (make-entry "t2" "v1")]] token->token-hash)))
+    (is (= #{}
+           (get-current-for-tokens [[(make-entry "t1" "v1") (make-entry "t2" "v2")]] token->token-hash)))
+    (is (= #{}
+           (get-current-for-tokens [[(make-entry "t1" "v2") (make-entry "t2" "v1")]] token->token-hash)))
+    (is (= #{"t1" "t2"}
+           (get-current-for-tokens [[(make-entry "t1" "v2") (make-entry "t2" "v2")]] token->token-hash)))
+    (is (= #{}
+           (get-current-for-tokens [[(make-entry "t1" "v1")] [(make-entry "t2" "v1")]] token->token-hash)))
+    (is (= #{"t2"}
+           (get-current-for-tokens [[(make-entry "t1" "v1")] [(make-entry "t2" "v2")]] token->token-hash)))
+    (is (= #{"t1"}
+           (get-current-for-tokens [[(make-entry "t1" "v2")] [(make-entry "t2" "v1")]] token->token-hash)))
+    (is (= #{"t1" "t2"}
+           (get-current-for-tokens [[(make-entry "t1" "v2")] [(make-entry "t2" "v2")]] token->token-hash)))))
+
+(deftest test-retrieve-token-based-fallback
+  (let [service-id->service-description-fn (fn [s & _] {"run-as-user" (str s ".rau")})
+        request->descriptor-fn (constantly nil)]
+    (is (nil? (retrieve-token-based-fallback request->descriptor-fn service-id->service-description-fn "s1" #{})))
+    (is (nil? (retrieve-token-based-fallback request->descriptor-fn service-id->service-description-fn "s1" #{"t1" "t2"})))
+    (is (nil? (retrieve-token-based-fallback request->descriptor-fn service-id->service-description-fn "s1" #{"t1" "t2" "t3"})))
+
+    (let [request->descriptor-fn (constantly {:descriptor {:service-id "s1"}})]
+      (is (nil? (retrieve-token-based-fallback request->descriptor-fn service-id->service-description-fn "s1" #{"t1"}))))
+
+    (let [request->descriptor-fn (fn [request]
+                                   (is (= "t1" (get-in request [:headers "x-waiter-token"])))
+                                   {:descriptor {:service-id "s1"}
+                                    :latest-descriptor {:service-id "s1"}})]
+      (is (nil? (retrieve-token-based-fallback request->descriptor-fn service-id->service-description-fn "s1" #{"t1"}))))
+
+    (let [request->descriptor-fn (fn [request]
+                                   (is (= "t1" (get-in request [:headers "x-waiter-token"])))
+                                   {:descriptor {:service-id "s0"}
+                                    :latest-descriptor {:service-id "s1"}})]
+      (is (nil? (retrieve-token-based-fallback request->descriptor-fn nil "s1" #{"t1"})))
+      (is (nil? (retrieve-token-based-fallback nil service-id->service-description-fn "s1" #{"t1"})))
+      (is (= {:token-fallback {:service-id "s0"}}
+             (retrieve-token-based-fallback request->descriptor-fn service-id->service-description-fn "s1" #{"t1"}))))))

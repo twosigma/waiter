@@ -421,6 +421,7 @@
                                   :make-inter-router-requests-async-fn (fn [& args]
                                                                         (let [target-fn @make-inter-router-requests-async-fn-atom]
                                                                           (apply target-fn args)))
+                                  :retrieve-token-based-fallback-fn (constantly nil)
                                   :router-metrics-helpers {:service-id->metrics-fn (constantly {})}
                                   :service-id->references-fn (constantly [])
                                   :service-id->service-description-fn (constantly {})
@@ -581,6 +582,7 @@
                        :routines {:allowed-to-manage-service?-fn (constantly true)
                                   :generate-log-url-fn (partial handler/generate-log-url #(str "http://www.example.com" %))
                                   :make-inter-router-requests-async-fn nil
+                                  :retrieve-token-based-fallback-fn (constantly nil)
                                   :router-metrics-helpers {:service-id->metrics-fn (constantly service-id->metrics)}
                                   :service-id->references-fn (constantly [])
                                   :service-id->service-description-fn (fn [service-id _ effective?]
