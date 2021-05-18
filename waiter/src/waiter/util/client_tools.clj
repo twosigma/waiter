@@ -1005,8 +1005,8 @@
 
 (defn service
   "Retrieves the service (from /apps) corresponding to the provided service-id"
-  [waiter-url service-id query-params & {:keys [cookies interval timeout]
-                                         :or {cookies [] interval 2 timeout 30}}]
+  [waiter-url service-id query-params & {:keys [cookies keywordize-keys interval timeout]
+                                         :or {cookies [] keywordize-keys false interval 2 timeout 30}}]
   ; allow time for router to receive updates from marathon
   (wait-for
     (fn []
@@ -1016,7 +1016,8 @@
             service (first (filter #(= service-id (get % "service-id")) parsed-body))]
         (when-not service
           (log/info "Service" service-id "is missing! Response:" body))
-        service))
+        (cond-> service
+          keywordize-keys walk/keywordize-keys)))
     :interval interval
     :timeout timeout))
 
@@ -1219,7 +1220,8 @@
   `(let [service-id# ~service-id
          cookies# ~cookies]
      (doseq [[_# router-url#] (routers ~waiter-url)]
-       (is (wait-for #(seq (active-instances router-url# service-id# :cookies cookies#)))))))
+       (is (wait-for #(seq (active-instances router-url# service-id# :cookies cookies#))
+                     :interval 1 :timeout 30)))))
 
 (defmacro assert-service-unhealthy-on-all-routers
   [waiter-url service-id cookies]
@@ -1228,7 +1230,8 @@
      (doseq [[_# router-url#] (routers ~waiter-url)]
        (is (wait-for #(let [instances# (active-instances router-url# service-id# :cookies cookies#)]
                         (log/info "instances:" instances#)
-                        (and (seq instances#) (every? (comp not :healthy?) instances#))))))))
+                        (and (seq instances#) (every? (comp not :healthy?) instances#)))
+                     :interval 1 :timeout 30)))))
 
 (defn token->etag
   "Retrieves the etag for a token"

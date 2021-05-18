@@ -1642,7 +1642,7 @@
                     references-c (get service-c-details :references)]
                 (is (nil? (:current-for-tokens service-a-details)))
                 (is (nil? (:current-for-tokens service-b-details)))
-                (is (= [token-name-a token-name-b] (:current-for-tokens service-c-details)))
+                (is (= #{token-name-a token-name-b} (set (:current-for-tokens service-c-details))))
                 (is (= 1 (count references-a)))
                 (is (= 1 (count references-b)))
                 (is (= 1 (count references-c)))
@@ -1739,10 +1739,10 @@
                 ;; allow syncer state to get updated
                 (await-healthy-service-on-routers service-id-2)
 
-                (let [sleep-duration (* 2 scheduler-syncer-interval-secs)
+                (let [sleep-duration (int (- fallback-period-secs (* 3 scheduler-syncer-interval-secs)))
                       service-description-3 (-> service-description-1
                                                 (assoc :name (str service-name "-v3") :version "version-3")
-                                                (update "cmd" (fn [c] (str "sleep " sleep-duration " && " c))))
+                                                (update :cmd (fn [c] (str "sleep " sleep-duration " && " c))))
                       token-description-3 (assoc service-description-3 :token token)
                       post-response (post-token waiter-url token-description-3)
                       _ (assert-response-status post-response http-200-ok)
@@ -1755,6 +1755,19 @@
                     ;; fallback to service-id-2
                     (is (= service-id-2 (retrieve-service-id waiter-url request-headers)))
                     (is (= service-id-2 (kitchen-env-service-id)))
+
+                    (testing "check token fallback output"
+                      (assert-service-on-all-routers waiter-url service-id-3 cookies)
+                      (let [query-params {"include" "token-fallback"}]
+                        (let [{:keys [current-for-tokens token-fallback] :as service-data}
+                              (service-settings waiter-url service-id-3 :cookies cookies :query-params query-params)]
+                          (is (= [token] current-for-tokens) (str service-data))
+                          (is (= {:service-id service-id-2} token-fallback) (str service-data)))
+                        (let [{:keys [current-for-tokens token-fallback] :as service-data}
+                              (service waiter-url service-id-3 query-params :cookies cookies :keywordize-keys true)]
+                          (is (= [token] current-for-tokens) (str service-data))
+                          (is (= {:service-id service-id-2} token-fallback) (str service-data)))))
+
                     (thread-sleep fallback-period-secs)
                     ;; outside fallback duration
                     (is (= service-id-3 (kitchen-env-service-id)))
