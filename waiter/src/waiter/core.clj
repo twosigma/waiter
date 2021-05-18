@@ -1491,14 +1491,14 @@
                                   [:routines make-inter-router-requests-async-fn]
                                   [:settings health-check-config]
                                   [:state fallback-state-atom router-id user-agent-version]
-                                  process-request-handler-fn process-request-wrapper-fn wrap-secure-request-fn]
+                                  process-request-fn wrap-descriptor-fn wrap-secure-request-fn]
                            (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                  user-agent (str "waiter-ping/" user-agent-version)
-                                 handler (process-request-wrapper-fn
+                                 handler (wrap-descriptor-fn
                                            (fn inner-ping-service-handler [request]
                                              (let [retrieve-service-status-label-fn #(service/retrieve-service-status-label % (query-state-fn))
                                                    service-state-fn (partial descriptor/extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn)]
-                                               (pr/ping-service user-agent process-request-handler-fn service-state-fn health-check-config request))))]
+                                               (pr/ping-service user-agent process-request-fn service-state-fn health-check-config request))))]
                              (wrap-secure-request-fn
                                (fn ping-service-handler [request]
                                  (let [request-params (-> request ru/query-params-request :query-params)

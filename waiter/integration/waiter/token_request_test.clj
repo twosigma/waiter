@@ -1085,32 +1085,48 @@
 (deftest ^:parallel ^:integration-fast test-token-https-redirects
   (testing-using-waiter-url
     (let [token (rand-name)
-          token-response (post-token waiter-url {:cmd (str (kitchen-cmd) " -p $PORT0")
-                                                 :cmd-type "shell"
-                                                 :https-redirect true
-                                                 :name token
-                                                 :version "does-not-matter"
-                                                 :token token})]
-      (assert-response-status token-response http-200-ok)
+          token-description (assoc (kitchen-params) :https-redirect true :name token :token token)]
 
-      (testing "https redirects"
-        (let [request-headers {:x-waiter-token token}
-              url (URL. (str "http://" waiter-url))
-              endpoint "/request-info"]
+      (let [request-headers {"accept" "application/json"
+                             :x-waiter-token token}
+            url (URL. (str "http://" waiter-url))
+            endpoint "/request-info"
+            ping-endpoint "/waiter-ping"]
+        (doseq [[request-method redirect-status-code]
+                [[:get http-301-moved-permanently]
+                 [:post http-307-temporary-redirect]]]
+          (testing "https redirects"
+            (let [token-response (post-token waiter-url token-description)]
+              (assert-response-status token-response http-200-ok))
 
-          (testing "get request"
-            (let [{:keys [headers] :as response}
-                  (make-kitchen-request waiter-url request-headers :method :get :path endpoint)]
-              (assert-response-status response http-301-moved-permanently)
-              (is (= (str "https://" (.getHost url) endpoint) (get headers "location")))
-              (is (str/starts-with? (str (get headers "server")) "waiter") (str "headers:" headers))))
+            (testing (str (name request-method) " request")
+              (let [{:keys [headers] :as response}
+                    (make-request waiter-url endpoint :headers request-headers :method request-method)]
+                (assert-response-status response redirect-status-code)
+                (assert-waiter-response response)
+                (is (= (str "https://" (.getHost url) endpoint) (get headers "location")))))
 
-          (testing "post request"
-            (let [{:keys [headers] :as response}
-                  (make-kitchen-request waiter-url request-headers :method :post :path endpoint)]
-              (assert-response-status response http-307-temporary-redirect)
-              (is (= (str "https://" (.getHost url) endpoint) (get headers "location")))
-              (is (str/starts-with? (str (get headers "server")) "waiter") (str "headers:" headers))))))
+            (testing (str (name request-method) " /waiter-ping request")
+              (let [{:keys [body headers] :as response}
+                    (make-request waiter-url ping-endpoint :headers request-headers :method request-method)]
+                (assert-response-status response redirect-status-code)
+                (assert-waiter-response response)
+                (is (= (str "https://" (.getHost url) ping-endpoint) (get headers "location")))
+                (let [ping-body-json (try-parse-json body)]
+                  (is (str/blank? (get ping-body-json "body")))
+                  (is (= "waiter-response" (get-in ping-body-json ["ping-response" "result"])))
+                  (is (= http-301-moved-permanently (get-in ping-body-json ["ping-response" "status"])))
+                  (is (false? (get-in ping-body-json ["service-state" "exists?"])))
+                  (is (false? (get-in ping-body-json ["service-state" "healthy?"])))
+                  (is (= "Inactive" (get-in ping-body-json ["service-state" "status"]))))))
+
+            (testing (str (name request-method) " /waiter-ping incomplete service description")
+              (let [token-response (post-token waiter-url (dissoc token-description :cpus))]
+                (assert-response-status token-response http-200-ok))
+
+              (let [response (make-request waiter-url ping-endpoint :headers request-headers :method request-method)]
+                (assert-response-status response http-400-bad-request)
+                (assert-waiter-response response))))))
 
       (delete-token-and-assert waiter-url token))))
 
@@ -1452,6 +1468,21 @@
             (assert-response-status response http-503-service-unavailable)
             (assert-waiter-response response)
             (is (str/includes? body custom-maintenance-message))))
+
+        (testing "request to /waiter-ping should report error with custom maintenance message"
+          (let [{:keys [body] :as response}
+                (make-request waiter-url "/waiter-ping" :headers request-headers)]
+            (assert-response-status response http-200-ok)
+            (assert-waiter-response response)
+            (let [ping-body-json (try-parse-json body)
+                  ping-response-body-json (try-parse-json (get-in ping-body-json ["ping-response" "body"]))]
+              (is (= "waiter.Maintenance" (str (get-in ping-response-body-json ["waiter-error" "details" "error-class"]))))
+              (is (str/includes? (str (get-in ping-response-body-json ["waiter-error" "message"])) custom-maintenance-message))
+              (is (= "waiter-response" (get-in ping-body-json ["ping-response" "result"])))
+              (is (= http-503-service-unavailable (get-in ping-body-json ["ping-response" "status"])))
+              (is (false? (get-in ping-body-json ["service-state" "exists?"])))
+              (is (false? (get-in ping-body-json ["service-state" "healthy?"])))
+              (is (= "Inactive" (get-in ping-body-json ["service-state" "status"]))))))
 
         (testing "request (text/html) to service should error with maintenance message where the special characters are html encoded"
           (let [{:keys [body] :as response}

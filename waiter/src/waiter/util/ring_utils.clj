@@ -49,6 +49,16 @@
        (>= status http-400-bad-request)
        (<= status 599)))
 
+(defn redirect-response?
+  "Determines if a response is a redirect response"
+  [{:keys [status]}]
+  (contains? #{http-301-moved-permanently
+               http-302-moved-temporarily
+               http-303-see-other
+               http-307-temporary-redirect
+               http-308-permanent-redirect}
+             status))
+
 (defn attach-header
   "Attaches the specified header into the response."
   [response header-name header-value]
