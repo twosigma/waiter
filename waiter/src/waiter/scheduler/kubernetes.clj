@@ -1128,13 +1128,18 @@
         [:spec :template :spec :containers]
         conj
         (let [{:keys [cmd image port] {:keys [cpu mem]} :resources} fileserver
-              memory (str mem "Mi")]
+              memory (str mem "Mi")
+              base-bucket-url (get base-env "WAITER_CONFIG_LOG_BUCKET_URL" log-bucket-url)]
           {:command cmd
            :env (into [{:name "WAITER_FILESERVER_PORT" :value (str port)}
                        {:name "WAITER_GRACE_SECS" :value (str configured-pod-sigkill-delay-secs)}]
-                      (when log-bucket-url
-                        [{:name "WAITER_LOG_BUCKET_URL"
-                          :value (str log-bucket-url "/" run-as-user "/" service-id)}]))
+                      (concat
+                        (for [[k v] base-env
+                              :when (str/starts-with? k "WAITER_")]
+                          {:name k :value v})
+                        (when base-bucket-url
+                          [{:name "WAITER_LOG_BUCKET_URL"
+                            :value (str base-bucket-url "/" run-as-user "/" service-id)}])))
            :image image
            :imagePullPolicy "IfNotPresent"
            :name "waiter-fileserver"
