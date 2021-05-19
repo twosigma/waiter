@@ -189,7 +189,7 @@
                           :interval 2 :timeout 45)
                 (str "no killed instances found for " service-id))
 
-            ;; Test that the killed instances' logs were persisted to S3.
+            ;; Test that the killed instance's logs were persisted to S3.
             ;; This portion of the test logic was modified from the active-instances tests above.
             (let [killed-instances (killed-instances router-url service-id :cookies cookies)
                   log-url (:log-url (first killed-instances))
@@ -213,6 +213,28 @@
                 (if (str/starts-with? (str file-link) "http")
                   (assert-response-status (make-request file-link "" :verbose true) http-200-ok)
                   (log/warn "test-s3-logs did not verify file link:" file-link))))))))))
+
+(deftest ^:parallel ^:integration-fast test-s3-custom-bucket
+  (testing-using-waiter-url
+    (when (using-k8s? waiter-url)
+      (when-let [log-bucket-url (-> waiter-url get-kubernetes-scheduler-settings :log-bucket-url)]
+        (let [bucket-subpath "/my/custom/path"
+              custom-bucket-url (str log-bucket-url bucket-subpath)
+              service-headers {:x-waiter-name (rand-name)
+                               :x-waiter-env-WAITER_CONFIG_LOG_BUCKET_URL custom-bucket-url}
+              _ (log/info "making canary request...")
+              {:keys [headers service-id]} (make-request-with-debug-info service-headers #(make-kitchen-request waiter-url %))
+              {user "x-waiter-auth-user" instance-id "x-waiter-backend-id"} headers
+              [_ pod-name run-number] (re-find #"^[^.]+\.(.*)-(\d+)$" instance-id)
+              stderr-path (str/join "/" [bucket-subpath user service-id pod-name (str "r" run-number) "stderr"])]
+          (with-service-cleanup service-id
+            (comment "Kill the service"))
+          (is (wait-for
+                (fn look-for-s3-logs []
+                  (let [stderr-response (make-request log-bucket-url stderr-path :method :get)]
+                    (and (= (:status stderr-response) http-200-ok)
+                         (str/includes? (:body stderr-response) service-id))))
+                :interval 2 :timeout 45)))))))
 
 (defn- check-pod-namespace
   [waiter-url headers expected-namespace]
