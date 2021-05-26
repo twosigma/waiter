@@ -1220,6 +1220,10 @@
                                                   :resolved-factory-fn resolved-factory-fn})))
                                reporter-instance))
                            codahale-reporters))
+   :dynamic-config-maintainer (pc/fnk [[:settings [:dynamic-config path poll-interval-ms schema]]
+                                       [:state clock]]
+                                (let [timer-ch (au/timer-chan poll-interval-ms)]
+                                  (settings/start-dynamic-config-maintainer clock timer-ch path schema)))
    :fallback-maintainer (pc/fnk [[:state fallback-state-atom]
                                  router-state-maintainer]
                           (let [{{:keys [router-state-push-mult]} :maintainer} router-state-maintainer

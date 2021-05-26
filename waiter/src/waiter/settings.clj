@@ -15,11 +15,13 @@
 ;;
 (ns waiter.settings
   (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [schema.core :as s]
+            [waiter.correlation-id :as cid]
             [waiter.schema :as schema]
             [waiter.util.utils :as utils]))
 
@@ -46,6 +48,9 @@
    (s/required-key :custom-components) {s/Keyword schema/require-symbol-factory-fn}
    (s/required-key :deployment-error-config) {(s/required-key :min-failed-instances) schema/positive-int
                                               (s/required-key :min-hosts) schema/positive-int}
+   (s/required-key :dynamic-config) {(s/required-key :path) schema/non-empty-string
+                                     (s/required-key :poll-interval-ms) schema/positive-int
+                                     (s/required-key :schema) s/Any}
    (s/required-key :entitlement-config) (s/constrained
                                           {:kind s/Keyword
                                            (s/optional-key :cache) {(s/required-key :threshold) schema/positive-int
@@ -292,6 +297,9 @@
    :custom-components {}
    :deployment-error-config {:min-failed-instances 2
                              :min-hosts 2}
+   :dynamic-config {:path "./dynamic-config.edn"
+                    :poll-interval-ms 2000
+                    :schema {}}
    :entitlement-config {:kind :simple
                         :simple {:factory-fn 'waiter.authorization/->SimpleEntitlementManager}}
    :health-check-config {:health-check-accept-header "application/json;q=1.0, */*;q=0.9"
@@ -529,3 +537,69 @@
     (assoc
       (load-settings-file config-file)
       :git-version git-version)))
+
+(defn start-dynamic-config-maintainer
+  "Creates a daemon process which loads configuration dynamically via polling a configuration .edn file periodically.
+  Before loading in any new dynamic configuration it is validated using the provided schema; if the initial configuration
+  is not valid, then this function will throw a validation exception"
+  [clock timer-ch config-path config-schema]
+  (cid/with-correlation-id
+    "dynamic-config-maintainer"
+    (let [initial-config (s/validate config-schema (load-settings-file config-path))
+          _ (log/info "initial dynamic-config loaded" {:initial-config initial-config})
+          state-atom (atom {:dynamic-config initial-config
+                            :last-error-time nil
+                            :last-update-time (clock)})
+          exit-chan (async/promise-chan)
+          query-chan (async/chan)
+          query-state-fn
+          (fn dynamic-config-maintainer-query-state-fn
+            [include-flags]
+            (let [{:keys [dynamic-config last-error-time last-update-time]} @state-atom]
+              (cond-> {:last-error-time last-error-time
+                       :last-update-time last-update-time
+                       :supported-include-params ["dynamic-config"]}
+                      (contains? include-flags "dynamic-config")
+                      (assoc :dynamic-config dynamic-config))))
+          go-chan
+          (async/go-loop [{:keys [dynamic-config] :as current-state} @state-atom]
+            (reset! state-atom current-state)
+            (let [[msg current-chan] (async/alts! [exit-chan timer-ch query-chan])
+                  next-state
+                  (condp = current-chan
+                    exit-chan
+                    (do
+                      (log/warn "stopping dynamic-config-maintainer")
+                      (when (not= :exit msg)
+                        (throw (ex-info "stopping dynamic-config-maintainer" {:time (clock) :reason msg}))))
+
+                    timer-ch
+                    (try
+                      (let [new-dynamic-config
+                            (s/validate config-schema (load-settings-file config-path))]
+                        (if (= dynamic-config new-dynamic-config)
+                          (do
+                            (log/debug "dynamic-config is the same, so no action is taken" {:current-config dynamic-config
+                                                                                            :new-config new-dynamic-config})
+                            {:dynamic-config dynamic-config
+                             :last-update-time (clock)})
+                          (do
+                            (log/info "loaded dynamic-config is changed, replacing previous config" {:current-config dynamic-config
+                                                                                                     :new-config new-dynamic-config})
+                            {:dynamic-config new-dynamic-config
+                             :last-update-time (clock)})))
+                      (catch Exception e
+                        (log/error e "error when loading dynamic config, retaining previous config!" {:current-config dynamic-config})
+                        current-state))
+
+                    query-chan
+                    (let [{:keys [include-flags response-chan]} msg]
+                      (async/put! response-chan (query-state-fn include-flags))
+                      current-state))]
+              (if next-state
+                (recur next-state)
+                (log/info "stopping dynamic-config-maintainer"))))]
+      {:exit-chan exit-chan
+       :go-chan go-chan
+       :query-chan query-chan
+       :query-state-fn query-state-fn})))
