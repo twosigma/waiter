@@ -222,7 +222,7 @@
 
 (defn load-settings-file
   "Loads the edn config in the specified file, it relies on having the filename being a path to the file."
-  [filename & {:keys [abort-on-missing-file] :or {abort-on-missing-file true}}]
+  [filename]
   (let [config-file (-> filename str io/file)
         config-file-path (.getAbsolutePath config-file)]
     (if (.exists config-file)
@@ -238,8 +238,7 @@
           settings))
       (do
         (log/info "unable to find configuration file:" config-file-path)
-        (when abort-on-missing-file
-          (utils/exit 1 (str "Unable to find configuration file: " config-file-path)))))))
+        (throw (ex-info "Unable to find configuration file" {:config-file-path config-file-path}))))))
 
 (defn sanitize-settings
   "Sanitizes settings for eventual conversion to JSON"
@@ -546,7 +545,7 @@
   [clock timer-ch config-path config-schema]
   (cid/with-correlation-id
     "dynamic-config-maintainer"
-    (let [initial-config (s/validate config-schema (load-settings-file config-path :abort-on-missing-file false))
+    (let [initial-config (s/validate config-schema (load-settings-file config-path))
           _ (log/info "initial dynamic-config loaded" {:initial-config initial-config})
           state-atom (atom {:dynamic-config initial-config
                             :last-error-time nil
@@ -577,7 +576,7 @@
                     timer-ch
                     (try
                       (let [new-dynamic-config
-                            (s/validate config-schema (load-settings-file config-path :abort-on-missing-file false))]
+                            (s/validate config-schema (load-settings-file config-path))]
                         (if (= dynamic-config new-dynamic-config)
                           (do
                             (log/debug "dynamic-config is the same, so no action is taken" {:current-config dynamic-config

@@ -14,19 +14,23 @@
 ;; limitations under the License.
 ;;
 (ns waiter.settings-test
-  (:require [clojure.test :refer :all]
+  (:require [clojure.core.async :as async]
+            [clojure.test :refer :all]
             [schema.core :as s]
             [waiter.settings :refer :all]
-            [waiter.util.utils :as utils]))
+            [waiter.util.utils :as utils]
+            [clj-time.core :as t]
+            [waiter.schema :as schema]))
 
 (deftest test-load-missing-edn-file
-  (let [exit-called-atom (atom false)]
-    (with-redefs [utils/exit (fn [status msg]
-                               (is (= 1 status))
-                               (is msg)
-                               (reset! exit-called-atom true))]
-      (load-settings-file "a-file-that-does-not-exist")
-      (is @exit-called-atom))))
+  (try
+    (load-settings-file "a-file-that-does-not-exist")
+    (is false "load-settings-file should have thrown a file-is-missing exception")
+    (catch Exception e
+      (is (= "Unable to find configuration file"
+             (ex-message e)))
+      (is (.contains (get (ex-data e) :config-file-path)
+                     "a-file-that-does-not-exist")))))
 
 (deftest test-load-existing-edn-file
   (let [test-cases (list
@@ -380,3 +384,32 @@
                              :zookeeper {:connect-string "test-connect-string"
                                          :gc-relative-path "gc-state"
                                          :leader-latch-relative-path "leader-latch"}}))))
+
+(deftest test-dynamic-config-maintainer
+  (let [clock (constantly (t/now))
+        stop-maintainer!! (fn stop-maintainer-fn!! [{:keys [exit-chan go-chan]}]
+                          (async/put! exit-chan :exit)
+                          (async/<!! go-chan))
+        get-latest-state!! (fn get-latest-state-fn!! [{:keys [query-chan]}]
+                             (let [temp-ch (async/promise-chan)]
+                               (async/>!! query-chan {:include-flags #{"dynamic-config"}
+                                                      :response-chan temp-ch})
+                               (async/<!! temp-ch)))]
+    (testing "dynamic-config-maintainer loads settings file initially"
+      (let [timer-ch (waiter.util.async-utils/timer-chan 2000)
+            config-schema {(s/required-key :test) schema/non-empty-string}
+            maintainer (start-dynamic-config-maintainer clock timer-ch "test-files/test-bar.edn" config-schema)
+            state (get-latest-state!! maintainer)]
+        (is (= {:dynamic-config {:test "some value"}
+                :last-error-time nil
+                :last-update-time (clock)}
+               state))
+        (stop-maintainer!! maintainer)))
+
+    (testing "dynamic-config-maintainer validates settings file initially")
+
+    (testing "dynamic-config-maintainer loads changes to dynamic-config.edn settings")
+
+    (testing "dynamic-config-maintainer falls back on previous configuration if new configuration is not valid")
+
+    (testing "dynamic-config-maintainer falls back on previous configuration if settings file is deleted")))
