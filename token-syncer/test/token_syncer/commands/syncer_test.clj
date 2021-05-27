@@ -160,6 +160,7 @@
 
 (deftest test-sync-token-on-clusters
   (let [test-token-etag (System/currentTimeMillis)
+        metadata-name nil
         waiter-api {:store-token (fn [cluster-url token token-etag token-description]
                                    (cond
                                      (str/includes? cluster-url "cluster-1")
@@ -189,7 +190,7 @@
                                      :details {:message "token root missing from latest token description"}}
                 "www.cluster-2.com" {:code :error/token-read
                                      :details {:message "cluster-2 data cannot be loaded"}}}
-               (sync-token-on-clusters waiter-api cluster-urls test-token token-description cluster-url->token-data)))))
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster error while missing status"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
@@ -205,7 +206,7 @@
                                      :details {:message "token root missing from latest token description"}}
                 "www.cluster-2.com" {:code :error/token-read
                                      :details {:message "status missing from response"}}}
-               (sync-token-on-clusters waiter-api cluster-urls test-token token-description cluster-url->token-data)))))
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster different owners but same root"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
@@ -224,7 +225,7 @@
                 "www.cluster-2.com" {:code :success/sync-update
                                      :details {:etag (str test-token-etag ".2.new")
                                                :status 200}}}
-               (sync-token-on-clusters waiter-api cluster-urls test-token token-description cluster-url->token-data)))))
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster different owners and different root"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
@@ -244,7 +245,7 @@
                 "www.cluster-2.com" {:code :error/root-mismatch
                                      :details {:cluster {"owner" "test-user-2", "root" "cluster-2"}
                                                :latest token-description}}}
-               (sync-token-on-clusters waiter-api cluster-urls test-token token-description cluster-url->token-data)))))
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster similar parameters and owner but different root"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com" "www.cluster-3.com"]
@@ -270,7 +271,7 @@
                 "www.cluster-2.com" {:code :success/skip-token-sync}
                 "www.cluster-3.com" {:code :error/token-sync
                                      :details {:message "token contents match, but were edited by different users"}}}
-               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster same owner; soft-deleted on one; and different last-update-user and root"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
@@ -292,7 +293,7 @@
                 "www.cluster-2.com" {:code :error/root-mismatch
                                      :details {:cluster token-description-2
                                                :latest token-description-1}}}
-               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster same last-update-user and owner; soft-deleted on one; and different root"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
@@ -314,7 +315,7 @@
                 "www.cluster-2.com" {:code :success/soft-delete
                                      :details {:etag (str test-token-etag ".2.new")
                                                :status 200}}}
-               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster different root and parameters; deleted on both"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
@@ -334,7 +335,7 @@
         (is (= {"www.cluster-1.com" {:code :success/token-match}
                 "www.cluster-2.com" {:code :error/tokens-deleted
                                      :details {:message "soft-deleted tokens should have already been hard-deleted"}}}
-               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster same owner; different last-update-user, parameters and root"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
@@ -355,7 +356,7 @@
                 "www.cluster-2.com" {:code :error/root-mismatch
                                      :details {:cluster token-description-2
                                                :latest token-description-1}}}
-               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster same last-update-user and owner; different parameters and root"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
@@ -376,7 +377,7 @@
                 "www.cluster-2.com" {:code :success/sync-update
                                      :details {:etag (str test-token-etag ".2.new")
                                                :status 200}}}
-               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 cluster-url->token-data)))))
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster with missing owners"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
@@ -398,7 +399,7 @@
                 "www.cluster-2.com" {:code :success/sync-update
                                      :details {:etag (str test-token-etag ".2.new")
                                                :status 200}}}
-               (sync-token-on-clusters waiter-api cluster-urls test-token token-description cluster-url->token-data)))))
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster with outdated missing last-update-user and root"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
@@ -420,7 +421,7 @@
                                                :latest {"last-update-user" "john.doe"
                                                         "name" "test-name-1"
                                                         "root" "test-user-1"}}}}
-               (sync-token-on-clusters waiter-api cluster-urls test-token token-description cluster-url->token-data)))))
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster with outdated missing root; different last-update-user"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
@@ -444,7 +445,7 @@
                                                :latest {"last-update-user" "john.doe"
                                                         "name" "test-name-1"
                                                         "root" "test-user-1"}}}}
-               (sync-token-on-clusters waiter-api cluster-urls test-token token-description cluster-url->token-data)))))
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster with latest missing root"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
@@ -461,7 +462,7 @@
                                      :details {:message "token root missing from latest token description"}}
                 "www.cluster-2.com" {:code :error/token-read
                                      :details {:message "token root missing from latest token description"}}}
-               (sync-token-on-clusters waiter-api cluster-urls test-token token-description cluster-url->token-data)))))
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster successfully"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
@@ -484,7 +485,7 @@
                 "www.cluster-2.com" {:code :success/sync-update
                                      :details {:etag (str test-token-etag ".2.new")
                                                :status 200}}}
-               (sync-token-on-clusters waiter-api cluster-urls test-token token-description cluster-url->token-data)))))
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster error"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2-error.com"]
@@ -506,7 +507,109 @@
         (is (= {"www.cluster-1.com" {:code :success/token-match}
                 "www.cluster-2-error.com" {:code :error/token-sync
                                            :details {:message "Error in storing token thrown from test"}}}
-               (sync-token-on-clusters waiter-api cluster-urls test-token token-description cluster-url->token-data)))))))
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description metadata-name cluster-url->token-data)))))
+
+    (testing "sync cluster skip on metadata field mismatch"
+      (let [metadata-name "sync-opt-out"
+            cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {"last-update-user" "john.doe"
+                               "metadata" {"sync-opt-in" "false"}
+                               "name" "test-name"
+                               "owner" "test-user-1"
+                               "root" "test-cluster-1"}
+            cluster-url->token-data {"www.cluster-1.com" {:description {"last-update-user" "john.doe"
+                                                                        "metadata" {"sync-opt-in" "false"}
+                                                                        "name" "test-name"
+                                                                        "owner" "test-user-1"
+                                                                        "root" "test-cluster-1"}
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description {"owner" "test-user-1"
+                                                                        "root" "test-cluster-1"}
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :success/sync-update
+                                     :details {:etag (str test-token-etag ".2.new")
+                                               :status 200}}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description metadata-name cluster-url->token-data)))))
+
+    (testing "sync cluster skip on metadata field opt-out"
+      (let [metadata-name "sync-opt-out"
+            cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {"last-update-user" "john.doe"
+                               "metadata" {"sync-opt-out" "true"}
+                               "name" "test-name"
+                               "owner" "test-user-1"
+                               "root" "test-cluster-1"}
+            cluster-url->token-data {"www.cluster-1.com" {:description {"last-update-user" "john.doe"
+                                                                        "metadata" {"sync-opt-out" "true"}
+                                                                        "name" "test-name"
+                                                                        "owner" "test-user-1"
+                                                                        "root" "test-cluster-1"}
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description {"owner" "test-user-1"
+                                                                        "root" "test-cluster-1"}
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :success/skip-opt-out}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description metadata-name cluster-url->token-data)))))
+
+    (testing "sync cluster success on metadata field opt-out non-true value"
+      (let [metadata-name "sync-opt-out"
+            cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {"last-update-user" "john.doe"
+                               "metadata" {"sync-opt-out" "yes"}
+                               "name" "test-name"
+                               "owner" "test-user-1"
+                               "root" "test-cluster-1"}
+            cluster-url->token-data {"www.cluster-1.com" {:description {"last-update-user" "john.doe"
+                                                                        "metadata" {"sync-opt-out" "yes"}
+                                                                        "name" "test-name"
+                                                                        "owner" "test-user-1"
+                                                                        "root" "test-cluster-1"}
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description {"owner" "test-user-1"
+                                                                        "root" "test-cluster-1"}
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :success/sync-update
+                                     :details {:etag (str test-token-etag ".2.new")
+                                               :status 200}}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description metadata-name cluster-url->token-data)))))
+
+    (testing "sync cluster success on metadata field opt-in"
+      (let [metadata-name "sync-opt-out"
+            cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {"last-update-user" "john.doe"
+                               "metadata" {"sync-opt-out" "false"}
+                               "name" "test-name"
+                               "owner" "test-user-1"
+                               "root" "test-cluster-1"}
+            cluster-url->token-data {"www.cluster-1.com" {:description {"last-update-user" "john.doe"
+                                                                        "metadata" {"sync-opt-out" "false"}
+                                                                        "name" "test-name"
+                                                                        "owner" "test-user-1"
+                                                                        "root" "test-cluster-1"}
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description {"owner" "test-user-1"
+                                                                        "root" "test-cluster-1"}
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :success/sync-update
+                                     :details {:etag (str test-token-etag ".2.new")
+                                               :status 200}}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description metadata-name cluster-url->token-data)))))))
 
 (deftest test-load-and-classify-tokens
   (let [current-time-ms (System/currentTimeMillis)
@@ -707,7 +810,8 @@
                                                "token" token}
                                               last-update-time (assoc "etag" (str "E" last-update-time))
                                               owner (assoc "owner" owner)))))
-                             vec)))}]
+                             vec)))}
+        metadata-name "foo-bar"]
     (with-redefs [retrieve-token->url->token-data (fn [_ in-cluster-urls all-tokens]
                                                     (is (= (set cluster-urls) in-cluster-urls))
                                                     (is (= #{"token-2" "token-3" "token-4" "token-5"}
@@ -718,7 +822,8 @@
                                                        token->latest-description)
                   hard-delete-token-on-all-clusters (fn [_ cluster-urls token _]
                                                       (compute-sync-result cluster-urls token :success/hard-delete))
-                  sync-token-on-clusters (fn [_ cluster-urls token description _]
+                  sync-token-on-clusters (fn [_ cluster-urls token description in-metadata-name _]
+                                           (is (= metadata-name in-metadata-name))
                                            (let [token-name (str (get description "name"))
                                                  code (cond
                                                         (str/includes? token-name "all-synced") :success/token-match
@@ -726,7 +831,7 @@
                                                         (str/includes? token-name "soft-delete") :success/soft-delete
                                                         :else :error/token-sync)]
                                              (compute-sync-result cluster-urls token code)))]
-      (let [{:keys [details summary]} (sync-tokens waiter-api cluster-urls (inc (count token->latest-description)))]
+      (let [{:keys [details summary]} (sync-tokens waiter-api cluster-urls (inc (count token->latest-description)) metadata-name)]
         (is (= {"token-2" {:latest (token->latest-description "token-2")
                            :sync-result (-> [cluster-2 cluster-3]
                                             (compute-sync-result "token-2" :success/sync-update))}
@@ -759,10 +864,21 @@
            (:errors (parse-cli-options ["-c" "abcd,abcd"]))))
     (is (= ["Missing required argument for \"-l LIMIT\""]
            (:errors (parse-cli-options ["-l"]))))
-    (is (= {:limit 200}
+    (is (= {:limit 200
+            :metadata-name nil}
            (:options (parse-cli-options ["-l" "200"]))))
-    (is (= {:limit 200}
-           (:options (parse-cli-options ["--limit" "200"]))))))
+    (is (= {:limit 200
+            :metadata-name nil}
+           (:options (parse-cli-options ["--limit" "200"]))))
+    (is (= {:limit 1000
+            :metadata-name "waiter-key"}
+           (:options (parse-cli-options ["-m" "waiter-key"]))))
+    (is (= {:limit 1000
+            :metadata-name "waiter-key"}
+           (:options (parse-cli-options ["--metadata-name" "waiter-key"]))))
+    (is (= {:limit 200
+            :metadata-name "waiter-key"}
+           (:options (parse-cli-options ["--limit" "200" "--metadata-name" "waiter-key"]))))))
 
 (deftest test-sync-clusters-config
   (let [test-command-config (assoc sync-clusters-config :command-name "test-command")
@@ -786,27 +902,40 @@
               :message "test-command: at least two different cluster urls required, provided: [\"http://cluster-1.com\" \"http://cluster-1.com\"]"}
              (cli/process-command test-command-config context args))))
     (let [args ["http://cluster-1.com" "http://cluster-2.com"]]
-      (with-redefs [sync-tokens (fn [in-waiter-api cluster-urls-set limit]
+      (with-redefs [sync-tokens (fn [in-waiter-api cluster-urls-set limit metadata-name]
                                   (is (= waiter-api in-waiter-api))
                                   (is (= #{"http://cluster-1.com" "http://cluster-2.com"} cluster-urls-set))
-                                  (is (= 1000 limit)))]
+                                  (is (= 1000 limit))
+                                  (is (nil? metadata-name)))]
         (is (= {:exit-code 0
                 :message "test-command: exiting with code 0"}
                (cli/process-command test-command-config context args)))))
     (let [args ["-l" "20" "http://cluster-1.com" "http://cluster-2.com"]]
-      (with-redefs [sync-tokens (fn [in-waiter-api cluster-urls-set limit]
+      (with-redefs [sync-tokens (fn [in-waiter-api cluster-urls-set limit metadata-name]
                                   (is (= waiter-api in-waiter-api))
                                   (is (= #{"http://cluster-1.com" "http://cluster-2.com"} cluster-urls-set))
-                                  (is (= 20 limit)))]
+                                  (is (= 20 limit))
+                                  (is (nil? metadata-name)))]
         (is (= {:exit-code 0
                 :message "test-command: exiting with code 0"}
                (cli/process-command test-command-config context args)))))
     (let [args ["http://cluster-1.com" "http://cluster-2.com"]]
-      (with-redefs [sync-tokens (fn [in-waiter-api cluster-urls-set limit]
+      (with-redefs [sync-tokens (fn [in-waiter-api cluster-urls-set limit metadata-name]
                                   (is (= waiter-api in-waiter-api))
                                   (is (= #{"http://cluster-1.com" "http://cluster-2.com"} cluster-urls-set))
                                   (is (= 1000 limit))
+                                  (is (nil? metadata-name))
                                   {:summary {:sync {:failed #{"foo"}}}})]
         (is (= {:exit-code 1
                 :message "test-command: exiting with code 1"}
                (cli/process-command test-command-config context args)))))))
+
+(deftest test-valid-metadata-name?
+  (is (true? (valid-metadata-name? nil)))
+  (is (true? (valid-metadata-name? "waiter-name")))
+  (is (true? (valid-metadata-name? "waiter-name-1234")))
+  (is (true? (valid-metadata-name? "waiter-name")))
+  (is (false? (valid-metadata-name? "1234-waiter-name")))
+  (is (true? (valid-metadata-name? (apply str (repeat 99 "m")))))
+  (is (false? (valid-metadata-name? (apply str (repeat 100 "m")))))
+  (is (false? (valid-metadata-name? (apply str (repeat 101 "m"))))))

@@ -98,6 +98,7 @@
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
           limit 10
+          metadata-name nil
           token-name (str "test-token-hard-delete-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -113,7 +114,7 @@
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit metadata-name)]
 
               ;; ASSERT
               (let [waiter-sync-result (constantly
@@ -144,6 +145,7 @@
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
           limit 10
+          metadata-name nil
           token-name (str "test-token-soft-delete-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -160,7 +162,7 @@
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit metadata-name)]
 
               ;; ASSERT
               (let [waiter-sync-result (constantly
@@ -193,6 +195,7 @@
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
           limit 10
+          metadata-name nil
           token-name (str "test-token-update-previously-soft-deleted-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -211,7 +214,7 @@
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit metadata-name)]
 
               ;; ASSERT
               (let [waiter-sync-result (constantly
@@ -244,6 +247,7 @@
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
           limit 10
+          metadata-name nil
           token-name (str "test-token-token-on-single-cluster-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -256,7 +260,7 @@
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit metadata-name)]
 
               ;; ASSERT
               (let [waiter-sync-result (constantly
@@ -291,6 +295,7 @@
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
           limit 10
+          metadata-name nil
           token-name (str "test-token-already-synced-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -304,7 +309,7 @@
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit metadata-name)]
 
               ;; ASSERT
               (let [expected-result {:details {}
@@ -332,6 +337,7 @@
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
           limit 10
+          metadata-name nil
           token-name (str "test-token-update-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -351,7 +357,181 @@
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit metadata-name)]
+
+              ;; ASSERT
+              (let [waiter-sync-result (constantly
+                                         {:code :success/sync-update
+                                          :details {:etag token-etag
+                                                    :status 200}})
+                    expected-result {:details {token-name {:latest {:cluster-url (first waiter-urls)
+                                                                    :description token-description
+                                                                    :token-etag token-etag}
+                                                           :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
+                                     :summary {:sync {:failed #{}
+                                                      :unmodified #{}
+                                                      :updated #{token-name}}
+                                               :tokens {:pending {:count 1 :value #{token-name}}
+                                                        :previously-synced {:count 0 :value #{}}
+                                                        :processed {:count 1 :value #{token-name}}
+                                                        :selected {:count 1 :value #{token-name}}
+                                                        :total {:count 1 :value #{token-name}}}}}]
+                (is (= expected-result actual-result))
+                (doseq [waiter-url waiter-urls]
+                  (is (= {:description token-description
+                          :headers {"content-type" "application/json"
+                                    "etag" token-etag}
+                          :status 200
+                          :token-etag token-etag}
+                         (load-token waiter-url token-name))))))))
+        (finally
+          (cleanup-token waiter-api waiter-urls token-name))))))
+
+(deftest ^:integration test-token-update-on-metadata-missing
+  (testing "token sync update"
+    (let [waiter-urls (waiter-urls)
+          {:keys [load-token store-token] :as waiter-api} (waiter-api)
+          limit 10
+          metadata-name "sync-opt-out"
+          token-name (str "test-token-update-" (UUID/randomUUID))]
+      (try
+        ;; ARRANGE
+        (let [current-time-ms (System/currentTimeMillis)
+              token-metadata (basic-token-metadata current-time-ms)
+              token-description-1 (merge basic-description token-metadata)
+              last-update-time-ms (- current-time-ms 10000)
+              token-description-2 (assoc token-description-1
+                                    "cpus" 2
+                                    "mem" 2048
+                                    "last-update-time" last-update-time-ms)]
+
+          (do
+            (store-token (first waiter-urls) token-name nil token-description-1)
+            (doseq [waiter-url (rest waiter-urls)]
+              (store-token waiter-url token-name nil token-description-2)))
+
+          (let [token-etag-1 (token->etag waiter-api (first waiter-urls) token-name)
+                token-etag-2 (token->etag waiter-api (last waiter-urls) token-name)]
+
+            ;; ACT
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit metadata-name)]
+
+              ;; ASSERT
+              (let [waiter-sync-result (constantly {:code :success/sync-update
+                                                    :details {:etag token-etag-1
+                                                              :status 200}})
+                    expected-result {:details {token-name {:latest {:cluster-url (first waiter-urls)
+                                                                    :description token-description-1
+                                                                    :token-etag token-etag-1}
+                                                           :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
+                                     :summary {:sync {:failed #{}
+                                                      :unmodified #{}
+                                                      :updated #{token-name}}
+                                               :tokens {:pending {:count 1 :value #{token-name}}
+                                                        :previously-synced {:count 0 :value #{}}
+                                                        :processed {:count 1 :value #{token-name}}
+                                                        :selected {:count 1 :value #{token-name}}
+                                                        :total {:count 1 :value #{token-name}}}}}]
+                (is (= expected-result actual-result))
+                (doseq [waiter-url waiter-urls]
+                  (is (= {:description token-description-1
+                          :headers {"content-type" "application/json"
+                                    "etag" token-etag-1}
+                          :status 200
+                          :token-etag token-etag-1}
+                         (load-token waiter-url token-name))))))))
+        (finally
+          (cleanup-token waiter-api waiter-urls token-name))))))
+
+(deftest ^:integration test-token-update-skip-on-metadata-opt-out
+  (testing "token sync update"
+    (let [waiter-urls (waiter-urls)
+          {:keys [load-token store-token] :as waiter-api} (waiter-api)
+          limit 10
+          metadata-name "sync-opt-out"
+          token-name (str "test-token-update-" (UUID/randomUUID))]
+      (try
+        ;; ARRANGE
+        (let [current-time-ms (System/currentTimeMillis)
+              token-metadata (basic-token-metadata current-time-ms)
+              token-description-1 (merge basic-description token-metadata {"metadata" {"sync-opt-out" "true"}})
+              last-update-time-ms (- current-time-ms 10000)
+              token-description-2 (assoc token-description-1
+                                    "cpus" 2
+                                    "mem" 2048
+                                    "metadata" {"sync-opt-out" "false"}
+                                    "last-update-time" last-update-time-ms)]
+
+          (do
+            (store-token (first waiter-urls) token-name nil token-description-1)
+            (doseq [waiter-url (rest waiter-urls)]
+              (store-token waiter-url token-name nil token-description-2)))
+
+          (let [token-etag-1 (token->etag waiter-api (first waiter-urls) token-name)
+                token-etag-2 (token->etag waiter-api (last waiter-urls) token-name)]
+
+            ;; ACT
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit metadata-name)]
+
+              ;; ASSERT
+              (let [waiter-sync-result (constantly {:code :success/skip-opt-out})
+                    expected-result {:details {token-name {:latest {:cluster-url (first waiter-urls)
+                                                                    :description token-description-1
+                                                                    :token-etag token-etag-1}
+                                                           :sync-result (pc/map-from-keys waiter-sync-result (rest waiter-urls))}}
+                                     :summary {:sync {:failed #{}
+                                                      :unmodified #{}
+                                                      :updated #{token-name}}
+                                               :tokens {:pending {:count 1 :value #{token-name}}
+                                                        :previously-synced {:count 0 :value #{}}
+                                                        :processed {:count 1 :value #{token-name}}
+                                                        :selected {:count 1 :value #{token-name}}
+                                                        :total {:count 1 :value #{token-name}}}}}]
+                (is (= expected-result actual-result))
+                (let [waiter-url (first waiter-urls)]
+                  (is (= {:description token-description-1
+                          :headers {"content-type" "application/json"
+                                    "etag" token-etag-1}
+                          :status 200
+                          :token-etag token-etag-1}
+                         (load-token waiter-url token-name))))
+                (doseq [waiter-url (rest waiter-urls)]
+                  (is (= {:description token-description-2
+                          :headers {"content-type" "application/json"
+                                    "etag" token-etag-2}
+                          :status 200
+                          :token-etag token-etag-2}
+                         (load-token waiter-url token-name))))))))
+        (finally
+          (cleanup-token waiter-api waiter-urls token-name))))))
+
+(deftest ^:integration test-token-update-success-on-metadata-opt-in
+  (testing "token sync update"
+    (let [waiter-urls (waiter-urls)
+          {:keys [load-token store-token] :as waiter-api} (waiter-api)
+          limit 10
+          metadata-name "sync-opt-out"
+          token-name (str "test-token-update-" (UUID/randomUUID))]
+      (try
+        ;; ARRANGE
+        (let [current-time-ms (System/currentTimeMillis)
+              token-metadata (basic-token-metadata current-time-ms)
+              token-description (merge basic-description token-metadata {"metadata" {"sync-opt-out" "false"}})]
+
+          (let [last-update-time-ms (- current-time-ms 10000)]
+            (store-token (first waiter-urls) token-name nil token-description)
+            (doseq [waiter-url (rest waiter-urls)]
+              (store-token waiter-url token-name nil
+                           (assoc token-description
+                             "cpus" 2
+                             "mem" 2048
+                             "metadata" {"sync-opt-out" "true"}
+                             "last-update-time" last-update-time-ms))))
+
+          (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
+
+            ;; ACT
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit metadata-name)]
 
               ;; ASSERT
               (let [waiter-sync-result (constantly
@@ -386,6 +566,7 @@
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
           limit 10
+          metadata-name nil
           token-name (str "test-token-maintenance-mode-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -403,7 +584,7 @@
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit metadata-name)]
 
               ;; ASSERT
               (let [waiter-sync-result (constantly
@@ -439,6 +620,7 @@
       (let [waiter-urls (waiter-urls)
             {:keys [load-token store-token] :as waiter-api} (waiter-api)
             limit 10
+            metadata-name nil
             token-name (str "test-token-maintenance-mode-" (UUID/randomUUID))]
         (try
           ;; ARRANGE
@@ -458,7 +640,7 @@
             (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
               ;; ACT
-              (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
+              (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit metadata-name)]
 
                 ;; ASSERT
                 (let [waiter-sync-result (constantly
@@ -493,6 +675,7 @@
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
           limit 10
+          metadata-name nil
           token-name (str "test-token-different-owners-but-same-root-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -517,7 +700,7 @@
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit metadata-name)]
 
               ;; ASSERT
               (let [latest-description (assoc basic-description
@@ -561,6 +744,7 @@
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
           limit 10
+          metadata-name nil
           token-name (str "test-token-diff-root-diff-user" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -585,7 +769,7 @@
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit metadata-name)]
 
               ;; ASSERT
               (let [latest-description (assoc basic-description
@@ -654,6 +838,7 @@
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
           limit 10
+          metadata-name nil
           token-name (str "diff-root-same-user" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -678,7 +863,7 @@
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit metadata-name)]
 
               ;; ASSERT
               (let [latest-description (assoc basic-description
@@ -730,6 +915,7 @@
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
           limit 10
+          metadata-name nil
           token-name (str "test-token-different-roots-and-deleted-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -755,7 +941,7 @@
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit metadata-name)]
 
               ;; ASSERT
               (let [latest-description (assoc basic-description
@@ -803,6 +989,7 @@
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
           limit 10
+          metadata-name nil
           token-name (str "test-token-same-user-params-but-different-root-and-last-update-user-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -826,7 +1013,7 @@
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit metadata-name)]
 
               ;; ASSERT
               (let [latest-description (assoc basic-description
@@ -880,6 +1067,7 @@
     (let [waiter-urls (waiter-urls)
           {:keys [load-token store-token] :as waiter-api} (waiter-api)
           limit 10
+          metadata-name nil
           token-name (str "test-token-same-user-params-and-last-update-user-but-different-root-" (UUID/randomUUID))]
       (try
         ;; ARRANGE
@@ -903,7 +1091,7 @@
           (let [token-etag (token->etag waiter-api (first waiter-urls) token-name)]
 
             ;; ACT
-            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit)]
+            (let [actual-result (syncer/sync-tokens waiter-api waiter-urls limit metadata-name)]
 
               ;; ASSERT
               (let [latest-description (assoc basic-description

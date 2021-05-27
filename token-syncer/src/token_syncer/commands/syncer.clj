@@ -75,7 +75,7 @@
   "Syncs a given token description on all clusters.
    If the cluster-url->token-data says that a given token was not successfully loaded, it is skipped.
    Token sync-ing is also skipped if the tokens are active and the roots are different."
-  [{:keys [store-token]} cluster-urls token latest-token-description cluster-url->token-data]
+  [{:keys [store-token]} cluster-urls token latest-token-description metadata-name cluster-url->token-data]
   (pc/map-from-keys
     (fn [cluster-url]
       (let [ignored-root-mismatch-equality-comparison-keys ["cluster" "last-update-time" "last-update-user" "previous" "root"]
@@ -107,6 +107,10 @@
                        (get description "deleted"))
                   {:code :error/tokens-deleted
                    :details {:message "soft-deleted tokens should have already been hard-deleted"}}
+
+                  (and (some? metadata-name)
+                       (= "true" (get-in latest-token-description ["metadata" metadata-name])))
+                  {:code :success/skip-opt-out}
 
                   ;; active token, content the same irrespective of system metadata keys but roots different
                   (and (seq description)
@@ -151,7 +155,7 @@
 
 (defn- perform-token-syncs
   "Perform token syncs for all the specified tokens."
-  [waiter-api cluster-urls all-tokens]
+  [waiter-api cluster-urls all-tokens metadata-name]
   (let [token->url->token-data (retrieve-token->url->token-data waiter-api cluster-urls all-tokens)
         token->latest-description (retrieve-token->latest-description token->url->token-data)]
     (pc/map-from-keys
@@ -166,7 +170,7 @@
           (log/info "syncing" token "with token description from" cluster-url {:all-soft-deleted all-soft-deleted})
           (let [sync-result (if all-soft-deleted
                               (hard-delete-token-on-all-clusters waiter-api cluster-urls token token-etag)
-                              (sync-token-on-clusters waiter-api remaining-cluster-urls token description
+                              (sync-token-on-clusters waiter-api remaining-cluster-urls token description metadata-name
                                                       (token->url->token-data token)))]
             {:latest (token->latest-description token)
              :sync-result sync-result})))
@@ -252,14 +256,14 @@
 (defn sync-tokens
   "Syncs tokens across provided clusters based on cluster-urls and returns the result of token syncing.
    Throws an exception if there was an error during token syncing."
-  [{:keys [load-token-list] :as waiter-api} cluster-urls limit]
+  [{:keys [load-token-list] :as waiter-api} cluster-urls limit metadata-name]
   (try
     (log/info "syncing tokens on clusters:" cluster-urls)
     (let [cluster-urls-set (set cluster-urls)
           {:keys [all-tokens pending-tokens synced-tokens]} (load-and-classify-tokens load-token-list cluster-urls-set)
           selected-tokens (->> (sort pending-tokens)
                                (take limit))
-          token-sync-result (perform-token-syncs waiter-api cluster-urls-set selected-tokens)]
+          token-sync-result (perform-token-syncs waiter-api cluster-urls-set selected-tokens metadata-name)]
       (log/info "completed syncing tokens (limited to " (min limit (count pending-tokens)) "tokens)")
       {:details token-sync-result
        :summary (-> {:all-tokens all-tokens
@@ -271,10 +275,19 @@
       (log/error th "unable to sync tokens")
       (throw th))))
 
+(defn valid-metadata-name?
+  "Validates that a non-nil input passes as a vlaid metadata name:
+   - contains fewer than 100 characters; and
+   - made up of lower-case letters, numbers, and hyphens and must start with a letter."
+  [metadata-name]
+  (or (nil? metadata-name)
+      (and (< (count metadata-name) 100)
+           (some? (re-matches #"^[a-z][a-z0-9\\-]*$" metadata-name)))))
+
 (def sync-clusters-config
   {:execute-command (fn execute-sync-clusters-command
                       [{:keys [waiter-api]} {:keys [options]} arguments]
-                      (let [{:keys [limit]} options
+                      (let [{:keys [limit metadata-name]} options
                             cluster-urls-set (set arguments)]
                         (cond
                           (<= (-> cluster-urls-set set count) 1)
@@ -282,7 +295,7 @@
                            :message (str "at least two different cluster urls required, provided: " (vec arguments))}
 
                           :else
-                          (let [{:keys [details summary] :as sync-result} (sync-tokens waiter-api cluster-urls-set limit)
+                          (let [{:keys [details summary] :as sync-result} (sync-tokens waiter-api cluster-urls-set limit metadata-name)
                                 exit-code (-> (get-in sync-result [:summary :sync :failed])
                                               empty?
                                               (if 0 1))]
@@ -293,7 +306,15 @@
    :option-specs [["-l" "--limit LIMIT" "The maximum number of tokens to attempt to sync, must be between 1 and 10000"
                    :default 1000
                    :parse-fn #(Integer/parseInt %)
-                   :validate [#(< 0 % 10001) "Must be between 1 and 10000"]]]
+                   :validate [#(< 0 % 10001) "Must be between 1 and 10000"]]
+                  ["-m" "--metadata-name NAME"
+                   (str "The metadata field that must be configured to 'true' on the latest description to "
+                        "trigger opting out of syncing, default is all tokens opt in to syncing")
+                   :default nil
+                   :parse-fn str
+                   :validate [valid-metadata-name?
+                              (str "Must be made up of lower-case letters, numbers, and hyphens and must start with a letter. "
+                                   "It must also be no more than 100 characters.")]]]
    :retrieve-documentation (fn retrieve-sync-clusters-documentation
                              [command-name _]
                              {:description (str "Syncs tokens across (at least two) Waiter clusters specified in the URL(s)")
