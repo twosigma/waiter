@@ -222,7 +222,7 @@
 
 (defn load-settings-file
   "Loads the edn config in the specified file, it relies on having the filename being a path to the file."
-  [filename]
+  [filename & {:keys [abort-on-missing-file] :or {abort-on-missing-file true}}]
   (let [config-file (-> filename str io/file)
         config-file-path (.getAbsolutePath config-file)]
     (if (.exists config-file)
@@ -238,7 +238,8 @@
           settings))
       (do
         (log/info "unable to find configuration file:" config-file-path)
-        (utils/exit 1 (str "Unable to find configuration file: " config-file-path))))))
+        (when abort-on-missing-file
+          (utils/exit 1 (str "Unable to find configuration file: " config-file-path)))))))
 
 (defn sanitize-settings
   "Sanitizes settings for eventual conversion to JSON"
@@ -545,7 +546,7 @@
   [clock timer-ch config-path config-schema]
   (cid/with-correlation-id
     "dynamic-config-maintainer"
-    (let [initial-config (s/validate config-schema (load-settings-file config-path))
+    (let [initial-config (s/validate config-schema (load-settings-file config-path :abort-on-missing-file false))
           _ (log/info "initial dynamic-config loaded" {:initial-config initial-config})
           state-atom (atom {:dynamic-config initial-config
                             :last-error-time nil
@@ -562,7 +563,7 @@
                       (contains? include-flags "dynamic-config")
                       (assoc :dynamic-config dynamic-config))))
           go-chan
-          (async/go-loop [{:keys [dynamic-config] :as current-state} @state-atom]
+          (async/go-loop [{:keys [dynamic-config last-error-time] :as current-state} @state-atom]
             (reset! state-atom current-state)
             (let [[msg current-chan] (async/alts! [exit-chan timer-ch query-chan])
                   next-state
@@ -576,21 +577,23 @@
                     timer-ch
                     (try
                       (let [new-dynamic-config
-                            (s/validate config-schema (load-settings-file config-path))]
+                            (s/validate config-schema (load-settings-file config-path :abort-on-missing-file false))]
                         (if (= dynamic-config new-dynamic-config)
                           (do
                             (log/debug "dynamic-config is the same, so no action is taken" {:current-config dynamic-config
                                                                                             :new-config new-dynamic-config})
                             {:dynamic-config dynamic-config
+                             :last-error-time last-error-time
                              :last-update-time (clock)})
                           (do
                             (log/info "loaded dynamic-config is changed, replacing previous config" {:current-config dynamic-config
                                                                                                      :new-config new-dynamic-config})
                             {:dynamic-config new-dynamic-config
+                             :last-error-time last-error-time
                              :last-update-time (clock)})))
                       (catch Exception e
                         (log/error e "error when loading dynamic config, retaining previous config!" {:current-config dynamic-config})
-                        current-state))
+                        (assoc current-state :last-error-time (clock))))
 
                     query-chan
                     (let [{:keys [include-flags response-chan]} msg]
