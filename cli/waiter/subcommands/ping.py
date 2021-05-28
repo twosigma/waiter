@@ -55,10 +55,12 @@ def token_explicitly_created_on_cluster(cluster, token_cluster_name):
 
 def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
+    default_timeout = 300
     parser = add_parser('ping', help='ping token by name')
     parser.add_argument('token-or-service-id')
-    parser.add_argument('--timeout', '-t', help='read timeout (in seconds) for ping request (default is 300 seconds)',
-                        type=check_positive, default=300)
+    parser.add_argument('--timeout', '-t', help=f'read timeout (in seconds) for ping request (default is '
+                                                f'{default_timeout} seconds)',
+                        type=check_positive, default=default_timeout)
     parser.add_argument('--service-id', '-s', help='ping by service id instead of token',
                         dest='is-service-id', action='store_true')
     parser.add_argument('--no-wait', '-n', help='do not wait for ping request to return',
