@@ -1218,6 +1218,65 @@ class WaiterCliTest(util.WaiterTest):
     def test_update_token_yaml_containing_token_name(self):
         self.__test_update_token_containing_token_name('yaml')
 
+    def __test_update_token_deep_merge(self, file_format):
+        token_name = self.token_name()
+        original_token_config = {'env': {'KEY_1': 'value_1',
+                                         'KEY_2': 'value_2'}}
+        update_doc = {'token': token_name,
+                      'env': {'KEY_2': 'new_value_2',
+                              'KEY_3': 'new_value_3'},
+                      'metadata': {'key-4': 'new_value_4'}}
+        expected_token_config = {'env': {'KEY_1': 'value_1',
+                                         'KEY_2': 'new_value_2',
+                                         'KEY_3': 'new_value_3'},
+                                 'metadata': {'key-4': 'new_value_4'}}
+        util.post_token(self.waiter_url, token_name, original_token_config)
+        try:
+
+            with cli.temp_token_file(update_doc, file_format) as path:
+                cp = cli.update(self.waiter_url, update_flags=f'--{file_format} {path} --deep-merge')
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                token_data = util.load_token(self.waiter_url, token_name)
+                self.assertEqual(expected_token_config['env'], token_data['env'])
+                self.assertEqual(expected_token_config['metadata'], token_data['metadata'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_update_token_json_deep_merge(self):
+        self.__test_update_token_deep_merge('json')
+
+    def test_update_token_yaml_deep_merge(self):
+        self.__test_update_token_deep_merge('yaml')
+
+    def __test_update_token_shallow_merge(self, file_format):
+        token_name = self.token_name()
+        original_token_config = {'env': {'KEY_1': 'value_1',
+                                         'KEY_2': 'value_2'}}
+        update_doc = {'token': token_name,
+                      'env': {'KEY_2': 'new_value_2',
+                              'KEY_3': 'new_value_3'},
+                      'metadata': {'KEY_4': 'new_value_4'}}
+        expected_token_config = {'env': {'KEY_2': 'new_value_2',
+                                         'KEY_3': 'new_value_3'},
+                                 'metadata': {'KEY_4': 'new_value_4'}}
+        util.post_token(self.waiter_url, token_name, original_token_config)
+        try:
+
+            with cli.temp_token_file(update_doc, file_format) as path:
+                cp = cli.update(self.waiter_url, update_flags=f'--{file_format} {path} --shallow-merge')
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                token_data = util.load_token(self.waiter_url, token_name)
+                self.assertEqual(expected_token_config['env'], token_data['env'])
+                self.assertEqual(expected_token_config['metadata'], token_data['metadata'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_update_token_json_shallow_merge(self):
+        self.__test_update_token_deep_merge('json')
+
+    def test_update_token_yaml_shallow_merge(self):
+        self.__test_update_token_deep_merge('yaml')
+
     def __test_update_token_override_fail(self, file_format):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'})

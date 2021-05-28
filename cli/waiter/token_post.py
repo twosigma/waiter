@@ -8,8 +8,8 @@ import requests
 from waiter import terminal, http_util
 from waiter.data_format import load_data
 from waiter.querying import get_token, query_token, get_target_cluster_from_token
-from waiter.util import FALSE_STRINGS, is_admin_enabled, print_info, response_message, TRUE_STRINGS, guard_no_cluster, \
-    str2bool
+from waiter.util import deep_merge, FALSE_STRINGS, is_admin_enabled, print_info, response_message, TRUE_STRINGS, \
+    guard_no_cluster, str2bool
 
 BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
 INT_PARAM_SUFFIXES = ['-failures', '-index', '-instances', '-length', '-level', '-mins', '-secs']
@@ -44,7 +44,7 @@ def post_failed_message(cluster_name, reason):
     return f'Token post {terminal.failed("failed")} on {cluster_name}:\n{terminal.reason(reason)}'
 
 
-def create_or_update(cluster, token_name, token_fields, admin_mode, action):
+def create_or_update(cluster, token_name, token_fields, admin_mode, action, should_deep_merge):
     """Creates (or updates) the given token on the given cluster"""
     cluster_name = cluster['name']
     cluster_url = cluster['url']
@@ -56,7 +56,10 @@ def create_or_update(cluster, token_name, token_fields, admin_mode, action):
         if admin_mode:
             params['update-mode'] = 'admin'
         json_body = existing_token_data if existing_token_data and action.should_patch() else {}
-        json_body.update(token_fields)
+        if should_deep_merge:
+            json_body = deep_merge(json_body, token_fields)
+        else:
+            json_body.update(token_fields)
         headers = {'If-Match': existing_token_etag or ''}
         resp = http_util.post(cluster, 'token', json_body, params=params, headers=headers)
         process_post_result(resp)
@@ -83,6 +86,7 @@ def create_or_update_token(clusters, args, _, enforce_cluster, action):
     input_file = args.pop('input', None)
     admin_mode = args.pop('admin', None)
     allow_override = args.pop('override', False)
+    should_deep_merge = args.pop('deep-merge', False)
 
     if input_file or json_file or yaml_file:
         token_fields_from_json = load_data({'data': input_file,
@@ -134,7 +138,7 @@ def create_or_update_token(clusters, args, _, enforce_cluster, action):
     else:
         cluster = clusters[0]
 
-    return create_or_update(cluster, token_name, token_fields, admin_mode, action)
+    return create_or_update(cluster, token_name, token_fields, admin_mode, action, should_deep_merge)
 
 
 def add_arguments(parser):

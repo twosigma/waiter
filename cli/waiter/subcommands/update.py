@@ -1,3 +1,4 @@
+import argparse
 from functools import partial
 
 from waiter import token_post
@@ -11,6 +12,12 @@ def register(add_parser):
     action = token_post.Action.UPDATE
     parser = token_post.register_argument_parser(add_parser, action)
     token_post.add_arguments(parser)
+    deep_merge_group = parser.add_mutually_exclusive_group(required=False)
+    deep_merge_group.add_argument('--deep-merge', action='store_true', dest='deep-merge',
+                                  help='Deep merge updates into existing token configuration. '
+                                       'This is useful if you want to add environment variables or metadata without '
+                                       'overriding the entire object.')
+    deep_merge_group.add_argument('--shallow-merge', action='store_false', dest='deep-merge', help=argparse.SUPPRESS)
     return partial(token_post.create_or_update_token, action=action)
 
 
