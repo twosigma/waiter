@@ -8,8 +8,8 @@ import requests
 from waiter import terminal, http_util
 from waiter.data_format import load_data
 from waiter.querying import get_token, query_token, get_target_cluster_from_token
-from waiter.util import assoc_in, deep_merge, FALSE_STRINGS, is_admin_enabled, print_info, response_message, \
-    TRUE_STRINGS, guard_no_cluster, str2bool
+from waiter.util import deep_merge, FALSE_STRINGS, is_admin_enabled, print_info, response_message, TRUE_STRINGS, \
+    guard_no_cluster, str2bool, update_in
 
 BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
 INT_PARAM_SUFFIXES = ['-failures', '-index', '-instances', '-length', '-level', '-mins', '-secs']
@@ -65,7 +65,7 @@ def merge_token_fields_from_args(token_fields_base, token_fields_from_args):
     token_fields = {**token_fields_base}
     for key_raw, value in token_fields_from_args.items():
         keys = key_raw.split('.')
-        token_fields = assoc_in(token_fields, keys, value)
+        update_in(token_fields, keys, value)
     return token_fields
 
 
