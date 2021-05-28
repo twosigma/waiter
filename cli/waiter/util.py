@@ -12,6 +12,16 @@ TRUE_STRINGS = ('yes', 'true', 'y')
 FALSE_STRINGS = ('no', 'false', 'n')
 
 
+def assoc_in(obj, keys, value):
+    """Given a list of keys and a value, return a new object with that value set"""
+    obj = obj.copy()
+    cur_node = obj
+    for key in keys[:-1]:
+        cur_node = cur_node.setdefault(key, {})
+    cur_node[keys[-1]] = value
+    return obj
+
+
 def deep_merge(a, b):
     """Merges a and b, letting b win if there is a conflict"""
     merged = a.copy()

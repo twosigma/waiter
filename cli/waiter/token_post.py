@@ -1,6 +1,6 @@
 import argparse
 import logging
-import os
+from collections import defaultdict
 from enum import Enum
 
 import requests
@@ -8,8 +8,8 @@ import requests
 from waiter import terminal, http_util
 from waiter.data_format import load_data
 from waiter.querying import get_token, query_token, get_target_cluster_from_token
-from waiter.util import FALSE_STRINGS, is_admin_enabled, print_info, response_message, TRUE_STRINGS, guard_no_cluster, \
-    str2bool
+from waiter.util import assoc_in, deep_merge, FALSE_STRINGS, is_admin_enabled, print_info, response_message, \
+    TRUE_STRINGS, guard_no_cluster, str2bool
 
 BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
 INT_PARAM_SUFFIXES = ['-failures', '-index', '-instances', '-length', '-level', '-mins', '-secs']
@@ -44,7 +44,32 @@ def post_failed_message(cluster_name, reason):
     return f'Token post {terminal.failed("failed")} on {cluster_name}:\n{terminal.reason(reason)}'
 
 
-def create_or_update(cluster, token_name, token_fields, admin_mode, action):
+def get_overrides(token_fields_base, token_fields_from_args):
+    """Returns true if there are any overrides from the token key args. Handles nested fields args split by a period."""
+    overrides = []
+    for key_raw, _ in token_fields_from_args.items():
+        keys = key_raw.split('.')
+        base_ref = token_fields_base
+        try:
+            for key in keys:
+                base_ref = base_ref[key]
+            # no KeyError means that the token_fields_base has an existing value corresponding with the arg
+            overrides.append(key_raw)
+        except KeyError:
+            pass
+    return overrides
+
+
+def merge_token_fields_from_args(token_fields_base, token_fields_from_args):
+    """Merges token fields from json and token fields from args. Handles nested fields args split by a period."""
+    token_fields = {**token_fields_base}
+    for key_raw, value in token_fields_from_args.items():
+        keys = key_raw.split('.')
+        token_fields = assoc_in(token_fields, keys, value)
+    return token_fields
+
+
+def create_or_update(cluster, token_name, token_fields, admin_mode, action, fields_from_args_only):
     """Creates (or updates) the given token on the given cluster"""
     cluster_name = cluster['name']
     cluster_url = cluster['url']
@@ -56,7 +81,10 @@ def create_or_update(cluster, token_name, token_fields, admin_mode, action):
         if admin_mode:
             params['update-mode'] = 'admin'
         json_body = existing_token_data if existing_token_data and action.should_patch() else {}
-        json_body.update(token_fields)
+        if fields_from_args_only and action.should_patch():
+            json_body = deep_merge(json_body, token_fields)
+        else:
+            json_body.update(token_fields)
         headers = {'If-Match': existing_token_etag or ''}
         resp = http_util.post(cluster, 'token', json_body, params=params, headers=headers)
         process_post_result(resp)
@@ -88,20 +116,22 @@ def create_or_update_token(clusters, args, _, enforce_cluster, action):
         token_fields_from_json = load_data({'data': input_file,
                                             'json': json_file,
                                             'yaml': yaml_file})
+        fields_from_args_only = False
     else:
         token_fields_from_json = {}
+        fields_from_args_only = True
 
     token_fields_from_args = args
-    shared_keys = set(token_fields_from_json).intersection(token_fields_from_args)
-    if shared_keys:
+    overrides = get_overrides(token_fields_from_json, token_fields_from_args)
+    if overrides:
         if not allow_override:
             raise Exception(f'You cannot specify the same parameter in both an input file '
-                            f'and token field flags at the same time ({", ".join(shared_keys)}) '
+                            f'and token field flags at the same time ({", ".join(overrides)}) '
                             f'without specifying the --override flag.')
         else:
-            logging.debug(f'Following parameters have specified values in both file and flags: {shared_keys}')
+            logging.debug(f'Following parameters have specified values in both file and flags: {overrides}')
 
-    token_fields = {**token_fields_from_json, **token_fields_from_args}
+    token_fields = merge_token_fields_from_args(token_fields_from_json, token_fields_from_args)
     token_name_from_json = token_fields.pop('token', None)
     if token_name_from_args and token_name_from_json:
         if not allow_override:
@@ -134,7 +164,7 @@ def create_or_update_token(clusters, args, _, enforce_cluster, action):
     else:
         cluster = clusters[0]
 
-    return create_or_update(cluster, token_name, token_fields, admin_mode, action)
+    return create_or_update(cluster, token_name, token_fields, admin_mode, action, fields_from_args_only)
 
 
 def add_arguments(parser):
@@ -184,7 +214,9 @@ def register_argument_parser(add_parser, action):
                       'token parameter as a flag. For example, '
                       'to specify 10 seconds for the '
                       'grace-period-secs parameter, '
-                      'you can pass --grace-period-secs 10.')
+                      'you can pass --grace-period-secs 10. '
+                      'You can also provide nested fields separated by a period. For example, '
+                      'to specify an environment variable FOO as \"bar\", you can pass --env.FOO \"bar\".')
 
 
 def possible_int(arg):
