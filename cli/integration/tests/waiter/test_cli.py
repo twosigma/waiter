@@ -1327,7 +1327,7 @@ class WaiterCliTest(util.WaiterTest):
         self.assertIn('foo-level', cli.stderr(cp))
         self.assertIn('bar-rate', cli.stderr(cp))
 
-    def test_nested_args_no_override(self):
+    def test_update_nested_args_no_override(self):
         token_name = self.token_name()
         initial_token_config = {'cmd': 'foo',
                                 'cpus': 0.1,
@@ -1352,7 +1352,7 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name)
 
-    def __test_nested_args_with_overrides_success(self, file_format):
+    def __test_update_nested_args_with_overrides_success(self, file_format):
         token_name = self.token_name()
         initial_token_config = {'cmd': 'foo',
                                 'cpus': 0.1,
@@ -1383,16 +1383,16 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name)
 
-    def test_nested_args_json_with_overrides_success(self):
-        self.__test_nested_args_with_overrides_success('json')
+    def test_update_nested_args_json_with_overrides_success(self):
+        self.__test_update_nested_args_with_overrides_success('json')
 
-    def test_nested_args_yaml_with_overrides_success(self):
-        self.__test_nested_args_with_overrides_success('yaml')
+    def test_update_nested_args_yaml_with_overrides_success(self):
+        self.__test_update_nested_args_with_overrides_success('yaml')
 
-    def test_nested_args_json_with_overrides_failure(self):
+    def test_update_nested_args_json_with_overrides_failure(self):
         self.__test_update_token_override_failure('json', False, update_flags="--env.FOO testing")
 
-    def test_nested_args_json_with_overrides_failure(self):
+    def test_update_nested_args_json_with_overrides_failure(self):
         self.__test_update_token_override_failure('yaml', False, update_flags="--env.FOO testing")
 
     def test_show_service_current(self):
