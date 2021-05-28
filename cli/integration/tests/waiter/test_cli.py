@@ -1198,6 +1198,55 @@ class WaiterCliTest(util.WaiterTest):
     def test_create_token_yaml_containing_token_name(self):
         self.__test_create_token_containing_token_name('yaml')
 
+    def test_create_nested_args_no_override(self):
+        token_name = self.token_name()
+        try:
+            create_flags = f'{token_name} --metadata.foo bar --env.KEY_2 new_value_2 --env.KEY_3 new_value_3'
+            cp = cli.create(self.waiter_url, flags='--verbose', create_flags=create_flags)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            token_data = util.load_token(self.waiter_url, token_name)
+            self.assertEqual({'KEY_2': 'new_value_2',
+                              'KEY_3': 'new_value_3'},
+                             token_data['env'])
+            self.assertEqual({'foo': 'bar'},
+                             token_data['metadata'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def __test_create_nested_args_parameter_override_success(self, file_format, create_existing_token=False):
+        token_name = self.token_name()
+        create_doc = {'token': token_name,
+                      'cpus': 0.2,
+                      'env': {'KEY_1': 'value_1',
+                              'KEY_2': 'value_2'}}
+        if create_existing_token:
+            util.post_token(self.waiter_url, token_name, {'env': {'key': 'should_be_overridden'}})
+        try:
+            with cli.temp_token_file(create_doc, file_format) as path:
+                explicit_create_flags = '--metadata.foo bar --env.KEY_2 new_value_2 --env.KEY_3 new_value_3'
+                create_flags = f'--override {explicit_create_flags} --{file_format} {path}'
+                cp = cli.create(self.waiter_url, flags='--verbose', create_flags=create_flags)
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                token_data = util.load_token(self.waiter_url, token_name)
+                self.assertEqual(0.2, token_data['cpus'])
+                self.assertEqual({'KEY_1': 'value_1',
+                                  'KEY_2': 'new_value_2',
+                                  'KEY_3': 'new_value_3'},
+                                 token_data['env'])
+                self.assertEqual({'foo': 'bar'},
+                                 token_data['metadata'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_create_nested_args_json_parameter_override_success(self):
+        self.__test_create_nested_args_parameter_override_success('json')
+
+    def test_create_nested_args_yaml_parameter_override_success(self):
+        self.__test_create_nested_args_parameter_override_success('yaml')
+
+    def test_create_nested_args_parameter_override_success_with_existing_token(self):
+        self.__test_create_nested_args_parameter_override_success('json', create_existing_token=True)
+
     def __test_update_token_containing_token_name(self, file_format):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'})
