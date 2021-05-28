@@ -57,7 +57,7 @@ def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
     parser = add_parser('ping', help='ping token by name')
     parser.add_argument('token-or-service-id')
-    parser.add_argument('--timeout', '-t', help='read timeout (in seconds) for ping request',
+    parser.add_argument('--timeout', '-t', help='read timeout (in seconds) for ping request (default is 300 seconds)',
                         type=check_positive, default=300)
     parser.add_argument('--service-id', '-s', help='ping by service id instead of token',
                         dest='is-service-id', action='store_true')
