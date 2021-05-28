@@ -1272,13 +1272,14 @@ class WaiterCliTest(util.WaiterTest):
     def test_update_token_yaml_token_override_success(self):
         self.__test_update_token_override_success('yaml', True)
 
-    def __test_update_token_override_failure(self, file_format, diff_token_in_file):
+    def __test_update_token_override_failure(self, file_format, diff_token_in_file, update_flags="--cpus 0.3"):
         token_name = self.token_name()
-        util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'})
+        token_fields = {'cpus': 0.1, 'mem': 128, 'cmd': 'foo', 'env': {'FOO': 'BAR'}}
+        util.post_token(self.waiter_url, token_name, token_fields)
         try:
             token_in_file = f'abc_{token_name}' if diff_token_in_file else token_name
-            with cli.temp_token_file({'token': token_in_file, 'cpus': 0.2, 'mem': 256}, file_format) as path:
-                update_flags = f'--no-override --cpus 0.3 --{file_format} {path}'
+            with cli.temp_token_file({'token': token_in_file, **token_fields}, file_format) as path:
+                update_flags = f'--no-override {update_flags} --{file_format} {path}'
                 if diff_token_in_file:
                     update_flags = f'{update_flags} {token_name}'
                 cp = cli.update(self.waiter_url, flags='--verbose', update_flags=update_flags)
@@ -1325,6 +1326,74 @@ class WaiterCliTest(util.WaiterTest):
         self.assertIn('Unsupported key(s)', cli.stderr(cp))
         self.assertIn('foo-level', cli.stderr(cp))
         self.assertIn('bar-rate', cli.stderr(cp))
+
+    def test_nested_args_no_override(self):
+        token_name = self.token_name()
+        initial_token_config = {'cmd': 'foo',
+                                'cpus': 0.1,
+                                'env': {'KEY_1': 'value_1',
+                                        'KEY_2': 'value_2'},
+                                'mem': 128}
+        util.post_token(self.waiter_url, token_name, initial_token_config)
+        try:
+            update_flags = f'{token_name} --metadata.foo bar --env.KEY_2 new_value_2 --env.KEY_3 new_value_3'
+            cp = cli.update(self.waiter_url, flags='--verbose', update_flags=update_flags)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            token_data = util.load_token(self.waiter_url, token_name)
+            self.assertEqual(0.1, token_data['cpus'])
+            self.assertEqual(128, token_data['mem'])
+            self.assertEqual('foo', token_data['cmd'])
+            self.assertEqual({'KEY_1': 'value_1',
+                              'KEY_2': 'new_value_2',
+                              'KEY_3': 'new_value_3'},
+                             token_data['env'])
+            self.assertEqual({'foo': 'bar'},
+                             token_data['metadata'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def __test_nested_args_with_overrides_success(self, file_format):
+        token_name = self.token_name()
+        initial_token_config = {'cmd': 'foo',
+                                'cpus': 0.1,
+                                'env': {'KEY_1': 'value_1',
+                                        'KEY_2': 'value_2'},
+                                'mem': 128}
+        token_update_doc = {'token': token_name,
+                            'cpus': 0.2,
+                            'mem': 256,
+                            'metadata': {'key1': 'value1'}}
+        explicit_update_flags = '--metadata.foo bar --env.KEY_2 new_value_2 --env.KEY_3 new_value_3'
+        util.post_token(self.waiter_url, token_name, initial_token_config)
+        try:
+            with cli.temp_token_file(token_update_doc, file_format) as path:
+                update_flags = f'--override {explicit_update_flags} --{file_format} {path}'
+                cp = cli.update(self.waiter_url, flags='--verbose', update_flags=update_flags)
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                token_data = util.load_token(self.waiter_url, token_name)
+                self.assertEqual(0.2, token_data['cpus'])
+                self.assertEqual(256, token_data['mem'])
+                # override with file will shallow merge
+                self.assertEqual({'KEY_2': 'new_value_2',
+                                  'KEY_3': 'new_value_3'},
+                                 token_data['env'])
+                self.assertEqual({'foo': 'bar',
+                                  'key1': 'value1'},
+                                 token_data['metadata'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_nested_args_json_with_overrides_success(self):
+        self.__test_nested_args_with_overrides_success('json')
+
+    def test_nested_args_yaml_with_overrides_success(self):
+        self.__test_nested_args_with_overrides_success('yaml')
+
+    def test_nested_args_json_with_overrides_failure(self):
+        self.__test_update_token_override_failure('json', False, update_flags="--env.FOO testing")
+
+    def test_nested_args_json_with_overrides_failure(self):
+        self.__test_update_token_override_failure('yaml', False, update_flags="--env.FOO testing")
 
     def test_show_service_current(self):
         token_name_1 = self.token_name()
