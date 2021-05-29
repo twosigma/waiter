@@ -1441,7 +1441,7 @@ class WaiterCliTest(util.WaiterTest):
     def test_update_nested_args_json_with_overrides_failure(self):
         self.__test_update_token_override_failure('json', False, update_flags="--env.FOO testing")
 
-    def test_update_nested_args_json_with_overrides_failure(self):
+    def test_update_nested_args_yaml_with_overrides_failure(self):
         self.__test_update_token_override_failure('yaml', False, update_flags="--env.FOO testing")
 
     def test_show_service_current(self):
