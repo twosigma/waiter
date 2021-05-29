@@ -491,7 +491,7 @@
                      :x-waiter-env-end_date "null"
                      :x-waiter-env-timestamp "20160713201333949"
                      :x-waiter-env-time2 "201607132013"}
-            {:keys [body service-id] :as response}
+            {:keys [body cookies service-id] :as response}
             (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :path "/environment"))]
         (assert-response-status response http-200-ok)
         (with-service-cleanup
@@ -508,7 +508,13 @@
               (is (every? #(contains? body-json %) ["BEGIN_DATE" "END_DATE" "TIME2" "TIMESTAMP"])
                   (str body-json)))
             (is (= {:BEGIN_DATE "foo" :END_DATE "null" :TIME2 "201607132013" :TIMESTAMP "20160713201333949"}
-                   (:env (response->service-description waiter-url response))))))))
+                   (:env (response->service-description waiter-url response)))))
+          (assert-service-on-all-routers waiter-url service-id cookies)
+          (let [query-params {"env.BEGIN_DATE" "foo"}
+                {:keys [body] :as response} (make-request waiter-url "/apps" :cookies cookies :query-params query-params)
+                services (json/read-str body)]
+            (assert-response-status response http-200-ok)
+            (is (contains? (set (map #(get % "service-id") services)) service-id))))))
 
     (testing "invalid values"
       (let [headers {:accept "application/json"

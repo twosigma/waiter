@@ -690,7 +690,9 @@
             (service-id->service-description-fn [service-id & _]
               (let [id (subs service-id (count "service"))]
                 {"cpus" (Integer/parseInt id)
+                 "env" {"E_ID" (str "id-" id)}
                  "mem" (* 10 (Integer/parseInt id))
+                 "metadata" {"m-id" (str "id-" id)}
                  "metric-group" (str "mg" id)
                  "run-as-user" (if (contains? test-user-services service-id) (str test-user id) "another-user")}))
             (service-id->source-tokens-entries-fn [service-id]
@@ -796,6 +798,58 @@
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
             (is (= #{"service1" "service2"} (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-with-filter-for-single-env-variable"
+        (let [request (assoc request :query-string "env.E_ID=id-1")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
+            (assert-successful-json-response response)
+            (is (= #{"service1"} (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-with-filter-for-multiple-env-variables"
+        (let [request (assoc request :query-string "env.E_ID=id-1&env.E_ID=id-2")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
+            (assert-successful-json-response response)
+            (is (= #{"service1" "service2"} (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-with-filter-for-single-metadata-variable"
+        (let [request (assoc request :query-string "metadata.m-id=id-1")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
+            (assert-successful-json-response response)
+            (is (= #{"service1"} (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-with-filter-for-multiple-metadata-variables"
+        (let [request (assoc request :query-string "metadata.m-id=id-1&metadata.m-id=id-2")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
+            (assert-successful-json-response response)
+            (is (= #{"service1" "service2"} (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
+
+      (testing "list-services-handler:success-with-filter-for-multiple-nested-parameters"
+        (let [request (assoc request :query-string "env.E_ID=id-1&metadata.m-id=id-1")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
+            (assert-successful-json-response response)
+            (is (= #{"service1"} (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
+        (let [request (assoc request :query-string "env.E_ID=id-1&metadata.m-id=id-2")]
+          (let [{:keys [body] :as response}
+                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                                       service-id->service-description-fn service-id->metrics-fn
+                                       service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
+            (assert-successful-json-response response)
+            (is (= #{} (->> body json/read-str walk/keywordize-keys (map :service-id) set))))))
 
       (testing "list-services-handler:success-regular-user-with-filter-for-same-user"
         (let [entitlement-manager (reify authz/EntitlementManager

@@ -2458,7 +2458,7 @@
       {"cluster" "c2" "deleted" true "last-update-time" (- last-update-time-seed 3000) "owner" "owner2"})
     (store-service-description-for-token
       synchronize-fn kv-store history-length limit-per-owner "token5"
-      {"cpus" 4 "mem" 2048 "run-as-user" "*"}
+      {"cpus" 4 "env" {"V1" "e1"} "mem" 2048 "metadata" {"f1" "m1"} "run-as-user" "*"}
       {"cluster" "c1" "last-update-time" (- last-update-time-seed 3000) "owner" "owner3"})
     (store-service-description-for-token
       synchronize-fn kv-store history-length limit-per-owner "token6"
@@ -2831,6 +2831,25 @@
                {"maintenance" false "owner" "owner3" "token" "token6"}
                {"maintenance" false "owner" "owner3" "token" "token7"}
                {"maintenance" false "owner" "owner3" "token" "token8"}}
+             (set (json/read-str body))))
+      (is (nil? (async/poll! token-watch-channels-update-chan))))
+    (let [request {:request-method :get :query-string "env.E1=v0"}
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
+      (is (= http-200-ok status))
+      (is (= #{{"maintenance" false, "owner" "owner3", "token" "token8"}
+               {"maintenance" true, "owner" "owner3", "token" "token9"}}
+             (set (json/read-str body))))
+      (is (nil? (async/poll! token-watch-channels-update-chan))))
+    (let [request {:request-method :get :query-string "env.P2=v2"}
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
+      (is (= http-200-ok status))
+      (is (= #{{"maintenance" true, "owner" "owner3", "token" "token9"}}
+             (set (json/read-str body))))
+      (is (nil? (async/poll! token-watch-channels-update-chan))))
+    (let [request {:request-method :get :query-string "env.V1=e1&metadata.f1=m1"}
+          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
+      (is (= http-200-ok status))
+      (is (= #{{"maintenance" false, "owner" "owner3", "token" "token5"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))))
 
