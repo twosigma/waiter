@@ -1,3 +1,4 @@
+import jinja2
 import json
 import logging
 import os
@@ -157,6 +158,21 @@ def load_data(options):
         content = load_file(input_file)
         if not content:
             raise Exception(f'Unable to load {input_format} from {input_file}.')
+
+        context_file = options.get('context')
+        if context_file:
+            logging.debug(f'reading context as yaml from {context_file}')
+            context_content = load_file(context_file)
+            if not context_content:
+                raise Exception(f'Unable to load yaml from {context_file}.')
+
+            context_obj = YAML.parse(context_content)
+            if not isinstance(context_obj, dict):
+                raise Exception(f'Provided context file must evaluate to a dictionary, instead it is {context_obj}')
+
+            logging.debug(f'applying jinja templating to input using context {context_obj}')
+            jinja_template = jinja2.Template(content)
+            content = jinja_template.render(**context_obj)
 
     content = input_format.parse(content)
     if type(content) is dict:

@@ -109,15 +109,20 @@ def create_or_update_token(clusters, args, _, enforce_cluster, action):
     json_file = args.pop('json', None)
     yaml_file = args.pop('yaml', None)
     input_file = args.pop('input', None)
+    context_file = args.pop('context', None)
     admin_mode = args.pop('admin', None)
     allow_override = args.pop('override', False)
 
     if input_file or json_file or yaml_file:
-        token_fields_from_json = load_data({'data': input_file,
+        token_fields_from_json = load_data({'context': context_file,
+                                            'data': input_file,
                                             'json': json_file,
                                             'yaml': yaml_file})
         fields_from_args_only = False
     else:
+        if context_file:
+            raise Exception('The --context file can only be used when a data file is specified via '
+                            '--input, --json, or --yaml.')
         token_fields_from_json = {}
         fields_from_args_only = True
 
@@ -177,6 +182,10 @@ def add_arguments(parser):
     format_group.add_argument('--json', help='provide the data in a JSON file', dest='json')
     format_group.add_argument('--yaml', help='provide the data in a YAML file', dest='yaml')
     format_group.add_argument('--input', help='provide the data in a JSON/YAML file', dest='input')
+    parser.add_argument('--context', dest='context',
+                        help='can be used only when a JSON or YAML data file has been provided; '
+                             'this YAML file provides the context variables used '
+                             'to render the data file as a Jinja template')
     add_override_flags(parser)
 
 

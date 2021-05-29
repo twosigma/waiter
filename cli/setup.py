@@ -6,6 +6,7 @@ from setuptools import setup
 requirements = [
     'arrow>=0.13.1',
     'humanfriendly>=4.18',
+    'Jinja2>=3.0.1',
     'pyyaml>=3.13',
     'requests>=2.20.0',
     'tabulate>=0.8.3'

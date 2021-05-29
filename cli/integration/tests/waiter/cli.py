@@ -160,6 +160,30 @@ def write_yaml(path, config):
         yaml.safe_dump(config, outfile)
 
 
+class temp_file:
+    """
+    A context manager used to generate and subsequently delete a temporary
+    text file for the CLI. Takes as input context to use.
+    """
+
+    def __init__(self, content):
+        self.content = content
+
+    def write_temp_file(self):
+        path = tempfile.NamedTemporaryFile(delete=False).name
+        with open(path, 'w') as outfile:
+            logging.info('echo \'%s\' > %s' % (self.content, path))
+            outfile.write(self.content)
+        return path
+
+    def __enter__(self):
+        self.path = self.write_temp_file()
+        return self.path
+
+    def __exit__(self, _, __, ___):
+        os.remove(self.path)
+
+
 class temp_config_file:
     """
     A context manager used to generate and subsequently delete a temporary
