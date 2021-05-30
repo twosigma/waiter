@@ -282,11 +282,12 @@
                            :message (str "at least two different cluster urls required, provided: " (vec arguments))}
 
                           :else
-                          (let [sync-result (sync-tokens waiter-api cluster-urls-set limit)
+                          (let [{:keys [details summary] :as sync-result} (sync-tokens waiter-api cluster-urls-set limit)
                                 exit-code (-> (get-in sync-result [:summary :sync :failed])
                                               empty?
                                               (if 0 1))]
-                            (log/info (-> sync-result pp/pprint with-out-str str/trim))
+                            (log/info "sync details:" (into (sorted-map) details))
+                            (log/info "sync summary:" (into (sorted-map) summary))
                             {:exit-code exit-code
                              :message (str "exiting with code " exit-code)}))))
    :option-specs [["-l" "--limit LIMIT" "The maximum number of tokens to attempt to sync, must be between 1 and 10000"
