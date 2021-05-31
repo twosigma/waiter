@@ -745,12 +745,14 @@
         (utils/exception->response ex request)))))
 
 (defn handle-list-tokens-request
-  [kv-store entitlement-manager streaming-timeout-ms tokens-watch-channels-update-chan {:keys [request-method] :as req}]
+  [retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms tokens-watch-channels-update-chan
+   {:keys [request-method] :as req}]
   (try
     (case request-method
       :get (let [{:strs [can-manage-as-user] :as request-params} (-> req ru/query-params-request :query-params)
                  include-deleted (utils/param-contains? request-params "include" "deleted")
                  show-metadata (utils/param-contains? request-params "include" "metadata")
+                 include-service-id (utils/param-contains? request-params "include" "service-id")
                  should-watch? (utils/request-flag request-params "watch")
                  should-filter-maintenance? (contains? request-params "maintenance")
                  maintenance-active? (utils/request-flag request-params "maintenance")
@@ -794,10 +796,23 @@
                             (or (nil? include-requires-parameters)
                                 (= include-requires-parameters (sd/requires-parameters? token-parameters)))))))
                  metadata-transducer-fn
-                 (fn metadata-predicate [entry]
-                   (if show-metadata
-                     (update entry :last-update-time tc/from-long)
-                     (dissoc entry :deleted :etag :last-update-time)))]
+                 (fn metadata-predicate [{:keys [deleted token] :as entry}]
+                   (cond-> entry
+                     show-metadata
+                     (update :last-update-time tc/from-long)
+                     (not show-metadata)
+                     (dissoc :deleted :etag :last-update-time)
+                     (and include-service-id (not deleted))
+                     (assoc :service-id (when-let [{:strs [run-as-user] :as service-description-template}
+                                                   (sd/token->service-parameter-template kv-store token :error-on-missing false)]
+                                          (when (and run-as-user
+                                                     (not (sd/run-as-requester? service-description-template))
+                                                     (not (sd/requires-parameters? service-description-template)))
+                                            (try
+                                              (let [{:keys [latest-descriptor]} (retrieve-descriptor-fn run-as-user token)]
+                                                (:service-id latest-descriptor))
+                                              (catch Exception ex
+                                                (log/info ex "unable to retrieve service id for token" token))))))))]
              (if should-watch?
                (handle-list-tokens-watch streaming-timeout-ms index-filter-fn metadata-transducer-fn tokens-watch-channels-update-chan req)
                (->> owners

@@ -1209,25 +1209,27 @@
 
 (deftest test-retrieve-token-based-fallback
   (let [service-id->service-description-fn (fn [s & _] {"run-as-user" (str s ".rau")})
-        request->descriptor-fn (constantly nil)]
-    (is (nil? (retrieve-token-based-fallback request->descriptor-fn service-id->service-description-fn "s1" #{})))
-    (is (nil? (retrieve-token-based-fallback request->descriptor-fn service-id->service-description-fn "s1" #{"t1" "t2"})))
-    (is (nil? (retrieve-token-based-fallback request->descriptor-fn service-id->service-description-fn "s1" #{"t1" "t2" "t3"})))
+        retrieve-descriptor-fn (constantly nil)]
+    (is (nil? (retrieve-token-based-fallback retrieve-descriptor-fn service-id->service-description-fn "s1" #{})))
+    (is (nil? (retrieve-token-based-fallback retrieve-descriptor-fn service-id->service-description-fn "s1" #{"t1" "t2"})))
+    (is (nil? (retrieve-token-based-fallback retrieve-descriptor-fn service-id->service-description-fn "s1" #{"t1" "t2" "t3"})))
 
-    (let [request->descriptor-fn (constantly {:descriptor {:service-id "s1"}})]
-      (is (nil? (retrieve-token-based-fallback request->descriptor-fn service-id->service-description-fn "s1" #{"t1"}))))
+    (let [retrieve-descriptor-fn (constantly {:descriptor {:service-id "s1"}})]
+      (is (nil? (retrieve-token-based-fallback retrieve-descriptor-fn service-id->service-description-fn "s1" #{"t1"}))))
 
-    (let [request->descriptor-fn (fn [request]
-                                   (is (= "t1" (get-in request [:headers "x-waiter-token"])))
+    (let [retrieve-descriptor-fn (fn [auth-user token]
+                                   (is (= "s1.rau" auth-user))
+                                   (is (= "t1" token))
                                    {:descriptor {:service-id "s1"}
                                     :latest-descriptor {:service-id "s1"}})]
-      (is (nil? (retrieve-token-based-fallback request->descriptor-fn service-id->service-description-fn "s1" #{"t1"}))))
+      (is (nil? (retrieve-token-based-fallback retrieve-descriptor-fn service-id->service-description-fn "s1" #{"t1"}))))
 
-    (let [request->descriptor-fn (fn [request]
-                                   (is (= "t1" (get-in request [:headers "x-waiter-token"])))
+    (let [retrieve-descriptor-fn (fn [auth-user token]
+                                   (is (= "s1.rau" auth-user))
+                                   (is (= "t1" token))
                                    {:descriptor {:service-id "s0"}
                                     :latest-descriptor {:service-id "s1"}})]
-      (is (nil? (retrieve-token-based-fallback request->descriptor-fn nil "s1" #{"t1"})))
+      (is (nil? (retrieve-token-based-fallback retrieve-descriptor-fn nil "s1" #{"t1"})))
       (is (nil? (retrieve-token-based-fallback nil service-id->service-description-fn "s1" #{"t1"})))
       (is (= {:token-fallback {:service-id "s0"}}
-             (retrieve-token-based-fallback request->descriptor-fn service-id->service-description-fn "s1" #{"t1"}))))))
+             (retrieve-token-based-fallback retrieve-descriptor-fn service-id->service-description-fn "s1" #{"t1"}))))))
