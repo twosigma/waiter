@@ -476,17 +476,13 @@
   "Retrieves the fallback service data, in a map of form {:token-fallback {:service-id ...}}, if a fallback service
    that can be accessed using only the token and no other special `x-waiter-` request headers should be used for the
    provided service. Returns `nil` if no such fallback service exists."
-  [request->descriptor-fn service-id->service-description-fn service-id current-for-tokens]
+  [retrieve-descriptor-fn service-id->service-description-fn service-id current-for-tokens]
   (try
     (when (= 1 (count current-for-tokens))
       (let [current-token (first current-for-tokens)
             {:strs [run-as-user]} (service-id->service-description-fn service-id :effective? true)
-            pseudo-request {:authorization/user run-as-user
-                            ;; we do not know env from request headers and cannot support parameterized services
-                            :headers {"x-waiter-token" current-token}
-                            :request-time (t/now)}
             ;; rely on fallback resolution logic for service discovery
-            {:keys [descriptor latest-descriptor]} (request->descriptor-fn pseudo-request)
+            {:keys [descriptor latest-descriptor]} (retrieve-descriptor-fn run-as-user current-token)
             request-service-id (:service-id descriptor)
             latest-service-id (:service-id latest-descriptor)]
         (when (and (= service-id latest-service-id)
@@ -495,3 +491,12 @@
     (catch Throwable th
       (log/error th "error in computing token-based fallback for" service-id)
       nil)))
+
+(defn retrieve-descriptor
+  "Retrieves the descriptor for a pseudo request made by auth-user specifying the provided token."
+  [request->descriptor-fn run-as-user token]
+  (let [pseudo-request {:authorization/user run-as-user
+                        ;; we do not know env from request headers and cannot support parameterized services
+                        :headers {"x-waiter-token" token}
+                        :request-time (t/now)}]
+    (request->descriptor-fn pseudo-request)))

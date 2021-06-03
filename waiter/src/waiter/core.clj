@@ -1051,10 +1051,13 @@
                                    (store-source-tokens-fn service-id source-tokens))
                                  (store-reference-fn service-id reference-type->entry)
                                  result)))
-   :retrieve-token-based-fallback-fn (pc/fnk [request->descriptor-fn service-id->service-description-fn]
+   :retrieve-descriptor-fn (pc/fnk [request->descriptor-fn]
+                             (fn retrieve-descriptor-fn [run-as-user token]
+                               (descriptor/retrieve-descriptor request->descriptor-fn run-as-user token)))
+   :retrieve-token-based-fallback-fn (pc/fnk [retrieve-descriptor-fn service-id->service-description-fn]
                                        (fn retrieve-token-based-fallback-fn [service-id current-for-tokens]
                                          (descriptor/retrieve-token-based-fallback
-                                           request->descriptor-fn service-id->service-description-fn
+                                           retrieve-descriptor-fn service-id->service-description-fn
                                            service-id current-for-tokens)))
    :router-metrics-helpers (pc/fnk [[:state passwords router-metrics-agent]]
                              (let [password (first passwords)]
@@ -1821,6 +1824,7 @@
                                waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
                                attach-service-defaults-fn tokens-update-chan request)))))
    :token-list-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
+                                   [:routines retrieve-descriptor-fn]
                                    [:settings [:instance-request-properties streaming-timeout-ms]]
                                    [:state entitlement-manager kv-store]
                                    wrap-secure-request-fn]
@@ -1828,7 +1832,7 @@
                               (wrap-secure-request-fn
                                 (fn token-handler-fn [request]
                                   (token/handle-list-tokens-request
-                                    kv-store entitlement-manager streaming-timeout-ms tokens-watch-channels-update-chan
+                                    retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms tokens-watch-channels-update-chan
                                     request)))))
    :token-owners-handler-fn (pc/fnk [[:state kv-store]
                                      wrap-secure-request-fn]
