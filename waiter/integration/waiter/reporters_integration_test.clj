@@ -17,13 +17,21 @@
   (:require [clojure.test :refer :all]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
-            [waiter.util.date-utils :as du]))
+            [waiter.util.date-utils :as du]
+            [waiter.util.utils :as utils]))
 
 (defn- get-graphite-reporter-state
   [waiter-url cookies]
   (let [{:keys [body] :as response} (make-request waiter-url "/state/codahale-reporters" :method :get :cookies cookies)]
     (assert-response-status response http-200-ok)
     (-> body str try-parse-json (get-in ["state" "graphite"]))))
+
+(defn- retrieve-graphite-reporter-last-event-time-ms
+  [router-url cookies]
+  (let [state (get-graphite-reporter-state router-url cookies)
+        {:strs [last-connect-failed-time last-flush-failed-time last-reporting-time last-send-failed-time]} state
+        last-event-time (reduce utils/nil-safe-max [last-connect-failed-time last-flush-failed-time last-reporting-time last-send-failed-time])]
+    (some-> last-event-time du/str-to-date .getMillis)))
 
 (defn- wait-for-period
   [period-ms fun]
@@ -32,35 +40,23 @@
 
 (deftest ^:parallel ^:integration-fast test-graphite-metrics-reporting
   (testing-using-waiter-url
-    (let [{:keys [service-id cookies]}
-          (make-request-with-debug-info {:x-waiter-name (rand-name)} #(make-kitchen-request waiter-url %))]
-      (with-service-cleanup
-        service-id
-        (doseq [router-url (vals (routers waiter-url))]
-          (let [{:keys [graphite]} (get-in (waiter-settings router-url :cookies cookies) [:metrics-config :codahale-reporters])]
-            (when graphite
-              (let [{:keys [period-ms]} graphite]
-                (is (wait-for-period period-ms #(-> (get-graphite-reporter-state router-url cookies)
-                                                    (get "last-report-successful")
-                                                    some?)))
-                (let [state (get-graphite-reporter-state router-url cookies)
-                      last-event-time-str "last-reporting-time"
-                      last-event-time (get state last-event-time-str)
-                      last-report-successful (get state "last-report-successful")
-                      _ (is last-report-successful)
-                      _ (is last-event-time)
-                      last-event-time-ms (-> last-event-time du/str-to-date .getMillis)
-                      next-last-event-time-ms (wait-for-period
-                                                period-ms
-                                                #(let [next-last-event-time-ms (-> (get-graphite-reporter-state router-url cookies)
-                                                                                   (get last-event-time-str)
-                                                                                   du/str-to-date
-                                                                                   .getMillis)]
-                                                   (if (not= next-last-event-time-ms last-event-time-ms)
-                                                     next-last-event-time-ms nil)))
-                      ;; expected precision for system "sleep" calls. a sleep call will sleep the right duration within 500 ms.
-                      sleep_precision 2000]
-                  (is next-last-event-time-ms)
-                  (when next-last-event-time-ms
-                    (is (< (Math/abs (- next-last-event-time-ms last-event-time-ms period-ms))
-                           sleep_precision))))))))))))
+    (let [cookies (all-cookies waiter-url)]
+      (doseq [router-url (vals (routers waiter-url))]
+        (let [{:keys [graphite]} (get-in (waiter-settings router-url :cookies cookies) [:metrics-config :codahale-reporters])]
+          (when graphite
+            (let [{:keys [period-ms]} graphite]
+              (is (wait-for-period period-ms #(-> (get-graphite-reporter-state router-url cookies)
+                                                (get "last-report-successful")
+                                                some?)))
+              (let [last-event-time-ms (retrieve-graphite-reporter-last-event-time-ms router-url cookies)
+                    _ (is last-event-time-ms)
+                    next-last-event-time-ms (wait-for-period
+                                              period-ms
+                                              #(let [next-last-event-time-ms (retrieve-graphite-reporter-last-event-time-ms router-url cookies)]
+                                                 (when (not= next-last-event-time-ms last-event-time-ms)
+                                                   next-last-event-time-ms)))
+                    ;; expected precision for system "sleep" calls. a sleep call will sleep the right duration within 500 ms.
+                    sleep_precision 2000]
+                (is next-last-event-time-ms)
+                (when next-last-event-time-ms
+                  (is (< (Math/abs (- next-last-event-time-ms last-event-time-ms period-ms)) sleep_precision)))))))))))
