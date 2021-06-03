@@ -1222,8 +1222,9 @@
                            codahale-reporters))
    :dynamic-config-maintainer (pc/fnk [[:settings [:dynamic-config path poll-interval-ms schema]]
                                        [:state clock]]
-                                (let [timer-ch (au/timer-chan poll-interval-ms)]
-                                  (settings/start-dynamic-config-maintainer clock timer-ch path schema)))
+                                (let [timer-ch (au/timer-chan poll-interval-ms)
+                                      config-schema (var-get (utils/resolve-symbol! schema))]
+                                  (settings/start-dynamic-config-maintainer clock timer-ch path config-schema)))
    :fallback-maintainer (pc/fnk [[:state fallback-state-atom]
                                  router-state-maintainer]
                           (let [{{:keys [router-state-push-mult]} :maintainer} router-state-maintainer

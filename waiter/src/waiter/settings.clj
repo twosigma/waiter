@@ -50,7 +50,7 @@
                                               (s/required-key :min-hosts) schema/positive-int}
    (s/required-key :dynamic-config) {(s/required-key :path) schema/non-empty-string
                                      (s/required-key :poll-interval-ms) schema/positive-int
-                                     (s/required-key :schema) s/Any}
+                                     (s/required-key :schema) s/Symbol}
    (s/required-key :entitlement-config) (s/constrained
                                           {:kind s/Keyword
                                            (s/optional-key :cache) {(s/required-key :threshold) schema/positive-int
@@ -299,7 +299,7 @@
                              :min-hosts 2}
    :dynamic-config {:path "./dynamic-config.edn"
                     :poll-interval-ms 2000
-                    :schema {}}
+                    :schema 'waiter.settings/default-dynamic-config-schema}
    :entitlement-config {:kind :simple
                         :simple {:factory-fn 'waiter.authorization/->SimpleEntitlementManager}}
    :health-check-config {:health-check-accept-header "application/json;q=1.0, */*;q=0.9"
@@ -537,6 +537,8 @@
     (assoc
       (load-settings-file config-file)
       :git-version git-version)))
+
+(def default-dynamic-config-schema {})
 
 (defn start-dynamic-config-maintainer
   "Creates a daemon process which loads configuration dynamically via polling a configuration .edn file periodically.
