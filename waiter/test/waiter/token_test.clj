@@ -2875,20 +2875,20 @@
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "env.E1=v0"}
-          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
+          {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
       (is (= #{{"maintenance" false, "owner" "owner3", "token" "token8"}
                {"maintenance" true, "owner" "owner3", "token" "token9"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "env.P2=v2"}
-          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
+          {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
       (is (= #{{"maintenance" true, "owner" "owner3", "token" "token9"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "env.V1=e1&metadata.f1=m1"}
-          {:keys [body status]} (handle-list-tokens-request kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
+          {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
       (is (= #{{"maintenance" false, "owner" "owner3", "token" "token5"}}
              (set (json/read-str body))))
