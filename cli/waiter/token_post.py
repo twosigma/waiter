@@ -185,7 +185,7 @@ def add_arguments(parser):
     parser.add_argument('--context', dest='context',
                         help='can be used only when a JSON or YAML data file has been provided; '
                              'this YAML file provides the context variables used '
-                             'to render the data file as a Jinja template')
+                             'to render the data file as a template')
     add_override_flags(parser)
 
 

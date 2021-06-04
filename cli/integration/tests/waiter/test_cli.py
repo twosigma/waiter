@@ -1635,7 +1635,7 @@ class WaiterCliTest(util.WaiterTest):
     def __test_create_update_token_context_success(self, action, file_format):
         token_name = self.token_name()
         context_fields = {'fee': 'bar', 'fie': 'baz', 'foe': 'fum'}
-        token_fields = {'cmd': '{{ fee }}-{{ fie }}', 'cpus': 0.2, 'mem': 256, 'metadata': {'foe': '{{ foe }}'}}
+        token_fields = {'cmd': '${fee}-${fie}', 'cpus': 0.2, 'mem': 256, 'metadata': {'foe': '${foe}'}}
         try:
             if action == 'update':
                 util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'mem': 128})

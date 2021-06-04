@@ -1,7 +1,7 @@
-import jinja2
 import json
 import logging
 import os
+import string
 import sys
 
 import yaml
@@ -170,9 +170,9 @@ def load_data(options):
             if not isinstance(context_obj, dict):
                 raise Exception(f'Provided context file must evaluate to a dictionary, instead it is {context_obj}')
 
-            logging.debug(f'applying jinja templating to input using context {context_obj}')
-            jinja_template = jinja2.Template(content)
-            content = jinja_template.render(**context_obj)
+            logging.debug(f'applying string templating to input using context {context_obj}')
+            string_template = string.Template(content)
+            content = string_template.substitute(context_obj)
 
     content = input_format.parse(content)
     if type(content) is dict:
