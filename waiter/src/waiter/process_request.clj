@@ -17,6 +17,7 @@
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.core.async.impl.protocols :as protocols]
+            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [full.async :as fa]
@@ -875,44 +876,61 @@
             (utils/data->error-response request)))
       (handler request))))
 
+(defn make-unsupported-waiter-headers-handler
+  "Middleware to check for unsupported headers (e.g. on the fly headers)"
+  [handler unsupported-headers on-header-error]
+  (fn unsupported-headers-handler [{{:keys [token waiter-headers]} :waiter-discovery :as request}]
+    (let [unsupported-headers-in-request (set/intersection (set (keys waiter-headers)) unsupported-headers)]
+      (if (empty? unsupported-headers-in-request)
+        (handler request)
+        (do
+          (log/info "Unsupported waiter headers found" {:token token
+                                                        :unsupported-headers-in-request unsupported-headers-in-request})
+          (on-header-error {:message "Unsupported waiter headers found"
+                            :status http-400-bad-request
+                            :details {:unsupported-headers-in-request unsupported-headers-in-request}}
+                           request))))))
+
+(defn wrap-unsupported-waiter-headers
+  "request middleware to check if unsupported headers are provided (e.g. on the fly headers)"
+  [handler unsupported-headers]
+  (make-unsupported-waiter-headers-handler
+    handler unsupported-headers utils/data->error-response))
+
+(defn wrap-unsupported-waiter-headers-acceptor
+  "websocket-request-acceptor middleware to check if unsupported headers are provided"
+  [handler unsupported-headers]
+  (make-unsupported-waiter-headers-handler
+    handler unsupported-headers (fn send-ws-error [{:keys [message status]} {^ServletUpgradeResponse upgrade-response :upgrade-response}]
+                                  (.sendError upgrade-response status message)
+                                  status)))
+
 (defn- make-maintenance-mode
   "Check if a service's token is in maintenance mode and pass a 503 response
-  with a custom message if specified to the on-maintenance-mode-error parameter.
-  Check if x-waiter-maintenance header is set and pass 400 response to the
-  on-header-error parameter."
-  [handler on-header-error on-maintenance-mode-error]
-  (fn maintenance-mode-handler [{{:keys [service-description-template token waiter-headers]
+  with a custom message if specified to the on-maintenance-mode-error parameter."
+  [handler on-maintenance-mode-error]
+  (fn maintenance-mode-handler [{{:keys [service-description-template token]
          {:strs [maintenance owner]} :token-metadata} :waiter-discovery
         :as request}]
     (let [response-map {:error-class error-class-maintenance
                         :name (get service-description-template "name")
                         :token token
                         :token-owner owner}]
-      (cond (contains? waiter-headers "x-waiter-maintenance")
-            (do
-              (log/info "x-waiter-maintenance is not supported as an on-the-fly header"
-                        {:service-description service-description-template :token token})
-              (on-header-error {:message "The maintenance parameter is not supported for on-the-fly requests"
-                                :status http-400-bad-request
-                                :waiter-headers waiter-headers}
-                               request))
-            (some? maintenance)
-            (do
-              (log/info (str "token " token " is in maintenance mode"))
-              (meters/mark! (metrics/waiter-meter "maintenance" "response-rate"))
-              (on-maintenance-mode-error {:details response-map
-                                          :message (get maintenance "message")
-                                          :status http-503-service-unavailable}
-                                         request))
-            :else (handler request)))))
+      (if (some? maintenance)
+        (do
+          (log/info (str "token " token " is in maintenance mode"))
+          (meters/mark! (metrics/waiter-meter "maintenance" "response-rate"))
+          (on-maintenance-mode-error {:details response-map
+                                      :message (get maintenance "message")
+                                      :status http-503-service-unavailable}
+                                     request))
+        (handler request)))))
 
 (defn wrap-maintenance-mode
   "Middleware to check for maintenance mode of a token and if improper maintenance mode header is provided"
   [handler]
   (make-maintenance-mode
     handler
-    (fn send-header-error [data-map request]
-      (utils/data->error-response data-map request))
     (fn send-maintenance-mode-error [data-map request]
       (utils/data->maintenance-mode-response data-map request))))
 
@@ -923,7 +941,7 @@
   (let [on-error (fn send-ws-error [{:keys [message status]} {^ServletUpgradeResponse upgrade-response :upgrade-response}]
                    (.sendError upgrade-response status message)
                    status)]
-    (make-maintenance-mode handler on-error on-error)))
+    (make-maintenance-mode handler on-error)))
 
 (defn wrap-too-many-requests
   "Check if a service has more pending requests than max-queue-length and immediately return a 503"

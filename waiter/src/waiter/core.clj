@@ -1532,6 +1532,7 @@
                                                  instance-request-properties determine-priority-fn process-response-fn
                                                  pr/abort-http-request-callback-factory local-usage-agent request))))
    :process-request-wrapper-fn (pc/fnk [[:routines wrap-service-discovery-fn]
+                                        [:settings [:instance-request-properties unsupported-headers]]
                                         [:state interstitial-state-atom]
                                         wrap-descriptor-fn wrap-secure-request-fn]
                                  ; If adding new middleware for process-request-wrapper-fn, consider adding the same middleware to
@@ -1547,6 +1548,7 @@
                                      auth/wrap-auth-bypass
                                      handler/wrap-https-redirect
                                      pr/wrap-maintenance-mode
+                                     (pr/wrap-unsupported-waiter-headers unsupported-headers)
                                      wrap-service-discovery-fn)))
    :profile-list-handler-fn (pc/fnk [[:state profile->defaults]
                                      wrap-secure-request-fn]
@@ -1894,14 +1896,20 @@
                                                (fn waiter-request-interstitial-handler-fn [request]
                                                  (interstitial/display-interstitial-handler request))))
    :websocket-request-acceptor (pc/fnk [[:routines wrap-service-discovery-fn]
+                                        [:settings [:instance-request-properties unsupported-headers]]
                                         [:state server-name]
                                         websocket-secure-request-acceptor-fn]
                                  ; If adding new middleware for websocket upgrade requests, consider adding the same middleware to
                                  ; process-request-wrapper-fn
-                                 (let [handler (-> #(ws/request-subprotocol-acceptor (:upgrade-request %) (:upgrade-response %))
+                                 (let [temp-fn (fn [handler]
+                                                 (fn [request]
+                                                   (println "testing:" request)
+                                                   (handler request)))
+                                       handler (-> #(ws/request-subprotocol-acceptor (:upgrade-request %) (:upgrade-response %))
                                                    websocket-secure-request-acceptor-fn
                                                    auth/wrap-auth-bypass-acceptor
                                                    pr/wrap-maintenance-mode-acceptor
+                                                   (pr/wrap-unsupported-waiter-headers-acceptor unsupported-headers)
                                                    handler/wrap-wss-redirect
                                                    ws/wrap-service-discovery-data
                                                    wrap-service-discovery-fn)]
