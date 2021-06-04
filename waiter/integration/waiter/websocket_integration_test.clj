@@ -216,7 +216,7 @@
         (finally
           (delete-token-and-assert waiter-url token))))))
 
-(deftest ^:parallel ^:integration-fast test-request-maintenance-mode
+(deftest ^:parallel ^:integration-fast test-request-unsupported-headers
   (testing-using-waiter-url
     (let [token (str "token-" (rand-name))
           token-description (assoc (kitchen-request-headers :prefix "")
@@ -228,25 +228,6 @@
                               :run-as-user (retrieve-username)
                               :token token)
           waiter-headers {"x-waiter-token" token}]
-      (testing "should not upgrade if token is in maintenance mode"
-        (try
-          (let [token-response (post-token waiter-url token-description)]
-            (assert-response-status token-response http-200-ok)
-            (try
-              (let [response-promise (promise)
-                    connection (ws-client/connect!
-                                 (websocket-client-factory)
-                                 (ws-url waiter-url "/websocket-auth")
-                                 (fn [{:keys [out]}]
-                                   (deliver response-promise :success)
-                                   (async/close! out))
-                                 {:middleware (fn [_ ^UpgradeRequest request]
-                                                (websocket/add-headers-to-upgrade-request! request waiter-headers))})
-                    [close-code error] (connection->ctrl-data connection)]
-                (assert-websocket-upgrade-error-response close-code error  "Unexpected HTTP Response Status Code: 503 Service Unavailable")
-                (is (not (realized? response-promise))))))
-          (finally
-            (delete-token-and-assert waiter-url token))))
 
       (testing "should give 400 if x-waiter-maintenance header is specified"
         (try
@@ -268,6 +249,42 @@
                 (is (not (realized? response-promise))))))
           (finally
             (delete-token-and-assert waiter-url token)))))))
+
+(deftest ^:parallel ^:integration-fast test-request-maintenance-mode
+  (testing-using-waiter-url
+    (let [token (str "token-" (rand-name))
+          token-description (assoc (kitchen-request-headers :prefix "")
+                              :authentication "disabled"
+                              :metric-group "waiter_ws_test"
+                              :name (rand-name)
+                              :permitted-user "*"
+                              :run-as-user (retrieve-username)
+                              :token token)
+          waiter-headers {"x-waiter-token" token}
+          waiter-settings (waiter-settings waiter-url)
+          waiter-unsupported-headers (get-in waiter-settings [:instance-request-properties :unsupported-headers])]
+
+      (testing "should give 400 if unsupported headers are specified"
+        (doseq [waiter-header waiter-unsupported-headers]
+          (try
+            (let [token-response (post-token waiter-url token-description)]
+              (assert-response-status token-response http-200-ok)
+              (try
+                (let [response-promise (promise)
+                      connection (ws-client/connect!
+                                   (websocket-client-factory)
+                                   (ws-url waiter-url "/websocket-auth")
+                                   (fn [{:keys [out]}]
+                                     (deliver response-promise :success)
+                                     (async/close! out))
+                                   {:middleware (fn [_ ^UpgradeRequest request]
+                                                  (.setHeader request waiter-header "some value")
+                                                  (websocket/add-headers-to-upgrade-request! request waiter-headers))})
+                      [close-code error] (connection->ctrl-data connection)]
+                  (assert-websocket-upgrade-error-response close-code error  "Unexpected HTTP Response Status Code: 400 Bad Request")
+                  (is (not (realized? response-promise))))))
+            (finally
+              (delete-token-and-assert waiter-url token))))))))
 
 (deftest ^:parallel ^:integration-fast test-request-wss-redirect
   (testing-using-waiter-url
@@ -315,29 +332,7 @@
                 (finally
                   (delete-service waiter-url waiter-headers))))
             (finally
-              (delete-token-and-assert waiter-url token)))))
-
-      (testing "should not upgrade if not wss and https-redirect is enabled"
-        (try
-          (let [token-response (post-token waiter-url token-description)]
-            (assert-response-status token-response http-200-ok)
-            (try
-              (let [response-promise (promise)
-                    ^HttpClient http-client (HttpClient.)
-                    _ (.setFollowRedirects http-client false)
-                    connection (ws-client/connect!
-                                 (websocket-client-factory (HttpClient.))
-                                 (ws-url waiter-url "/websocket-auth")
-                                 (fn [{:keys [out]}]
-                                   (deliver response-promise :success)
-                                   (async/close! out))
-                                 {:middleware (fn [_ ^UpgradeRequest request]
-                                                (websocket/add-headers-to-upgrade-request! request waiter-headers))})
-                    [close-code error] (connection->ctrl-data connection)]
-                (assert-websocket-upgrade-error-response close-code error "301 Moved Permanently")
-                (is (not (realized? response-promise))))))
-          (finally
-            (delete-token-and-assert waiter-url token)))))))
+              (delete-token-and-assert waiter-url token))))))))
 
 (deftest ^:parallel ^:integration-fast test-request-authentication-and-on-the-fly-headers
   (testing-using-waiter-url
