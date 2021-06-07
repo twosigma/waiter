@@ -226,7 +226,9 @@
                               :permitted-user "*"
                               :run-as-user (retrieve-username)
                               :token token)
-          waiter-headers {"x-waiter-token" token}]
+          waiter-headers {"x-waiter-token" token}
+          settings (waiter-settings waiter-url)
+          waiter-unsupported-headers (get-in settings [:instance-request-properties :unsupported-headers])]
 
       (testing "should give 400 if unsupported headers are specified"
         (doseq [waiter-header waiter-unsupported-headers]
@@ -327,6 +329,28 @@
                   (is (nil? x-waiter-auth-principal)))
                 (finally
                   (delete-service waiter-url waiter-headers))))
+            (finally
+              (delete-token-and-assert waiter-url token))))
+
+        (testing "should not upgrade if not wss and https-redirect is enabled"
+          (try
+            (let [token-response (post-token waiter-url token-description)]
+              (assert-response-status token-response http-200-ok)
+              (try
+                (let [response-promise (promise)
+                      ^HttpClient http-client (HttpClient.)
+                      _ (.setFollowRedirects http-client false)
+                      connection (ws-client/connect!
+                                   (websocket-client-factory (HttpClient.))
+                                   (ws-url waiter-url "/websocket-auth")
+                                   (fn [{:keys [out]}]
+                                     (deliver response-promise :success)
+                                     (async/close! out))
+                                   {:middleware (fn [_ ^UpgradeRequest request]
+                                                  (websocket/add-headers-to-upgrade-request! request waiter-headers))})
+                      [close-code error] (connection->ctrl-data connection)]
+                  (assert-websocket-upgrade-error-response close-code error "301 Moved Permanently")
+                  (is (not (realized? response-promise))))))
             (finally
               (delete-token-and-assert waiter-url token))))))))
 
