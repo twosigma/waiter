@@ -1901,11 +1901,7 @@
                                         websocket-secure-request-acceptor-fn]
                                  ; If adding new middleware for websocket upgrade requests, consider adding the same middleware to
                                  ; process-request-wrapper-fn
-                                 (let [temp-fn (fn [handler]
-                                                 (fn [request]
-                                                   (println "testing:" request)
-                                                   (handler request)))
-                                       handler (-> #(ws/request-subprotocol-acceptor (:upgrade-request %) (:upgrade-response %))
+                                 (let [handler (-> #(ws/request-subprotocol-acceptor (:upgrade-request %) (:upgrade-response %))
                                                    websocket-secure-request-acceptor-fn
                                                    auth/wrap-auth-bypass-acceptor
                                                    pr/wrap-maintenance-mode-acceptor
