@@ -1506,7 +1506,7 @@
               response (make-kitchen-request waiter-url request-headers :path "/hello")]
           (assert-response-status response http-503-service-unavailable))))))
 
-(deftest test-request-unsupported-headers
+(deftest  ^:parallel ^:integration-fast test-request-unsupported-headers
   (testing-using-waiter-url
     (let [settings (waiter-settings waiter-url)
           waiter-unsupported-headers (get-in settings [:instance-request-properties :unsupported-headers])]
