@@ -216,7 +216,7 @@
         (finally
           (delete-token-and-assert waiter-url token))))))
 
-(deftest ^:parallel ^:integration-fast test-request-unsupported-headers
+(deftest ^:parallel ^:integration-fast test-request-ws-unsupported-headers
   (testing-using-waiter-url
     (let [token (str "token-" (rand-name))
           token-description (assoc (kitchen-request-headers :prefix "")
