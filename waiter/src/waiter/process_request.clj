@@ -876,35 +876,6 @@
             (utils/data->error-response request)))
       (handler request))))
 
-(defn make-unsupported-waiter-headers-handler
-  "Middleware to check for unsupported headers (e.g. on the fly headers)"
-  [handler unsupported-headers on-header-error]
-  (fn unsupported-headers-handler [{{:keys [token waiter-headers]} :waiter-discovery :as request}]
-    (let [unsupported-headers-in-request (set/intersection (set (keys waiter-headers)) unsupported-headers)]
-      (if (empty? unsupported-headers-in-request)
-        (handler request)
-        (do
-          (log/info "Unsupported waiter headers found" {:token token
-                                                        :unsupported-headers-in-request unsupported-headers-in-request})
-          (on-header-error {:message "Unsupported waiter headers found"
-                            :status http-400-bad-request
-                            :details {:unsupported-headers-in-request unsupported-headers-in-request}}
-                           request))))))
-
-(defn wrap-unsupported-waiter-headers
-  "request middleware to check if unsupported headers are provided (e.g. on the fly headers)"
-  [handler unsupported-headers]
-  (make-unsupported-waiter-headers-handler
-    handler unsupported-headers utils/data->error-response))
-
-(defn wrap-unsupported-waiter-headers-acceptor
-  "websocket-request-acceptor middleware to check if unsupported headers are provided"
-  [handler unsupported-headers]
-  (make-unsupported-waiter-headers-handler
-    handler unsupported-headers (fn send-ws-error [{:keys [message status]} {^ServletUpgradeResponse upgrade-response :upgrade-response}]
-                                  (.sendError upgrade-response status message)
-                                  status)))
-
 (defn- make-maintenance-mode
   "Check if a service's token is in maintenance mode and pass a 503 response
   with a custom message if specified to the on-maintenance-mode-error parameter."
