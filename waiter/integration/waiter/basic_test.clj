@@ -1513,8 +1513,8 @@
 
       (testing "should give 400 if unsupported headers are specified"
         (doseq [waiter-header waiter-unsupported-headers]
-          (let [{:keys [service-id body] :as response} (make-request-with-debug-info
-                                              {:x-waiter-name (rand-name)
+          (let [{:keys [service-id body] :as response}
+                (make-request-with-debug-info {:x-waiter-name (rand-name)
                                                waiter-header "some value"}
                                               #(make-kitchen-request waiter-url % :path "/hello"))]
             (assert-response-status response http-400-bad-request)
