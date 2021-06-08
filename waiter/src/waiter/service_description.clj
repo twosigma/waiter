@@ -1551,7 +1551,7 @@
   "Processing the request headers to identify the Waiter service parameters.
    Returns a map of the waiter and passthrough headers, the identified token, and
    the service description template created from the token."
-  [kv-store attach-service-defaults-fn attach-token-defaults-fn waiter-hostnames headers]
+  [kv-store attach-service-defaults-fn attach-token-defaults-fn waiter-hostnames headers unsupported-headers]
   (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
         {:keys [token]} (retrieve-token-from-service-description-or-hostname
                           waiter-headers passthrough-headers waiter-hostnames)
@@ -1571,7 +1571,15 @@
         token-metadata (when token
                          (-> (token->token-parameters kv-store token :error-on-missing false)
                            (attach-token-defaults-fn)
-                           (select-keys token-metadata-keys)))]
+                           (select-keys token-metadata-keys)))
+        unsupported-headers-in-request (set/intersection (set (keys waiter-headers)) unsupported-headers)]
+    (when (not-empty unsupported-headers-in-request)
+      (let [error-details {:unsupported-headers-in-request unsupported-headers-in-request}]
+        (log/info "Unsupported waiter headers found" error-details)
+        (throw (ex-info "Unsupported waiter headers found"
+                        {:details error-details
+                         :log-level :info
+                         :status http-400-bad-request}))))
     {:passthrough-headers passthrough-headers
      :service-description-template service-description-template
      :token token

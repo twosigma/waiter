@@ -444,9 +444,9 @@
       ex
       (ex-info (str "Internal error: " (.getMessage ex)) (assoc error-data :status http-500-internal-server-error) ex))))
 
-(defn exception->response
-  "Converts an exception into a ring response."
-  [^Exception ex request]
+(defn exception->response-metadata
+  "Converts an exception into response metadata."
+  [^Exception ex]
   (let [wrapped-ex (wrap-unhandled-exception ex)
         {:keys [friendly-error-message headers log-level message status] :as data} (ex-data wrapped-ex)
         response-msg (if (or message friendly-error-message)
@@ -457,11 +457,16 @@
       :info (log/info (.getMessage wrapped-ex))
       :warn (log/warn wrapped-ex response-msg)
       (log/error wrapped-ex response-msg))
-    (-> {:details data
-         :headers processed-headers
-         :message response-msg
-         :status status}
-        (data->error-response request))))
+    {:details data
+     :headers processed-headers
+     :message response-msg
+     :status status}))
+
+(defn exception->response
+  "Converts an exception into a ring response."
+  [^Exception ex request]
+  (-> (exception->response-metadata ex)
+      (data->error-response request)))
 
 (defmacro log-and-suppress-when-exception-thrown
   "Executes the body inside a try-catch block and suppresses any thrown exceptions."

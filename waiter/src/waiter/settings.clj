@@ -72,7 +72,8 @@
                                                   (s/required-key :lingering-request-threshold-ms) schema/positive-int
                                                   (s/required-key :output-buffer-size) schema/positive-int
                                                   (s/required-key :queue-timeout-ms) schema/positive-int
-                                                  (s/required-key :streaming-timeout-ms) schema/positive-int}
+                                                  (s/required-key :streaming-timeout-ms) schema/positive-int
+                                                  (s/required-key :unsupported-headers) #{schema/non-empty-string}}
    (s/required-key :instance-tracker-config) {(s/required-key :instance-failure-handler) (s/constrained
                                                                                            {:kind s/Keyword
                                                                                             s/Keyword schema/require-symbol-factory-fn}
@@ -310,7 +311,8 @@
                                  :lingering-request-threshold-ms 60000 ; 1 minute
                                  :output-buffer-size 4096 ;; 4 KiB
                                  :queue-timeout-ms 300000
-                                 :streaming-timeout-ms 20000}
+                                 :streaming-timeout-ms 20000
+                                 :unsupported-headers #{"x-waiter-maintenance"}}
    :instance-tracker-config {:instance-failure-handler {:kind :default
                                                         :default {:factory-fn 'waiter.instance-tracker/create-instance-failure-event-handler
                                                                   :config {:recent-failed-instance-cache {:threshold 5000

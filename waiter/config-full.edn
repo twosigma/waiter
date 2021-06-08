@@ -876,7 +876,11 @@
                                :queue-timeout-ms 300000
 
                                ;; Configures the idle timeout (milliseconds) in the response output stream:
-                               :streaming-timeout-ms 20000}
+                               :streaming-timeout-ms 20000
+
+                               ;; unsupported waiter headers which will cause requests to fail if these headers
+                               ;; are provided
+                               :unsupported-headers #{"x-waiter-maintenance"}}
 
  ; ---------- Load Balancing ----------
 

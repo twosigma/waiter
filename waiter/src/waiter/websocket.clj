@@ -550,3 +550,13 @@
                             (when (ru/error-response? response)
                               (async/close! out))
                             response)))))
+
+(defn wrap-ws-acceptor-error-handling
+  "wraps a handler and catches any uncaught exceptions and sends an appropriate error response"
+  [handler]
+  (fn wrap-ws-error-handling-fn [{^ServletUpgradeResponse upgrade-response :upgrade-response :as request}]
+    (try
+      (handler request)
+      (catch Exception e
+        (let [{:keys [message status]} (utils/exception->response-metadata e)]
+          (.sendError upgrade-response status message))))))

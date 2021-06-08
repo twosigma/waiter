@@ -403,15 +403,6 @@
       (is (= http-503-service-unavailable status))
       (is (str/includes? body maintenance-message))))
 
-  (testing "returns 400 if x-waiter-maintenance is specified in headers"
-    (let [handler (wrap-maintenance-mode (fn [_] {:status http-200-ok}))
-          request {:waiter-discovery {:token-metadata {}
-                                      :token "token"
-                                      :waiter-headers {"x-waiter-maintenance" "some value"}}}
-          {:keys [status body]} (handler request)]
-      (is (= http-400-bad-request status))
-      (is (str/includes? body "The maintenance parameter is not supported for on-the-fly requests"))))
-
   (testing "passes apps by default"
     (let [handler (wrap-maintenance-mode (fn [_] {:status http-200-ok}))
           request {:waiter-discovery {:token-metadata {}
@@ -433,18 +424,6 @@
       (is (= http-503-service-unavailable response-status))
       (is (= http-503-service-unavailable (.getStatusCode upgrade-response)))
       (is (str/includes? (.getStatusReason upgrade-response) maintenance-message))))
-
-  (testing "returns 400 if x-waiter-maintenance is specified in headers"
-    (let [handler (wrap-maintenance-mode-acceptor (fn [_] (is false "Not supposed to call this handler") true))
-          upgrade-response (reified-upgrade-response)
-          request {:upgrade-response upgrade-response
-                   :waiter-discovery {:token-metadata {}
-                                      :token "token"
-                                      :waiter-headers {"x-waiter-maintenance" "some value"}}}
-          response-status (handler request)]
-      (is (= http-400-bad-request response-status))
-      (is (= http-400-bad-request (.getStatusCode upgrade-response)))
-      (is (str/includes? (.getStatusReason upgrade-response) "The maintenance parameter is not supported for on-the-fly requests"))))
 
   (testing "passes apps by default"
     (let [handler (wrap-maintenance-mode-acceptor (fn [_] true))

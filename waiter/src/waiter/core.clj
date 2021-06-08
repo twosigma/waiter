@@ -972,11 +972,12 @@
                             (let [position-generator-atom (atom 0)]
                               (fn determine-priority-fn [waiter-headers]
                                 (pr/determine-priority position-generator-atom waiter-headers))))
-   :discover-service-parameters-fn (pc/fnk [[:state kv-store waiter-hostnames]
+   :discover-service-parameters-fn (pc/fnk [[:settings [:instance-request-properties unsupported-headers]]
+                                            [:state kv-store waiter-hostnames]
                                             attach-service-defaults-fn attach-token-defaults-fn]
                                      (fn discover-service-parameters-fn [headers]
                                        (sd/discover-service-parameters
-                                         kv-store attach-service-defaults-fn attach-token-defaults-fn waiter-hostnames headers)))
+                                         kv-store attach-service-defaults-fn attach-token-defaults-fn waiter-hostnames headers unsupported-headers)))
    :enable-work-stealing-support? (pc/fnk [[:settings [:work-stealing supported-distribution-schemes]]
                                            service-id->service-description-fn]
                                     (fn enable-work-stealing-support? [service-id]
@@ -1894,6 +1895,7 @@
                                                (fn waiter-request-interstitial-handler-fn [request]
                                                  (interstitial/display-interstitial-handler request))))
    :websocket-request-acceptor (pc/fnk [[:routines wrap-service-discovery-fn]
+                                        [:settings [:instance-request-properties unsupported-headers]]
                                         [:state server-name]
                                         websocket-secure-request-acceptor-fn]
                                  ; If adding new middleware for websocket upgrade requests, consider adding the same middleware to
@@ -1904,7 +1906,8 @@
                                                    pr/wrap-maintenance-mode-acceptor
                                                    handler/wrap-wss-redirect
                                                    ws/wrap-service-discovery-data
-                                                   wrap-service-discovery-fn)]
+                                                   wrap-service-discovery-fn
+                                                   ws/wrap-ws-acceptor-error-handling)]
                                    (ws/make-websocket-request-acceptor server-name handler)))
    :websocket-secure-request-acceptor-fn (pc/fnk [[:state passwords]]
                                            (fn websocket-secure-request-acceptor-fn

@@ -1505,3 +1505,23 @@
                                 :x-waiter-queue-timeout 5000)
               response (make-kitchen-request waiter-url request-headers :path "/hello")]
           (assert-response-status response http-503-service-unavailable))))))
+
+(deftest  ^:parallel ^:integration-fast test-request-unsupported-headers
+  (testing-using-waiter-url
+    (let [settings (waiter-settings waiter-url)
+          waiter-unsupported-headers (get-in settings [:instance-request-properties :unsupported-headers])]
+
+      (testing "should give 400 if unsupported headers are specified"
+        (doseq [waiter-header waiter-unsupported-headers]
+          (let [{:keys [service-id body] :as response}
+                (make-request-with-debug-info {:x-waiter-name (rand-name)
+                                               waiter-header "some value"}
+                                              #(make-kitchen-request waiter-url % :path "/hello"))]
+            (assert-response-status response http-400-bad-request)
+            (is (nil? service-id))
+            (is (str/includes? body "Unsupported waiter headers found"))
+            (is (str/includes? body waiter-header))
+
+            ; cleanup in case a service was created
+            (when service-id
+              (delete-service waiter-url service-id))))))))
