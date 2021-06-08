@@ -282,12 +282,12 @@
    The result map contains the following elements:
    {:keys [waiter-headers passthrough-headers sources service-id service-description core-service-description suspended-state]}"
   [attach-service-defaults-fn attach-token-defaults-fn service-id-prefix kv-store waiter-hostnames request
-   service-description-builder assoc-run-as-user-approved? unsupported-headers]
+   service-description-builder assoc-run-as-user-approved?]
   (let [current-request-user (get request :authorization/user)
         build-service-description-and-id-helper (sd/make-build-service-description-and-id-helper
                                                   kv-store service-id-prefix current-request-user
                                                   service-description-builder assoc-run-as-user-approved?)
-        {:keys [waiter-headers] :as descriptor}
+        descriptor
         (-> (headers/split-headers (:headers request))
           (sd/merge-service-description-sources
             kv-store waiter-hostnames attach-service-defaults-fn attach-token-defaults-fn)
@@ -296,13 +296,6 @@
           (build-service-description-and-id-helper true))]
     (when-let [throwable (sd/validate-service-description kv-store service-description-builder descriptor)]
       (throw throwable))
-    (let [unsupported-headers-in-request (set/intersection (set (keys waiter-headers)) unsupported-headers)
-          details {:unsupported-headers-in-request unsupported-headers-in-request}]
-      (when (not-empty unsupported-headers-in-request)
-        (log/info "Unsupported waiter headers found" details)
-        (throw (ex-info "Unsupported waiter headers found"
-                        {:status http-400-bad-request
-                         :details details}))))
     descriptor))
 
 (defn descriptor->previous-descriptor
@@ -366,7 +359,7 @@
     "Extract the service descriptor from a request.
      It also performs the necessary authorization."
     [assoc-run-as-user-approved? can-run-as? attach-service-defaults-fn attach-token-defaults-fn fallback-state-atom
-     kv-store search-history-length service-description-builder service-id-prefix waiter-hostnames unsupported-headers
+     kv-store search-history-length service-description-builder service-id-prefix waiter-hostnames
      {:keys [request-time] :as request}]
     (timers/start-stop-time!
       request->descriptor-timer
@@ -374,7 +367,7 @@
             service-approved? (fn service-approved? [service-id] (assoc-run-as-user-approved? request service-id))
             latest-descriptor (compute-descriptor
                                 attach-service-defaults-fn attach-token-defaults-fn service-id-prefix kv-store
-                                waiter-hostnames request service-description-builder service-approved? unsupported-headers)
+                                waiter-hostnames request service-description-builder service-approved?)
             descriptor->previous-descriptor
             (fn descriptor->previous-descriptor-fn
               [descriptor]

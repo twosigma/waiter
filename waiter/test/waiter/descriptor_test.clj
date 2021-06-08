@@ -299,11 +299,10 @@
                                                    :profile->defaults profile->defaults
                                                    :service-description-defaults service-description-defaults}))
                 attach-service-defaults-fn #(sd/merge-defaults % service-description-defaults profile->defaults metric-group-mappings)
-                attach-token-defaults-fn #(sd/attach-token-defaults % token-defaults profile->defaults)
-                unsupported-headers []]
+                attach-token-defaults-fn #(sd/attach-token-defaults % token-defaults profile->defaults)]
             (request->descriptor
               assoc-run-as-user-approved? can-run-as? attach-service-defaults-fn attach-token-defaults-fn fallback-state-atom
-              kv-store search-history-length service-description-builder service-id-prefix waiter-hostnames unsupported-headers request)))]
+              kv-store search-history-length service-description-builder service-id-prefix waiter-hostnames request)))]
 
     (testing "missing user in request"
       (let [request {}

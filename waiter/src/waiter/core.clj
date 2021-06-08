@@ -1035,9 +1035,7 @@
    :refresh-service-descriptions-fn (pc/fnk [[:state kv-store]]
                                       (fn refresh-service-descriptions-fn [service-ids]
                                         (sd/refresh-service-descriptions kv-store service-ids)))
-   :request->descriptor-fn (pc/fnk [[:settings
-                                     [:token-config history-length]
-                                     [:instance-request-properties unsupported-headers]]
+   :request->descriptor-fn (pc/fnk [[:settings [:token-config history-length]]
                                     [:state fallback-state-atom kv-store service-description-builder
                                      service-id-prefix waiter-hostnames]
                                     assoc-run-as-user-approved? attach-service-defaults-fn attach-token-defaults-fn
@@ -1048,7 +1046,7 @@
                                        assoc-run-as-user-approved? can-run-as?-fn
                                        attach-service-defaults-fn attach-token-defaults-fn
                                        fallback-state-atom kv-store history-length service-description-builder
-                                       service-id-prefix waiter-hostnames unsupported-headers request)
+                                       service-id-prefix waiter-hostnames request)
                                      {:keys [reference-type->entry service-id source-tokens]} latest-descriptor]
                                  (when (seq source-tokens)
                                    (store-source-tokens-fn service-id source-tokens))
