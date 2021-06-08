@@ -972,11 +972,12 @@
                             (let [position-generator-atom (atom 0)]
                               (fn determine-priority-fn [waiter-headers]
                                 (pr/determine-priority position-generator-atom waiter-headers))))
-   :discover-service-parameters-fn (pc/fnk [[:state kv-store waiter-hostnames]
+   :discover-service-parameters-fn (pc/fnk [[:settings [:instance-request-properties unsupported-headers]]
+                                            [:state kv-store waiter-hostnames]
                                             attach-service-defaults-fn attach-token-defaults-fn]
                                      (fn discover-service-parameters-fn [headers]
                                        (sd/discover-service-parameters
-                                         kv-store attach-service-defaults-fn attach-token-defaults-fn waiter-hostnames headers)))
+                                         kv-store attach-service-defaults-fn attach-token-defaults-fn waiter-hostnames headers unsupported-headers)))
    :enable-work-stealing-support? (pc/fnk [[:settings [:work-stealing supported-distribution-schemes]]
                                            service-id->service-description-fn]
                                     (fn enable-work-stealing-support? [service-id]
@@ -1034,7 +1035,9 @@
    :refresh-service-descriptions-fn (pc/fnk [[:state kv-store]]
                                       (fn refresh-service-descriptions-fn [service-ids]
                                         (sd/refresh-service-descriptions kv-store service-ids)))
-   :request->descriptor-fn (pc/fnk [[:settings [:token-config history-length]]
+   :request->descriptor-fn (pc/fnk [[:settings
+                                     [:token-config history-length]
+                                     [:instance-request-properties unsupported-headers]]
                                     [:state fallback-state-atom kv-store service-description-builder
                                      service-id-prefix waiter-hostnames]
                                     assoc-run-as-user-approved? attach-service-defaults-fn attach-token-defaults-fn
@@ -1045,7 +1048,7 @@
                                        assoc-run-as-user-approved? can-run-as?-fn
                                        attach-service-defaults-fn attach-token-defaults-fn
                                        fallback-state-atom kv-store history-length service-description-builder
-                                       service-id-prefix waiter-hostnames request)
+                                       service-id-prefix waiter-hostnames unsupported-headers request)
                                      {:keys [reference-type->entry service-id source-tokens]} latest-descriptor]
                                  (when (seq source-tokens)
                                    (store-source-tokens-fn service-id source-tokens))
@@ -1532,7 +1535,6 @@
                                                  instance-request-properties determine-priority-fn process-response-fn
                                                  pr/abort-http-request-callback-factory local-usage-agent request))))
    :process-request-wrapper-fn (pc/fnk [[:routines wrap-service-discovery-fn]
-                                        [:settings [:instance-request-properties unsupported-headers]]
                                         [:state interstitial-state-atom]
                                         wrap-descriptor-fn wrap-secure-request-fn]
                                  ; If adding new middleware for process-request-wrapper-fn, consider adding the same middleware to
@@ -1548,7 +1550,6 @@
                                      auth/wrap-auth-bypass
                                      handler/wrap-https-redirect
                                      pr/wrap-maintenance-mode
-                                     (pr/wrap-unsupported-waiter-headers unsupported-headers)
                                      wrap-service-discovery-fn)))
    :profile-list-handler-fn (pc/fnk [[:state profile->defaults]
                                      wrap-secure-request-fn]
@@ -1905,10 +1906,10 @@
                                                    websocket-secure-request-acceptor-fn
                                                    auth/wrap-auth-bypass-acceptor
                                                    pr/wrap-maintenance-mode-acceptor
-                                                   (pr/wrap-unsupported-waiter-headers-acceptor unsupported-headers)
                                                    handler/wrap-wss-redirect
                                                    ws/wrap-service-discovery-data
-                                                   wrap-service-discovery-fn)]
+                                                   wrap-service-discovery-fn
+                                                   ws/wrap-ws-acceptor-error-handling)]
                                    (ws/make-websocket-request-acceptor server-name handler)))
    :websocket-secure-request-acceptor-fn (pc/fnk [[:state passwords]]
                                            (fn websocket-secure-request-acceptor-fn
