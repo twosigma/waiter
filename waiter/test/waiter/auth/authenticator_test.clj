@@ -145,7 +145,7 @@
         handler-response (Object.)
         execute-request (fn execute-request-fn [{:keys [headers] :as in-request}]
                           (let [test-request (->> (sd/discover-service-parameters
-                                                    kv-store attach-service-defaults-fn attach-token-defaults-fn waiter-hostnames headers [])
+                                                    kv-store attach-service-defaults-fn attach-token-defaults-fn waiter-hostnames headers #{})
                                                   (assoc in-request :waiter-discovery))
                                 request-handler-argument-atom (atom nil)
                                 test-request-handler (fn request-handler-fn [request]
