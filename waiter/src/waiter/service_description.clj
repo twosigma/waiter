@@ -1572,13 +1572,14 @@
                          (-> (token->token-parameters kv-store token :error-on-missing false)
                            (attach-token-defaults-fn)
                            (select-keys token-metadata-keys)))
-        unsupported-headers-in-request (set/intersection (set (keys waiter-headers)) unsupported-headers)
-        details {:unsupported-headers-in-request unsupported-headers-in-request}]
+        unsupported-headers-in-request (set/intersection (set (keys waiter-headers)) unsupported-headers)]
     (when (not-empty unsupported-headers-in-request)
-      (log/info "Unsupported waiter headers found" details)
-      (throw (ex-info "Unsupported waiter headers found"
-                      {:status http-400-bad-request
-                       :details details})))
+      (let [error-details {:unsupported-headers-in-request unsupported-headers-in-request}]
+        (log/info "Unsupported waiter headers found" error-details)
+        (throw (ex-info "Unsupported waiter headers found"
+                        {:details error-details
+                         :log-level :info
+                         :status http-400-bad-request}))))
     {:passthrough-headers passthrough-headers
      :service-description-template service-description-template
      :token token
