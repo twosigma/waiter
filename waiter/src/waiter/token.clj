@@ -37,6 +37,11 @@
 
 (def ^:const ANY-USER "*")
 
+(defn dummy-post-validator
+  "returns nil and logs request"
+  [_ request]
+  (log/debug "external token post validator called" {:post-request request}))
+
 (defn ensure-history
   "Ensures a non-nil previous entry exists in `token-data`.
    If one already was present when this function was called, returns `token-data` unmodified.
@@ -437,9 +442,9 @@
 (defn- handle-post-token-request
   "Validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
-  [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames
+  [clock custom-components synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames
    entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
-   tokens-update-chan {:keys [headers] :as request}]
+   tokens-update-chan post-validator-fn {:keys [headers] :as request}]
   (let [request-params (-> request ru/query-params-request :query-params)
         admin-mode? (= "admin" (get request-params "update-mode"))
         authenticated-user (get request :authorization/user)
@@ -525,6 +530,9 @@
                           (not current-owner?)
                           existing-editor
                           (authz/run-as? entitlement-manager authenticated-user existing-editor))]
+
+        (post-validator-fn custom-components request)
+
         (when editing?
           (log/info "applying editor privileges to operation" {:editor authenticated-user :owner existing-owner})
           (let [existing-token-parameters (sd/token->token-parameters kv-store token :include-deleted false)]
@@ -649,16 +657,16 @@
 
    If handling POST, validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
-  [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames entitlement-manager
-   make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn tokens-update-chan {:keys [request-method] :as request}]
+  [clock custom-components synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames entitlement-manager
+   make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn tokens-update-chan post-validator-fn {:keys [request-method] :as request}]
   (try
     (case request-method
       :delete (handle-delete-token-request clock synchronize-fn kv-store history-length waiter-hostnames entitlement-manager
                                            make-peer-requests-fn tokens-update-chan request)
       :get (handle-get-token-request kv-store cluster-calculator token-root waiter-hostnames request)
-      :post (handle-post-token-request clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
+      :post (handle-post-token-request clock custom-components synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
                                        waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
-                                       attach-service-defaults-fn tokens-update-chan request)
+                                       attach-service-defaults-fn tokens-update-chan post-validator-fn request)
       (throw (ex-info "Invalid request method" {:log-level :info :request-method request-method :status http-405-method-not-allowed})))
     (catch Exception ex
       (utils/exception->response ex request))))

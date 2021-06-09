@@ -1814,16 +1814,17 @@
    :token-handler-fn (pc/fnk [[:curator synchronize-fn]
                               [:daemons token-watch-maintainer]
                               [:routines attach-service-defaults-fn make-inter-router-requests-sync-fn validate-service-description-fn]
-                              [:settings [:token-config history-length limit-per-owner]]
-                              [:state clock entitlement-manager kv-store token-cluster-calculator token-root waiter-hostnames]
+                              [:settings [:token-config history-length limit-per-owner post-validator-fn]]
+                              [:state clock custom-components entitlement-manager kv-store token-cluster-calculator token-root waiter-hostnames]
                               wrap-secure-request-fn]
-                       (let [{:keys [tokens-update-chan]} token-watch-maintainer]
+                       (let [{:keys [tokens-update-chan]} token-watch-maintainer
+                             post-validator-fn (-> post-validator-fn utils/resolve-symbol!)]
                          (wrap-secure-request-fn
                            (fn token-handler-fn [request]
                              (token/handle-token-request
-                               clock synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
+                               clock custom-components synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
                                waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
-                               attach-service-defaults-fn tokens-update-chan request)))))
+                               attach-service-defaults-fn tokens-update-chan post-validator-fn request)))))
    :token-list-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
                                    [:routines retrieve-descriptor-fn]
                                    [:settings [:instance-request-properties streaming-timeout-ms]]
