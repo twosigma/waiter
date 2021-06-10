@@ -2627,6 +2627,19 @@
                  {"maintenance" true "owner" "owner3" "token" "token9"}}
                (set (json/read-str body))))
         (is (nil? (async/poll! token-watch-channels-update-chan))))
+      (let [request {:query-string "can-manage-as-user=owner&include=cluster" :request-method :get}
+            {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
+        (is (= http-200-ok status))
+        (is (= #{{"maintenance" false, "owner" "owner1", "token" "token1", "cluster" "c1"}
+                 {"maintenance" false, "owner" "owner1", "token" "token2", "cluster" "c1"}
+                 {"maintenance" false, "owner" "owner2", "token" "token3", "cluster" "c2"}
+                 {"maintenance" false, "owner" "owner3", "token" "token5", "cluster" "c1"}
+                 {"maintenance" false, "owner" "owner3", "token" "token6", "cluster" "c1"}
+                 {"maintenance" false, "owner" "owner3", "token" "token7", "cluster" "c1"}
+                 {"maintenance" false, "owner" "owner3", "token" "token8", "cluster" "c1"}
+                 {"maintenance" true, "owner" "owner3", "token" "token9", "cluster" "c1"}}
+               (set (json/read-str body))))
+        (is (nil? (async/poll! token-watch-channels-update-chan))))
       (let [request {:query-string "can-manage-as-user=owner&include=service-id" :request-method :get}
             {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
         (is (= http-200-ok status))
@@ -2681,17 +2694,19 @@
                 "token" "token2"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
-    (let [request {:query-string "owner=owner1&include=metadata&include=service-id" :request-method :get}
+    (let [request {:query-string "owner=owner1&include=metadata&include=cluster&include=service-id" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"deleted" false
+      (is (= #{{"cluster" "c1"
+                "deleted" false
                 "etag" (token->token-hash "token1")
                 "last-update-time" (-> (- last-update-time-seed 1000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner1"
                 "service-id" "s-token1-t1"
                 "token" "token1"}
-               {"deleted" false
+               {"cluster" "c1"
+                "deleted" false
                 "etag" (token->token-hash "token2")
                 "last-update-time" (-> (- last-update-time-seed 2000) tc/from-long du/date-to-str)
                 "maintenance" false

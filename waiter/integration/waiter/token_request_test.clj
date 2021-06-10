@@ -379,12 +379,15 @@
                         (is (= service-id (:service-id response))))))
                   (swap! token->version->etag-atom assoc-in [token version-suffix] token-etag))))
 
-            (let [{:keys [body] :as tokens-response}
-                  (list-tokens waiter-url current-user cookies {"include" "service-id"})]
+            (let [{:keys [body] :as tokens-response} (list-tokens waiter-url current-user cookies {"include" ["cluster" "service-id"]})
+                  token-cluster (retrieve-token-cluster waiter-url)]
               (assert-response-status tokens-response http-200-ok)
               (let [tokens (json/read-str body)
+                    token->cluster (-> (pc/for-map [{:strs [cluster token]} tokens] token cluster)
+                                        (select-keys all-tokens))
                     token->service-id (-> (pc/for-map [{:strs [service-id token]} tokens] token service-id)
                                         (select-keys all-tokens))]
+                (is (= (pc/map-from-keys (constantly token-cluster) all-tokens) token->cluster) (str body))
                 (is (= @token->service-id-atom token->service-id) (str body))))))
 
         (is (= (* (count all-tokens) (count all-version-suffixes)) (count @service-ids-atom))

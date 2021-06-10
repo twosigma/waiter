@@ -753,6 +753,7 @@
                  include-deleted (utils/param-contains? request-params "include" "deleted")
                  show-metadata (utils/param-contains? request-params "include" "metadata")
                  include-service-id (utils/param-contains? request-params "include" "service-id")
+                 include-cluster (utils/param-contains? request-params "include" "cluster")
                  should-watch? (utils/request-flag request-params "watch")
                  should-filter-maintenance? (contains? request-params "maintenance")
                  maintenance-active? (utils/request-flag request-params "maintenance")
@@ -804,6 +805,8 @@
                      (update :last-update-time tc/from-long)
                      (not show-metadata)
                      (dissoc :deleted :etag :last-update-time)
+                     include-cluster
+                     (assoc :cluster (get (sd/token->token-metadata kv-store token :error-on-missing false) "cluster"))
                      (and include-service-id (not deleted))
                      (assoc :service-id (when-let [{:strs [run-as-user] :as service-description-template}
                                                    (sd/token->service-parameter-template kv-store token :error-on-missing false)]
