@@ -496,7 +496,7 @@
                                    "https-redirect" false
                                    "service-mapping" "legacy"
                                    "stale-timeout-mins" 15}
-                  :post-validator-fn 'waiter.token/dummy-post-validator}
+                  :post-validator-fn 'waiter.token/simple-post-validator}
    :watch-config {:tokens {:channels-update-chan-buffer-size 1024
                            :tokens-update-chan-buffer-size 1024
                            :watch-refresh-timeout-ms 10000}}

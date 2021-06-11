@@ -37,10 +37,11 @@
 
 (def ^:const ANY-USER "*")
 
-(defn dummy-post-validator
+(defn simple-post-validator
   "returns nil and logs request"
-  [_ request]
-  (log/debug "external token post validator called" {:post-request request}))
+  [_ request existing-token-metadata]
+  (log/debug "external token post validator called" {:existing-token-metadata existing-token-metadata
+                                                     :request request}))
 
 (defn ensure-history
   "Ensures a non-nil previous entry exists in `token-data`.
@@ -531,7 +532,8 @@
                           existing-editor
                           (authz/run-as? entitlement-manager authenticated-user existing-editor))]
 
-        (post-validator-fn custom-components request)
+        ;; do any custom validation
+        (post-validator-fn custom-components request existing-token-metadata)
 
         (when editing?
           (log/info "applying editor privileges to operation" {:editor authenticated-user :owner existing-owner})
