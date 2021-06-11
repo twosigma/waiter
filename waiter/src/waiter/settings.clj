@@ -184,11 +184,11 @@
                                                                           schema/contains-kind-sub-map?)
                                    (s/required-key :history-length) schema/positive-int
                                    (s/required-key :limit-per-owner) schema/positive-int
+                                   (s/required-key :post-validator-fn) s/Symbol
                                    (s/required-key :token-defaults) {(s/required-key "fallback-period-secs") schema/non-negative-int
                                                                      (s/required-key "https-redirect") s/Bool
                                                                      (s/optional-key "service-mapping") schema/non-empty-string
-                                                                     (s/required-key "stale-timeout-mins") schema/non-negative-int}
-                                   (s/required-key :post-validator-fn) s/Symbol}
+                                                                     (s/required-key "stale-timeout-mins") schema/non-negative-int}}
    (s/required-key :watch-config) {(s/required-key :tokens) {(s/required-key :channels-update-chan-buffer-size) schema/non-negative-int
                                                              (s/required-key :tokens-update-chan-buffer-size) schema/non-negative-int
                                                              (s/required-key :watch-refresh-timeout-ms) schema/non-negative-int}}
@@ -492,11 +492,11 @@
                                                     :host->cluster {}}}
                   :history-length 5
                   :limit-per-owner 1000
+                  :post-validator-fn 'waiter.token/simple-post-validator
                   :token-defaults {"fallback-period-secs" (-> 5 t/minutes t/in-seconds)
                                    "https-redirect" false
                                    "service-mapping" "legacy"
-                                   "stale-timeout-mins" 15}
-                  :post-validator-fn 'waiter.token/simple-post-validator}
+                                   "stale-timeout-mins" 15}}
    :watch-config {:tokens {:channels-update-chan-buffer-size 1024
                            :tokens-update-chan-buffer-size 1024
                            :watch-refresh-timeout-ms 10000}}
