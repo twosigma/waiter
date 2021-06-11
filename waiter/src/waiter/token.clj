@@ -41,8 +41,9 @@
   "returns a simple post-validator-fn which just returns nil and logs the request"
   [_]
   (fn post-validator-fn
-    [request existing-token-metadata]
+    [request new-token-data existing-token-metadata]
     (log/debug "external token post validator called" {:existing-token-metadata existing-token-metadata
+                                                       :new-token-data new-token-data
                                                        :request request})))
 
 (defn ensure-history
@@ -535,7 +536,7 @@
                           (authz/run-as? entitlement-manager authenticated-user existing-editor))]
 
         ;; do any custom validation
-        (post-validator-fn request existing-token-metadata)
+        (post-validator-fn request new-token-data existing-token-metadata)
 
         (when editing?
           (log/info "applying editor privileges to operation" {:editor authenticated-user :owner existing-owner})
