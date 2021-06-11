@@ -31,7 +31,6 @@
             [waiter.token-watch :as token-watch]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
-            [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
   (:import (clojure.lang ExceptionInfo)
            (java.io StringBufferInputStream)
