@@ -1220,7 +1220,7 @@
 
       (testing "post:post-validator-fn-throws-error"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-              post-validator-fn (fn post-validator [_ _]
+              post-validator-fn (fn post-validator [_ _ _]
                                   (throw (ex-info "post validator failed request" {:status http-400-bad-request})))
               {:keys [body status]}
               (run-handle-token-request
