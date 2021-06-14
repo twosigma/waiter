@@ -779,12 +779,24 @@
    :token-cluster-calculator (pc/fnk [[:settings [:cluster-config name] [:token-config cluster-calculator]]]
                                (utils/create-component
                                  cluster-calculator :context {:default-cluster name}))
-   :token-post-validator-fn (pc/fnk [[:settings [:token-config post-validator]]
-                                     custom-components]
-                              (utils/create-component
-                                post-validator :context {:custom-components custom-components}))
    :token-root (pc/fnk [[:settings [:cluster-config name]]] name)
+   :token-validator (pc/fnk [[:settings [:token-config validator]]
+                             custom-components validate-service-description-fn]
+                      (utils/create-component
+                        validator :context {:custom-components custom-components
+                                            :validate-service-description-fn validate-service-description-fn}))
    :user-agent-version (pc/fnk [[:settings git-version]] (str/join (take 7 git-version)))
+   :validate-service-description-fn (pc/fnk [[:settings service-description-defaults]
+                                             authenticator service-description-builder]
+                                      (let [authentication-providers (into #{"disabled" "standard"} (auth/get-authentication-providers authenticator))
+                                            default-authentication (get service-description-defaults "authentication")]
+                                        (fn validate-service-description [service-description]
+                                          (let [authentication (or (get service-description "authentication") default-authentication)]
+                                            (when-not (contains? authentication-providers authentication)
+                                              (throw (ex-info (str "authentication must be one of: '"
+                                                                   (str/join "', '" (sort authentication-providers)) "'")
+                                                              {:authentication authentication :status http-400-bad-request}))))
+                                          (sd/validate service-description-builder service-description {}))))
    :waiter-hostnames (pc/fnk [[:settings hostname]]
                        (set (if (sequential? hostname)
                               hostname
@@ -1131,8 +1143,7 @@
                                 [:state kv-store]]
                          (fn store-reference-fn [service-id reference]
                            (sd/store-reference! synchronize-fn kv-store service-id reference)))
-   :store-service-description-fn (pc/fnk [[:state kv-store]
-                                          validate-service-description-fn]
+   :store-service-description-fn (pc/fnk [[:state kv-store validate-service-description-fn]]
                                    (fn store-service-description [{:keys [core-service-description service-id]}]
                                      (sd/store-core kv-store service-id core-service-description validate-service-description-fn)))
    :store-source-tokens-fn (pc/fnk [[:curator synchronize-fn]
@@ -1151,17 +1162,6 @@
    :token->token-parameters (pc/fnk [[:state kv-store]]
                               (fn token->token-parameters [token]
                                 (sd/token->token-parameters kv-store token :error-on-missing false)))
-   :validate-service-description-fn (pc/fnk [[:settings service-description-defaults]
-                                             [:state authenticator service-description-builder]]
-                                      (let [authentication-providers (into #{"disabled" "standard"} (auth/get-authentication-providers authenticator))
-                                            default-authentication (get service-description-defaults "authentication")]
-                                        (fn validate-service-description [service-description]
-                                          (let [authentication (or (get service-description "authentication") default-authentication)]
-                                            (when-not (contains? authentication-providers authentication)
-                                              (throw (ex-info (str "authentication must be one of: '"
-                                                                   (str/join "', '" (sort authentication-providers)) "'")
-                                                              {:authentication authentication :status http-400-bad-request}))))
-                                          (sd/validate service-description-builder service-description {}))))
    :waiter-request?-fn (pc/fnk [[:state waiter-hostnames]]
                          (let [local-router (InetAddress/getLocalHost)
                                waiter-router-hostname (.getCanonicalHostName local-router)
@@ -1817,17 +1817,17 @@
    :status-handler-fn (pc/fnk [] handler/status-handler)
    :token-handler-fn (pc/fnk [[:curator synchronize-fn]
                               [:daemons token-watch-maintainer]
-                              [:routines attach-service-defaults-fn make-inter-router-requests-sync-fn validate-service-description-fn]
+                              [:routines attach-service-defaults-fn make-inter-router-requests-sync-fn]
                               [:settings [:token-config history-length limit-per-owner]]
-                              [:state clock entitlement-manager kv-store token-cluster-calculator token-post-validator-fn token-root waiter-hostnames]
+                              [:state clock entitlement-manager kv-store token-cluster-calculator token-root token-validator waiter-hostnames]
                               wrap-secure-request-fn]
                        (let [{:keys [tokens-update-chan]} token-watch-maintainer]
                          (wrap-secure-request-fn
                            (fn token-handler-fn [request]
                              (token/handle-token-request
                                clock synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
-                               waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
-                               attach-service-defaults-fn tokens-update-chan token-post-validator-fn request)))))
+                               waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn attach-service-defaults-fn
+                               tokens-update-chan token-validator request)))))
    :token-list-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
                                    [:routines retrieve-descriptor-fn]
                                    [:settings [:instance-request-properties streaming-timeout-ms]]
