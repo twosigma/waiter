@@ -1074,8 +1074,8 @@
                 :limit-per-owner 1000
 
                 ;; Custom validator on post /token endpoint
-                :post-validator {:kind :configured
-                                 :configured {:factory-fn 'waiter.token/create-simple-post-validator}}
+                :validator {:kind :configured
+                            :configured {:factory-fn 'waiter.token/create-default-token-validator}}
 
                 ;; Default values associated with tokens while resolving the service description
                 :token-defaults {
