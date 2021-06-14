@@ -19,6 +19,7 @@
             [clojure.data :as data]
             [clojure.set :as set]
             [clojure.string :as str]
+            [clojure.test :as test]
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
             [plumbing.core :as pc]
@@ -46,36 +47,58 @@
   (validate [this token-data]
     "Throws an error if the new-token-data is invalid, and otherwise returns nil"))
 
-(defrecord DefaultTokenValidator [validate-service-description-fn]
+(defrecord DefaultTokenValidator [attach-service-defaults-fn validate-service-description-fn]
   TokenValidator
 
   (state [_]
     {})
 
   (validate [_ {:keys [new-service-parameter-template new-token-data new-user-metadata token waiter-hostnames]}]
-    (when (str/blank? token)
-      (throw (ex-info "Must provide the token" {:status http-400-bad-request :log-level :warn})))
-    (when (some #(= token %) waiter-hostnames)
-      (throw (ex-info "Token name is reserved" {:status http-403-forbidden :token token :log-level :warn})))
-    (when (empty? (select-keys new-token-data sd/token-user-editable-keys))
-      (throw (ex-info (str "No parameters provided for " token) {:status http-400-bad-request :log-level :warn})))
-    (sd/validate-token token)
-    (validate-service-description-fn new-service-parameter-template)
-    (sd/validate-user-metadata-schema new-user-metadata new-service-parameter-template)
-    (let [unknown-keys (-> new-token-data
-                           keys
-                           set
-                           (set/difference sd/token-data-keys)
-                           (disj "token"))]
-      (when (not-empty unknown-keys)
-        (throw (ex-info (str "Unsupported key(s) in token: " (str (vec unknown-keys)))
-                        {:status http-400-bad-request :token token :log-level :warn}))))))
+    (let [{:strs [authentication interstitial-secs permitted-user]} new-service-parameter-template]
+      (when (str/blank? token)
+        (throw (ex-info "Must provide the token" {:status http-400-bad-request :log-level :warn})))
+      (when (some #(= token %) waiter-hostnames)
+        (throw (ex-info "Token name is reserved" {:status http-403-forbidden :token token :log-level :warn})))
+      (when (empty? (select-keys new-token-data sd/token-user-editable-keys))
+        (throw (ex-info (str "No parameters provided for " token) {:status http-400-bad-request :log-level :warn})))
+      (sd/validate-token token)
+      (validate-service-description-fn new-service-parameter-template)
+      (sd/validate-user-metadata-schema new-user-metadata new-service-parameter-template)
+      (let [unknown-keys (-> new-token-data
+                             keys
+                             set
+                             (set/difference sd/token-data-keys)
+                             (disj "token"))]
+        (when (not-empty unknown-keys)
+          (throw (ex-info (str "Unsupported key(s) in token: " (str (vec unknown-keys)))
+                          {:status http-400-bad-request :token token :log-level :warn}))))
+      (let [service-parameter-with-service-defaults (attach-service-defaults-fn new-service-parameter-template)
+            missing-parameters (->> sd/service-required-keys (remove #(contains? service-parameter-with-service-defaults %1)) seq)]
+        (when (= authentication "disabled")
+          (when (not= permitted-user "*")
+            (throw (ex-info (str "Tokens with authentication disabled must specify"
+                                 " permitted-user as *, instead provided " permitted-user)
+                            {:status http-400-bad-request :token token :log-level :warn})))
+          ;; partial tokens not supported when authentication is disabled
+          (when-not (sd/required-keys-present? service-parameter-with-service-defaults)
+            (throw (ex-info "Tokens with authentication disabled must specify all required parameters"
+                            {:log-level :warn
+                             :missing-parameters missing-parameters
+                             :service-description new-service-parameter-template
+                             :status http-400-bad-request}))))
+        (when (and interstitial-secs (not (sd/required-keys-present? service-parameter-with-service-defaults)))
+          (throw (ex-info (str "Tokens with missing required parameters cannot use interstitial support")
+                          {:log-level :warn
+                           :missing-parameters missing-parameters
+                           :status http-400-bad-request
+                           :token token})))))))
 
 (defn create-default-token-validator
   "creates the default token validator and returns it"
-  [{:keys [validate-service-description-fn]}]
-  ; {:pre [(function? validate-service-description-fn)]}
-  (->DefaultTokenValidator validate-service-description-fn))
+  [{:keys [attach-service-defaults-fn validate-service-description-fn]}]
+  {:pre [(test/function? attach-service-defaults-fn)
+         (test/function? validate-service-description-fn)]}
+  (->DefaultTokenValidator attach-service-defaults-fn validate-service-description-fn))
 
 (defn ensure-history
   "Ensures a non-nil previous entry exists in `token-data`.
@@ -478,8 +501,7 @@
   "Validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
   [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames
-   entitlement-manager make-peer-requests-fn attach-service-defaults-fn
-   tokens-update-chan validator {:keys [headers] :as request}]
+   entitlement-manager make-peer-requests-fn tokens-update-chan validator {:keys [headers] :as request}]
   (let [request-params (-> request ru/query-params-request :query-params)
         admin-mode? (= "admin" (get request-params "update-mode"))
         authenticated-user (get request :authorization/user)
@@ -497,7 +519,7 @@
         token (or token token-param)
         new-token-metadata (select-keys new-token-data sd/token-metadata-keys)
         new-user-metadata (select-keys new-token-metadata sd/user-metadata-keys)
-        {:strs [authentication interstitial-secs permitted-user run-as-user] :as new-service-parameter-template}
+        {:strs [run-as-user] :as new-service-parameter-template}
         (select-keys new-token-data sd/service-parameter-keys)
         existing-token-metadata (sd/token->token-metadata kv-store token :error-on-missing false)
         owner (or (get new-token-metadata "owner")
@@ -511,26 +533,6 @@
                          :token token
                          :waiter-hostnames waiter-hostnames})
 
-    (let [service-parameter-with-service-defaults (attach-service-defaults-fn new-service-parameter-template)
-          missing-parameters (->> sd/service-required-keys (remove #(contains? service-parameter-with-service-defaults %1)) seq)]
-      (when (= authentication "disabled")
-        (when (not= permitted-user "*")
-          (throw (ex-info (str "Tokens with authentication disabled must specify"
-                               " permitted-user as *, instead provided " permitted-user)
-                          {:status http-400-bad-request :token token :log-level :warn})))
-        ;; partial tokens not supported when authentication is disabled
-        (when-not (sd/required-keys-present? service-parameter-with-service-defaults)
-          (throw (ex-info "Tokens with authentication disabled must specify all required parameters"
-                          {:log-level :warn
-                           :missing-parameters missing-parameters
-                           :service-description new-service-parameter-template
-                           :status http-400-bad-request}))))
-      (when (and interstitial-secs (not (sd/required-keys-present? service-parameter-with-service-defaults)))
-        (throw (ex-info (str "Tokens with missing required parameters cannot use interstitial support")
-                        {:log-level :warn
-                         :missing-parameters missing-parameters
-                         :status http-400-bad-request
-                         :token token}))))
     (case (get request-params "update-mode")
       "admin"
       (do
@@ -680,15 +682,14 @@
    If handling POST, validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
   [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames entitlement-manager
-   make-peer-requests-fn attach-service-defaults-fn tokens-update-chan validator {:keys [request-method] :as request}]
+   make-peer-requests-fn tokens-update-chan validator {:keys [request-method] :as request}]
   (try
     (case request-method
       :delete (handle-delete-token-request clock synchronize-fn kv-store history-length waiter-hostnames entitlement-manager
                                            make-peer-requests-fn tokens-update-chan request)
       :get (handle-get-token-request kv-store cluster-calculator token-root waiter-hostnames request)
       :post (handle-post-token-request clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
-                                       waiter-hostnames entitlement-manager make-peer-requests-fn attach-service-defaults-fn
-                                       tokens-update-chan validator request)
+                                       waiter-hostnames entitlement-manager make-peer-requests-fn tokens-update-chan validator request)
       (throw (ex-info "Invalid request method" {:log-level :info :request-method request-method :status http-405-method-not-allowed})))
     (catch Exception ex
       (utils/exception->response ex request))))

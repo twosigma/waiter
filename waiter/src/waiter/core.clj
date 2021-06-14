@@ -615,6 +615,10 @@
                                               :context {:default-authentication (get service-description-defaults "authentication")
                                                         :hostname hostname
                                                         :password (first passwords)})))
+   :attach-service-defaults-fn (pc/fnk [[:settings metric-group-mappings service-description-defaults]
+                                        profile->defaults]
+                                 (fn attach-service-defaults-fn [service-description]
+                                   (sd/merge-defaults service-description service-description-defaults profile->defaults metric-group-mappings)))
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
                      (utils/create-component cors-config))
@@ -781,9 +785,10 @@
                                  cluster-calculator :context {:default-cluster name}))
    :token-root (pc/fnk [[:settings [:cluster-config name]]] name)
    :token-validator (pc/fnk [[:settings [:token-config validator]]
-                             custom-components validate-service-description-fn]
+                             attach-service-defaults-fn custom-components validate-service-description-fn]
                       (utils/create-component
-                        validator :context {:custom-components custom-components
+                        validator :context {:attach-service-defaults-fn attach-service-defaults-fn
+                                            :custom-components custom-components
                                             :validate-service-description-fn validate-service-description-fn}))
    :user-agent-version (pc/fnk [[:settings git-version]] (str/join (take 7 git-version)))
    :validate-service-description-fn (pc/fnk [[:settings service-description-defaults]
@@ -945,10 +950,6 @@
                                  (fn async-trigger-terminate-fn [target-router-id service-id request-id]
                                    (async-req/async-trigger-terminate
                                      async-request-terminate-fn make-inter-router-requests-sync-fn router-id target-router-id service-id request-id)))
-   :attach-service-defaults-fn (pc/fnk [[:settings metric-group-mappings service-description-defaults]
-                                        [:state profile->defaults]]
-                                 (fn attach-service-defaults-fn [service-description]
-                                   (sd/merge-defaults service-description service-description-defaults profile->defaults metric-group-mappings)))
    :attach-token-defaults-fn (pc/fnk [[:settings [:token-config token-defaults]]
                                       [:state profile->defaults]]
                                (fn attach-token-defaults-fn [token-parameters]
@@ -989,8 +990,8 @@
                               (fn determine-priority-fn [waiter-headers]
                                 (pr/determine-priority position-generator-atom waiter-headers))))
    :discover-service-parameters-fn (pc/fnk [[:settings [:instance-request-properties unsupported-headers]]
-                                            [:state kv-store waiter-hostnames]
-                                            attach-service-defaults-fn attach-token-defaults-fn]
+                                            [:state attach-service-defaults-fn kv-store waiter-hostnames]
+                                            attach-token-defaults-fn]
                                      (fn discover-service-parameters-fn [headers]
                                        (sd/discover-service-parameters
                                          kv-store attach-service-defaults-fn attach-token-defaults-fn waiter-hostnames headers unsupported-headers)))
@@ -1052,9 +1053,9 @@
                                       (fn refresh-service-descriptions-fn [service-ids]
                                         (sd/refresh-service-descriptions kv-store service-ids)))
    :request->descriptor-fn (pc/fnk [[:settings [:token-config history-length]]
-                                    [:state fallback-state-atom kv-store service-description-builder
+                                    [:state attach-service-defaults-fn fallback-state-atom kv-store service-description-builder
                                      service-id-prefix waiter-hostnames]
-                                    assoc-run-as-user-approved? attach-service-defaults-fn attach-token-defaults-fn
+                                    assoc-run-as-user-approved? attach-token-defaults-fn
                                     can-run-as?-fn store-reference-fn store-source-tokens-fn]
                              (fn request->descriptor-fn [request]
                                (let [{:keys [latest-descriptor] :as result}
@@ -1817,7 +1818,7 @@
    :status-handler-fn (pc/fnk [] handler/status-handler)
    :token-handler-fn (pc/fnk [[:curator synchronize-fn]
                               [:daemons token-watch-maintainer]
-                              [:routines attach-service-defaults-fn make-inter-router-requests-sync-fn]
+                              [:routines make-inter-router-requests-sync-fn]
                               [:settings [:token-config history-length limit-per-owner]]
                               [:state clock entitlement-manager kv-store token-cluster-calculator token-root token-validator waiter-hostnames]
                               wrap-secure-request-fn]
@@ -1826,8 +1827,7 @@
                            (fn token-handler-fn [request]
                              (token/handle-token-request
                                clock synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
-                               waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn attach-service-defaults-fn
-                               tokens-update-chan token-validator request)))))
+                               waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn tokens-update-chan token-validator request)))))
    :token-list-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
                                    [:routines retrieve-descriptor-fn]
                                    [:settings [:instance-request-properties streaming-timeout-ms]]
