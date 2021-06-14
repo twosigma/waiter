@@ -88,6 +88,8 @@
         validate-service-description-fn (fn validate-service-description-fn [service-description]
                                           (sd/validate-schema service-description {s/Str s/Any} profile->defaults nil))
         validator (create-default-token-validator {:attach-service-defaults-fn attach-service-defaults-fn
+                                                   :entitlement-manager entitlement-manager
+                                                   :kv-store kv-store
                                                    :validate-service-description-fn validate-service-description-fn})]
     (handle-token-request clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
                           waiter-hostnames entitlement-manager make-peer-requests-fn (au/latest-chan) validator request)))

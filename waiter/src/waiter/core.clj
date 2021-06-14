@@ -785,10 +785,12 @@
                                  cluster-calculator :context {:default-cluster name}))
    :token-root (pc/fnk [[:settings [:cluster-config name]]] name)
    :token-validator (pc/fnk [[:settings [:token-config validator]]
-                             attach-service-defaults-fn custom-components validate-service-description-fn]
+                             attach-service-defaults-fn custom-components entitlement-manager kv-store validate-service-description-fn]
                       (utils/create-component
                         validator :context {:attach-service-defaults-fn attach-service-defaults-fn
                                             :custom-components custom-components
+                                            :entitlement-manager entitlement-manager
+                                            :kv-store kv-store
                                             :validate-service-description-fn validate-service-description-fn}))
    :user-agent-version (pc/fnk [[:settings git-version]] (str/join (take 7 git-version)))
    :validate-service-description-fn (pc/fnk [[:settings service-description-defaults]

@@ -47,14 +47,15 @@
   (validate [this token-data]
     "Throws an error if the new-token-data is invalid, and otherwise returns nil"))
 
-(defrecord DefaultTokenValidator [attach-service-defaults-fn validate-service-description-fn]
+(defrecord DefaultTokenValidator [attach-service-defaults-fn entitlement-manager kv-store validate-service-description-fn]
   TokenValidator
 
   (state [_]
     {})
 
-  (validate [_ {:keys [new-service-parameter-template new-token-data new-user-metadata token waiter-hostnames]}]
-    (let [{:strs [authentication interstitial-secs permitted-user]} new-service-parameter-template]
+  (validate [_ {:keys [authenticated-user existing-token-metadata headers new-service-parameter-template new-token-data
+                       new-token-metadata new-user-metadata owner token update-mode version-hash waiter-hostnames]}]
+    (let [{:strs [authentication interstitial-secs permitted-user run-as-user]} new-service-parameter-template]
       (when (str/blank? token)
         (throw (ex-info "Must provide the token" {:status http-400-bad-request :log-level :warn})))
       (when (some #(= token %) waiter-hostnames)
@@ -91,14 +92,100 @@
                           {:log-level :warn
                            :missing-parameters missing-parameters
                            :status http-400-bad-request
-                           :token token})))))))
+                           :token token}))))
+
+      (case update-mode
+        "admin"
+        (do
+          (when (and (seq existing-token-metadata) (not version-hash))
+            (throw (ex-info "Must specify if-match header for admin mode token updates"
+                            {:request-headers headers, :status http-400-bad-request :log-level :warn})))
+          (when-not (authz/administer-token? entitlement-manager authenticated-user token new-token-metadata)
+            (throw (ex-info "Cannot administer token"
+                            {:status http-403-forbidden
+                             :token-metadata new-token-metadata
+                             :user authenticated-user
+                             :log-level :warn}))))
+
+        nil
+        (let [existing-editor (get existing-token-metadata "editor")
+              existing-owner (get existing-token-metadata "owner")
+              creating-token? (empty? existing-token-metadata)
+              current-owner? (and existing-owner
+                                  (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata))
+              editing? (and (not creating-token?)
+                            (not current-owner?)
+                            existing-editor
+                            (authz/run-as? entitlement-manager authenticated-user existing-editor))]
+
+          (when editing?
+            (log/info "applying editor privileges to operation" {:editor authenticated-user :owner existing-owner})
+            (let [existing-token-parameters (sd/token->token-parameters kv-store token :include-deleted false)]
+              (doseq [parameter-name ["editor" "owner" "run-as-user"]]
+                (let [existing-value (get existing-token-parameters parameter-name)
+                      new-value (get new-token-data parameter-name)]
+                  (when (not= existing-value new-value)
+                    (throw (ex-info (str "Not allowed to edit parameter " parameter-name)
+                                    {:authenticated-user authenticated-user
+                                     :existing-token-description existing-token-parameters
+                                     :parameter parameter-name
+                                     :parameter-exiting-value existing-value
+                                     :parameter-new-value new-value
+                                     :privileges {:current-owner? current-owner? :editor? editing?}
+                                     :status http-403-forbidden
+                                     :log-level :warn})))))))
+          ;; only check run-as-user rules when not running as editor, editor cannot change run-as-user from previous check
+          (when (and (not editing?) run-as-user (not= "*" run-as-user))
+            (when-not (authz/run-as? entitlement-manager authenticated-user run-as-user)
+              (throw (ex-info "Cannot run as user"
+                              {:authenticated-user authenticated-user
+                               :run-as-user run-as-user
+                               :status http-403-forbidden
+                               :log-level :warn}))))
+          (if creating-token?
+            ;; new token creation
+            (when-not (authz/run-as? entitlement-manager authenticated-user owner)
+              (throw (ex-info "Cannot create token as user"
+                              {:authenticated-user authenticated-user
+                               :owner owner
+                               :status http-403-forbidden
+                               :log-level :warn})))
+            ;; editing token
+            (let [delegated-user (or (when editing? existing-owner) authenticated-user)]
+              (when-not (authz/manage-token? entitlement-manager delegated-user token existing-token-metadata)
+                (throw (ex-info "Cannot update token"
+                                {:authenticated-user authenticated-user
+                                 :existing-owner existing-owner
+                                 :new-user owner
+                                 :privileges {:editor? editing? :owner? current-owner?}
+                                 :status http-403-forbidden
+                                 :log-level :warn})))))
+          ;; Neither owner nor editor may modify system metadata fields
+          (doseq [parameter-name ["last-update-time" "last-update-user" "root" "previous"]]
+            (when (contains? new-token-metadata parameter-name)
+              (throw (ex-info (str "Cannot modify " parameter-name " token metadata")
+                              {:status http-400-bad-request
+                               :token-metadata new-token-metadata
+                               :log-level :warn})))))
+
+        (throw (ex-info "Invalid update-mode"
+                        {:mode update-mode
+                         :status http-400-bad-request
+                         :log-level :warn})))
+
+      (when-let [previous (get new-token-metadata "previous")]
+        (when-not (map? previous)
+          (throw (ex-info (str "Token previous must be a map")
+                          {:previous previous :status http-400-bad-request :token token :log-level :warn})))))))
 
 (defn create-default-token-validator
   "creates the default token validator and returns it"
-  [{:keys [attach-service-defaults-fn validate-service-description-fn]}]
-  {:pre [(test/function? attach-service-defaults-fn)
+  [{:keys [attach-service-defaults-fn entitlement-manager kv-store validate-service-description-fn]}]
+  {:pre [(some? entitlement-manager)
+         (some? kv-store)
+         (test/function? attach-service-defaults-fn)
          (test/function? validate-service-description-fn)]}
-  (->DefaultTokenValidator attach-service-defaults-fn validate-service-description-fn))
+  (->DefaultTokenValidator attach-service-defaults-fn entitlement-manager kv-store validate-service-description-fn))
 
 (defn ensure-history
   "Ensures a non-nil previous entry exists in `token-data`.
@@ -501,7 +588,7 @@
   "Validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
   [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames
-   entitlement-manager make-peer-requests-fn tokens-update-chan validator {:keys [headers] :as request}]
+   make-peer-requests-fn tokens-update-chan validator {:keys [headers] :as request}]
   (let [request-params (-> request ru/query-params-request :query-params)
         admin-mode? (= "admin" (get request-params "update-mode"))
         authenticated-user (get request :authorization/user)
@@ -519,103 +606,25 @@
         token (or token token-param)
         new-token-metadata (select-keys new-token-data sd/token-metadata-keys)
         new-user-metadata (select-keys new-token-metadata sd/user-metadata-keys)
-        {:strs [run-as-user] :as new-service-parameter-template}
-        (select-keys new-token-data sd/service-parameter-keys)
+        new-service-parameter-template (select-keys new-token-data sd/service-parameter-keys)
         existing-token-metadata (sd/token->token-metadata kv-store token :error-on-missing false)
         owner (or (get new-token-metadata "owner")
                   (get existing-token-metadata "owner")
                   authenticated-user)
         version-hash (get headers "if-match")]
     (log/info "request to edit token" token)
-    (validate validator {:new-service-parameter-template new-service-parameter-template
+    (validate validator {:authenticated-user authenticated-user
+                         :existing-token-metadata existing-token-metadata
+                         :headers headers
+                         :new-service-parameter-template new-service-parameter-template
                          :new-token-data new-token-data
+                         :new-token-metadata new-token-metadata
                          :new-user-metadata new-user-metadata
+                         :owner owner
                          :token token
+                         :update-mode (get request-params "update-mode")
+                         :version-hash version-hash
                          :waiter-hostnames waiter-hostnames})
-
-    (case (get request-params "update-mode")
-      "admin"
-      (do
-        (when (and (seq existing-token-metadata) (not version-hash))
-          (throw (ex-info "Must specify if-match header for admin mode token updates"
-                          {:request-headers headers, :status http-400-bad-request :log-level :warn})))
-        (when-not (authz/administer-token? entitlement-manager authenticated-user token new-token-metadata)
-          (throw (ex-info "Cannot administer token"
-                          {:status http-403-forbidden
-                           :token-metadata new-token-metadata
-                           :user authenticated-user
-                           :log-level :warn}))))
-
-      nil
-      (let [existing-editor (get existing-token-metadata "editor")
-            existing-owner (get existing-token-metadata "owner")
-            creating-token? (empty? existing-token-metadata)
-            current-owner? (and existing-owner
-                                (authz/manage-token? entitlement-manager authenticated-user token existing-token-metadata))
-            editing? (and (not creating-token?)
-                          (not current-owner?)
-                          existing-editor
-                          (authz/run-as? entitlement-manager authenticated-user existing-editor))]
-
-        (when editing?
-          (log/info "applying editor privileges to operation" {:editor authenticated-user :owner existing-owner})
-          (let [existing-token-parameters (sd/token->token-parameters kv-store token :include-deleted false)]
-            (doseq [parameter-name ["editor" "owner" "run-as-user"]]
-              (let [existing-value (get existing-token-parameters parameter-name)
-                    new-value (get new-token-data parameter-name)]
-                (when (not= existing-value new-value)
-                  (throw (ex-info (str "Not allowed to edit parameter " parameter-name)
-                                  {:authenticated-user authenticated-user
-                                   :existing-token-description existing-token-parameters
-                                   :parameter parameter-name
-                                   :parameter-exiting-value existing-value
-                                   :parameter-new-value new-value
-                                   :privileges {:current-owner? current-owner? :editor? editing?}
-                                   :status http-403-forbidden
-                                   :log-level :warn})))))))
-        ;; only check run-as-user rules when not running as editor, editor cannot change run-as-user from previous check
-        (when (and (not editing?) run-as-user (not= "*" run-as-user))
-          (when-not (authz/run-as? entitlement-manager authenticated-user run-as-user)
-            (throw (ex-info "Cannot run as user"
-                            {:authenticated-user authenticated-user
-                             :run-as-user run-as-user
-                             :status http-403-forbidden
-                             :log-level :warn}))))
-        (if creating-token?
-          ;; new token creation
-          (when-not (authz/run-as? entitlement-manager authenticated-user owner)
-            (throw (ex-info "Cannot create token as user"
-                            {:authenticated-user authenticated-user
-                             :owner owner
-                             :status http-403-forbidden
-                             :log-level :warn})))
-          ;; editing token
-          (let [delegated-user (or (when editing? existing-owner) authenticated-user)]
-            (when-not (authz/manage-token? entitlement-manager delegated-user token existing-token-metadata)
-              (throw (ex-info "Cannot update token"
-                              {:authenticated-user authenticated-user
-                               :existing-owner existing-owner
-                               :new-user owner
-                               :privileges {:editor? editing? :owner? current-owner?}
-                               :status http-403-forbidden
-                               :log-level :warn})))))
-        ;; Neither owner nor editor may modify system metadata fields
-        (doseq [parameter-name ["last-update-time" "last-update-user" "root" "previous"]]
-          (when (contains? new-token-metadata parameter-name)
-            (throw (ex-info (str "Cannot modify " parameter-name " token metadata")
-                            {:status http-400-bad-request
-                             :token-metadata new-token-metadata
-                             :log-level :warn})))))
-
-      (throw (ex-info "Invalid update-mode"
-                      {:mode (get request-params "update-mode")
-                       :status http-400-bad-request
-                       :log-level :warn})))
-
-    (when-let [previous (get new-token-metadata "previous")]
-      (when-not (map? previous)
-        (throw (ex-info (str "Token previous must be a map")
-                        {:previous previous :status http-400-bad-request :token token :log-level :warn}))))
 
     ; Store the token
     (let [{:strs [last-update-time] :as new-token-metadata}
@@ -689,7 +698,7 @@
                                            make-peer-requests-fn tokens-update-chan request)
       :get (handle-get-token-request kv-store cluster-calculator token-root waiter-hostnames request)
       :post (handle-post-token-request clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
-                                       waiter-hostnames entitlement-manager make-peer-requests-fn tokens-update-chan validator request)
+                                       waiter-hostnames make-peer-requests-fn tokens-update-chan validator request)
       (throw (ex-info "Invalid request method" {:log-level :info :request-method request-method :status http-405-method-not-allowed})))
     (catch Exception ex
       (utils/exception->response ex request))))
