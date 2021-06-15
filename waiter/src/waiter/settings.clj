@@ -495,8 +495,8 @@
                                                     :host->cluster {}}}
                   :history-length 5
                   :limit-per-owner 1000
-                  :validator {:kind :configured
-                              :configured {:factory-fn 'waiter.token/create-default-token-validator}}
+                  :validator {:kind :default
+                              :default {:factory-fn 'waiter.token/create-default-token-validator}}
                   :token-defaults {"fallback-period-secs" (-> 5 t/minutes t/in-seconds)
                                    "https-redirect" false
                                    "service-mapping" "legacy"
