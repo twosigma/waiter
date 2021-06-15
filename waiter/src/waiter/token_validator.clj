@@ -13,7 +13,7 @@
     "Returns the global state of the token validator")
 
   (validate [this token-data]
-    "Throws an error if the new-token-data is invalid, and otherwise returns nil"))
+    "Throws an error if the token-data is invalid, and otherwise returns nil"))
 
 (defrecord DefaultTokenValidator [entitlement-manager kv-store]
   TokenValidator
