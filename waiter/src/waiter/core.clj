@@ -65,6 +65,7 @@
             [waiter.statsd :as statsd]
             [waiter.status-codes :refer :all]
             [waiter.token :as token]
+            [waiter.token-validator :as token-validator]
             [waiter.token-watch :as token-watch]
             [waiter.util.async-utils :as au]
             [waiter.util.cache-utils :as cu]
@@ -136,6 +137,7 @@
                               ["/service-description-builder" :state-service-description-builder-handler-fn]
                               ["/service-maintainer" :state-service-maintainer-handler-fn]
                               ["/statsd" :state-statsd-handler-fn]
+                              ["/token-validator" :state-token-validator-fn]
                               ["/token-watch-maintainer" :state-token-watch-maintainer-fn]
                               ["/work-stealing" :state-work-stealing-handler-fn]
                               [["/" :service-id] :state-service-handler-fn]]
@@ -780,6 +782,11 @@
                                (utils/create-component
                                  cluster-calculator :context {:default-cluster name}))
    :token-root (pc/fnk [[:settings [:cluster-config name]]] name)
+   :token-validator (pc/fnk [[:settings [:token-config validator]]
+                             entitlement-manager kv-store]
+                      (utils/create-component
+                        validator :context {:entitlement-manager entitlement-manager
+                                            :kv-store kv-store}))
    :user-agent-version (pc/fnk [[:settings git-version]] (str/join (take 7 git-version)))
    :waiter-hostnames (pc/fnk [[:settings hostname]]
                        (set (if (sequential? hostname)
@@ -1798,6 +1805,11 @@
                               (wrap-secure-request-fn
                                 (fn state-statsd-handler-fn [request]
                                   (handler/get-statsd-state router-id request))))
+   :state-token-validator-fn (pc/fnk [[:state router-id token-validator]
+                                      wrap-secure-request-fn]
+                               (wrap-secure-request-fn
+                                 (fn validator-state-handler-fn [request]
+                                   (handler/get-daemon-state router-id #(token-validator/state token-validator %) request))))
    :state-token-watch-maintainer-fn (pc/fnk [[:daemons token-watch-maintainer]
                                              [:state router-id]
                                              wrap-secure-request-fn]
@@ -1815,7 +1827,7 @@
                               [:daemons token-watch-maintainer]
                               [:routines attach-service-defaults-fn make-inter-router-requests-sync-fn validate-service-description-fn]
                               [:settings [:token-config history-length limit-per-owner]]
-                              [:state clock entitlement-manager kv-store token-cluster-calculator token-root waiter-hostnames]
+                              [:state clock entitlement-manager kv-store token-cluster-calculator token-root token-validator waiter-hostnames]
                               wrap-secure-request-fn]
                        (let [{:keys [tokens-update-chan]} token-watch-maintainer]
                          (wrap-secure-request-fn
@@ -1823,7 +1835,7 @@
                              (token/handle-token-request
                                clock synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
                                waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
-                               attach-service-defaults-fn tokens-update-chan request)))))
+                               attach-service-defaults-fn tokens-update-chan token-validator request)))))
    :token-list-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
                                    [:routines retrieve-descriptor-fn]
                                    [:settings [:instance-request-properties streaming-timeout-ms]]

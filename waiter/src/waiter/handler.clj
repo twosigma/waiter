@@ -824,7 +824,7 @@
                                                           "gc-broken-services" "gc-services" "gc-transient-metrics" "instance-tracker" "interstitial"
                                                           "jwt-auth-server" "kv-store" "launch-metrics" "leader" "local-usage"
                                                           "maintainer" "router-metrics" "scheduler" "service-description-builder"
-                                                          "service-maintainer" "statsd" "token-watch-maintainer" "work-stealing"]
+                                                          "service-maintainer" "statsd" "token-validator" "token-watch-maintainer" "work-stealing"]
                                                          (pc/map-from-keys make-url))
                                            :router-id router-id
                                            :routers routers}))

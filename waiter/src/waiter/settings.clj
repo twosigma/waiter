@@ -184,6 +184,10 @@
                                                                           schema/contains-kind-sub-map?)
                                    (s/required-key :history-length) schema/positive-int
                                    (s/required-key :limit-per-owner) schema/positive-int
+                                   (s/required-key :validator) (s/constrained
+                                                                 {:kind s/Keyword
+                                                                  s/Keyword schema/require-symbol-factory-fn}
+                                                                 schema/contains-kind-sub-map?)
                                    (s/required-key :token-defaults) {(s/required-key "fallback-period-secs") schema/non-negative-int
                                                                      (s/required-key "https-redirect") s/Bool
                                                                      (s/optional-key "service-mapping") schema/non-empty-string
@@ -491,6 +495,8 @@
                                                     :host->cluster {}}}
                   :history-length 5
                   :limit-per-owner 1000
+                  :validator {:kind :default
+                              :default {:factory-fn 'waiter.token-validator/create-default-token-validator}}
                   :token-defaults {"fallback-period-secs" (-> 5 t/minutes t/in-seconds)
                                    "https-redirect" false
                                    "service-mapping" "legacy"
