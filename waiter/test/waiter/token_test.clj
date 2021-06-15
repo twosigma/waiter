@@ -87,12 +87,11 @@
                                      (sd/compute-service-defaults template profile->defaults profile))
         validate-service-description-fn (fn validate-service-description-fn [service-description]
                                           (sd/validate-schema service-description {s/Str s/Any} profile->defaults nil))
-        validator (create-default-token-validator {:attach-service-defaults-fn attach-service-defaults-fn
-                                                   :entitlement-manager entitlement-manager
-                                                   :kv-store kv-store
-                                                   :validate-service-description-fn validate-service-description-fn})]
+        validator (create-default-token-validator {:entitlement-manager entitlement-manager
+                                                   :kv-store kv-store})]
     (handle-token-request clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
-                          waiter-hostnames entitlement-manager make-peer-requests-fn (au/latest-chan) validator request)))
+                          waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
+                          attach-service-defaults-fn (au/latest-chan) validator request)))
 
 (def optional-metadata-keys (disj sd/user-metadata-keys "owner"))
 

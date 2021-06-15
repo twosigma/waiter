@@ -19,7 +19,6 @@
             [clojure.data :as data]
             [clojure.set :as set]
             [clojure.string :as str]
-            [clojure.test :as test]
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
             [plumbing.core :as pc]
@@ -47,14 +46,15 @@
   (validate [this token-data]
     "Throws an error if the new-token-data is invalid, and otherwise returns nil"))
 
-(defrecord DefaultTokenValidator [attach-service-defaults-fn entitlement-manager kv-store validate-service-description-fn]
+(defrecord DefaultTokenValidator [entitlement-manager kv-store]
   TokenValidator
 
   (state [_]
     {})
 
   (validate [_ {:keys [authenticated-user existing-token-metadata headers new-service-parameter-template new-token-data
-                       new-token-metadata new-user-metadata owner token update-mode version-hash waiter-hostnames]}]
+                       new-token-metadata new-user-metadata owner service-parameter-with-service-defaults token update-mode
+                       validate-service-description-fn version-hash waiter-hostnames]}]
     (let [{:strs [authentication interstitial-secs permitted-user run-as-user]} new-service-parameter-template]
       (when (str/blank? token)
         (throw (ex-info "Must provide the token" {:status http-400-bad-request :log-level :warn})))
@@ -73,8 +73,7 @@
         (when (not-empty unknown-keys)
           (throw (ex-info (str "Unsupported key(s) in token: " (str (vec unknown-keys)))
                           {:status http-400-bad-request :token token :log-level :warn}))))
-      (let [service-parameter-with-service-defaults (attach-service-defaults-fn new-service-parameter-template)
-            missing-parameters (->> sd/service-required-keys (remove #(contains? service-parameter-with-service-defaults %1)) seq)]
+      (let [missing-parameters (->> sd/service-required-keys (remove #(contains? service-parameter-with-service-defaults %1)) seq)]
         (when (= authentication "disabled")
           (when (not= permitted-user "*")
             (throw (ex-info (str "Tokens with authentication disabled must specify"
@@ -180,12 +179,10 @@
 
 (defn create-default-token-validator
   "creates the default token validator and returns it"
-  [{:keys [attach-service-defaults-fn entitlement-manager kv-store validate-service-description-fn]}]
+  [{:keys [entitlement-manager kv-store]}]
   {:pre [(some? entitlement-manager)
-         (some? kv-store)
-         (test/function? attach-service-defaults-fn)
-         (test/function? validate-service-description-fn)]}
-  (->DefaultTokenValidator attach-service-defaults-fn entitlement-manager kv-store validate-service-description-fn))
+         (some? kv-store)]}
+  (->DefaultTokenValidator entitlement-manager kv-store))
 
 (defn ensure-history
   "Ensures a non-nil previous entry exists in `token-data`.
@@ -588,7 +585,8 @@
   "Validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
   [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames
-   make-peer-requests-fn tokens-update-chan validator {:keys [headers] :as request}]
+   make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn tokens-update-chan validator
+   {:keys [headers] :as request}]
   (let [request-params (-> request ru/query-params-request :query-params)
         admin-mode? (= "admin" (get request-params "update-mode"))
         authenticated-user (get request :authorization/user)
@@ -611,7 +609,8 @@
         owner (or (get new-token-metadata "owner")
                   (get existing-token-metadata "owner")
                   authenticated-user)
-        version-hash (get headers "if-match")]
+        version-hash (get headers "if-match")
+        service-parameter-with-service-defaults (attach-service-defaults-fn new-service-parameter-template)]
     (log/info "request to edit token" token)
     (validate validator {:authenticated-user authenticated-user
                          :existing-token-metadata existing-token-metadata
@@ -621,8 +620,10 @@
                          :new-token-metadata new-token-metadata
                          :new-user-metadata new-user-metadata
                          :owner owner
+                         :service-parameter-with-service-defaults service-parameter-with-service-defaults
                          :token token
                          :update-mode (get request-params "update-mode")
+                         :validate-service-description-fn validate-service-description-fn
                          :version-hash version-hash
                          :waiter-hostnames waiter-hostnames})
 
@@ -690,15 +691,17 @@
 
    If handling POST, validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
-  [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames entitlement-manager
-   make-peer-requests-fn tokens-update-chan validator {:keys [request-method] :as request}]
+  [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames
+   entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
+   tokens-update-chan validator {:keys [request-method] :as request}]
   (try
     (case request-method
       :delete (handle-delete-token-request clock synchronize-fn kv-store history-length waiter-hostnames entitlement-manager
                                            make-peer-requests-fn tokens-update-chan request)
       :get (handle-get-token-request kv-store cluster-calculator token-root waiter-hostnames request)
       :post (handle-post-token-request clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
-                                       waiter-hostnames make-peer-requests-fn tokens-update-chan validator request)
+                                       waiter-hostnames make-peer-requests-fn validate-service-description-fn
+                                       attach-service-defaults-fn tokens-update-chan validator request)
       (throw (ex-info "Invalid request method" {:log-level :info :request-method request-method :status http-405-method-not-allowed})))
     (catch Exception ex
       (utils/exception->response ex request))))

@@ -615,10 +615,6 @@
                                               :context {:default-authentication (get service-description-defaults "authentication")
                                                         :hostname hostname
                                                         :password (first passwords)})))
-   :attach-service-defaults-fn (pc/fnk [[:settings metric-group-mappings service-description-defaults]
-                                        profile->defaults]
-                                 (fn attach-service-defaults-fn [service-description]
-                                   (sd/merge-defaults service-description service-description-defaults profile->defaults metric-group-mappings)))
    :clock (pc/fnk [] t/now)
    :cors-validator (pc/fnk [[:settings cors-config]]
                      (utils/create-component cors-config))
@@ -785,25 +781,12 @@
                                  cluster-calculator :context {:default-cluster name}))
    :token-root (pc/fnk [[:settings [:cluster-config name]]] name)
    :token-validator (pc/fnk [[:settings [:token-config validator]]
-                             attach-service-defaults-fn custom-components entitlement-manager kv-store validate-service-description-fn]
+                             custom-components entitlement-manager kv-store]
                       (utils/create-component
-                        validator :context {:attach-service-defaults-fn attach-service-defaults-fn
-                                            :custom-components custom-components
+                        validator :context {:custom-components custom-components
                                             :entitlement-manager entitlement-manager
-                                            :kv-store kv-store
-                                            :validate-service-description-fn validate-service-description-fn}))
+                                            :kv-store kv-store}))
    :user-agent-version (pc/fnk [[:settings git-version]] (str/join (take 7 git-version)))
-   :validate-service-description-fn (pc/fnk [[:settings service-description-defaults]
-                                             authenticator service-description-builder]
-                                      (let [authentication-providers (into #{"disabled" "standard"} (auth/get-authentication-providers authenticator))
-                                            default-authentication (get service-description-defaults "authentication")]
-                                        (fn validate-service-description [service-description]
-                                          (let [authentication (or (get service-description "authentication") default-authentication)]
-                                            (when-not (contains? authentication-providers authentication)
-                                              (throw (ex-info (str "authentication must be one of: '"
-                                                                   (str/join "', '" (sort authentication-providers)) "'")
-                                                              {:authentication authentication :status http-400-bad-request}))))
-                                          (sd/validate service-description-builder service-description {}))))
    :waiter-hostnames (pc/fnk [[:settings hostname]]
                        (set (if (sequential? hostname)
                               hostname
@@ -952,6 +935,10 @@
                                  (fn async-trigger-terminate-fn [target-router-id service-id request-id]
                                    (async-req/async-trigger-terminate
                                      async-request-terminate-fn make-inter-router-requests-sync-fn router-id target-router-id service-id request-id)))
+   :attach-service-defaults-fn (pc/fnk [[:settings metric-group-mappings service-description-defaults]
+                                        [:state profile->defaults]]
+                                 (fn attach-service-defaults-fn [service-description]
+                                   (sd/merge-defaults service-description service-description-defaults profile->defaults metric-group-mappings)))
    :attach-token-defaults-fn (pc/fnk [[:settings [:token-config token-defaults]]
                                       [:state profile->defaults]]
                                (fn attach-token-defaults-fn [token-parameters]
@@ -992,8 +979,8 @@
                               (fn determine-priority-fn [waiter-headers]
                                 (pr/determine-priority position-generator-atom waiter-headers))))
    :discover-service-parameters-fn (pc/fnk [[:settings [:instance-request-properties unsupported-headers]]
-                                            [:state attach-service-defaults-fn kv-store waiter-hostnames]
-                                            attach-token-defaults-fn]
+                                            [:state kv-store waiter-hostnames]
+                                            attach-service-defaults-fn attach-token-defaults-fn]
                                      (fn discover-service-parameters-fn [headers]
                                        (sd/discover-service-parameters
                                          kv-store attach-service-defaults-fn attach-token-defaults-fn waiter-hostnames headers unsupported-headers)))
@@ -1055,9 +1042,9 @@
                                       (fn refresh-service-descriptions-fn [service-ids]
                                         (sd/refresh-service-descriptions kv-store service-ids)))
    :request->descriptor-fn (pc/fnk [[:settings [:token-config history-length]]
-                                    [:state attach-service-defaults-fn fallback-state-atom kv-store service-description-builder
+                                    [:state fallback-state-atom kv-store service-description-builder
                                      service-id-prefix waiter-hostnames]
-                                    assoc-run-as-user-approved? attach-token-defaults-fn
+                                    assoc-run-as-user-approved? attach-service-defaults-fn attach-token-defaults-fn
                                     can-run-as?-fn store-reference-fn store-source-tokens-fn]
                              (fn request->descriptor-fn [request]
                                (let [{:keys [latest-descriptor] :as result}
@@ -1146,7 +1133,8 @@
                                 [:state kv-store]]
                          (fn store-reference-fn [service-id reference]
                            (sd/store-reference! synchronize-fn kv-store service-id reference)))
-   :store-service-description-fn (pc/fnk [[:state kv-store validate-service-description-fn]]
+   :store-service-description-fn (pc/fnk [[:state kv-store]
+                                          validate-service-description-fn]
                                    (fn store-service-description [{:keys [core-service-description service-id]}]
                                      (sd/store-core kv-store service-id core-service-description validate-service-description-fn)))
    :store-source-tokens-fn (pc/fnk [[:curator synchronize-fn]
@@ -1165,6 +1153,17 @@
    :token->token-parameters (pc/fnk [[:state kv-store]]
                               (fn token->token-parameters [token]
                                 (sd/token->token-parameters kv-store token :error-on-missing false)))
+   :validate-service-description-fn (pc/fnk [[:settings service-description-defaults]
+                                             [:state authenticator service-description-builder]]
+                                      (let [authentication-providers (into #{"disabled" "standard"} (auth/get-authentication-providers authenticator))
+                                            default-authentication (get service-description-defaults "authentication")]
+                                        (fn validate-service-description [service-description]
+                                          (let [authentication (or (get service-description "authentication") default-authentication)]
+                                            (when-not (contains? authentication-providers authentication)
+                                              (throw (ex-info (str "authentication must be one of: '"
+                                                                   (str/join "', '" (sort authentication-providers)) "'")
+                                                              {:authentication authentication :status http-400-bad-request}))))
+                                          (sd/validate service-description-builder service-description {}))))
    :waiter-request?-fn (pc/fnk [[:state waiter-hostnames]]
                          (let [local-router (InetAddress/getLocalHost)
                                waiter-router-hostname (.getCanonicalHostName local-router)
@@ -1820,7 +1819,7 @@
    :status-handler-fn (pc/fnk [] handler/status-handler)
    :token-handler-fn (pc/fnk [[:curator synchronize-fn]
                               [:daemons token-watch-maintainer]
-                              [:routines make-inter-router-requests-sync-fn]
+                              [:routines attach-service-defaults-fn make-inter-router-requests-sync-fn validate-service-description-fn]
                               [:settings [:token-config history-length limit-per-owner]]
                               [:state clock entitlement-manager kv-store token-cluster-calculator token-root token-validator waiter-hostnames]
                               wrap-secure-request-fn]
@@ -1829,7 +1828,8 @@
                            (fn token-handler-fn [request]
                              (token/handle-token-request
                                clock synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
-                               waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn tokens-update-chan token-validator request)))))
+                               waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
+                               attach-service-defaults-fn tokens-update-chan token-validator request)))))
    :token-list-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
                                    [:routines retrieve-descriptor-fn]
                                    [:settings [:instance-request-properties streaming-timeout-ms]]
