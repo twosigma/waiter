@@ -40,7 +40,7 @@
 (defprotocol TokenValidator
   "A protocol for validating a new token configuration"
 
-  (state [this]
+  (state [this include-flags]
     "Returns the global state of the token validator")
 
   (validate [this token-data]
@@ -49,8 +49,9 @@
 (defrecord DefaultTokenValidator [entitlement-manager kv-store]
   TokenValidator
 
-  (state [_]
-    {})
+  (state [_ _]
+    {:supported-include-params []
+     :type "DefaultTokenValidator"})
 
   (validate [_ {:keys [authenticated-user existing-token-metadata headers new-service-parameter-template new-token-data
                        new-token-metadata new-user-metadata owner service-parameter-with-service-defaults token update-mode
