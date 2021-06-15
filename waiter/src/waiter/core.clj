@@ -781,10 +781,9 @@
                                  cluster-calculator :context {:default-cluster name}))
    :token-root (pc/fnk [[:settings [:cluster-config name]]] name)
    :token-validator (pc/fnk [[:settings [:token-config validator]]
-                             custom-components entitlement-manager kv-store]
+                             entitlement-manager kv-store]
                       (utils/create-component
-                        validator :context {:custom-components custom-components
-                                            :entitlement-manager entitlement-manager
+                        validator :context {:entitlement-manager entitlement-manager
                                             :kv-store kv-store}))
    :user-agent-version (pc/fnk [[:settings git-version]] (str/join (take 7 git-version)))
    :waiter-hostnames (pc/fnk [[:settings hostname]]
