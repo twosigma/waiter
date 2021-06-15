@@ -28,6 +28,7 @@
             [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
             [waiter.token :refer :all]
+            [waiter.token-validator :as token-validator]
             [waiter.token-watch :as token-watch]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
@@ -83,8 +84,8 @@
    attach-service-defaults-fn request]
   (let [cluster-calculator (new-configured-cluster-calculator {:default-cluster (str token-root "-cluster")
                                                                :host->cluster {}})
-        validator (create-default-token-validator {:entitlement-manager entitlement-manager
-                                                   :kv-store kv-store})]
+        validator (token-validator/create-default-token-validator {:entitlement-manager entitlement-manager
+                                                                   :kv-store kv-store})]
     (handle-token-request clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
                           waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
                           attach-service-defaults-fn (au/latest-chan) validator request)))

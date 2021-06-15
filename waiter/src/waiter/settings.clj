@@ -496,7 +496,7 @@
                   :history-length 5
                   :limit-per-owner 1000
                   :validator {:kind :default
-                              :default {:factory-fn 'waiter.token/create-default-token-validator}}
+                              :default {:factory-fn 'waiter.token-validator/create-default-token-validator}}
                   :token-defaults {"fallback-period-secs" (-> 5 t/minutes t/in-seconds)
                                    "https-redirect" false
                                    "service-mapping" "legacy"
