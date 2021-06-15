@@ -179,7 +179,7 @@
                           {:previous previous :status http-400-bad-request :token token :log-level :warn})))))))
 
 (defn create-default-token-validator
-  "creates the default token validator and returns it"
+  "Creates the default token validator."
   [{:keys [entitlement-manager kv-store]}]
   {:pre [(some? entitlement-manager)
          (some? kv-store)]}
