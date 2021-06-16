@@ -535,6 +535,10 @@
                                  ;; Maximum number of characters allowed for a Kubernetes object name:
                                  :max-name-length 63
 
+                                 ;; Target Kubernetes namespace for all Waiter-managed objects.
+                                 ;; When nil, Waiter operates at the global scope with access to all namespaces.
+                                 :namespace nil
+
                                  ;; Port number used to set the $PORT0 (service port) for Waiter service instances.
                                  ;; Waiter generates a random offset in the range [0, 990] each time it creates a service,
                                  ;; adding that offset to the pod-base-port value to get that Waiter service's $PORT0 value.
