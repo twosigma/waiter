@@ -405,14 +405,20 @@
                     :timeout timeout-secs)))))
         (log/warn "skipping test as INTEGRATION_TEST_BAD_IMAGE is not specified")))))
 
-(deftest ^:parallel ^:integration-fast test-kubernetes-reverse-proxy-sidecar
+(defn assert-envoy-response-headers
+  "Check if the given response header map includes known Envoy-injected headers.
+   This is used to confirm that the Envoy proxy is actually running in the pod."
+  [response-headers]
+  (is (contains? response-headers "x-envoy-upstream-service-time")))
+
+(deftest ^:parallel ^:integration-fast test-kubernetes-raven-basic
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
-      (if (contains? (get-kubernetes-scheduler-settings waiter-url) :reverse-proxy)
+      (if (raven-support? waiter-url)
         (let [reverse-proxy-flag reverse-proxy-flag
               x-waiter-name (rand-name)
               request-headers {:x-waiter-name x-waiter-name
-                               (keyword (str "x-waiter-env-" reverse-proxy-flag)) "yes"}
+                               (str "x-waiter-env-" reverse-proxy-flag) "true"}
               _ (log/info "making canary request")
               {:keys [cookies service-id] :as response} (make-request-with-debug-info
                                                           request-headers
@@ -425,11 +431,13 @@
             (let [response (make-kitchen-request waiter-url request-headers :method :get :path "/request-info")]
               (assert-response-status response http-200-ok)
               (testing "Expected envoy specific headers are present in both request and response"
-                (let [response-body (try-parse-json (:body response))
-                      response-headers (:headers response)]
-                  ;; x-envoy-expected-rq-timeout-ms is absent when timeouts are disabled
-                  (is (contains? (get response-body "headers") "x-envoy-external-address"))
-                  (is (contains? response-headers "x-envoy-upstream-service-time")))))
+                (let [response-headers (:headers response)
+                      response-body (try-parse-json (:body response))
+                      request-headers (get response-body "headers")]
+                  ;; When useRemoteAddress=true in the envoy config, either x-envoy-external-address
+                  ;; or x-envoy-internal will be set, depending on the number of intermediate proxies.
+                  (is (some #(contains? request-headers %) ["x-envoy-external-address" "x-envoy-internal"]))
+                  (assert-envoy-response-headers response-headers))))
 
             (let [response (make-request-with-debug-info
                              request-headers
@@ -443,5 +451,37 @@
                     (is (not= response-header-backend-port env-response-port0))))
                 (testing "Reverse proxy flag environment variable is present"
                   (is (contains? response-body reverse-proxy-flag))
-                  (is (= "yes" (get response-body reverse-proxy-flag))))))))
+                  (is (= "true" (get response-body reverse-proxy-flag))))))))
         (log/warn "skipping the integration test as :reverse-proxy is not defined")))))
+
+(deftest ^:parallel ^:integration-fast test-kubernetes-raven-2-ports
+  (testing-using-waiter-url
+    (when (using-k8s? waiter-url)
+      (if-not (raven-support? waiter-url)
+        (log/warn "skipping the integration test as :reverse-proxy is not defined")
+        (doseq [proto0 ["http" "https"]
+                proto1 ["http" "https"]
+                force-ingress-tls [false true]]
+          (let [test-case-config (str "proto0=" proto0 " proto1=" proto1 " force-ingress-tls=" force-ingress-tls)]
+            (testing (str "reverse proxy for 2-port service: " test-case-config)
+              (log/info "making canary request" test-case-config)
+              (let [nginx-command (nginx-server-command proto0 proto1)
+                    request-headers {:x-waiter-backend-proto proto0
+                                     :x-waiter-cmd nginx-command
+                                     :x-waiter-env-kitchen_cmd (kitchen-cmd)
+                                     :x-waiter-env-raven_force_ingress_tls (str force-ingress-tls)
+                                     (str "x-waiter-env-" reverse-proxy-flag) "true"
+                                     :x-waiter-health-check-port-index 1
+                                     :x-waiter-health-check-proto proto1
+                                     :x-waiter-name (rand-name)
+                                     :x-waiter-ports 3}
+                    {:keys [headers service-id] :as response}
+                    (make-request-with-debug-info request-headers #(make-shell-request waiter-url % :path "/request-info"))]
+                (with-service-cleanup
+                  service-id
+                  (assert-response-status response http-200-ok)
+                  (assert-envoy-response-headers headers)
+                  (let [{:strs [x-nginx-client-proto x-nginx-client-scheme x-waiter-backend-proto]} headers]
+                    (is (= proto0 x-nginx-client-scheme))
+                    (is (= proto0 x-waiter-backend-proto)))
+                  (comment "TODO: direct-connect to backend instance to verify port0 and port1 protocols"))))))))))

@@ -1,8 +1,8 @@
-FROM envoyproxy/envoy-alpine:v1.14.4
+FROM envoyproxy/envoy-alpine:v1.18.2
+
+RUN apk add --no-cache openssl
 
 COPY envoy-start /opt/waiter/envoy/bin/
-COPY envoy-one-port.yaml /etc/envoy/
-COPY envoy-two-ports.yaml /etc/envoy/
-
+COPY envoy.template.yaml /etc/envoy/
 
 ENTRYPOINT /opt/waiter/envoy/bin/envoy-start

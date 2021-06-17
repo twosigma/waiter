@@ -428,11 +428,17 @@
                    :x-waiter-name (rand-name)
                    :x-waiter-ports 3}
           {:keys [service-id] :as response} (make-request-with-debug-info headers #(make-shell-request waiter-url %))]
-      (with-service-cleanup
+      (do ; with-service-cleanup
         service-id
-        (assert-response-status response http-502-bad-gateway)
-        (is (str/includes? (-> response :body str) "Request to service backend failed"))
-        (is (str/includes? (-> response :headers (get "server")) "waiter/"))
+        (if (raven-response? response)
+          (do ;; raven-proxied backend
+            (assert-response-status response http-503-service-unavailable)
+            (is (str/includes? (-> response :body str) "reset reason: connection failure"))
+            (is (not (str/starts-with? (get-in response [:headers "server"] "") "waiter/"))))
+          (do ;; raw backend
+            (assert-response-status response http-502-bad-gateway)
+            (is (str/includes? (-> response :body str) "Request to service backend failed"))
+            (is (str/starts-with? (get-in response [:headers "server"] "") "waiter/"))))
         (let [{:keys [service-description]} (service-settings waiter-url service-id)
               {:keys [cmd health-check-port-index ports]} service-description]
           (is (= kitchen-command cmd))

@@ -496,11 +496,12 @@
 
 (defn nginx-server-command
   "Returns the command to launch the nginx server."
-  [backend-proto]
-  (let [raw-command (System/getProperty "waiter.test.nginx.cmd")]
-    (if (str/blank? raw-command)
-      (throw (Exception. "Property waiter.test.nginx.cmd is not set! (try `lein with-profile +test`)"))
-      (str raw-command " " backend-proto))))
+  ([backend-proto] (nginx-server-command backend-proto ""))
+  ([backend-proto0 backend-proto1]
+   (let [raw-command (System/getProperty "waiter.test.nginx.cmd")]
+     (if (str/blank? raw-command)
+       (throw (Exception. "Property waiter.test.nginx.cmd is not set! (try `lein with-profile +test`)"))
+       (str raw-command " " backend-proto0 " " backend-proto1)))))
 
 (defn sediment-server-command
   "Returns the command to launch the sediment server."
@@ -607,10 +608,18 @@
         profiles-json (try-parse-json (:body profiles-result))]
     (walk/keywordize-keys profiles-json)))
 
-(defn waiter-settings [waiter-url & {:keys [cookies] :or {cookies []}}]
-  (let [settings-result (make-request waiter-url "/settings" :verbose true :cookies cookies)
-        settings-json (try-parse-json (:body settings-result))]
-    (walk/keywordize-keys settings-json)))
+(let [settings-atom (atom nil)
+      atom-update-lock (Object.)]
+  (defn waiter-settings [waiter-url & {:keys [cookies] :or {cookies []}}]
+    (if-let [settings @settings-atom]
+      settings
+      ;; lazily fetch settings
+      (locking atom-update-lock
+        (if-let [settings @settings-atom]
+          settings
+          (let [settings-result (make-request waiter-url "/settings" :verbose true :cookies cookies)
+                settings-json (try-parse-json (:body settings-result))]
+            (reset! settings-atom (walk/keywordize-keys settings-json))))))))
 
 (defn waiter-settings-port
   "Retrieves a Waiter port from the settings."
@@ -719,6 +728,23 @@
   "Return the kubernetes scheduler's settings even if the scheduler is part of a composite scheduler."
   [waiter-url]
   (get-scheduler-settings waiter-url :kubernetes))
+
+(defn raven-support?
+  "Returns true if the scheduler configuration supports opt-in (or always-on) Raven proxy."
+  [waiter-url]
+  (contains? (get-kubernetes-scheduler-settings waiter-url) :reverse-proxy))
+
+(defn raven-response?
+  "Returns true if the HTTP debug response indicates the presense of the Raven proxy."
+  [debug-response]
+  (= "enabled" (get-in debug-response [:headers "x-waiter-raven-proxy"])))
+
+(defn raven-service?
+  "Returns true if the given service is using Raven. Must have at least one service instance."
+  [waiter-url service-id cookies]
+  (-> (service-state waiter-url service-id :cookies cookies)
+      (get-in [:state :responder-state :id->instance])
+      first val :proxy-protocol boolean))
 
 (defn marathon-url
   "Returns the Marathon URL setting"

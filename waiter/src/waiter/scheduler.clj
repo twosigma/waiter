@@ -103,6 +103,8 @@
    exit-code
    ^String host
    port
+   proxy-offset
+   proxy-protocol
    extra-ports
    ^String log-directory
    ^String message])
@@ -251,9 +253,10 @@
 
 (defn build-health-check-url
   "Returns the health check url which can be queried on the service instance."
-  [{:keys [host] :as instance} health-check-proto health-check-port-index health-check-path]
-  (let [url-port (instance->port instance health-check-port-index)]
-    (end-point-url health-check-proto host url-port health-check-path)))
+  [{:keys [host] :as instance} health-check-proto health-check-port-index health-check-path proxy-protocol]
+  (let [request-proto (or proxy-protocol health-check-proto)
+        url-port (instance->port instance health-check-port-index)]
+    (end-point-url request-proto host url-port health-check-path)))
 
 (defn log-health-check-issues
   "Logs messages based on the type of error (if any) encountered by a health check"
@@ -297,13 +300,16 @@
 (defn available?
   "Async go block which returns the status code and success of a health check.
    Returns {:healthy? false} if such a connection cannot be established."
-  [service-id->password-fn ^HttpClient http-client scheduler-name {:keys [host port service-id] :as service-instance}
+  [service-id->password-fn ^HttpClient http-client scheduler-name
+   {:keys [host port proxy-protocol service-id] :as service-instance}
    {:strs [health-check-authentication health-check-port-index health-check-url] :as service-description}]
   (async/go
     (try
       (if (and port (pos? port) host (not= UNKNOWN-IP host))
-        (let [protocol (service-description->health-check-protocol service-description)
-              instance-health-check-url (build-health-check-url service-instance protocol health-check-port-index health-check-url)
+        (let [protocol (if proxy-protocol ;; XXX - lift this into a helper (it's used elsewhere too)
+                         (hu/backend-proto->scheme proxy-protocol)
+                         (service-description->health-check-protocol service-description))
+              instance-health-check-url (build-health-check-url service-instance protocol health-check-port-index health-check-url proxy-protocol)
               request-timeout-ms (max (+ (.getConnectTimeout http-client) (.getIdleTimeout http-client)) http-200-ok )
               request-abort-chan (async/chan 1)
               request-time (t/now)

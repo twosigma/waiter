@@ -304,6 +304,9 @@
                                 backend-directory (:log-directory instance)
                                 backend-log-url (when backend-directory
                                                   (generate-log-url-fn instance))
+                                has-raven?  (boolean (:proxy-protocol instance))
+                                direct-port (comment TODO (:??? instance))
+                                direct-proto (comment TODO)
                                 request-date (when request-time
                                                (du/date-to-str request-time du/formatter-rfc822))]
                             (update (auth/attach-authorization-headers response)
@@ -320,6 +323,9 @@
                                                         "x-waiter-backend-host" (:host instance)
                                                         "x-waiter-backend-port" (str (:port instance))
                                                         "x-waiter-backend-proto" backend-proto)
+                                        has-raven?  (assoc "x-waiter-raven-proxy" "enabled"
+                                                           "x-waiter-backend-no-proxy-port" direct-port
+                                                           "x-waiter-backend-no-proxy-proto" direct-proto)
                                         backend-directory (assoc "x-waiter-backend-directory" backend-directory
                                                                  "x-waiter-backend-log-url" backend-log-url))))))]
         (ru/update-response response add-headers))
