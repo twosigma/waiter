@@ -5,7 +5,8 @@
             [plumbing.core :as pc]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
-            [waiter.util.cache-utils :as cu]))
+            [waiter.util.cache-utils :as cu]
+            [clojure.set :as set]))
 
 ; Events are being handled by all routers in a cluster for resiliency
 (defprotocol InstanceEventHandler
@@ -49,6 +50,25 @@
                              :last-error-time nil})]
     (DefaultInstanceFailureHandler. clock handler-state)))
 
+(defn make-id->instance [service-id->instances]
+  (reduce
+    (fn [cur-id->inst cur-instances]
+      (reduce
+        (fn [inner-cur-id->inst {:keys [id] :as inst}]
+          (assoc inner-cur-id->inst id inst))
+        cur-id->inst
+        cur-instances))
+    {}
+    (vals service-id->instances)))
+
+(defn get-new-and-old-instances [id->instance id->instance']
+  (let [inst-ids (set (keys id->instance))
+        inst-ids' (set (keys id->instance'))
+        in-both (set/intersection inst-ids inst-ids')]
+
+    [(map id->instance (set/difference inst-ids in-both))
+     (map id->instance' (set/difference inst-ids' in-both))]))
+
 (defn start-instance-tracker
   "Starts daemon thread that tracks instances and produces events based on state changes. It routes these events to the
   proper instance handler component"
@@ -58,21 +78,24 @@
     (let [exit-chan (async/promise-chan)
           query-chan (async/chan)
           state-atom (atom {:id->failed-instance {}
+                            :id->healthy-instance {}
                             :last-update-time nil})
           query-state-fn
           (fn instance-tracker-query-state-fn
             [include-flags]
-            (let [{:keys [id->failed-instance last-update-time]} @state-atom]
+            (let [{:keys [id->failed-instance id->healthy-instance last-update-time]} @state-atom]
               (cond-> {:last-update-time last-update-time
-                       :supported-include-params ["id->failed-instance" "instance-failure-handler"]}
+                       :supported-include-params ["id->failed-instance" "id->healthy-instance" "instance-failure-handler"]}
                       (contains? include-flags "id->failed-instance")
                       (assoc :id->failed-instance id->failed-instance)
+                      (contains? include-flags "id->healthy-instance")
+                      (assoc :id->healthy-instance id->healthy-instance)
                       (contains? include-flags "instance-failure-handler")
                       (assoc :instance-failure-handler (state instance-failure-handler-component include-flags)))))
           go-chan
           (async/go
             (try
-              (loop [{:keys [id->failed-instance] :as current-state} @state-atom]
+              (loop [{:keys [id->failed-instance id->healthy-instance] :as current-state} @state-atom]
                 (reset! state-atom current-state)
                 (let [[msg current-chan] (async/alts! [exit-chan router-state-chan query-chan] :priority true)
                       next-state
@@ -86,24 +109,26 @@
                         router-state-chan
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "instance-tracker" "router-state-chan")
-                          (let [{:keys [service-id->failed-instances]} msg
-                                id->failed-instance' (reduce
-                                                       (fn [cur-id->failed-instance cur-failed-instances]
-                                                         (reduce
-                                                           (fn [inner-cur-id->failed-instance failed-instance]
-                                                             (assoc inner-cur-id->failed-instance (:id failed-instance) failed-instance))
-                                                           cur-id->failed-instance
-                                                           cur-failed-instances))
-                                                       {}
-                                                       (vals service-id->failed-instances))
-                                all-failed-instances-ids' (set (keys id->failed-instance'))
-                                all-failed-instances-ids (set (keys id->failed-instance))
-                                new-failed-instances-ids (filter (complement all-failed-instances-ids) all-failed-instances-ids')
-                                new-failed-instances (map id->failed-instance' new-failed-instances-ids)]
-                            (when (not (empty? new-failed-instances))
+                          (let [{:keys [service-id->failed-instances service-id->healthy-instances]} msg
+                                id->failed-instance' (make-id->instance service-id->failed-instances)
+                                [_ new-failed-instances]
+                                (get-new-and-old-instances id->failed-instance id->failed-instance')
+                                id->healthy-instance' (make-id->instance service-id->healthy-instances)
+                                [removed-healthy-instances new-healthy-instances]
+                                (get-new-and-old-instances id->healthy-instance id->healthy-instance')]
+
+                            (when (not-empty new-failed-instances)
                               (log/info "new failed instances" {:new-failed-instances (map :id new-failed-instances)})
                               (handle-instances-event! instance-failure-handler-component {:new-failed-instances new-failed-instances}))
-                            (assoc current-state :id->failed-instance id->failed-instance')))
+
+                            (when (not-empty new-healthy-instances)
+                              (log/info "new healthy instances" {:new-healthy-instances (map :id new-healthy-instances)}))
+
+                            (when (not-empty removed-healthy-instances)
+                              (log/info "new not healthy instances" {:removed-healthy-instances (map :id removed-healthy-instances)}))
+
+                            (assoc current-state :id->failed-instance id->failed-instance'
+                                                 :id->healthy-instance id->healthy-instance')))
 
                         query-chan
                         (let [{:keys [include-flags response-chan]} msg]
