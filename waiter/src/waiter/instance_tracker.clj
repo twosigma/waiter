@@ -205,7 +205,6 @@
             (fn watch-chan-ex-handler [e]
               (async/put! ctrl e)
               (cid/cerror correlation-id e "error during transformation of a instances watch event"))]
-        (println "got watch instances request" should-watch?)
         (if should-watch?
           (let [watch-chan (async/chan 1024 watch-chan-xform watch-chan-ex-handler-fn)]
             (if (async/put! instance-watch-channels-update-chan watch-chan)
