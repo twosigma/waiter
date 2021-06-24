@@ -108,6 +108,7 @@
                      "eject" :eject-instance-handler-fn
                      "ejected" {["/" :service-id] :ejected-instances-list-handler-fn}
                      "favicon.ico" :favicon-handler-fn
+                     "instances" {"" :instances-list-handler-fn}
                      "metrics" :metrics-request-handler-fn
                      (subs oidc/oidc-callback-uri 1) :oidc-callback-handler-fn
                      "service-id" :service-id-handler-fn
@@ -1479,6 +1480,13 @@
                          (fn favicon-handler-fn [_]
                            {:body (io/input-stream (io/resource "web/favicon.ico"))
                             :content-type "image/png"}))
+   :instances-list-handler-fn (pc/fnk [[:daemons instance-tracker]
+                                       wrap-secure-request-fn]
+                                (let [{:keys [instance-watch-channels-update-chan]} instance-tracker]
+                                  (wrap-secure-request-fn
+                                    (fn instances-list-handler-fn [request]
+                                      (instance-tracker/handle-list-instances-request
+                                        instance-watch-channels-update-chan request)))))
    :kill-instance-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! router-state-maintainer]
                                       [:routines peers-acknowledged-eject-requests-fn]
                                       [:scheduler scheduler]

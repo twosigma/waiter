@@ -17,25 +17,6 @@
     {:object object :type type}
     id (assoc :id id)))
 
-(defn send-event-to-channels!
-  "Given a list of watch channels and the event to send to each channel, send the event in a non blocking fashion and
-  close channels that error the async/put! operation. Returns the set of open channels."
-  [watch-chans event]
-  (reduce
-    (fn send-event! [open-chans watch-chan]
-      (try
-        (if (async/put! watch-chan event)
-          (conj open-chans watch-chan)
-          (do
-            (log/info "removing closed watch-chan" watch-chan)
-            open-chans))
-        (catch AssertionError e
-          (log/error e "removing and closing watch-chan" watch-chan)
-          (async/close! watch-chan)
-          open-chans)))
-    #{}
-    watch-chans))
-
 (defn start-token-watch-maintainer
   "Starts daemon thread that maintains token watches and process/filters internal token events to be streamed to
   clients through the watch handlers. Returns map of various channels and state functions to control the daemon."
@@ -103,7 +84,7 @@
                                            (assoc current-state :token->index (dissoc token->index token))])
                                         _ (log/info "sending a token event to watches" {:event index-event})
                                         open-chans (->> (make-index-event :EVENTS [index-event] :id external-event-cid)
-                                                        (send-event-to-channels! watch-chans))]
+                                                        (utils/send-event-to-channels! watch-chans))]
                                     (assoc next-state :watch-chans open-chans)))))))
 
                         tokens-watch-channels-update-chan
@@ -143,7 +124,7 @@
                                   events (concat delete-events update-events)
                                   ; send events event if empty, which will serve as a heartbeat
                                   open-chans
-                                  (send-event-to-channels! watch-chans (make-index-event :EVENTS events :id external-event-cid))]
+                                  (utils/send-event-to-channels! watch-chans (make-index-event :EVENTS events :id external-event-cid))]
                               (when (not-empty events)
                                 (counters/inc! (metrics/waiter-counter "core" "token-watch-maintainer" "refresh-sync"))
                                 (meters/mark! (metrics/waiter-meter "core" "token-watch-maintainer" "refresh-sync-rate"))
