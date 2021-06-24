@@ -6,7 +6,14 @@
             [clojure.walk :as walk]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
-            [waiter.util.date-utils :as du]))
+            [waiter.util.date-utils :as du]
+            [clojure.core.async :as async]
+            [waiter.util.utils :as utils]
+            [cheshire.core :as cheshire]
+            [clojure.data :as data]
+            [clojure.pprint :as pprint])
+  (:import (java.io SequenceInputStream InputStreamReader ByteArrayInputStream)
+           (java.util Collections)))
 
 (defn- get-instance-tracker-state
   [waiter-url & {:keys [cookies keywordize-keys query-params]
@@ -83,14 +90,140 @@
                     ; assert that the error time is recent
                     (is (t/before? start-time (du/str-to-date last-error-time)))))))))))))
 
+(defn- start-watch
+  [router-url cookies]
+  (let [{:keys [body error headers] :as response}
+        (make-request router-url "/instances" :async? true :cookies cookies :query-params {"watch" "true"})
+        _ (assert-response-status response 200)
+        json-objects (->> body
+                          utils/chan-to-seq!!
+                          (map (fn [chunk] (-> chunk .getBytes ByteArrayInputStream.)))
+                          Collections/enumeration
+                          SequenceInputStream.
+                          InputStreamReader.
+                          cheshire/parsed-seq)
+        id->healthy-instance-atom (atom {})
+        query-state-fn (fn [] @id->healthy-instance-atom)
+        exit-fn (fn []
+                  (async/close! body))
+        go-chan
+        (async/go
+          (try
+            (doseq [msg json-objects
+                    :when (some? msg)]
+              (reset!
+                id->healthy-instance-atom
+                (let [{:strs [object type]} msg
+                      id->healthy-instance @id->healthy-instance-atom]
+                  (case type
+                    "initial"
+                    (reduce
+                      (fn [new-id->healthy-instance inst]
+                        (assoc new-id->healthy-instance (get inst "id") inst))
+                      {}
+                      (get object "healthy-instances"))
+
+                    "events"
+                    (let [new-healthy-instances (get-in object ["healthy-instances" "new"])
+                          removed-healthy-instances (get-in object ["healthy-instances" "removed"])]
+                      (cond-> id->healthy-instance
+                              (some? new-healthy-instances)
+                              #(reduce
+                                 (fn [new-id->healthy-instance inst]
+                                   (assoc new-id->healthy-instance (get inst "id") inst))
+                                 %
+                                 new-healthy-instances)
+                              (some? removed-healthy-instances)
+                              #(reduce
+                                 (fn [new-id->healthy-instance inst]
+                                   (dissoc new-id->healthy-instance (get inst "id") inst))
+                                 %
+                                 new-healthy-instances)))
+                    (throw (ex-info "Unknown event type received from watch" {:event msg}))))))
+            (catch Exception e
+              (exit-fn)
+              (log/error e "Error in test watch-chan" {:router-url router-url}))))]
+    {:exit-fn exit-fn
+     :error-chan error
+     :go-chan go-chan
+     :headers headers
+     :query-state-fn query-state-fn
+     :router-url router-url}))
+
+(defn- start-watches
+  [router-urls cookies]
+  (mapv
+    #(start-watch % cookies)
+    router-urls))
+
+(defn- stop-watch
+  [{:keys [exit-fn go-chan]}]
+  (exit-fn)
+  (async/<!! go-chan))
+
+(defn- stop-watches
+  [watches]
+  (doseq [watch watches]
+    (stop-watch watch)))
+
+(defmacro assert-watch-instance-id-entry
+  [watch instance-id entry]
+  `(let [watch# ~watch
+         instance-id# ~instance-id
+         entry# ~entry
+         router-url# (:router-url watch#)
+         query-state-fn# (:query-state-fn watch#)
+         get-current-instance-entry-fn# #(get (query-state-fn#) instance-id#)]
+     (is (wait-for
+           #(= (walk/keywordize-keys (get-current-instance-entry-fn#))
+               (dissoc entry# :log-url))
+           :interval 1 :timeout 5)
+         (str "watch for " router-url# " id->instance entry for instance-id '" instance-id# "' was '" (get-current-instance-entry-fn#)
+              "' instead of '" entry# "'"))))
+
+(defmacro assert-watches-instance-id-entry
+  [watches instance-id entry]
+  `(let [watches# ~watches
+         instance-id# ~instance-id
+         entry# ~entry]
+     (doseq [watch# watches#]
+       (assert-watch-instance-id-entry watch# instance-id# entry#))))
+
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-instance-watch
   (testing-using-waiter-url
     (let [routers (routers waiter-url)
           router-urls (vals routers)
           {:keys [cookies]} (make-request waiter-url "/waiter-auth")]
 
-      (testing "watch stream gets initial list of healthy instances")
+      (testing "watch stream gets initial list of healthy instances that were created before watch started"
+        (let [{:keys [service-id] :as response}
+              (make-request-with-debug-info
+                {:x-waiter-name (rand-name)}
+                #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
+          (with-service-cleanup
+            service-id
+            (assert-response-status response http-200-ok)
+            (assert-backend-response response)
+            ; wait for all routers to have positive number of healthy instances
+            (is (wait-for
+                  (fn every-router-has-healthy-instances? []
+                    (every? (fn has-failed-instances? [router-url]
+                              (let [{:keys [active-instances]} (:instances (service-settings router-url service-id :cookies cookies))
+                                    healthy-instances (filter :healthy? active-instances)]
+                                (pos? (count healthy-instances))))
+                            router-urls))))
+            (let [{:keys [active-instances]} (:instances (service-settings waiter-url service-id :cookies cookies))
+                  healthy-instances (filter :healthy? active-instances)
+                  watches (start-watches router-urls cookies)]
+              (is (pos? (count healthy-instances)))
+              (doseq [{:keys [id] :as inst} healthy-instances]
+                (assert-watches-instance-id-entry watches id inst))))))
 
-      (testing "stream receives ")
+      (testing "stream receives events when instances become healthy")
+
+      (testing "stream receives events when instances are no longer healthy")
+
+      (testing "stream receives events when instances are no longer healthy due to service getting killed")
+
 
       )))

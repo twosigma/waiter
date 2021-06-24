@@ -108,7 +108,8 @@
                       (contains? include-flags "instance-failure-handler")
                       (assoc :instance-failure-handler (state instance-failure-handler-component include-flags))
                       (contains? include-flags "buffer-state")
-                      (assoc :buffer-state {:instance-watch-channels-update-chan-count (.count instance-watch-channels-update-chan-buffer)}))))
+                      (assoc :buffer-state {:instance-watch-channels-update-chan-count
+                                            (.count instance-watch-channels-update-chan-buffer)}))))
           go-chan
           (async/go
             (try
@@ -189,6 +190,9 @@
        :query-state-fn query-state-fn})))
 
 (defn handle-list-instances-request
+  "Handle a request to list instances. Currently this endpoint only supports watch=true query parameter. The current list
+  of healthy instances will be streamed first and subsequent changes in set of healthy instances will be streamed
+  in the response."
   [instance-watch-channels-update-chan {:keys [ctrl request-method] :as req}]
   (try
     (case request-method
