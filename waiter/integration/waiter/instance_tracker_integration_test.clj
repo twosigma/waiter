@@ -25,9 +25,10 @@
 
       (testing "no query parameters provides the default state fields"
         (let [{{:keys [supported-include-params] :as state} :state} (get-instance-tracker-state waiter-url :cookies cookies)
-              default-state-fields #{:last-update-time :supported-include-params}]
-          (is (= (set (keys state)) default-state-fields) (str state))
-          (is (= (set supported-include-params) #{"id->failed-instance" "instance-failure-handler"}) (str state))))
+              default-state-fields #{:last-update-time :supported-include-params :watch-count}]
+          (is (set/superset? (set (keys state)) default-state-fields) (str state))
+          (is (set/superset? (set supported-include-params) #{"id->failed-instance" "id->healthy-instance" "instance-failure-handler"})
+              (str state))))
 
       (testing "InstanceEventHandler provides default state fields"
         (let [query-params "include=instance-failure-handler"
@@ -35,8 +36,7 @@
                                                :cookies cookies
                                                :query-params query-params)
               default-inst-event-handler-state-fields #{:last-error-time :supported-include-params :type}]
-          (is (set/superset? (set (keys (get-in body [:state :instance-failure-handler])))
-                             default-inst-event-handler-state-fields)
+          (is (set/superset? (set (keys (get-in body [:state :instance-failure-handler]))) default-inst-event-handler-state-fields)
               (str body)))))))
 
 (deftest ^:parallel ^:integration-fast ^:resource-heavy test-instance-tracker-failing-instance
@@ -82,3 +82,15 @@
                                      (keyword id))))
                     ; assert that the error time is recent
                     (is (t/before? start-time (du/str-to-date last-error-time)))))))))))))
+
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-instance-watch
+  (testing-using-waiter-url
+    (let [routers (routers waiter-url)
+          router-urls (vals routers)
+          {:keys [cookies]} (make-request waiter-url "/waiter-auth")]
+
+      (testing "watch stream gets initial list of healthy instances")
+
+      (testing "stream receives ")
+
+      )))
