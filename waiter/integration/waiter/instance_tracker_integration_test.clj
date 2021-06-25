@@ -278,7 +278,28 @@
               (doseq [{:keys [id]} healthy-instances]
                 (assert-watches-instance-id-entry watches id nil))))))
 
-      (testing "stream receives events when instances are no longer healthy due to service getting killed")
+      (testing "stream receives events when instances are no longer healthy due to service getting killed"
+        (let [watches (start-watches router-urls cookies)
+              {:keys [service-id] :as response}
+              (make-request-with-debug-info
+                {:x-kitchen-die-after-ms 6000
+                 :x-waiter-name (rand-name)}
+                #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
+          (with-service-cleanup
+            service-id
+            (assert-response-status response http-200-ok)
+            (assert-backend-response response)
+            ; wait for all routers to have positive number of healthy instances
+            (is (wait-for #(every-router-has-healthy-instances?-fn service-id)))
+            (let [{:keys [active-instances]} (:instances (service-settings waiter-url service-id :cookies cookies))
+                  healthy-instances (filter :healthy? active-instances)]
+              (is (pos? (count healthy-instances)))
+              (doseq [{:keys [id] :as inst} healthy-instances]
+                (assert-watches-instance-id-entry watches id inst))
+              ; kill service
+              (delete-service waiter-url service-id)
+              (doseq [{:keys [id]} healthy-instances]
+                (assert-watches-instance-id-entry watches id nil))))))
 
 
       )))
