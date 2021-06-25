@@ -27,6 +27,7 @@
             [waiter.service :as service]
             [waiter.statsd :as statsd]
             [waiter.status-codes :refer :all]
+            [waiter.util.async-utils :as au]
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
   (:import (java.net ConnectException SocketTimeoutException URI URLEncoder)
@@ -158,13 +159,42 @@
       (log/info "requesting termination of async request" request-id "at router" target-router-id)
       (make-inter-router-requests-fn endpoint :acceptable-router? #(= target-router-id %) :method :get))))
 
+(defn unpack-async-v2-request-data
+  "Helper for unpacking waiter-async v2 parameters from uri component.
+   Returns updated request object with parameters merged into :route-params."
+  [{:keys [request-data] :as route-params}]
+  (let [parsed-data (utils/b64-url-json-decode request-data)]
+    (-> route-params (dissoc :request-data) (merge parsed-data))))
+
+(defn delegate-async-v2-request
+  "Helper for unpacking waiter-async v2 parameters from uri component.
+   Returns updated request object with parameters merged into :route-params."
+  [request handler]
+  (let [request' (try
+                   (update request :route-params unpack-async-v2-request-data)
+                   (catch Exception ex
+                     (log/error ex "error in unpacking async request")
+                     {::error ex}))]
+    (if-let [ex (::error request')]
+      (au/singleton-chan (utils/exception->response ex request))
+      (handler request'))))
+
 (defn route-params->uri
   "Converts the route params to a uri.
-   The function expects prefix to end with a slash and location to begin with a slash.
-   Returns a formatted url: prefix/{request-id}/{router-id}/{service-id}/{host}/{port}{location}"
-  [prefix {:keys [host location port request-id router-id service-id]}]
-  (let [encode #(if %1 (URLEncoder/encode %1 "UTF-8") (str %1))]
-    (str prefix (encode request-id) "/" (encode router-id) "/" service-id "/" (str host) "/" (str port) location)))
+   The function expects location to begin with a slash.
+   Returns a uri in one of the following formats (depending on whether :proto is set):
+   - /waiter-async/action/{request-id}/{router-id}/{service-id}/{host}/{port}{location}
+   - /waiter-async/v2/action/{request-id}/{encoded-request-data}"
+  [action {:keys [host location port proto request-id router-id service-id] :as route-params}]
+  (let [encode #(if %1 (URLEncoder/encode %1 "UTF-8") (str %1))
+        v2? (boolean proto)]
+    (if v2?
+      (let [request-data (dissoc route-params :location :request-id)]
+        (str "/waiter-async/v2/" (name action) "/" (encode request-id)
+             "/" (utils/b64-url-json-encode request-data) location))
+      (str "/waiter-async/" (name action) "/"
+           (encode request-id) "/" (encode router-id) "/" service-id
+           "/" (str host) "/" (str port) location))))
 
 (defn sanitize-check-interval
   "Computes the async-check-interval to use by restricting the total number of checks to be performed
@@ -182,25 +212,25 @@
   "Performs the get request for the async request status and returns the response.
    Also, adds a corresponding entry into the request log."
   [make-http-request-fn auth-params-map user-agent {:keys [service-description service-id] :as descriptor}
-   {:keys [host] :as instance} location query-string]
+   {:keys [host] :as instance} request-proto location query-string]
   (counters/inc! (metrics/service-counter service-id "request-counts" "async-monitor"))
   (let [{:strs [metric-group backend-proto]} service-description
-        backend-protocol (hu/backend-protocol->http-version backend-proto)
-        backend-scheme (hu/backend-proto->scheme backend-proto)
+        request-protocol (hu/backend-protocol->http-version request-proto)
+        request-scheme (hu/backend-proto->scheme request-proto)
         request-stub (assoc auth-params-map
                        :body nil
-                       :client-protocol backend-protocol
+                       :client-protocol request-protocol
                        :headers {"host" host
                                  "user-agent" user-agent
                                  "x-cid" (cid/get-correlation-id)}
-                       :internal-protocol backend-protocol
+                       :internal-protocol request-protocol
                        :query-string query-string
                        :request-id (str "waiter-async-status-check-" (utils/unique-identifier))
                        :request-method :get
                        :request-time (t/now)
-                       :scheme backend-scheme
+                       :scheme request-scheme
                        :uri location)
-        response-ch (make-http-request-fn instance request-stub location metric-group backend-proto)]
+        response-ch (make-http-request-fn instance request-stub location metric-group request-proto)]
     (async/go
       (let [{:keys [error] :as response} (async/<! response-ch)]
         (let [response (-> (merge auth-params-map response)
@@ -209,11 +239,18 @@
                                 :error-class (some-> error .getClass .getCanonicalName)
                                 :instance-proto backend-proto
                                 :latest-service-id service-id
-                                :protocol backend-protocol
+                                :protocol request-protocol
                                 :request-type "async-status-check"
                                 :waiter-api-call? false))]
           (rlog/log-request! request-stub response))
         response))))
+
+(defn get-async-request-protocol
+  "Select the protocol for a waiter async request.
+   Currently always returns the configured backend-proto for the service,
+   but tests are able to redef this funcion to do something else."
+  [instance port service-description]
+  (get service-description "backend-proto"))
 
 (defn post-process-async-request-response
   "Triggers execution of monitoring system for an async request.
@@ -225,7 +262,9 @@
    {:keys [request-id] :as reason-map} request-properties location query-string]
   (let [correlation-id (cid/get-correlation-id)
         {:strs [metric-group backend-proto]} service-description
-        status-endpoint (scheduler/end-point-url backend-proto host port location)
+        request-proto (get-async-request-protocol instance port service-description)
+        proto (when (not= request-proto backend-proto) request-proto)
+        status-endpoint (scheduler/end-point-url request-proto host port location)
         _ (log/info "status endpoint for async request is" status-endpoint query-string)
         {:keys [async-check-interval-ms async-request-max-status-checks async-request-timeout-ms]} request-properties
         exit-chan (async/chan 1)]
@@ -235,7 +274,7 @@
     ;; trigger execution of monitoring system
     (letfn [(make-get-request-fn []
               (make-async-status-get-request make-http-request-fn auth-params-map user-agent descriptor
-                                             instance location query-string))
+                                             instance request-proto location query-string))
             (release-instance-fn [status]
               (log/info "decrementing outstanding requests as an async request has completed:" status)
               (counters/dec! (metrics/service-counter service-id "request-counts" "async"))
@@ -252,8 +291,8 @@
         (monitor-async-request make-get-request-fn complete-async-request-fn request-still-active? status-endpoint
                                check-interval-ms async-request-timeout-ms correlation-id exit-chan)))
     ;; modify the location header in the response
-    (let [param-map {:host host, :location location, :port port, :request-id request-id, :router-id router-id, :service-id service-id}
-          status-location (route-params->uri "/waiter-async/status/" param-map)
+    (let [param-map {:host host :location location :port port :proto proto :request-id request-id :router-id router-id :service-id service-id}
+          status-location (route-params->uri :status param-map)
           status-url (cond-> status-location
                        query-string (str "?" query-string))]
       (log/info "updating status location to" status-location "from" location "with query string" query-string)

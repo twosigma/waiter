@@ -22,7 +22,8 @@
             [waiter.auth.authentication :as auth]
             [waiter.service :as service]
             [waiter.status-codes :refer :all]
-            [waiter.test-helpers :refer :all])
+            [waiter.test-helpers :refer :all]
+            [waiter.util.utils :as utils])
   (:import java.net.URLDecoder))
 
 (deftest test-monitor-async-request
@@ -286,70 +287,82 @@
       (is (= "remote" @terminate-call-atom)))))
 
 (deftest test-post-process-async-request-response
-  (let [instance-host "www.example.com"
-        {:keys [host port] :as instance} {:host instance-host :port 1234}
-        router-id "my-router-id"
-        service-id "test-service-id"
-        metric-group "test-metric-group"
-        backend-proto "http"
-        user-agent "waiter-async-status-check/1234"
-        async-request-store-atom (atom {})
-        request-id "request-2394613984619"
-        reason-map {:request-id request-id}
-        request-properties {:async-check-interval-ms 100 :async-request-max-status-checks 50 :async-request-timeout-ms 200}
-        location (str "/location/" request-id)
-        query-string "a=b&c=d|e"
-        auth-params-map (auth/build-auth-params-map :internal "waiter@example.com")
-        make-http-request-fn (fn [in-instance in-request end-route metric-group backend-proto]
-                               (is (= instance in-instance))
-                               (is (contains? in-request :request-id))
-                               (is (str/starts-with? (str (:request-id in-request)) "waiter-async-status-check-"))
-                               (is (contains? in-request :request-time))
-                               (is (= (assoc auth-params-map
-                                        :body nil
-                                        :client-protocol "HTTP/1.1"
-                                        :headers {"host" instance-host
-                                                  "user-agent" "waiter-async-status-check/1234"
-                                                  "x-cid" "UNKNOWN"}
-                                        :internal-protocol "HTTP/1.1"
-                                        :query-string "a=b&c=d|e"
-                                        :request-method :get
-                                        :scheme "http"
-                                        :uri location)
-                                      (dissoc in-request :request-id :request-time)))
-                               (is (= "/location/request-2394613984619" end-route))
-                               (is (= "test-metric-group" metric-group))
-                               (is (= "http" backend-proto))
-                               (async/go {}))
-        instance-rpc-chan (async/chan 1)
-        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
-        complete-async-request-atom (atom nil)
-        response {}]
-    (with-redefs [service/release-instance-go (constantly nil)
-                  monitor-async-request
-                  (fn [make-get-request-fn complete-async-request-fn request-still-active? _
-                       async-check-interval-ms async-request-timeout-ms correlation-id exit-chan]
-                    (is (request-still-active?))
-                    (is (= 100 async-check-interval-ms))
-                    (is (= 200 async-request-timeout-ms))
-                    (is correlation-id)
-                    (is exit-chan)
-                    (make-get-request-fn)
-                    (reset! complete-async-request-atom complete-async-request-fn))]
-      (let [descriptor {:service-description {"backend-proto" backend-proto
-                                              "metric-group" metric-group}
-                        :service-id service-id}
-            {:keys [headers]} (post-process-async-request-response
-                                router-id async-request-store-atom make-http-request-fn auth-params-map
-                                populate-maintainer-chan! user-agent response descriptor instance reason-map
-                                request-properties location query-string)]
-        (is (get @async-request-store-atom request-id))
-        (is (= (str "/waiter-async/status/" request-id "/" router-id "/" service-id "/" host "/" port location "?" query-string)
-               (get headers "location")))
-        (let [complete-async-request-fn @complete-async-request-atom]
-          (is complete-async-request-fn)
-          (complete-async-request-fn :success)
-          (is (nil? (get @async-request-store-atom request-id))))))))
+  (doseq [version ["v1" "v2"]]
+    (testing (str "creating async " version " request")
+      (let [v2? (= version "v2")
+            instance-host "www.example.com"
+            {:keys [host port] :as instance} {:host instance-host :port 1234}
+            router-id "my-router-id"
+            service-id "test-service-id"
+            metric-group "test-metric-group"
+            backend-proto "http"
+            user-agent "waiter-async-status-check/1234"
+            async-request-store-atom (atom {})
+            request-id "request-2394613984619"
+            reason-map {:request-id request-id}
+            request-properties {:async-check-interval-ms 100 :async-request-max-status-checks 50 :async-request-timeout-ms 200}
+            location (str "/location/" request-id)
+            query-string "a=b&c=d|e"
+            auth-params-map (auth/build-auth-params-map :internal "waiter@example.com")
+            make-http-request-fn (fn [in-instance in-request end-route metric-group request-proto]
+                                   (is (= instance in-instance))
+                                   (is (contains? in-request :request-id))
+                                   (is (str/starts-with? (str (:request-id in-request)) "waiter-async-status-check-"))
+                                   (is (contains? in-request :request-time))
+                                   (is (= (assoc auth-params-map
+                                                 :body nil
+                                                 :client-protocol "HTTP/1.1"
+                                                 :headers {"host" instance-host
+                                                           "user-agent" "waiter-async-status-check/1234"
+                                                           "x-cid" "UNKNOWN"}
+                                                 :internal-protocol "HTTP/1.1"
+                                                 :query-string "a=b&c=d|e"
+                                                 :request-method :get
+                                                 :scheme (if v2? "https" "http")
+                                                 :uri location)
+                                          (dissoc in-request :request-id :request-time)))
+                                   (is (= "/location/request-2394613984619" end-route))
+                                   (is (= "test-metric-group" metric-group))
+                                   (is (= (if v2? "https" "http") request-proto))
+                                   (async/go {}))
+            instance-rpc-chan (async/chan 1)
+            populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
+            complete-async-request-atom (atom nil)
+            response {}
+            b64-url-json-encode* utils/b64-url-json-encode
+            get-async-request-protocol* get-async-request-protocol]
+        (with-redefs [get-async-request-protocol (if v2? (constantly "https") get-async-request-protocol*)
+                      service/release-instance-go (constantly nil)
+                      utils/b64-url-json-encode #(->> % (into (sorted-map)) b64-url-json-encode*)
+                      monitor-async-request
+                      (fn [make-get-request-fn complete-async-request-fn request-still-active? _
+                           async-check-interval-ms async-request-timeout-ms correlation-id exit-chan]
+                        (is (request-still-active?))
+                        (is (= 100 async-check-interval-ms))
+                        (is (= 200 async-request-timeout-ms))
+                        (is correlation-id)
+                        (is exit-chan)
+                        (make-get-request-fn)
+                        (reset! complete-async-request-atom complete-async-request-fn))]
+          (let [descriptor {:service-description {"backend-proto" backend-proto
+                                                  "metric-group" metric-group}
+                            :service-id service-id}
+                {:keys [headers]} (post-process-async-request-response
+                                    router-id async-request-store-atom make-http-request-fn auth-params-map
+                                    populate-maintainer-chan! user-agent response descriptor instance reason-map
+                                    request-properties location query-string)]
+            (is (get @async-request-store-atom request-id))
+            (if v2?
+              (let [params {:router-id router-id :service-id service-id :host host :port port :proto "https"}
+                    encoded-params (utils/b64-url-json-encode params)]
+                (is (= (str "/waiter-async/v2/status/" request-id "/" encoded-params location "?" query-string)
+                       (get headers "location"))))
+              (is (= (str "/waiter-async/status/" request-id "/" router-id "/" service-id "/" host "/" port location "?" query-string)
+                     (get headers "location"))))
+            (let [complete-async-request-fn @complete-async-request-atom]
+              (is complete-async-request-fn)
+              (complete-async-request-fn :success)
+              (is (nil? (get @async-request-store-atom request-id))))))))))
 
 (deftest test-post-process-async-request-response-sanitized-check-interval
   (let [instance-host "www.example.com"
@@ -426,22 +439,34 @@
 (deftest test-route-params-and-uri-generation
   (let [uri->route-params (fn [prefix uri]
                             (when (str/starts-with? (str uri) prefix)
-                              (let [route-uri (subs (str uri) (count prefix))
-                                    [request-id router-id service-id host port & remaining] (str/split (str route-uri) #"/")
-                                    decode #(URLDecoder/decode %1 "UTF-8")]
-                                {:host (when-not (str/blank? host) host)
-                                 :location (when (seq remaining) (str "/" (str/join "/" remaining)))
-                                 :port (when-not (str/blank? port) port)
-                                 :request-id (when-not (str/blank? request-id) (decode request-id))
-                                 :router-id (when-not (str/blank? router-id) (decode router-id))
-                                 :service-id (when-not (str/blank? service-id) service-id)})))
+                              (let [decode #(URLDecoder/decode % "UTF-8")
+                                    route-uri (subs (str uri) (count prefix))
+                                    [request-id & remaining-segments] (str/split (str route-uri) #"/")]
+                                (if (str/includes? prefix "/v2/")
+                                  (->> {:location (str "/" (str/join "/" (rest remaining-segments)))
+                                        :request-id request-id
+                                        :request-data (first remaining-segments)}
+                                       unpack-async-v2-request-data
+                                       (pc/map-vals (comp #(when-not (str/blank? %) %) str)))
+                                  (let [[router-id service-id host port & location-parts] remaining-segments]
+                                    {:host (when-not (str/blank? host) host)
+                                     :location (when (seq location-parts) (str "/" (str/join "/" location-parts)))
+                                     :port (when-not (str/blank? port) port)
+                                     :request-id (when-not (str/blank? request-id) (decode request-id))
+                                     :router-id (when-not (str/blank? router-id) (decode router-id))
+                                     :service-id (when-not (str/blank? service-id) service-id)})))))
         execute-test (fn [params]
-                       (let [prefix "/my-test-prefix/"
-                             uri (route-params->uri prefix params)
-                             decoded-params (uri->route-params prefix uri)]
+                       (let [action :action
+                             v2? (contains? params :proto)
+                             prefix (str "/waiter-async/" (when v2? "v2/") (name action) "/")
+                             uri (route-params->uri action params)
+                             decoded-params (uri->route-params prefix uri)
+                             v1-param-keys [:host :location :port :request-id :router-id :service-id]
+                             default-nil-v1-params (pc/map-from-keys (constantly nil) v1-param-keys)]
                          (is (str/starts-with? uri prefix))
-                         (is (every? (fn [v] (if v (str/includes? uri (str v)) true)) (vals params)))
-                         (is (= (merge {:host nil, :location nil, :port nil, :request-id nil, :router-id nil, :service-id nil}
+                         (when-not v2?
+                           (doseq [[_ v] params] (is (str/includes? uri (str v)))))
+                         (is (= (merge default-nil-v1-params
                                        (pc/map-vals #(if (integer? %1) (str %1) %1) params))
                                 decoded-params))))]
     (testing "empty-params" (execute-test {}))
@@ -451,9 +476,16 @@
     (testing "only-request-id" (execute-test {:request-id "6546540.6406460"}))
     (testing "only-router-id" (execute-test {:router-id "6546540.6406460"}))
     (testing "only-service-id" (execute-test {:service-id "test-service-id"}))
+    (testing "all-but-proto" (execute-test {:host "105.123.025.36"
+                                            :location "/status-location"
+                                            :port 3254
+                                            :request-id "6546540.6406460"
+                                            :router-id "6546540.6406460"
+                                            :service-id "test-service-id"}))
     (testing "all-params" (execute-test {:host "105.123.025.36"
                                          :location "/status-location"
                                          :port 3254
+                                         :proto "h2"
                                          :request-id "6546540.6406460"
                                          :router-id "6546540.6406460"
                                          :service-id "test-service-id"}))))

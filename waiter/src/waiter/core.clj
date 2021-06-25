@@ -148,11 +148,16 @@
                                "/owners" :token-owners-handler-fn
                                "/refresh" :token-refresh-handler-fn
                                "/reindex" :token-reindex-handler-fn}
-                     "waiter-async" {["/complete/" :request-id "/" :service-id] :async-complete-handler-fn
+                     "waiter-async" {;; async api version 1
+                                     ["/complete/" :request-id "/" :service-id] :async-complete-handler-fn
                                      ["/result/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
                                      :async-result-handler-fn
                                      ["/status/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
-                                     :async-status-handler-fn}
+                                     :async-status-handler-fn
+                                     ;; async api version 2
+                                     ["/v2/complete/" :request-id "/" :request-data] :async-complete-v2-handler-fn
+                                     ["/v2/result/" :request-id "/" :request-data "/" [#".+" :location]] :async-result-v2-handler-fn
+                                     ["/v2/status/" :request-id "/" :request-data "/" [#".+" :location]] :async-status-v2-handler-fn}
                      "waiter-auth" :waiter-auth-handler-fn
                      "waiter-consent" {"" :waiter-acknowledge-consent-handler-fn
                                        ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
@@ -575,6 +580,9 @@
         (async/close! body)
         (assoc response :body body-response)))))
 
+(def waiter-request-path-pattern
+  #"^/waiter-(async/(v2/)?(complete|result|status)/|auth/|consent|interstitial)")
+
 (defn waiter-request?-factory
   "Creates a function that determines for a given request whether or not
   the request is intended for Waiter itself or a service of Waiter."
@@ -587,9 +595,7 @@
       (let [{:strs [host]} headers]
         ; special urls that are always for Waiter (FIXME)
         (or (contains? waiter-api-full-names uri)
-            (some #(str/starts-with? (str uri) %)
-                  ["/waiter-async/complete/" "/waiter-async/result/" "/waiter-async/status/" "/waiter-auth/"
-                   "/waiter-consent" "/waiter-interstitial"])
+            (and uri (some? (re-find waiter-request-path-pattern uri)))
             (and (or (str/blank? host)
                      (valid-waiter-hostnames (-> host
                                                (str/split #":")
@@ -1417,16 +1423,25 @@
                                 (wrap-router-auth-fn
                                   (fn async-complete-handler-fn [request]
                                     (handler/complete-async-handler async-request-terminate-fn request))))
+   :async-complete-v2-handler-fn (pc/fnk [async-complete-handler-fn]
+                                   (fn async-complete-v2-handler-fn [request]
+                                     (async-req/delegate-async-v2-request request async-complete-handler-fn)))
    :async-result-handler-fn (pc/fnk [[:routines async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn]
                                      wrap-secure-request-fn]
                               (wrap-secure-request-fn
                                 (fn async-result-handler-fn [request]
                                   (handler/async-result-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))))
+   :async-result-v2-handler-fn (pc/fnk [async-result-handler-fn]
+                                 (fn async-result-v2-handler-fn [request]
+                                   (async-req/delegate-async-v2-request request async-result-handler-fn)))
    :async-status-handler-fn (pc/fnk [[:routines async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn]
                                      wrap-secure-request-fn]
                               (wrap-secure-request-fn
                                 (fn async-status-handler-fn [request]
                                   (handler/async-status-handler async-trigger-terminate-fn make-http-request-fn service-id->service-description-fn request))))
+   :async-status-v2-handler-fn (pc/fnk [async-status-handler-fn]
+                                 (fn async-status-v2-handler-fn [request]
+                                   (async-req/delegate-async-v2-request request async-status-handler-fn)))
    :auth-expires-at-handler-fn (pc/fnk [[:state passwords]]
                                  (let [password (first passwords)]
                                    (fn auth-expires-at-handler-fn [request]
