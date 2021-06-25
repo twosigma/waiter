@@ -211,6 +211,12 @@
                       (let [{:keys [active-instances]} (:instances (service-settings router-url service-id :cookies cookies))
                             healthy-instances (filter :healthy? active-instances)]
                         (pos? (count healthy-instances))))
+                    router-urls))
+          every-router-has-failed-instances?-fn
+          (fn every-router-has-failed-instances? [service-id]
+            (every? (fn has-failed-instances? [router-url]
+                      (let [{:keys [failed-instances]} (:instances (service-settings router-url service-id :cookies cookies))]
+                        (pos? (count failed-instances))))
                     router-urls))]
 
       (testing "watch stream gets initial list of healthy instances that were created before watch started"
@@ -245,12 +251,32 @@
             (is (wait-for #(every-router-has-healthy-instances?-fn service-id)))
             (let [{:keys [active-instances]} (:instances (service-settings waiter-url service-id :cookies cookies))
                   healthy-instances (filter :healthy? active-instances)]
-              (println "looking for healthy-instances" healthy-instances)
               (is (pos? (count healthy-instances)))
               (doseq [{:keys [id] :as inst} healthy-instances]
                 (assert-watches-instance-id-entry watches id inst))))))
 
-      (testing "stream receives events when instances are no longer healthy")
+      (testing "stream receives events when instances are no longer healthy"
+        (let [watches (start-watches router-urls cookies)
+              {:keys [service-id] :as response}
+              (make-request-with-debug-info
+                {:x-kitchen-die-after-ms 6000
+                 :x-waiter-name (rand-name)}
+                #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
+          (with-service-cleanup
+            service-id
+            (assert-response-status response http-200-ok)
+            (assert-backend-response response)
+            ; wait for all routers to have positive number of healthy instances
+            (is (wait-for #(every-router-has-healthy-instances?-fn service-id)))
+            (let [{:keys [active-instances]} (:instances (service-settings waiter-url service-id :cookies cookies))
+                  healthy-instances (filter :healthy? active-instances)]
+              (is (pos? (count healthy-instances)))
+              (doseq [{:keys [id] :as inst} healthy-instances]
+                (assert-watches-instance-id-entry watches id inst))
+              ; wait for all routers to report failed instances
+              (is (wait-for #(every-router-has-failed-instances?-fn service-id)))
+              (doseq [{:keys [id]} healthy-instances]
+                (assert-watches-instance-id-entry watches id nil))))))
 
       (testing "stream receives events when instances are no longer healthy due to service getting killed")
 
