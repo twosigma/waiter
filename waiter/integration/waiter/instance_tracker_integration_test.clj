@@ -9,9 +9,7 @@
             [waiter.util.date-utils :as du]
             [clojure.core.async :as async]
             [waiter.util.utils :as utils]
-            [cheshire.core :as cheshire]
-            [clojure.data :as data]
-            [clojure.pprint :as pprint])
+            [cheshire.core :as cheshire])
   (:import (java.io SequenceInputStream InputStreamReader ByteArrayInputStream)
            (java.util Collections)))
 
@@ -115,6 +113,8 @@
                 id->healthy-instance-atom
                 (let [{:strs [object type]} msg
                       id->healthy-instance @id->healthy-instance-atom]
+                  (println "received msg")
+                  (println msg)
                   (case type
                     "initial"
                     (reduce
@@ -125,20 +125,30 @@
 
                     "events"
                     (let [new-healthy-instances (get-in object ["healthy-instances" "new"])
-                          removed-healthy-instances (get-in object ["healthy-instances" "removed"])]
-                      (cond-> id->healthy-instance
-                              (some? new-healthy-instances)
-                              #(reduce
-                                 (fn [new-id->healthy-instance inst]
-                                   (assoc new-id->healthy-instance (get inst "id") inst))
-                                 %
-                                 new-healthy-instances)
-                              (some? removed-healthy-instances)
-                              #(reduce
-                                 (fn [new-id->healthy-instance inst]
-                                   (dissoc new-id->healthy-instance (get inst "id") inst))
-                                 %
-                                 new-healthy-instances)))
+                          removed-healthy-instances (get-in object ["healthy-instances" "removed"])
+                          add-healthy-instances-fn (fn add-healthy-instances
+                                                     [id->inst]
+                                                     (reduce
+                                                       (fn [new-id->inst inst]
+                                                         (assoc new-id->inst (get inst "id") inst))
+                                                       id->inst
+                                                       new-healthy-instances))
+                          remove-healthy-instances-fn (fn remove-healthy-instances
+                                                        [id->inst]
+                                                        (reduce
+                                                          (fn [new-id->inst inst]
+                                                            (dissoc new-id->inst (get inst "id")))
+                                                          id->inst
+                                                          removed-healthy-instances))
+                          id->healthy-instance' (cond-> id->healthy-instance
+                                                        (some? new-healthy-instances)
+                                                        add-healthy-instances-fn
+                                                        (some? removed-healthy-instances)
+                                                        remove-healthy-instances-fn)]
+                      (println "new-healthy-instances" new-healthy-instances)
+                      (println "removed-healthy-instances" removed-healthy-instances)
+                      (println "id->healthy-instance'" id->healthy-instance')
+                      id->healthy-instance')
                     (throw (ex-info "Unknown event type received from watch" {:event msg}))))))
             (catch Exception e
               (exit-fn)
@@ -177,7 +187,8 @@
      (is (wait-for
            #(= (walk/keywordize-keys (get-current-instance-entry-fn#))
                (dissoc entry# :log-url))
-           :interval 1 :timeout 5)
+           ; this timeout is so high due to scheduler syncer
+           :interval 1 :timeout 10)
          (str "watch for " router-url# " id->instance entry for instance-id '" instance-id# "' was '" (get-current-instance-entry-fn#)
               "' instead of '" entry# "'"))))
 
@@ -193,7 +204,14 @@
   (testing-using-waiter-url
     (let [routers (routers waiter-url)
           router-urls (vals routers)
-          {:keys [cookies]} (make-request waiter-url "/waiter-auth")]
+          {:keys [cookies]} (make-request waiter-url "/waiter-auth")
+          every-router-has-healthy-instances?-fn
+          (fn every-router-has-healthy-instances? [service-id]
+            (every? (fn has-failed-instances? [router-url]
+                      (let [{:keys [active-instances]} (:instances (service-settings router-url service-id :cookies cookies))
+                            healthy-instances (filter :healthy? active-instances)]
+                        (pos? (count healthy-instances))))
+                    router-urls))]
 
       (testing "watch stream gets initial list of healthy instances that were created before watch started"
         (let [{:keys [service-id] :as response}
@@ -205,13 +223,7 @@
             (assert-response-status response http-200-ok)
             (assert-backend-response response)
             ; wait for all routers to have positive number of healthy instances
-            (is (wait-for
-                  (fn every-router-has-healthy-instances? []
-                    (every? (fn has-failed-instances? [router-url]
-                              (let [{:keys [active-instances]} (:instances (service-settings router-url service-id :cookies cookies))
-                                    healthy-instances (filter :healthy? active-instances)]
-                                (pos? (count healthy-instances))))
-                            router-urls))))
+            (is (wait-for #(every-router-has-healthy-instances?-fn service-id)))
             (let [{:keys [active-instances]} (:instances (service-settings waiter-url service-id :cookies cookies))
                   healthy-instances (filter :healthy? active-instances)
                   watches (start-watches router-urls cookies)]
@@ -219,7 +231,24 @@
               (doseq [{:keys [id] :as inst} healthy-instances]
                 (assert-watches-instance-id-entry watches id inst))))))
 
-      (testing "stream receives events when instances become healthy")
+      (testing "stream receives events when instances become healthy"
+        (let [watches (start-watches router-urls cookies)
+              {:keys [service-id] :as response}
+              (make-request-with-debug-info
+                {:x-waiter-name (rand-name)}
+                #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
+          (with-service-cleanup
+            service-id
+            (assert-response-status response http-200-ok)
+            (assert-backend-response response)
+            ; wait for all routers to have positive number of healthy instances
+            (is (wait-for #(every-router-has-healthy-instances?-fn service-id)))
+            (let [{:keys [active-instances]} (:instances (service-settings waiter-url service-id :cookies cookies))
+                  healthy-instances (filter :healthy? active-instances)]
+              (println "looking for healthy-instances" healthy-instances)
+              (is (pos? (count healthy-instances)))
+              (doseq [{:keys [id] :as inst} healthy-instances]
+                (assert-watches-instance-id-entry watches id inst))))))
 
       (testing "stream receives events when instances are no longer healthy")
 
