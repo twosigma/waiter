@@ -8,8 +8,8 @@
             [waiter.metrics :as metrics]
             [waiter.status-codes :refer :all]
             [waiter.util.cache-utils :as cu]
-            [waiter.util.utils :as utils]
-            [waiter.util.ring-utils :as ru]))
+            [waiter.util.ring-utils :as ru]
+            [waiter.util.utils :as utils]))
 
 ; Events are being handled by all routers in a cluster for resiliency
 (defprotocol InstanceEventHandler
@@ -201,7 +201,7 @@
             should-watch? (utils/request-flag request-params "watch")
             correlation-id (cid/get-correlation-id)
             watch-chan-xform
-            (map (fn [{:keys [id object type] :as event}]
+            (map (fn [{:keys [id type] :as event}]
                    (cid/cinfo correlation-id "forwarding instances event to client" {:id id :type type})
                    (cid/cdebug correlation-id "full instances event data sent to watch client" {:event event})
                    (utils/clj->json event)))

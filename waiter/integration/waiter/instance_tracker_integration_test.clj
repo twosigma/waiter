@@ -1,5 +1,7 @@
 (ns waiter.instance-tracker-integration-test
-  (:require [clj-time.core :as t]
+  (:require [cheshire.core :as cheshire]
+            [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.set :as set]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
@@ -7,9 +9,7 @@
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du]
-            [clojure.core.async :as async]
-            [waiter.util.utils :as utils]
-            [cheshire.core :as cheshire])
+            [waiter.util.utils :as utils])
   (:import (java.io SequenceInputStream InputStreamReader ByteArrayInputStream)
            (java.util Collections)))
 
@@ -113,8 +113,6 @@
                 id->healthy-instance-atom
                 (let [{:strs [object type]} msg
                       id->healthy-instance @id->healthy-instance-atom]
-                  (println "received msg")
-                  (println msg)
                   (case type
                     "initial"
                     (reduce
@@ -139,16 +137,12 @@
                                                           (fn [new-id->inst inst]
                                                             (dissoc new-id->inst (get inst "id")))
                                                           id->inst
-                                                          removed-healthy-instances))
-                          id->healthy-instance' (cond-> id->healthy-instance
-                                                        (some? new-healthy-instances)
-                                                        add-healthy-instances-fn
-                                                        (some? removed-healthy-instances)
-                                                        remove-healthy-instances-fn)]
-                      (println "new-healthy-instances" new-healthy-instances)
-                      (println "removed-healthy-instances" removed-healthy-instances)
-                      (println "id->healthy-instance'" id->healthy-instance')
-                      id->healthy-instance')
+                                                          removed-healthy-instances))]
+                      (cond-> id->healthy-instance
+                              (some? new-healthy-instances)
+                              add-healthy-instances-fn
+                              (some? removed-healthy-instances)
+                              remove-healthy-instances-fn))
                     (throw (ex-info "Unknown event type received from watch" {:event msg}))))))
             (catch Exception e
               (exit-fn)
@@ -299,7 +293,4 @@
               ; kill service
               (delete-service waiter-url service-id)
               (doseq [{:keys [id]} healthy-instances]
-                (assert-watches-instance-id-entry watches id nil))))))
-
-
-      )))
+                (assert-watches-instance-id-entry watches id nil)))))))))
