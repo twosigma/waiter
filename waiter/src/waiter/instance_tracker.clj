@@ -9,7 +9,8 @@
             [waiter.status-codes :refer :all]
             [waiter.util.cache-utils :as cu]
             [waiter.util.ring-utils :as ru]
-            [waiter.util.utils :as utils]))
+            [waiter.util.utils :as utils]
+            [clj-time.core :as t]))
 
 ; Events are being handled by all routers in a cluster for resiliency
 (defprotocol InstanceEventHandler
@@ -54,12 +55,18 @@
     (DefaultInstanceFailureHandler. clock handler-state)))
 
 (defn make-instance-event
-  [type object id]
-  {:object object
-   :type type
-   :id id})
+  "Create an event map with keys :id :object :type
+  :id is an id for tracking a debugging issues
+  :object is general data
+  :type provides the client a information to interpret the object data"
+  [id type object]
+  {:id id
+   :object object
+   :type type})
 
-(defn make-id->instance [service-id->instances]
+(defn make-id->instance
+  "Takes a service-id->instances mapping and returns an instance-id->instance mapping"
+  [service-id->instances]
   (reduce
     (fn [cur-id->inst cur-instances]
       (reduce
@@ -70,13 +77,22 @@
     {}
     (vals service-id->instances)))
 
-(defn get-new-and-old-instances [id->instance id->instance']
+(defn get-new-and-old-instances
+  "Returns [old-instances new-instances] given two maps id->instance and id->instance'. Instances that exist only in
+  id->instance are considered an old-instances, and instances that exist only in id->instance' are considered new instances.
+  This is based on the instance ids only and changes in other instance fields are ignored."
+  [id->instance id->instance']
   (let [inst-ids (set (keys id->instance))
         inst-ids' (set (keys id->instance'))
         in-both (set/intersection inst-ids inst-ids')]
-
     [(map id->instance (set/difference inst-ids in-both))
      (map id->instance' (set/difference inst-ids' in-both))]))
+
+; TODO:
+; add filter for service-id
+; add streaming-timeout
+; move endpoint to /apps/instances
+; stream changes in other instance fields
 
 (defn start-instance-tracker
   "Starts daemon thread that tracks instances and produces events based on state changes. It routes these events to the
@@ -110,6 +126,7 @@
                       (contains? include-flags "buffer-state")
                       (assoc :buffer-state {:instance-watch-channels-update-chan-count
                                             (.count instance-watch-channels-update-chan-buffer)}))))
+
           go-chan
           (async/go
             (try
@@ -151,7 +168,7 @@
                                                    (assoc-in [:healthy-instances :new] new-healthy-instances)
                                                    (not-empty removed-healthy-instances)
                                                    (assoc-in [:healthy-instances :removed] removed-healthy-instances))
-                                    instance-event (make-instance-event :events events external-event-cid)
+                                    instance-event (make-instance-event external-event-cid :events events)
                                     watch-chans' (if (or (not-empty new-healthy-instances)
                                                          (not-empty removed-healthy-instances))
                                                    ; only send event if there were changes to set of healthy-instances
@@ -169,7 +186,7 @@
                             (log/info "received watch-chan" msg)
                             (let [watch-chan msg
                                   event-object {:healthy-instances (or (vals id->healthy-instance) [])}
-                                  initial-event (make-instance-event :initial event-object external-event-cid)]
+                                  initial-event (make-instance-event external-event-cid :initial event-object)]
                               (async/put! watch-chan initial-event)
                               (assoc current-state :watch-chans (conj watch-chans watch-chan)))))
 
