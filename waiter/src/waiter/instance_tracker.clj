@@ -77,22 +77,24 @@
     {}
     (vals service-id->instances)))
 
-(defn get-new-and-old-instances
-  "Returns [old-instances new-instances] given two maps id->instance and id->instance'. Instances that exist only in
-  id->instance are considered an old-instances, and instances that exist only in id->instance' are considered new instances.
-  This is based on the instance ids only and changes in other instance fields are ignored."
+(defn get-new-changed-and-old-instances
+  "Returns [old-instances new-instances changed-instances] given two maps id->instance and id->instance'.
+  Instances that exist only in id->instance are considered an old-instances, instances that exist only in id->instance' are considered new instances, and instances in both input maps with different fields are considered updated"
   [id->instance id->instance']
   (let [inst-ids (set (keys id->instance))
         inst-ids' (set (keys id->instance'))
         in-both (set/intersection inst-ids inst-ids')]
     [(map id->instance (set/difference inst-ids in-both))
-     (map id->instance' (set/difference inst-ids' in-both))]))
+     (map id->instance' (set/difference inst-ids' in-both))
+     (map id->instance' (filter
+                          (fn changed? [inst-id]
+                            (not= (get id->instance inst-id) (get id->instance' inst-id)))
+                          in-both))]))
 
 ; TODO:
 ; add filter for service-id
 ; add streaming-timeout
 ; move endpoint to /apps/instances
-; stream changes in other instance fields
 
 (defn start-instance-tracker
   "Starts daemon thread that tracks instances and produces events based on state changes. It routes these events to the
@@ -151,21 +153,22 @@
                             processing-cid
                             (let [{:keys [service-id->failed-instances service-id->healthy-instances]} msg
                                   id->failed-instance' (make-id->instance service-id->failed-instances)
-                                  [_ new-failed-instances]
-                                  (get-new-and-old-instances id->failed-instance id->failed-instance')
+                                  [_ new-failed-instances _]
+                                  (get-new-changed-and-old-instances id->failed-instance id->failed-instance')
                                   id->healthy-instance' (make-id->instance service-id->healthy-instances)
-                                  [removed-healthy-instances new-healthy-instances]
-                                  (get-new-and-old-instances id->healthy-instance id->healthy-instance')]
+                                  [removed-healthy-instances new-healthy-instances changed-healthy-instances]
+                                  (get-new-changed-and-old-instances id->healthy-instance id->healthy-instance')
+                                  updated-healthy-instances (concat new-healthy-instances changed-healthy-instances)]
                               (when (not-empty new-failed-instances)
                                 (log/info "new failed instances" {:new-failed-instances new-failed-instances})
                                 (handle-instances-event! instance-failure-handler-component {:new-failed-instances new-failed-instances}))
-                              (when (not-empty new-healthy-instances)
+                              (when (not-empty updated-healthy-instances)
                                 (log/info "new healthy instances" {:new-healthy-instances (map :id new-healthy-instances)}))
                               (when (not-empty removed-healthy-instances)
                                 (log/info "removed healthy instances" {:removed-healthy-instances (map :id removed-healthy-instances)}))
                               (let [events (cond-> {:healthy-instances {}}
                                                    (not-empty new-healthy-instances)
-                                                   (assoc-in [:healthy-instances :new] new-healthy-instances)
+                                                   (assoc-in [:healthy-instances :updated] updated-healthy-instances)
                                                    (not-empty removed-healthy-instances)
                                                    (assoc-in [:healthy-instances :removed] removed-healthy-instances))
                                     instance-event (make-instance-event external-event-cid :events events)

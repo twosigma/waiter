@@ -122,24 +122,24 @@
                       (get object "healthy-instances"))
 
                     "events"
-                    (let [new-healthy-instances (get-in object ["healthy-instances" "new"])
+                    (let [updated-healthy-instances (get-in object ["healthy-instances" "updated"])
                           removed-healthy-instances (get-in object ["healthy-instances" "removed"])
                           add-healthy-instances-fn (fn add-healthy-instances
                                                      [id->inst]
                                                      (reduce
-                                                       (fn [new-id->inst inst]
-                                                         (assoc new-id->inst (get inst "id") inst))
+                                                       (fn [updated-id->inst inst]
+                                                         (assoc updated-id->inst (get inst "id") inst))
                                                        id->inst
-                                                       new-healthy-instances))
+                                                       updated-healthy-instances))
                           remove-healthy-instances-fn (fn remove-healthy-instances
                                                         [id->inst]
                                                         (reduce
-                                                          (fn [new-id->inst inst]
-                                                            (dissoc new-id->inst (get inst "id")))
+                                                          (fn [removed-id->inst inst]
+                                                            (dissoc removed-id->inst (get inst "id")))
                                                           id->inst
                                                           removed-healthy-instances))]
                       (cond-> id->healthy-instance
-                              (some? new-healthy-instances)
+                              (some? updated-healthy-instances)
                               add-healthy-instances-fn
                               (some? removed-healthy-instances)
                               remove-healthy-instances-fn))
