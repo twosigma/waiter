@@ -98,6 +98,7 @@
                      (subs oidc/oidc-enabled-uri 1) :oidc-enabled-handler-fn
                      "app-name" :app-name-handler-fn
                      "apps" {"" :service-list-handler-fn
+                             ["/" "instances"] :instances-list-handler-fn
                              ["/" :service-id] :service-handler-fn
                              ["/" :service-id "/await/" :goal-state] :service-await-handler-fn
                              ["/" :service-id "/logs"] :service-view-logs-handler-fn
@@ -108,7 +109,6 @@
                      "eject" :eject-instance-handler-fn
                      "ejected" {["/" :service-id] :ejected-instances-list-handler-fn}
                      "favicon.ico" :favicon-handler-fn
-                     "instances" {"" :instances-list-handler-fn}
                      "metrics" :metrics-request-handler-fn
                      (subs oidc/oidc-callback-uri 1) :oidc-callback-handler-fn
                      "service-id" :service-id-handler-fn

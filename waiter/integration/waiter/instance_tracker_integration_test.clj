@@ -91,7 +91,7 @@
 (defn- start-watch
   [router-url cookies]
   (let [{:keys [body error headers] :as response}
-        (make-request router-url "/instances" :async? true :cookies cookies :query-params {"watch" "true"})
+        (make-request router-url "/apps/instances" :async? true :cookies cookies :query-params {"watch" "true"})
         _ (assert-response-status response 200)
         json-objects (->> body
                           utils/chan-to-seq!!
