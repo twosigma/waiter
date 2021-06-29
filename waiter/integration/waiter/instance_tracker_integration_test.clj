@@ -291,7 +291,7 @@
                 (assert-watches-instance-id-entry watches id nil))))
           (stop-watches watches)))
 
-      (testing "service-id filter provides only initial instances for a service"
+      (testing "service-id filter provides initial healthy-instances only for a service"
         (let [{:keys [service-id] :as response}
               (make-request-with-debug-info
                 {:x-waiter-name (rand-name)}
@@ -326,7 +326,7 @@
                   (assert-watch-instance-id-entry watch id nil))
                 (stop-watch watch))))))
 
-      (testing "service-id filter provides update events only for a service"
+      (testing "service-id filter provides [:healthy-instances :update] events only for a service"
         (let [{:keys [service-id] :as response}
               (make-request-with-debug-info
                 {:x-waiter-name (rand-name)}
