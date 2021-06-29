@@ -116,15 +116,15 @@
                        :supported-include-params ["buffer-state" "id->failed-instance" "id->healthy-instance"
                                                   "instance-failure-handler"]
                        :watch-count (count watch-chans)}
+                      (contains? include-flags "buffer-state")
+                      (assoc :buffer-state {:instance-watch-channels-update-chan-count
+                                            (.count instance-watch-channels-update-chan-buffer)})
                       (contains? include-flags "id->failed-instance")
                       (assoc :id->failed-instance id->failed-instance)
                       (contains? include-flags "id->healthy-instance")
                       (assoc :id->healthy-instance id->healthy-instance)
                       (contains? include-flags "instance-failure-handler")
-                      (assoc :instance-failure-handler (state instance-failure-handler-component include-flags))
-                      (contains? include-flags "buffer-state")
-                      (assoc :buffer-state {:instance-watch-channels-update-chan-count
-                                            (.count instance-watch-channels-update-chan-buffer)}))))
+                      (assoc :instance-failure-handler (state instance-failure-handler-component include-flags)))))
 
           go-chan
           (async/go

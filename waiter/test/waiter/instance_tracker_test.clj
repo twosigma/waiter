@@ -34,9 +34,23 @@
 (defn get-latest-instance-tracker-state!!
   [query-chan]
   (let [temp-chan (async/promise-chan)]
-    (async/>!! query-chan {:include-flags #{"id->failed-date" "id->failed-instance" "instance-failure-handler"}
+    (async/>!! query-chan {:include-flags #{"id->failed-date" "id->failed-instance" "id->healthy-instance"
+                                            "instance-failure-handler"}
                            :response-chan temp-chan})
     (async/<!! temp-chan)))
+
+(defn- create-watch-chans
+  [x]
+  (for [_ (range x)]
+    (async/chan (async/sliding-buffer 1024))))
+
+(defn add-watch-chans [tokens-watch-channels-update-chan watch-chans]
+  (doseq [chan watch-chans]
+    (async/put! tokens-watch-channels-update-chan chan)))
+
+(defn remove-watch-chans [watch-chans]
+  (doseq [chan watch-chans]
+    (async/close! chan)))
 
 (deftest test-instance-tracker
   (let [router-state-1 {:service-id->failed-instances {"service-id-1" [{:id "s1.instance-id-1"}]}}
@@ -143,4 +157,25 @@
                    {:id "s2.instance-id-3"}}
                  (some-> handle-instances-event! second first :new-failed-instances set))))
 
-        (stop-instance-tracker!! go-chan exit-chan)))))
+        (stop-instance-tracker!! go-chan exit-chan)))
+
+    (testing "instance-tracker daemon increments watch-chan count when adding a new watch-chan"
+      (let [ev-handler-call-history-atom (atom {:handle-instances-event! [] :state []})
+            ev-handler (TestInstanceFailureHandler. ev-handler-call-history-atom)
+            router-state-chan (au/latest-chan)
+            {:keys [exit-chan go-chan instance-watch-channels-update-chan query-chan]}
+            (start-instance-tracker clock router-state-chan ev-handler)]
+        (is (= (:watch-count (get-latest-instance-tracker-state!! query-chan))
+               0))
+        (add-watch-chans instance-watch-channels-update-chan (create-watch-chans 10))
+        (is (= (:watch-count (get-latest-instance-tracker-state!! query-chan))
+               10))
+        (stop-instance-tracker!! go-chan exit-chan)))
+
+    (testing "instance-tracker does not send empty events to watch-chans"
+
+      )
+
+    (testing "instance-tracker daemon determines updated healthy instances if a field changed")
+
+    ))
