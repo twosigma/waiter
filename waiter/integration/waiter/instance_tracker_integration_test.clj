@@ -126,8 +126,12 @@
                           remove-healthy-instances-fn (fn remove-healthy-instances
                                                         [id->inst]
                                                         (reduce
-                                                          (fn [removed-id->inst inst]
-                                                            (dissoc removed-id->inst (get inst "id")))
+                                                          (fn [removed-id->inst {:strs [id] :as inst}]
+                                                            (if (get removed-id->inst id)
+                                                              (dissoc removed-id->inst (get inst "id"))
+                                                              (throw (ex-info "No instance to remove from client listener"
+                                                                              {:instance-id id
+                                                                               :event msg}))))
                                                           id->inst
                                                           removed-healthy-instances))]
                       (cond-> id->healthy-instance
@@ -331,13 +335,85 @@
               (make-request-with-debug-info
                 {:x-waiter-name (rand-name)}
                 #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))
-              watch (start-watch waiter-url cookies
-                                 :query-params {"service-id" service-id
-                                                "watch" "true"})
               {service-id-filtered :service-id :as response-filtered}
               (make-request-with-debug-info
                 {:x-waiter-metadata-foo "baz"
                  :x-waiter-name (rand-name)}
+                #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
+          (with-service-cleanup
+            service-id-filtered
+            (with-service-cleanup
+              service-id
+              (is (not= service-id service-id-filtered))
+              (assert-response-status response http-200-ok)
+              (assert-backend-response response)
+              (assert-response-status response-filtered http-200-ok)
+              (assert-backend-response response-filtered)
+              (is (wait-for #(every-router-has-healthy-instances?-fn service-id)))
+              (is (wait-for #(every-router-has-healthy-instances?-fn service-id-filtered)))
+              (let [{:keys [active-instances]} (:instances (service-settings waiter-url service-id :cookies cookies))
+                    {active-instances-filtered :active-instances}
+                    (:instances (service-settings waiter-url service-id-filtered :cookies cookies))
+                    healthy-instances (filter :healthy? active-instances)
+                    watch (start-watch waiter-url cookies
+                                       :query-params {"service-id" service-id
+                                                      "watch" "true"})]
+                (is (pos? (count healthy-instances)))
+                (doseq [{:keys [id] :as inst} healthy-instances]
+                  (assert-watch-instance-id-entry watch id inst))
+                (doseq [{:keys [id]} (filter :healthy? active-instances-filtered)]
+                  (assert-watch-instance-id-entry watch id nil))
+                (stop-watch watch))))))
+
+      (testing "streams initial instances for service-ids that match service description filter"
+        (let [{:keys [service-id] :as response}
+              (make-request-with-debug-info
+                {:x-waiter-metadata-foo "testingfoo1013"
+                 :x-waiter-name (rand-name)}
+                #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))
+              {service-id-filtered :service-id :as response-filtered}
+              (make-request-with-debug-info
+                {:x-waiter-name (rand-name)}
+                #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
+          (with-service-cleanup
+            service-id-filtered
+            (with-service-cleanup
+              service-id
+              (is (not= service-id service-id-filtered))
+              (assert-response-status response http-200-ok)
+              (assert-backend-response response)
+              (assert-response-status response-filtered http-200-ok)
+              (assert-backend-response response-filtered)
+              (is (wait-for #(every-router-has-healthy-instances?-fn service-id)))
+              (is (wait-for #(every-router-has-healthy-instances?-fn service-id-filtered)))
+              (let [{:keys [active-instances]} (:instances (service-settings waiter-url service-id :cookies cookies))
+                    {active-instances-filtered :active-instances}
+                    (:instances (service-settings waiter-url service-id-filtered :cookies cookies))
+                    healthy-instances (filter :healthy? active-instances)
+                    healthy-instances-filtered (filter :healthy? active-instances-filtered)
+                    watch (start-watch waiter-url cookies
+                                       :query-params {"metadata.foo" "testingfoo1013"
+                                                      "watch" "true"})]
+                (is (pos? (count healthy-instances)))
+                (is (pos? (count healthy-instances-filtered)))
+                (doseq [{:keys [id] :as inst} healthy-instances]
+                  (assert-watch-instance-id-entry watch id inst))
+                (doseq [{:keys [id]} healthy-instances-filtered]
+                  (assert-watch-instance-id-entry watch id nil))
+                (stop-watch watch))))))
+
+      (testing "streams updated healthy instances for service-ids that match service description filter"
+        (let [watch (start-watch waiter-url cookies
+                                 :query-params {"metadata.foo" "random-value-required"
+                                                "watch" "true"})
+              {:keys [service-id] :as response}
+              (make-request-with-debug-info
+                {:x-waiter-metadata-foo "random-value-required"
+                 :x-waiter-name (rand-name)}
+                #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))
+              {service-id-filtered :service-id :as response-filtered}
+              (make-request-with-debug-info
+                {:x-waiter-name (rand-name)}
                 #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
           (with-service-cleanup
             service-id-filtered

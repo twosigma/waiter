@@ -11,7 +11,8 @@
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils]
             [clj-time.core :as t]
-            [waiter.util.async-utils :as au]))
+            [waiter.util.async-utils :as au]
+            [waiter.handler :as handler]))
 
 ; Events are being handled by all routers in a cluster for resiliency
 (defprotocol InstanceEventHandler
@@ -212,7 +213,8 @@
   "Handle a request to list instances. Currently this endpoint only supports watch=true query parameter. The current list
   of healthy instances will be streamed first and subsequent changes in set of healthy instances will be streamed
   in the response."
-  [instance-watch-channels-update-chan default-streaming-timeout-ms {:keys [ctrl request-method] :as req}]
+  [instance-watch-channels-update-chan service-id->service-description-fn default-streaming-timeout-ms
+   {:keys [ctrl request-method] :as req}]
   (try
     (case request-method
       :get
@@ -221,6 +223,8 @@
                                                    (utils/parse-int streaming-timeout)
                                                    default-streaming-timeout-ms)]
           (let [should-watch? (utils/request-flag request-params "watch")
+                service-description-filter-predicate
+                (handler/query-params->service-description-filter-predicate request-params)
                 correlation-id (cid/get-correlation-id)
                 watch-chan-xform
                 (comp
@@ -228,14 +232,20 @@
                     (fn event-filter [{:keys [id object type] :as event}]
                       (cid/cinfo correlation-id "received event from instance-tracker daemon" {:id id})
                       (cid/cinfo correlation-id "full instances event data received from instance-tracker daemon" {:event event})
-                      (let [service-id-filter (filter
-                                                (fn filter-service-id [inst]
-                                                  (or (nil? service-id)
-                                                      (= (:service-id inst) service-id))))
+                      (let [service-filter
+                            (filter
+                              (fn filter-service-id [inst]
+                                (let [inst-service-id (:service-id inst)
+                                      service-description
+                                      (service-id->service-description-fn inst-service-id :effective? true)]
+                                  (and
+                                    (or (nil? service-id)
+                                        (= inst-service-id service-id))
+                                    (service-description-filter-predicate service-description)))))
                             updated-healthy-instances (some->> (get-in object [:healthy-instances :updated])
-                                                               (sequence service-id-filter))
+                                                               (sequence service-filter))
                             removed-healthy-instances (some->> (get-in object [:healthy-instances :removed])
-                                                               (sequence service-id-filter))
+                                                               (sequence service-filter))
                             new-object (cond-> {}
                                                (not-empty updated-healthy-instances)
                                                (assoc-in [:healthy-instances :updated] updated-healthy-instances)
