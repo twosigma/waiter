@@ -89,9 +89,9 @@
                     (is (t/before? start-time (du/str-to-date last-error-time)))))))))))))
 
 (defn- start-watch
-  [router-url cookies]
+  [router-url cookies & {:keys [query-params] :or {query-params {"watch" "true"}}}]
   (let [{:keys [body error headers] :as response}
-        (make-request router-url "/apps/instances" :async? true :cookies cookies :query-params {"watch" "true"})
+        (make-request router-url "/apps/instances" :async? true :cookies cookies :query-params query-params)
         _ (assert-response-status response 200)
         json-objects (->> body
                           utils/chan-to-seq!!
@@ -113,15 +113,7 @@
                 id->healthy-instance-atom
                 (let [{:strs [object type]} msg
                       id->healthy-instance @id->healthy-instance-atom]
-                  (case type
-                    "initial"
-                    (reduce
-                      (fn [new-id->healthy-instance inst]
-                        (assoc new-id->healthy-instance (get inst "id") inst))
-                      {}
-                      (get object "healthy-instances"))
-
-                    "events"
+                  (if (contains? #{"initial" "events"} type)
                     (let [updated-healthy-instances (get-in object ["healthy-instances" "updated"])
                           removed-healthy-instances (get-in object ["healthy-instances" "removed"])
                           add-healthy-instances-fn (fn add-healthy-instances
@@ -229,7 +221,8 @@
                   watches (start-watches router-urls cookies)]
               (is (pos? (count healthy-instances)))
               (doseq [{:keys [id] :as inst} healthy-instances]
-                (assert-watches-instance-id-entry watches id inst))))))
+                (assert-watches-instance-id-entry watches id inst))
+              (stop-watches watches)))))
 
       (testing "stream receives events when instances become healthy"
         (let [watches (start-watches router-urls cookies)
@@ -247,7 +240,8 @@
                   healthy-instances (filter :healthy? active-instances)]
               (is (pos? (count healthy-instances)))
               (doseq [{:keys [id] :as inst} healthy-instances]
-                (assert-watches-instance-id-entry watches id inst))))))
+                (assert-watches-instance-id-entry watches id inst))))
+          (stop-watches watches)))
 
       (testing "stream receives events when instances are no longer healthy"
         (let [watches (start-watches router-urls cookies)
@@ -270,7 +264,8 @@
               ; wait for all routers to report failed instances
               (is (wait-for #(every-router-has-failed-instances?-fn service-id)))
               (doseq [{:keys [id]} healthy-instances]
-                (assert-watches-instance-id-entry watches id nil))))))
+                (assert-watches-instance-id-entry watches id nil))))
+          (stop-watches watches)))
 
       (testing "stream receives events when instances are no longer healthy due to service getting killed"
         (let [watches (start-watches router-urls cookies)
@@ -293,4 +288,75 @@
               ; kill service
               (delete-service waiter-url service-id)
               (doseq [{:keys [id]} healthy-instances]
-                (assert-watches-instance-id-entry watches id nil)))))))))
+                (assert-watches-instance-id-entry watches id nil))))
+          (stop-watches watches)))
+
+      (testing "service-id filter provides only initial instances for a service"
+        (let [{:keys [service-id] :as response}
+              (make-request-with-debug-info
+                {:x-waiter-name (rand-name)}
+                #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))
+              {service-id-filtered :service-id :as response-filtered}
+              (make-request-with-debug-info
+                {:x-waiter-metadata-foo "baz"
+                 :x-waiter-name (rand-name)}
+                #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
+          (with-service-cleanup
+            service-id-filtered
+            (with-service-cleanup
+              service-id
+              (is (not= service-id service-id-filtered))
+              (assert-response-status response http-200-ok)
+              (assert-backend-response response)
+              (assert-response-status response-filtered http-200-ok)
+              (assert-backend-response response-filtered)
+              (is (wait-for #(every-router-has-healthy-instances?-fn service-id)))
+              (is (wait-for #(every-router-has-healthy-instances?-fn service-id-filtered)))
+              (let [{:keys [active-instances]} (:instances (service-settings waiter-url service-id :cookies cookies))
+                    {active-instances-filtered :active-instances}
+                    (:instances (service-settings waiter-url service-id-filtered :cookies cookies))
+                    healthy-instances (filter :healthy? active-instances)
+                    watch (start-watch (first router-urls) cookies
+                                         :query-params {"service-id" service-id
+                                                        "watch" "true"})]
+                (is (pos? (count healthy-instances)))
+                (doseq [{:keys [id] :as inst} healthy-instances]
+                  (assert-watch-instance-id-entry watch id inst))
+                (doseq [{:keys [id]} (filter :healthy? active-instances-filtered)]
+                  (assert-watch-instance-id-entry watch id nil))
+                (stop-watch watch))))))
+
+      (testing "service-id filter provides update events only for a service"
+        (let [{:keys [service-id] :as response}
+              (make-request-with-debug-info
+                {:x-waiter-name (rand-name)}
+                #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))
+              watch (start-watch (first router-urls) cookies
+                                 :query-params {"service-id" service-id
+                                                "watch" "true"})
+              {service-id-filtered :service-id :as response-filtered}
+              (make-request-with-debug-info
+                {:x-waiter-metadata-foo "baz"
+                 :x-waiter-name (rand-name)}
+                #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
+          (with-service-cleanup
+            service-id-filtered
+            (with-service-cleanup
+              service-id
+              (is (not= service-id service-id-filtered))
+              (assert-response-status response http-200-ok)
+              (assert-backend-response response)
+              (assert-response-status response-filtered http-200-ok)
+              (assert-backend-response response-filtered)
+              (is (wait-for #(every-router-has-healthy-instances?-fn service-id)))
+              (is (wait-for #(every-router-has-healthy-instances?-fn service-id-filtered)))
+              (let [{:keys [active-instances]} (:instances (service-settings waiter-url service-id :cookies cookies))
+                    {active-instances-filtered :active-instances}
+                    (:instances (service-settings waiter-url service-id-filtered :cookies cookies))
+                    healthy-instances (filter :healthy? active-instances)]
+                (is (pos? (count healthy-instances)))
+                (doseq [{:keys [id] :as inst} healthy-instances]
+                  (assert-watch-instance-id-entry watch id inst))
+                (doseq [{:keys [id]} (filter :healthy? active-instances-filtered)]
+                  (assert-watch-instance-id-entry watch id nil))
+                (stop-watch watch)))))))))

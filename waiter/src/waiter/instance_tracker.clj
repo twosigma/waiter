@@ -79,7 +79,8 @@
 
 (defn get-new-changed-and-old-instances
   "Returns [old-instances new-instances changed-instances] given two maps id->instance and id->instance'.
-  Instances that exist only in id->instance are considered an old-instances, instances that exist only in id->instance' are considered new instances, and instances in both input maps with different fields are considered updated"
+  Instances that exist only in id->instance are considered an old-instances, instances that exist only in id->instance'
+  are considered new instances, and instances in both input maps with different fields are considered updated"
   [id->instance id->instance']
   (let [inst-ids (set (keys id->instance))
         inst-ids' (set (keys id->instance'))
@@ -94,7 +95,6 @@
 ; TODO:
 ; add filter for service-id
 ; add streaming-timeout
-; move endpoint to /apps/instances
 
 (defn start-instance-tracker
   "Starts daemon thread that tracks instances and produces events based on state changes. It routes these events to the
@@ -188,7 +188,7 @@
                             processing-cid
                             (log/info "received watch-chan" msg)
                             (let [watch-chan msg
-                                  event-object {:healthy-instances (or (vals id->healthy-instance) [])}
+                                  event-object {:healthy-instances {:updated (or (vals id->healthy-instance) [])}}
                                   initial-event (make-instance-event external-event-cid :initial event-object)]
                               (async/put! watch-chan initial-event)
                               (assoc current-state :watch-chans (conj watch-chans watch-chan)))))
@@ -217,14 +217,41 @@
   (try
     (case request-method
       :get
-      (let [request-params (-> req ru/query-params-request :query-params)
+      (let [{:strs [service-id] :as request-params} (-> req ru/query-params-request :query-params)
             should-watch? (utils/request-flag request-params "watch")
             correlation-id (cid/get-correlation-id)
             watch-chan-xform
-            (map (fn [{:keys [id type] :as event}]
-                   (cid/cinfo correlation-id "forwarding instances event to client" {:id id :type type})
-                   (cid/cdebug correlation-id "full instances event data sent to watch client" {:event event})
-                   (utils/clj->json event)))
+            (comp
+              (map
+                (fn event-filter [{:keys [id object type] :as event}]
+                  (cid/cinfo correlation-id "received event from instance-tracker daemon" {:id id})
+                  (cid/cinfo correlation-id "full instances event data received from instance-tracker daemon" {:event event})
+                  (let [service-id-filter (filter
+                                            (fn filter-service-id [inst]
+                                              (or (nil? service-id)
+                                                  (= (:service-id inst) service-id))))
+                        updated-healthy-instances (some->> (get-in object [:healthy-instances :updated])
+                                                           (sequence service-id-filter))
+                        removed-healthy-instances (some->> (get-in object [:healthy-instances :removed])
+                                                           (sequence service-id-filter))
+                        new-object (cond-> {}
+                                           (not-empty updated-healthy-instances)
+                                           (assoc-in [:healthy-instances :updated] updated-healthy-instances)
+                                           (not-empty removed-healthy-instances)
+                                           (assoc-in [:healthy-instances :removed] removed-healthy-instances))]
+                    {:id id
+                     :object new-object
+                     :type type})))
+              (filter
+                (fn empty-event? [{:keys [object type] :as event}]
+                  (case type
+                    :initial true
+                    :events (not= {} object)
+                    (throw (ex-info "Invalid event type provided" {:event event})))))
+              (map (fn [{:keys [id type] :as event}]
+                     (cid/cinfo correlation-id "forwarding instances event to client" {:id id :type type})
+                     (cid/cinfo correlation-id "full instances event data sent to watch client" {:event event})
+                     (utils/clj->json event))))
             watch-chan-ex-handler-fn
             (fn watch-chan-ex-handler [e]
               (async/put! ctrl e)
