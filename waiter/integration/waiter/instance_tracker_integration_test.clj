@@ -367,7 +367,8 @@
           streaming-timeout-ms 5000
           start-time-epoch-ms (System/currentTimeMillis)
           {:keys [exit-fn go-chan headers query-state-fn]}
-          (start-watch waiter-url cookies :query-params {"streaming-timeout" (str streaming-timeout-ms)
+          (start-watch waiter-url cookies :query-params {"service-id" "this-is-not-a-valid-service-id"
+                                                         "streaming-timeout" (str streaming-timeout-ms)
                                                          "watch" "true"})
           _ (async/alts!! [go-chan (async/timeout (* 2 streaming-timeout-ms))] :priority true)
           end-time-epoch-ms (System/currentTimeMillis)
