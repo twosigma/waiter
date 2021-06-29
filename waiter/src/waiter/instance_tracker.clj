@@ -10,7 +10,8 @@
             [waiter.util.cache-utils :as cu]
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils]
-            [clj-time.core :as t]))
+            [clj-time.core :as t]
+            [waiter.util.async-utils :as au]))
 
 ; Events are being handled by all routers in a cluster for resiliency
 (defprotocol InstanceEventHandler
@@ -91,10 +92,6 @@
                           (fn changed? [inst-id]
                             (not= (get id->instance inst-id) (get id->instance' inst-id)))
                           in-both))]))
-
-; TODO:
-; add filter for service-id
-; add streaming-timeout
 
 (defn start-instance-tracker
   "Starts daemon thread that tracks instances and produces events based on state changes. It routes these events to the
@@ -213,69 +210,94 @@
   "Handle a request to list instances. Currently this endpoint only supports watch=true query parameter. The current list
   of healthy instances will be streamed first and subsequent changes in set of healthy instances will be streamed
   in the response."
-  [instance-watch-channels-update-chan {:keys [ctrl request-method] :as req}]
+  [instance-watch-channels-update-chan default-streaming-timeout-ms {:keys [ctrl request-method] :as req}]
   (try
     (case request-method
       :get
-      (let [{:strs [service-id] :as request-params} (-> req ru/query-params-request :query-params)
-            should-watch? (utils/request-flag request-params "watch")
-            correlation-id (cid/get-correlation-id)
-            watch-chan-xform
-            (comp
-              (map
-                (fn event-filter [{:keys [id object type] :as event}]
-                  (cid/cinfo correlation-id "received event from instance-tracker daemon" {:id id})
-                  (cid/cinfo correlation-id "full instances event data received from instance-tracker daemon" {:event event})
-                  (let [service-id-filter (filter
-                                            (fn filter-service-id [inst]
-                                              (or (nil? service-id)
-                                                  (= (:service-id inst) service-id))))
-                        updated-healthy-instances (some->> (get-in object [:healthy-instances :updated])
-                                                           (sequence service-id-filter))
-                        removed-healthy-instances (some->> (get-in object [:healthy-instances :removed])
-                                                           (sequence service-id-filter))
-                        new-object (cond-> {}
-                                           (not-empty updated-healthy-instances)
-                                           (assoc-in [:healthy-instances :updated] updated-healthy-instances)
-                                           (not-empty removed-healthy-instances)
-                                           (assoc-in [:healthy-instances :removed] removed-healthy-instances))]
-                    {:id id
-                     :object new-object
-                     :type type})))
-              (filter
-                (fn empty-event? [{:keys [object type] :as event}]
-                  (case type
-                    :initial true
-                    :events (not= {} object)
-                    (throw (ex-info "Invalid event type provided" {:event event})))))
-              (map (fn [{:keys [id type] :as event}]
-                     (cid/cinfo correlation-id "forwarding instances event to client" {:id id :type type})
-                     (cid/cinfo correlation-id "full instances event data sent to watch client" {:event event})
-                     (utils/clj->json event))))
-            watch-chan-ex-handler-fn
-            (fn watch-chan-ex-handler [e]
-              (async/put! ctrl e)
-              (cid/cerror correlation-id e "error during transformation of a instances watch event"))]
-        (if should-watch?
-          (let [watch-chan (async/chan 1024 watch-chan-xform watch-chan-ex-handler-fn)]
-            (if (async/put! instance-watch-channels-update-chan watch-chan)
-              (do
-                (async/go
-                  (let [data (async/<! ctrl)]
-                    (log/info "closing watch-chan as ctrl channel has been triggered" {:data data})
-                    (async/close! watch-chan)))
-                (utils/attach-waiter-source
-                  {:body watch-chan
-                   :headers {"content-type" "application/json"}
-                   :status http-200-ok}))
-              (utils/exception->response (ex-info "tokens-watch-channels-update-chan is closed!" {}) req)))
-          (let [ex (ex-info "watch query parameter must be true, no other option is supported."
+      (let [{:strs [service-id streaming-timeout] :as request-params} (-> req ru/query-params-request :query-params)]
+        (if-let [configured-streaming-timeout-ms (if streaming-timeout
+                                                   (utils/parse-int streaming-timeout)
+                                                   default-streaming-timeout-ms)]
+          (let [should-watch? (utils/request-flag request-params "watch")
+                correlation-id (cid/get-correlation-id)
+                watch-chan-xform
+                (comp
+                  (map
+                    (fn event-filter [{:keys [id object type] :as event}]
+                      (cid/cinfo correlation-id "received event from instance-tracker daemon" {:id id})
+                      (cid/cinfo correlation-id "full instances event data received from instance-tracker daemon" {:event event})
+                      (let [service-id-filter (filter
+                                                (fn filter-service-id [inst]
+                                                  (or (nil? service-id)
+                                                      (= (:service-id inst) service-id))))
+                            updated-healthy-instances (some->> (get-in object [:healthy-instances :updated])
+                                                               (sequence service-id-filter))
+                            removed-healthy-instances (some->> (get-in object [:healthy-instances :removed])
+                                                               (sequence service-id-filter))
+                            new-object (cond-> {}
+                                               (not-empty updated-healthy-instances)
+                                               (assoc-in [:healthy-instances :updated] updated-healthy-instances)
+                                               (not-empty removed-healthy-instances)
+                                               (assoc-in [:healthy-instances :removed] removed-healthy-instances))]
+                        {:id id
+                         :object new-object
+                         :type type})))
+                  (filter
+                    (fn empty-event? [{:keys [object type] :as event}]
+                      (case type
+                        :initial true
+                        :events (not= {} object)
+                        (throw (ex-info "Invalid event type provided" {:event event})))))
+                  (map (fn [{:keys [id type] :as event}]
+                         (cid/cinfo correlation-id "forwarding instances event to client" {:id id :type type})
+                         (cid/cinfo correlation-id "full instances event data sent to watch client" {:event event})
+                         (utils/clj->json event))))
+                watch-chan-ex-handler-fn
+                (fn watch-chan-ex-handler [e]
+                  (async/put! ctrl e)
+                  (cid/cerror correlation-id e "error during transformation of a instances watch event"))]
+            (if should-watch?
+              (let [watch-chan (async/chan 1024 watch-chan-xform watch-chan-ex-handler-fn)
+                    watch-mult (async/mult watch-chan)
+                    response-chan (async/chan 1024)
+                    _ (async/tap watch-mult response-chan)
+                    trigger-chan (au/latest-chan)
+                    _ (async/tap watch-mult trigger-chan)]
+                (async/go-loop [timeout-ch (async/timeout configured-streaming-timeout-ms)]
+                  (let [[message chan] (async/alts! [trigger-chan timeout-ch] :priority true)]
+                    (cond
+                      (= chan trigger-chan)
+                      (if (nil? message)
+                        (log/info "watch-chan has been closed")
+                        (recur (async/timeout configured-streaming-timeout-ms)))
+                      :else                                 ;; timeout channel has been triggered
+                      (do
+                        (log/info "closing watch-chan due to streaming timeout" configured-streaming-timeout-ms "ms")
+                        (async/close! watch-chan)))))
+                (if (async/put! instance-watch-channels-update-chan watch-chan)
+                  (do
+                    (async/go
+                      (let [data (async/<! ctrl)]
+                        (log/info "closing watch-chan as ctrl channel has been triggered" {:data data})
+                        (async/close! watch-chan)))
+                    (utils/attach-waiter-source
+                      {:body response-chan
+                       :headers {"content-type" "application/json"}
+                       :status http-200-ok}))
+                  (utils/exception->response (ex-info "tokens-watch-channels-update-chan is closed!" {}) req)))
+              (let [ex (ex-info "watch query parameter must be true, no other option is supported."
+                                {:log-level :info
+                                 :status http-400-bad-request
+                                 :watch-param should-watch?})]
+                (utils/exception->response ex req))))
+          (let [ex (ex-info "streaming-timeout query parameter must be an integer"
                             {:log-level :info
                              :status http-400-bad-request
-                             :watch-param should-watch?})]
+                             :streaming-timeout streaming-timeout})]
             (utils/exception->response ex req))))
-      (throw (ex-info "Only GET supported" {:log-level :info
-                                            :request-method request-method
-                                            :status http-405-method-not-allowed})))
+      (let [ex (ex-info "Only GET supported" {:log-level :info
+                                              :request-method request-method
+                                              :status http-405-method-not-allowed})]
+        (utils/exception->response ex req)))
     (catch Exception ex
       (utils/exception->response ex req))))

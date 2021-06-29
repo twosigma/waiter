@@ -316,9 +316,9 @@
                     {active-instances-filtered :active-instances}
                     (:instances (service-settings waiter-url service-id-filtered :cookies cookies))
                     healthy-instances (filter :healthy? active-instances)
-                    watch (start-watch (first router-urls) cookies
-                                         :query-params {"service-id" service-id
-                                                        "watch" "true"})]
+                    watch (start-watch waiter-url cookies
+                                       :query-params {"service-id" service-id
+                                                      "watch" "true"})]
                 (is (pos? (count healthy-instances)))
                 (doseq [{:keys [id] :as inst} healthy-instances]
                   (assert-watch-instance-id-entry watch id inst))
@@ -331,7 +331,7 @@
               (make-request-with-debug-info
                 {:x-waiter-name (rand-name)}
                 #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))
-              watch (start-watch (first router-urls) cookies
+              watch (start-watch waiter-url cookies
                                  :query-params {"service-id" service-id
                                                 "watch" "true"})
               {service-id-filtered :service-id :as response-filtered}
@@ -360,3 +360,20 @@
                 (doseq [{:keys [id]} (filter :healthy? active-instances-filtered)]
                   (assert-watch-instance-id-entry watch id nil))
                 (stop-watch watch)))))))))
+
+(deftest ^:parallel ^:integration-fast test-instance-watch-streaming-timeout
+  (testing-using-waiter-url
+    (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
+          streaming-timeout-ms 5000
+          start-time-epoch-ms (System/currentTimeMillis)
+          {:keys [exit-fn go-chan headers query-state-fn]}
+          (start-watch waiter-url cookies :query-params {"streaming-timeout" (str streaming-timeout-ms)
+                                                         "watch" "true"})
+          _ (async/alts!! [go-chan (async/timeout (* 2 streaming-timeout-ms))] :priority true)
+          end-time-epoch-ms (System/currentTimeMillis)
+          elapsed-time-ms (- end-time-epoch-ms start-time-epoch-ms)
+          _ (exit-fn)
+          assertion-message (str {:elapsed-time-ms elapsed-time-ms
+                                  :headers headers})]
+      (is (empty? (query-state-fn)) assertion-message)
+      (is (<= streaming-timeout-ms elapsed-time-ms (+ streaming-timeout-ms 1000)) assertion-message))))
