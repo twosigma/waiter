@@ -163,13 +163,15 @@
                                 (log/info "new healthy instances" {:new-healthy-instances (map :id new-healthy-instances)}))
                               (when (not-empty removed-healthy-instances)
                                 (log/info "removed healthy instances" {:removed-healthy-instances (map :id removed-healthy-instances)}))
-                              (let [events (cond-> {:healthy-instances {}}
-                                                   (not-empty new-healthy-instances)
-                                                   (assoc-in [:healthy-instances :updated] updated-healthy-instances)
-                                                   (not-empty removed-healthy-instances)
-                                                   (assoc-in [:healthy-instances :removed] removed-healthy-instances))
+                              (let [healthy-instances-event
+                                    (cond-> {}
+                                            (not-empty updated-healthy-instances)
+                                            (assoc :updated updated-healthy-instances)
+                                            (not-empty removed-healthy-instances)
+                                            (assoc :removed removed-healthy-instances))
+                                    events {:healthy-instances healthy-instances-event}
                                     instance-event (make-instance-event external-event-cid :events events)
-                                    watch-chans' (if (or (not-empty new-healthy-instances)
+                                    watch-chans' (if (or (not-empty updated-healthy-instances)
                                                          (not-empty removed-healthy-instances))
                                                    ; only send event if there were changes to set of healthy-instances
                                                    (utils/send-event-to-channels! watch-chans instance-event)
