@@ -8,10 +8,10 @@
             [waiter.metrics :as metrics]
             [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
+            [waiter.util.async-utils :as au]
             [waiter.util.cache-utils :as cu]
             [waiter.util.ring-utils :as ru]
-            [waiter.util.utils :as utils]
-            [waiter.util.async-utils :as au]))
+            [waiter.util.utils :as utils]))
 
 ; Events are being handled by all routers in a cluster for resiliency
 (defprotocol InstanceEventHandler
