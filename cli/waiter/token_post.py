@@ -101,6 +101,18 @@ def create_or_update(cluster, token_name, token_fields, admin_mode, action, fiel
         print_info(f'{message}\n')
 
 
+def pop_context_override_args(args):
+    context_overrides = {}
+    for k in list(args.keys()):
+        if k.startswith('context.'):
+            v = args.pop(k)
+            context_overrides[k] = v
+    if context_overrides:
+        return merge_token_fields_from_args({}, context_overrides)['context']
+    else:
+        return None
+
+
 def create_or_update_token(clusters, args, _, enforce_cluster, action):
     """Creates (or updates) a Waiter token"""
     guard_no_cluster(clusters)
@@ -109,12 +121,14 @@ def create_or_update_token(clusters, args, _, enforce_cluster, action):
     json_file = args.pop('json', None)
     yaml_file = args.pop('yaml', None)
     input_file = args.pop('input', None)
-    context_file = args.pop('context', None)
     admin_mode = args.pop('admin', None)
     allow_override = args.pop('override', False)
+    context_file = args.pop('context', None)
+    context_overrides = pop_context_override_args(args)
 
     if input_file or json_file or yaml_file:
-        token_fields_from_json = load_data({'context': context_file,
+        token_fields_from_json = load_data({'context_file': context_file,
+                                            'context_overrides': context_overrides,
                                             'data': input_file,
                                             'json': json_file,
                                             'yaml': yaml_file})
@@ -122,6 +136,9 @@ def create_or_update_token(clusters, args, _, enforce_cluster, action):
     else:
         if context_file:
             raise Exception('The --context file can only be used when a data file is specified via '
+                            '--input, --json, or --yaml.')
+        if context_overrides:
+            raise Exception('The --context.xyz overrides can only be used when a data file is specified via '
                             '--input, --json, or --yaml.')
         token_fields_from_json = {}
         fields_from_args_only = True

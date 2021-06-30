@@ -159,20 +159,35 @@ def load_data(options):
         if not content:
             raise Exception(f'Unable to load {input_format} from {input_file}.')
 
-        context_file = options.get('context')
+        context_dict = {}
+        context_provided = False
+        context_file = options.get('context_file')
         if context_file:
+            context_provided = True
             logging.debug(f'reading context as yaml from {context_file}')
             context_content = load_file(context_file)
             if not context_content:
                 raise Exception(f'Unable to load yaml from {context_file}.')
 
-            context_obj = YAML.parse(context_content)
-            if not isinstance(context_obj, dict):
-                raise Exception(f'Provided context file must evaluate to a dictionary, instead it is {context_obj}')
+            context_file_obj = YAML.parse(context_content)
+            if not isinstance(context_file_obj, dict):
+                raise Exception(f'Provided context file must evaluate to a dictionary, instead it is {context_file_obj}')
+            context_dict.update(context_file_obj)
 
-            logging.debug(f'applying string templating to input using context {context_obj}')
-            string_template = string.Template(content)
-            content = string_template.substitute(context_obj)
+        context_overrides = options.get('context_overrides')
+        if context_overrides:
+            context_provided = True
+            logging.debug(f'merging additional context {context_overrides}')
+            context_dict.update(context_overrides)
+
+        if context_provided:
+            try:
+                logging.debug(f'applying string templating to input using context {context_dict}')
+                string_template = string.Template(content)
+                content = string_template.substitute(context_dict)
+            except Exception as ex:
+                message = f'missing variable {ex}' if isinstance(ex, KeyError) else str(ex)
+                raise Exception(f'Error when processing template: {message}')
 
     content = input_format.parse(content)
     if type(content) is dict:
