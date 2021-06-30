@@ -197,7 +197,7 @@
           {:keys [cookies]} (make-request waiter-url "/waiter-auth")
           every-router-has-healthy-instances?-fn
           (fn every-router-has-healthy-instances? [service-id]
-            (every? (fn has-failed-instances? [router-url]
+            (every? (fn has-healthy-instances? [router-url]
                       (let [{:keys [active-instances]} (:instances (service-settings router-url service-id :cookies cookies))
                             healthy-instances (filter :healthy? active-instances)]
                         (pos? (count healthy-instances))))
