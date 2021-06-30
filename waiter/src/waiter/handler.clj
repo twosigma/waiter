@@ -324,7 +324,6 @@
         param-predicates (map (fn [[param-name param-value]]
                                 (let [param-predicate (param-value->filter-fn param-value)]
                                   (fn [service-description]
-                                    (println "filtering by:" param-name)
                                     (->> (str/split param-name #"\.")
                                       (get-in service-description)
                                       (str)
