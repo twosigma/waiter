@@ -68,15 +68,7 @@
 (defn make-id->instance
   "Takes a service-id->instances mapping and returns an instance-id->instance mapping"
   [service-id->instances]
-  (reduce
-    (fn [cur-id->inst cur-instances]
-      (reduce
-        (fn [inner-cur-id->inst {:keys [id] :as inst}]
-          (assoc inner-cur-id->inst id inst))
-        cur-id->inst
-        cur-instances))
-    {}
-    (vals service-id->instances)))
+  (->> service-id->instances vals flatten (pc/map-from-vals :id)))
 
 (defn get-new-changed-and-old-instances
   "Returns [old-instances new-instances changed-instances] given two maps id->instance and id->instance'.
