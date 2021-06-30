@@ -5,8 +5,8 @@
             [metrics.timers :as timers]
             [plumbing.core :as pc]
             [waiter.correlation-id :as cid]
-            [waiter.handler :as handler]
             [waiter.metrics :as metrics]
+            [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
             [waiter.util.cache-utils :as cu]
             [waiter.util.ring-utils :as ru]
@@ -223,7 +223,7 @@
                                                    default-streaming-timeout-ms)]
           (let [should-watch? (utils/request-flag request-params "watch")
                 service-description-filter-predicate
-                (handler/query-params->service-description-filter-predicate request-params)
+                (sd/query-params->service-description-filter-predicate request-params)
                 correlation-id (cid/get-correlation-id)
                 watch-chan-xform
                 (comp

@@ -280,21 +280,6 @@
     (catch Exception ex
       (utils/exception->response ex request))))
 
-(defn- str->filter-fn
-  "Returns a name-filtering function given a user-provided name filter string"
-  [name]
-  (let [pattern (-> (str name)
-                    (str/replace #"\." "\\\\.")
-                    (str/replace #"\*+" ".*")
-                    re-pattern)]
-    #(re-matches pattern %)))
-
-(defn- strs->filter-fn
-  "Returns a name-filtering function that matches on any of the given sequence of user-provided names as filter string."
-  [names]
-  (let [filter-fns (map str->filter-fn names)]
-    (fn [value] (some #(%1 value) filter-fns))))
-
 (defn- retrieve-scaling-state
   "Retrieves the scaling state for the service from the autoscaler state."
   [query-autoscaler-state-fn service-id]
@@ -303,35 +288,6 @@
     (get service-id)
     :scale-amount
     utils/scale-amount->scaling-state))
-
-(defn param-value->filter-fn
-  "Accepts a single string or a sequence of strings as input.
-   Creates the filter function that does substring match for the input string or any string in the sequence."
-  [param-value]
-  (if (string? param-value)
-    (str->filter-fn param-value)
-    (strs->filter-fn param-value)))
-
-(defn query-params->service-description-filter-predicate
-  "Creates the filter function for service descriptions that matches every parameter provided in the request-params map."
-  [request-params]
-  (let [service-description-params (utils/filterm
-                                     (fn [[param-name _]]
-                                       (->> (str/split param-name #"\.")
-                                         (first)
-                                         (contains? sd/service-parameter-keys)))
-                                     request-params)
-        param-predicates (map (fn [[param-name param-value]]
-                                (let [param-predicate (param-value->filter-fn param-value)]
-                                  (fn [service-description]
-                                    (->> (str/split param-name #"\.")
-                                      (get-in service-description)
-                                      (str)
-                                      (param-predicate)))))
-                              (seq service-description-params))]
-    (fn [service-description]
-      (or (empty? param-predicates)
-          (every? #(%1 service-description) param-predicates)))))
 
 (defn compute-resource-usage
   "Computes the resources used to a service."
@@ -347,7 +303,7 @@
    token->token-hash request]
   (let [{:keys [all-available-service-ids service-id->healthy-instances service-id->unhealthy-instances] :as global-state} (query-state-fn)]
     (let [{:strs [run-as-user token token-version] :as request-params} (-> request ru/query-params-request :query-params)
-          service-description-filter-predicate (query-params->service-description-filter-predicate request-params)
+          service-description-filter-predicate (sd/query-params->service-description-filter-predicate request-params)
           auth-user (get request :authorization/user)
           viewable-service-ids (filter
                                  (fn [service-id]
@@ -361,12 +317,12 @@
                                           (or (seq run-as-user)
                                               (authz/manage-service? entitlement-manager auth-user service-id service-description))
                                           (or (str/blank? token)
-                                              (let [filter-fn (str->filter-fn token)]
+                                              (let [filter-fn (utils/str->filter-fn token)]
                                                 (->> source-tokens
                                                   (map #(get % "token"))
                                                   (some filter-fn))))
                                           (or (str/blank? token-version)
-                                              (let [filter-fn (str->filter-fn token-version)]
+                                              (let [filter-fn (utils/str->filter-fn token-version)]
                                                 (->> source-tokens
                                                   (map #(get % "version"))
                                                   (some filter-fn)))))))
