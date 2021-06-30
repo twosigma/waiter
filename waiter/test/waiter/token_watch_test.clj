@@ -22,7 +22,8 @@
             [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
             [waiter.token :refer :all]
-            [waiter.token-watch :refer :all])
+            [waiter.token-watch :refer :all]
+            [waiter.util.utils :as utils])
   (:import (org.joda.time DateTime)))
 
 (def ^:const history-length 5)
@@ -81,7 +82,7 @@
 
     (testing "sending basic event to channels"
       (let [chans (create-watch-chans 10)
-            open-chans (send-event-to-channels! chans event)]
+            open-chans (utils/send-event-to-channels! chans event)]
         (is (= (set chans) open-chans))
         (assert-channels-next-message chans event)))
 
@@ -90,7 +91,7 @@
             open-chans (create-watch-chans 10)
             chans (conj open-chans closed-chan)
             _ (async/close! closed-chan)
-            result-open-chans (send-event-to-channels! chans event)]
+            result-open-chans (utils/send-event-to-channels! chans event)]
         (is (= (set open-chans) result-open-chans))
         (assert-channels-next-message open-chans event)))
 
@@ -99,7 +100,7 @@
             _ (dotimes [i 1024] (async/put! filled-chan i))
             open-chans (create-watch-chans 10)
             chans (conj open-chans filled-chan)
-            result-open-chans (send-event-to-channels! chans event)]
+            result-open-chans (utils/send-event-to-channels! chans event)]
         (is (= (set open-chans) result-open-chans))
         (assert-channels-next-message open-chans event)))))
 

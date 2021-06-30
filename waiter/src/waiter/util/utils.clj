@@ -823,3 +823,37 @@
   (lazy-seq
     (when-some [v (async/<!! c)]
       (cons v (chan-to-seq!! c)))))
+
+(defn send-event-to-channels!
+  "Given a list of watch channels and the event to send to each channel, send the event in a non blocking fashion and
+  close channels that error the async/put! operation. Returns the set of open channels."
+  [watch-chans event]
+  (reduce
+    (fn send-event! [open-chans watch-chan]
+      (try
+        (if (async/put! watch-chan event)
+          (conj open-chans watch-chan)
+          (do
+            (log/info "removing closed watch-chan" watch-chan)
+            open-chans))
+        (catch AssertionError e
+          (log/error e "removing and closing watch-chan" watch-chan)
+          (async/close! watch-chan)
+          open-chans)))
+    #{}
+    watch-chans))
+
+(defn str->filter-fn
+  "Returns a name-filtering function given a user-provided name filter string"
+  [name]
+  (let [pattern (-> (str name)
+                    (str/replace #"\." "\\\\.")
+                    (str/replace #"\*+" ".*")
+                    re-pattern)]
+    #(re-matches pattern %)))
+
+(defn strs->filter-fn
+  "Returns a name-filtering function that matches on any of the given sequence of user-provided names as filter string."
+  [names]
+  (let [filter-fns (map str->filter-fn names)]
+    (fn [value] (some #(%1 value) filter-fns))))

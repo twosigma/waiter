@@ -98,6 +98,7 @@
                      (subs oidc/oidc-enabled-uri 1) :oidc-enabled-handler-fn
                      "app-name" :app-name-handler-fn
                      "apps" {"" :service-list-handler-fn
+                             ["/" "instances"] :instances-list-handler-fn
                              ["/" :service-id] :service-handler-fn
                              ["/" :service-id "/await/" :goal-state] :service-await-handler-fn
                              ["/" :service-id "/logs"] :service-view-logs-handler-fn
@@ -1479,6 +1480,16 @@
                          (fn favicon-handler-fn [_]
                            {:body (io/input-stream (io/resource "web/favicon.ico"))
                             :content-type "image/png"}))
+   :instances-list-handler-fn (pc/fnk [[:daemons instance-tracker]
+                                       [:routines service-id->service-description-fn]
+                                       [:settings [:instance-request-properties streaming-timeout-ms]]
+                                       wrap-secure-request-fn]
+                                (let [{:keys [instance-watch-channels-update-chan]} instance-tracker]
+                                  (wrap-secure-request-fn
+                                    (fn instances-list-handler-fn [request]
+                                      (instance-tracker/handle-list-instances-request
+                                        instance-watch-channels-update-chan service-id->service-description-fn
+                                        streaming-timeout-ms request)))))
    :kill-instance-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! router-state-maintainer]
                                       [:routines peers-acknowledged-eject-requests-fn]
                                       [:scheduler scheduler]
