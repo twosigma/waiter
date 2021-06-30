@@ -71,19 +71,19 @@
   (->> service-id->instances vals flatten (pc/map-from-vals :id)))
 
 (defn get-new-changed-and-old-instances
-  "Returns [old-instances new-instances changed-instances] given two maps id->instance and id->instance'.
+  "Returns map {:old-instances :new-instances :changed-instances} given two maps id->instance and id->instance'.
   Instances that exist only in id->instance are considered an old-instances, instances that exist only in id->instance'
   are considered new instances, and instances in both input maps with different fields are considered updated"
   [id->instance id->instance']
   (let [inst-ids (set (keys id->instance))
         inst-ids' (set (keys id->instance'))
         in-both (set/intersection inst-ids inst-ids')]
-    [(map id->instance (set/difference inst-ids in-both))
-     (map id->instance' (set/difference inst-ids' in-both))
-     (map id->instance' (filter
-                          (fn changed? [inst-id]
-                            (not= (get id->instance inst-id) (get id->instance' inst-id)))
-                          in-both))]))
+    {:changed-instances (map id->instance' (filter
+                                             (fn changed? [inst-id]
+                                               (not= (get id->instance inst-id) (get id->instance' inst-id)))
+                                             in-both))
+     :new-instances (map id->instance' (set/difference inst-ids' in-both))
+     :old-instances (map id->instance (set/difference inst-ids in-both))}))
 
 (defn start-instance-tracker
   "Starts daemon thread that tracks instances and produces events based on state changes. It routes these events to the
@@ -142,10 +142,12 @@
                             processing-cid
                             (let [{:keys [service-id->failed-instances service-id->healthy-instances]} msg
                                   id->failed-instance' (make-id->instance service-id->failed-instances)
-                                  [_ new-failed-instances _]
+                                  {new-failed-instances :new-instances}
                                   (get-new-changed-and-old-instances id->failed-instance id->failed-instance')
                                   id->healthy-instance' (make-id->instance service-id->healthy-instances)
-                                  [removed-healthy-instances new-healthy-instances changed-healthy-instances]
+                                  {changed-healthy-instances :changed-instances
+                                   new-healthy-instances :new-instances
+                                   removed-healthy-instances :old-instances}
                                   (get-new-changed-and-old-instances id->healthy-instance id->healthy-instance')
                                   updated-healthy-instances (concat new-healthy-instances changed-healthy-instances)]
                               (when (not-empty new-failed-instances)
