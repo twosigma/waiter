@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import string
 import sys
 
 import yaml
@@ -157,6 +158,36 @@ def load_data(options):
         content = load_file(input_file)
         if not content:
             raise Exception(f'Unable to load {input_format} from {input_file}.')
+
+        context_dict = {}
+        context_provided = False
+        context_file = options.get('context_file')
+        if context_file:
+            context_provided = True
+            logging.debug(f'reading context from {context_file}')
+            context_content = load_file(context_file)
+            if not context_content:
+                raise Exception(f'Unable to load context from {context_file}.')
+
+            context_file_obj = YAML.parse(context_content)
+            if not isinstance(context_file_obj, dict):
+                raise Exception(f'Provided context file must evaluate to a dictionary, instead it is {context_file_obj}')
+            context_dict.update(context_file_obj)
+
+        context_overrides = options.get('context_overrides')
+        if context_overrides:
+            context_provided = True
+            logging.debug(f'merging additional context {context_overrides}')
+            context_dict.update(context_overrides)
+
+        if context_provided:
+            try:
+                logging.debug(f'applying string templating to input using context {context_dict}')
+                string_template = string.Template(content)
+                content = string_template.substitute(context_dict)
+            except Exception as ex:
+                message = f'missing variable {ex}' if isinstance(ex, KeyError) else str(ex)
+                raise Exception(f'Error when processing template: {message}')
 
     content = input_format.parse(content)
     if type(content) is dict:

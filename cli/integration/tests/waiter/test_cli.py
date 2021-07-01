@@ -1555,6 +1555,195 @@ class WaiterCliTest(util.WaiterTest):
     def test_update_token_no_admin_mode(self):
         self.__test_create_update_token_admin_mode('update', self.token_name(), False)
 
+    def __test_create_update_token_context_missing_data_failure(self, action):
+        token_name = self.token_name()
+        context_fields = {'fee': 'bar', 'fie': 'baz', 'foe': 'fum'}
+        try:
+            with cli.temp_token_file({**context_fields}, 'yaml') as path:
+                flags = f'--context {path}'
+                cp = getattr(cli, action)(self.waiter_url, token_name, flags='-v', **{f'{action}_flags': flags})
+                self.assertEqual(1, cp.returncode, cp.stderr)
+                stderr = cli.stderr(cp)
+                err_msg = '--context file can only be used when a data file is specified via --input, --json, or --yaml'
+                self.assertIn(err_msg, stderr)
+        finally:
+            # the token should not have been created, but cleaning up in case the test failed
+            util.delete_token(self.waiter_url, token_name, assert_response=False)
+
+    def test_create_token_context_missing_data_failure(self):
+        self.__test_create_update_token_context_missing_data_failure('create')
+
+    def test_update_token_context_missing_data_failure(self):
+        self.__test_create_update_token_context_missing_data_failure('update')
+
+    def __test_create_update_token_context_missing_file_failure(self, action, file_format):
+        token_name = self.token_name()
+        token_fields = {'cmd': 'foo-bar', 'cpus': 0.2, 'mem': 256}
+        try:
+            with cli.temp_token_file({**token_fields}, file_format) as token_path:
+                with tempfile.NamedTemporaryFile(delete=True) as file:
+                    flags = f'--context {file.name} --{file_format} {token_path}'
+                    cp = getattr(cli, action)(self.waiter_url, token_name, flags='-v', **{f'{action}_flags': flags})
+                    self.assertEqual(1, cp.returncode, cp.stderr)
+                    stderr = cli.stderr(cp)
+                    err_msg = f'Unable to load context from {file.name}'
+                    self.assertIn(err_msg, stderr)
+        finally:
+            # the token should not have been created, but cleaning up in case the test failed
+            util.delete_token(self.waiter_url, token_name, assert_response=False)
+
+    def test_create_token_context_missing_file_failure_json_data(self):
+        self.__test_create_update_token_context_missing_file_failure('create', 'json')
+
+    def test_create_token_context_missing_file_failure_yaml_data(self):
+        self.__test_create_update_token_context_missing_file_failure('create', 'yaml')
+
+    def test_update_token_context_missing_file_failure_json_data(self):
+        self.__test_create_update_token_context_missing_file_failure('update', 'json')
+
+    def test_update_token_context_missing_file_failure_yaml_data(self):
+        self.__test_create_update_token_context_missing_file_failure('update', 'yaml')
+
+    def __test_create_update_token_context_bad_format_failure(self, action, file_format):
+        token_name = self.token_name()
+        token_fields = {'cmd': 'foo-bar', 'cpus': 0.2, 'mem': 256}
+        try:
+            with cli.temp_token_file({**token_fields}, file_format) as token_path:
+                with cli.temp_file('foo-bar') as context_path:
+                    flags = f'--context {context_path} --{file_format} {token_path}'
+                    cp = getattr(cli, action)(self.waiter_url, token_name, flags='-v', **{f'{action}_flags': flags})
+                    self.assertEqual(1, cp.returncode, cp.stderr)
+                    stderr = cli.stderr(cp)
+                    err_msg = 'Provided context file must evaluate to a dictionary, instead it is foo-bar'
+                    self.assertIn(err_msg, stderr)
+        finally:
+            # the token should not have been created, but cleaning up in case the test failed
+            util.delete_token(self.waiter_url, token_name, assert_response=False)
+
+    def test_create_token_context_bad_format_failure_json_data(self):
+        self.__test_create_update_token_context_bad_format_failure('create', 'json')
+
+    def test_create_token_context_bad_format_failure_yaml_data(self):
+        self.__test_create_update_token_context_bad_format_failure('create', 'yaml')
+
+    def test_update_token_context_bad_format_failure_json_data(self):
+        self.__test_create_update_token_context_bad_format_failure('update', 'json')
+
+    def test_update_token_context_bad_format_failure_yaml_data(self):
+        self.__test_create_update_token_context_bad_format_failure('update', 'yaml')
+
+    def __test_create_update_token_context_success(self, action, file_format):
+        token_name = self.token_name()
+        context_fields = {'fee': 'bar', 'fie': 'baz', 'foe': 'fum'}
+        token_fields = {'cmd': '${fee}-${fie}', 'cpus': 0.2, 'mem': 256, 'metadata': {'foe': '${foe}'}}
+        try:
+            if action == 'update':
+                util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'mem': 128})
+                token_data = util.load_token(self.waiter_url, token_name)
+                self.assertEqual(0.1, token_data['cpus'])
+                self.assertEqual(128, token_data['mem'])
+
+            with cli.temp_token_file({**token_fields}, file_format) as token_path:
+                with cli.temp_token_file({**context_fields}, 'yaml') as context_path:
+                    flags = f'--context {context_path} --{file_format} {token_path}'
+                    cp = getattr(cli, action)(self.waiter_url, token_name, flags='-v', **{f'{action}_flags': flags})
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    stdout = cli.stdout(cp)
+                    out_msg = f'Successfully {action}d {token_name}'
+                    self.assertIn(out_msg, stdout)
+                    token_data = util.load_token(self.waiter_url, token_name)
+                    self.assertEqual('bar-baz', token_data['cmd'])
+                    self.assertEqual(0.2, token_data['cpus'])
+                    self.assertEqual(256, token_data['mem'])
+                    self.assertEqual({'foe': 'fum'}, token_data['metadata'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_create_token_context_success_json_data(self):
+        self.__test_create_update_token_context_success('create', 'json')
+
+    def test_create_token_context_success_yaml_data(self):
+        self.__test_create_update_token_context_success('create', 'yaml')
+
+    def test_update_token_context_success_json_data(self):
+        self.__test_create_update_token_context_success('update', 'json')
+
+    def test_update_token_context_success_yaml_data(self):
+        self.__test_create_update_token_context_success('update', 'yaml')
+
+    def __test_create_update_token_context_missing_variable_failure(self, action, file_format):
+        token_name = self.token_name()
+        context_fields = {'fee': 'bar', 'fie': 'baz'}
+        token_fields = {'cmd': '${fee}-${fie}-${foe}', 'cpus': 0.2, 'mem': 256, 'metadata': {'foe': '${foe}'}}
+        try:
+            if action == 'update':
+                util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'mem': 128})
+                token_data = util.load_token(self.waiter_url, token_name)
+                self.assertEqual(0.1, token_data['cpus'])
+                self.assertEqual(128, token_data['mem'])
+
+            with cli.temp_token_file({**token_fields}, file_format) as token_path:
+                with cli.temp_token_file({**context_fields}, 'yaml') as context_path:
+                    flags = f'--context {context_path} --{file_format} {token_path}'
+                    cp = getattr(cli, action)(self.waiter_url, token_name, flags='-v', **{f'{action}_flags': flags})
+                    self.assertEqual(1, cp.returncode, cp.stderr)
+                    stderr = cli.stderr(cp)
+                    err_msg = "Error when processing template: missing variable 'foe'"
+                    self.assertIn(err_msg, stderr)
+        finally:
+            util.delete_token(self.waiter_url, token_name, assert_response=False)
+
+    def test_create_token_context_missing_variable_failure_json_data(self):
+        self.__test_create_update_token_context_missing_variable_failure('create', 'json')
+
+    def test_create_token_context_missing_variable_failure_yaml_data(self):
+        self.__test_create_update_token_context_missing_variable_failure('create', 'yaml')
+
+    def test_update_token_context_missing_variable_failure_json_data(self):
+        self.__test_create_update_token_context_missing_variable_failure('update', 'json')
+
+    def test_update_token_context_missing_variable_failure_yaml_data(self):
+        self.__test_create_update_token_context_missing_variable_failure('update', 'yaml')
+
+    def __test_create_update_token_context_override_variable_success(self, action, file_format):
+        token_name = self.token_name()
+        context_fields = {'fee': 'bar', 'fie': 'baz'}
+        token_fields = {'cmd': '${fee}-${fie}-${foe}', 'cpus': 0.2, 'mem': 256, 'metadata': {'foe': '${foe}'}}
+        try:
+            if action == 'update':
+                util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'mem': 128})
+                token_data = util.load_token(self.waiter_url, token_name)
+                self.assertEqual(0.1, token_data['cpus'])
+                self.assertEqual(128, token_data['mem'])
+
+            with cli.temp_token_file({**token_fields}, file_format) as token_path:
+                with cli.temp_token_file({**context_fields}, 'yaml') as context_path:
+                    flags = f'--context {context_path} --context.fie box --context.foe fum --{file_format} {token_path}'
+                    cp = getattr(cli, action)(self.waiter_url, token_name, flags='-v', **{f'{action}_flags': flags})
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    stdout = cli.stdout(cp)
+                    out_msg = f'Successfully {action}d {token_name}'
+                    self.assertIn(out_msg, stdout)
+                    token_data = util.load_token(self.waiter_url, token_name)
+                    self.assertEqual('bar-box-fum', token_data['cmd'])
+                    self.assertEqual(0.2, token_data['cpus'])
+                    self.assertEqual(256, token_data['mem'])
+                    self.assertEqual({'foe': 'fum'}, token_data['metadata'])
+        finally:
+            util.delete_token(self.waiter_url, token_name, assert_response=False)
+
+    def test_create_token_context_override_variable_success_json_data(self):
+        self.__test_create_update_token_context_override_variable_success('create', 'json')
+
+    def test_create_token_context_override_variable_success_yaml_data(self):
+        self.__test_create_update_token_context_override_variable_success('create', 'yaml')
+
+    def test_update_token_context_override_variable_success_json_data(self):
+        self.__test_create_update_token_context_override_variable_success('update', 'json')
+
+    def test_update_token_context_override_variable_success_yaml_data(self):
+        self.__test_create_update_token_context_override_variable_success('update', 'yaml')
+
     def run_maintenance_start_test(self, start_args='', ping_token=False):
         token_name = self.token_name()
         token_fields = util.minimal_service_description()

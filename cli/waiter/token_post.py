@@ -101,6 +101,18 @@ def create_or_update(cluster, token_name, token_fields, admin_mode, action, fiel
         print_info(f'{message}\n')
 
 
+def pop_context_override_args(args):
+    context_overrides = {}
+    for k in list(args.keys()):
+        if k.startswith('context.'):
+            v = args.pop(k)
+            context_overrides[k] = v
+    if context_overrides:
+        return merge_token_fields_from_args({}, context_overrides)['context']
+    else:
+        return None
+
+
 def create_or_update_token(clusters, args, _, enforce_cluster, action):
     """Creates (or updates) a Waiter token"""
     guard_no_cluster(clusters)
@@ -111,13 +123,23 @@ def create_or_update_token(clusters, args, _, enforce_cluster, action):
     input_file = args.pop('input', None)
     admin_mode = args.pop('admin', None)
     allow_override = args.pop('override', False)
+    context_file = args.pop('context', None)
+    context_overrides = pop_context_override_args(args)
 
     if input_file or json_file or yaml_file:
-        token_fields_from_json = load_data({'data': input_file,
+        token_fields_from_json = load_data({'context_file': context_file,
+                                            'context_overrides': context_overrides,
+                                            'data': input_file,
                                             'json': json_file,
                                             'yaml': yaml_file})
         fields_from_args_only = False
     else:
+        if context_file:
+            raise Exception('The --context file can only be used when a data file is specified via '
+                            '--input, --json, or --yaml.')
+        if context_overrides:
+            raise Exception('The --context.xyz overrides can only be used when a data file is specified via '
+                            '--input, --json, or --yaml.')
         token_fields_from_json = {}
         fields_from_args_only = True
 
@@ -177,6 +199,10 @@ def add_arguments(parser):
     format_group.add_argument('--json', help='provide the data in a JSON file', dest='json')
     format_group.add_argument('--yaml', help='provide the data in a YAML file', dest='yaml')
     format_group.add_argument('--input', help='provide the data in a JSON/YAML file', dest='input')
+    parser.add_argument('--context', dest='context',
+                        help='can be used only when a data file has been provided via --input, --json, or --yaml; '
+                             'this JSON/YAML file provides the context variables used '
+                             'to render the data file as a template')
     add_override_flags(parser)
 
 
