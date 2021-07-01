@@ -164,10 +164,10 @@ def load_data(options):
         context_file = options.get('context_file')
         if context_file:
             context_provided = True
-            logging.debug(f'reading context as yaml from {context_file}')
+            logging.debug(f'reading context from {context_file}')
             context_content = load_file(context_file)
             if not context_content:
-                raise Exception(f'Unable to load yaml from {context_file}.')
+                raise Exception(f'Unable to load context from {context_file}.')
 
             context_file_obj = YAML.parse(context_content)
             if not isinstance(context_file_obj, dict):

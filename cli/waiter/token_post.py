@@ -200,8 +200,8 @@ def add_arguments(parser):
     format_group.add_argument('--yaml', help='provide the data in a YAML file', dest='yaml')
     format_group.add_argument('--input', help='provide the data in a JSON/YAML file', dest='input')
     parser.add_argument('--context', dest='context',
-                        help='can be used only when a JSON or YAML data file has been provided; '
-                             'this YAML file provides the context variables used '
+                        help='can be used only when a data file has been provided via --input, --json, or --yaml; '
+                             'this JSON/YAML file provides the context variables used '
                              'to render the data file as a template')
     add_override_flags(parser)
 

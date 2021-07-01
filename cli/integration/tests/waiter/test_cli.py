@@ -1586,7 +1586,7 @@ class WaiterCliTest(util.WaiterTest):
                     cp = getattr(cli, action)(self.waiter_url, token_name, flags='-v', **{f'{action}_flags': flags})
                     self.assertEqual(1, cp.returncode, cp.stderr)
                     stderr = cli.stderr(cp)
-                    err_msg = f'Unable to load yaml from {file.name}'
+                    err_msg = f'Unable to load context from {file.name}'
                     self.assertIn(err_msg, stderr)
         finally:
             # the token should not have been created, but cleaning up in case the test failed
