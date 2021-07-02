@@ -178,7 +178,7 @@
            #(= (walk/keywordize-keys (get-current-instance-entry-fn#))
                (dissoc entry# :log-url))
            ; this timeout is so high due to scheduler syncer
-           :interval 1 :timeout 10)
+           :interval 1 :timeout 20)
          (str "watch for " router-url# " id->instance entry for instance-id '" instance-id# "' was '" (get-current-instance-entry-fn#)
               "' instead of '" entry# "'"))))
 
