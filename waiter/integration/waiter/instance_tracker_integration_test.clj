@@ -166,29 +166,33 @@
   (doseq [watch watches]
     (stop-watch watch)))
 
-(defmacro assert-watch-instance-id-entry
-  [watch instance-id entry]
+(defmacro assert-watch-instance-id-entry-with-fn
+  [watch instance-id validator-fn]
   `(let [watch# ~watch
          instance-id# ~instance-id
-         entry# ~entry
          router-url# (:router-url watch#)
          query-state-fn# (:query-state-fn watch#)
-         get-current-instance-entry-fn# #(get (query-state-fn#) instance-id#)]
+         get-current-instance-entry-fn# #(get (query-state-fn#) instance-id#)
+         validator-fn# ~validator-fn]
      (is (wait-for
-           #(= (walk/keywordize-keys (get-current-instance-entry-fn#))
-               (dissoc entry# :log-url))
+           #(validator-fn# (get-current-instance-entry-fn#))
            ; this timeout is so high due to scheduler syncer
-           :interval 1 :timeout 20)
-         (str "watch for " router-url# " id->instance entry for instance-id '" instance-id# "' was '" (get-current-instance-entry-fn#)
-              "' instead of '" entry# "'"))))
+           :interval 1 :timeout 10)
+         (str "watch for " router-url# " id->instance entry for instance-id '" instance-id# "' was " (get-current-instance-entry-fn#)))))
 
-(defmacro assert-watches-instance-id-entry
-  [watches instance-id entry]
+(defmacro assert-watches-some-instance-id-entry
+  [watches instance-id]
   `(let [watches# ~watches
-         instance-id# ~instance-id
-         entry# ~entry]
+         instance-id# ~instance-id]
      (doseq [watch# watches#]
-       (assert-watch-instance-id-entry watch# instance-id# entry#))))
+       (assert-watch-instance-id-entry-with-fn watch# instance-id# some?))))
+
+(defmacro assert-watches-nil-instance-id-entry
+  [watches instance-id]
+  `(let [watches# ~watches
+         instance-id# ~instance-id]
+     (doseq [watch# watches#]
+       (assert-watch-instance-id-entry-with-fn watch# instance-id# nil?))))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-instance-watch
   (testing-using-waiter-url
@@ -224,8 +228,8 @@
                   healthy-instances (filter :healthy? active-instances)
                   watches (start-watches router-urls cookies)]
               (is (pos? (count healthy-instances)))
-              (doseq [{:keys [id] :as inst} healthy-instances]
-                (assert-watches-instance-id-entry watches id inst))
+              (doseq [{:keys [id]} healthy-instances]
+                (assert-watches-some-instance-id-entry watches id))
               (stop-watches watches)))))
 
       (testing "stream receives events when instances become healthy"
@@ -243,8 +247,8 @@
             (let [{:keys [active-instances]} (:instances (service-settings waiter-url service-id :cookies cookies))
                   healthy-instances (filter :healthy? active-instances)]
               (is (pos? (count healthy-instances)))
-              (doseq [{:keys [id] :as inst} healthy-instances]
-                (assert-watches-instance-id-entry watches id inst))))
+              (doseq [{:keys [id]} healthy-instances]
+                (assert-watches-some-instance-id-entry watches id))))
           (stop-watches watches)))
 
       (testing "stream receives events when instances are no longer healthy"
@@ -266,7 +270,7 @@
               ; wait for all routers to report failed instances
               (is (wait-for #(every-router-has-failed-instances?-fn service-id)))
               (doseq [{:keys [id]} healthy-instances]
-                (assert-watches-instance-id-entry watches id nil))))
+                (assert-watches-nil-instance-id-entry watches id))))
           (stop-watches watches)))
 
       (testing "stream receives events when instances are no longer healthy due to service getting killed"
@@ -287,7 +291,7 @@
               ; kill service
               (delete-service waiter-url service-id)
               (doseq [{:keys [id]} healthy-instances]
-                (assert-watches-instance-id-entry watches id nil))))
+                (assert-watches-nil-instance-id-entry watches id))))
           (stop-watches watches)))
 
       (testing "service-id filter provides initial healthy-instances only for a service"
@@ -319,10 +323,10 @@
                                        :query-params {"service-id" service-id
                                                       "watch" "true"})]
                 (is (pos? (count healthy-instances)))
-                (doseq [{:keys [id] :as inst} healthy-instances]
-                  (assert-watch-instance-id-entry watch id inst))
+                (doseq [{:keys [id]} healthy-instances]
+                  (assert-watches-some-instance-id-entry [watch] id))
                 (doseq [{:keys [id]} (filter :healthy? active-instances-filtered)]
-                  (assert-watch-instance-id-entry watch id nil))
+                  (assert-watches-nil-instance-id-entry [watch] id))
                 (stop-watch watch))))))
 
       (testing "service-id filter provides [:healthy-instances :update] events only for a service"
@@ -354,10 +358,10 @@
                                        :query-params {"service-id" service-id
                                                       "watch" "true"})]
                 (is (pos? (count healthy-instances)))
-                (doseq [{:keys [id] :as inst} healthy-instances]
-                  (assert-watch-instance-id-entry watch id inst))
+                (doseq [{:keys [id]} healthy-instances]
+                  (assert-watches-some-instance-id-entry [watch] id))
                 (doseq [{:keys [id]} (filter :healthy? active-instances-filtered)]
-                  (assert-watch-instance-id-entry watch id nil))
+                  (assert-watches-nil-instance-id-entry [watch] id))
                 (stop-watch watch))))))
 
       (testing "streams initial instances for service-ids that match service description filter"
@@ -391,10 +395,10 @@
                                                       "watch" "true"})]
                 (is (pos? (count healthy-instances)))
                 (is (pos? (count healthy-instances-filtered)))
-                (doseq [{:keys [id] :as inst} healthy-instances]
-                  (assert-watch-instance-id-entry watch id inst))
+                (doseq [{:keys [id]} healthy-instances]
+                  (assert-watches-some-instance-id-entry [watch] id))
                 (doseq [{:keys [id]} healthy-instances-filtered]
-                  (assert-watch-instance-id-entry watch id nil))
+                  (assert-watches-nil-instance-id-entry [watch] id))
                 (stop-watch watch))))))
 
       (testing "streams updated healthy instances for service-ids that match service description filter"
@@ -426,10 +430,10 @@
                     (:instances (service-settings waiter-url service-id-filtered :cookies cookies))
                     healthy-instances (filter :healthy? active-instances)]
                 (is (pos? (count healthy-instances)))
-                (doseq [{:keys [id] :as inst} healthy-instances]
-                  (assert-watch-instance-id-entry watch id inst))
+                (doseq [{:keys [id]} healthy-instances]
+                  (assert-watches-some-instance-id-entry [watch] id))
                 (doseq [{:keys [id]} (filter :healthy? active-instances-filtered)]
-                  (assert-watch-instance-id-entry watch id nil))
+                  (assert-watches-nil-instance-id-entry [watch] id))
                 (stop-watch watch)))))))))
 
 (deftest ^:parallel ^:integration-fast test-instance-watch-streaming-timeout
