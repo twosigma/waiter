@@ -143,7 +143,6 @@ def create_or_update_token(clusters, args, _, enforce_cluster, action):
                             '--input, --json, or --yaml.')
         token_fields_from_json = {}
         fields_from_args_only = True
-    print(args)
 
     token_fields_from_args = args
     overrides = get_overrides(token_fields_from_json, token_fields_from_args)
@@ -154,7 +153,6 @@ def create_or_update_token(clusters, args, _, enforce_cluster, action):
                             f'without specifying the --override flag.')
         else:
             logging.debug(f'Following parameters have specified values in both file and flags: {overrides}')
-    print(token_fields_from_args)
     token_fields = merge_token_fields_from_args(token_fields_from_json, token_fields_from_args)
     token_name_from_json = token_fields.pop('token', None)
     if token_name_from_args and token_name_from_json:
