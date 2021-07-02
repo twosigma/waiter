@@ -1213,6 +1213,21 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name)
 
+    def test_create_env_metadata_are_parsed_as_strings(self):
+        token_name = self.token_name()
+        try:
+            create_flags = f'{token_name} --metadata.foo true --env.KEY_2 true --env.KEY_3 false'
+            cp = cli.create(self.waiter_url, flags='--verbose', create_flags=create_flags)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            token_data = util.load_token(self.waiter_url, token_name)
+            self.assertEqual({'KEY_2': 'true',
+                              'KEY_3': 'false'},
+                             token_data['env'])
+            self.assertEqual({'foo': 'true'},
+                             token_data['metadata'])
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
     def __test_create_nested_args_parameter_override_success(self, file_format, create_existing_token=False):
         token_name = self.token_name()
         create_doc = {'token': token_name,
