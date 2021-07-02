@@ -251,7 +251,7 @@
         (let [watches (start-watches router-urls cookies)
               {:keys [service-id] :as response}
               (make-request-with-debug-info
-                {:x-kitchen-die-after-ms 6000
+                {:x-kitchen-die-after-ms 10000
                  :x-waiter-name (rand-name)}
                 #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
           (with-service-cleanup
@@ -263,8 +263,6 @@
             (let [{:keys [active-instances]} (:instances (service-settings waiter-url service-id :cookies cookies))
                   healthy-instances (filter :healthy? active-instances)]
               (is (pos? (count healthy-instances)))
-              (doseq [{:keys [id] :as inst} healthy-instances]
-                (assert-watches-instance-id-entry watches id inst))
               ; wait for all routers to report failed instances
               (is (wait-for #(every-router-has-failed-instances?-fn service-id)))
               (doseq [{:keys [id]} healthy-instances]
@@ -275,8 +273,7 @@
         (let [watches (start-watches router-urls cookies)
               {:keys [service-id] :as response}
               (make-request-with-debug-info
-                {:x-kitchen-die-after-ms 6000
-                 :x-waiter-name (rand-name)}
+                {:x-waiter-name (rand-name)}
                 #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
           (with-service-cleanup
             service-id
@@ -287,8 +284,6 @@
             (let [{:keys [active-instances]} (:instances (service-settings waiter-url service-id :cookies cookies))
                   healthy-instances (filter :healthy? active-instances)]
               (is (pos? (count healthy-instances)))
-              (doseq [{:keys [id] :as inst} healthy-instances]
-                (assert-watches-instance-id-entry watches id inst))
               ; kill service
               (delete-service waiter-url service-id)
               (doseq [{:keys [id]} healthy-instances]
