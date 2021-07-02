@@ -14,6 +14,7 @@ from waiter.util import deep_merge, FALSE_STRINGS, is_admin_enabled, print_info,
 BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
 INT_PARAM_SUFFIXES = ['-failures', '-index', '-instances', '-length', '-level', '-mins', '-secs']
 FLOAT_PARAM_SUFFIXES = ['-factor', '-rate', '-threshold']
+STRING_PARAM_PREFIXES = ['env', 'metadata']
 
 
 class Action(Enum):
@@ -142,6 +143,7 @@ def create_or_update_token(clusters, args, _, enforce_cluster, action):
                             '--input, --json, or --yaml.')
         token_fields_from_json = {}
         fields_from_args_only = True
+    print(args)
 
     token_fields_from_args = args
     overrides = get_overrides(token_fields_from_json, token_fields_from_args)
@@ -152,7 +154,7 @@ def create_or_update_token(clusters, args, _, enforce_cluster, action):
                             f'without specifying the --override flag.')
         else:
             logging.debug(f'Following parameters have specified values in both file and flags: {overrides}')
-
+    print(token_fields_from_args)
     token_fields = merge_token_fields_from_args(token_fields_from_json, token_fields_from_args)
     token_name_from_json = token_fields.pop('token', None)
     if token_name_from_args and token_name_from_json:
@@ -272,12 +274,15 @@ def add_implicit_arguments(unknown_args, parser):
     for i in range(num_unknown_args):
         arg = unknown_args[i]
         if arg.startswith(("-", "--")):
+            arg_dest = arg.lstrip('-')
             if any(arg.endswith(suffix) for suffix in INT_PARAM_SUFFIXES):
                 arg_type = possible_int
             elif any(arg.endswith(suffix) for suffix in FLOAT_PARAM_SUFFIXES):
                 arg_type = possible_float
+            elif any(arg_dest.startswith(prefix) for prefix in STRING_PARAM_PREFIXES):
+                arg_type = None
             elif (i + 1) < num_unknown_args and unknown_args[i + 1].lower() in BOOL_STRINGS:
                 arg_type = str2bool
             else:
                 arg_type = None
-            parser.add_argument(arg, dest=arg.lstrip('-'), type=arg_type)
+            parser.add_argument(arg, dest=arg_dest, type=arg_type)
