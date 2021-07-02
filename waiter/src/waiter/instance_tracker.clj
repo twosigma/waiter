@@ -223,8 +223,8 @@
                 (comp
                   (map
                     (fn event-filter [{:keys [id object type] :as event}]
-                      (cid/cinfo correlation-id "received event from instance-tracker daemon" {:id id})
-                      (cid/cinfo correlation-id "full instances event data received from instance-tracker daemon" {:event event})
+                      (cid/cinfo correlation-id "received event from instance-tracker daemon" {:id id :type type})
+                      (cid/cdebug correlation-id "full instances event data received from instance-tracker daemon" {:event event})
                       (let [service-filter
                             (filter
                               (fn filter-service-id [inst]
@@ -255,7 +255,7 @@
                         (throw (ex-info "Invalid event type provided" {:event event})))))
                   (map (fn [{:keys [id type] :as event}]
                          (cid/cinfo correlation-id "forwarding instances event to client" {:id id :type type})
-                         (cid/cinfo correlation-id "full instances event data sent to watch client" {:event event})
+                         (cid/cdebug correlation-id "full instances event data sent to watch client" {:event event})
                          (utils/clj->json event))))
                 watch-chan-ex-handler-fn
                 (fn watch-chan-ex-handler [e]
