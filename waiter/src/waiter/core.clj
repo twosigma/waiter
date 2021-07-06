@@ -902,11 +902,10 @@
                                                    (scheduler/available? service-id->password-fn* http-client
                                                                          scheduler-name service-instance service-description))]
                                   (fn start-scheduler-syncer-fn
-                                    [scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs]
-                                    (let [timer-ch (-> scheduler-syncer-interval-secs t/seconds t/in-millis au/timer-chan)]
-                                      (scheduler/start-scheduler-syncer
-                                        clock timer-ch service-id->service-description-fn* available?
-                                        failed-check-threshold scheduler-name get-service->instances-fn scheduler-state-chan)))))})
+                                    [scheduler-name get-service->instances-fn scheduler-state-chan trigger-chan]
+                                    (scheduler/start-scheduler-syncer
+                                      clock trigger-chan service-id->service-description-fn* available?
+                                      failed-check-threshold scheduler-name get-service->instances-fn scheduler-state-chan))))})
 
 (def routines
   {:allowed-to-manage-service?-fn (pc/fnk [[:state entitlement-manager kv-store]]

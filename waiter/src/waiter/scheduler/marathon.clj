@@ -648,8 +648,9 @@
         get-service->instances-fn
         #(get-service->instances marathon-api mesos-api is-waiter-service?-fn retrieve-framework-id-fn
                                  service-id->failed-instances-transient-store)
+        syncer-trigger-chan (scheduler/scheduler-syncer-timer-chan scheduler-syncer-interval-secs)
         {:keys [retrieve-syncer-state-fn]}
-        (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
+        (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan syncer-trigger-chan)
         marathon-descriptor-builder-fn (let [f (-> marathon-descriptor-builder
                                                    :factory-fn
                                                    utils/resolve-symbol

@@ -1507,11 +1507,12 @@
                                       (do
                                         (log/warn "scheduler instance has not yet been initialized")
                                         {})))
+        syncer-trigger-chan (scheduler/scheduler-syncer-timer-chan scheduler-syncer-interval-secs)
         {:keys [retrieve-syncer-state-fn]} (start-scheduler-syncer-fn
                                              scheduler-name
                                              get-service->instances-fn
                                              scheduler-state-chan
-                                             scheduler-syncer-interval-secs)
+                                             syncer-trigger-chan)
         fileserver (update fileserver :predicate-fn (fn [predicate-fn]
                                                       (if (nil? predicate-fn)
                                                         fileserver-container-enabled?

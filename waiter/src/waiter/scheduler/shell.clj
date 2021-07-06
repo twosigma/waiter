@@ -853,8 +853,9 @@
          (fn? start-scheduler-syncer-fn)]}
   (let [id->service-agent (agent {})
         get-service->instances-fn #(get-service->instances id->service-agent)
+        syncer-trigger-chan (scheduler/scheduler-syncer-timer-chan scheduler-syncer-interval-secs)
         {:keys [retrieve-syncer-state-fn]}
-        (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
+        (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan syncer-trigger-chan)
         {:keys [id->service-agent port->reservation-atom work-directory] :as scheduler}
         (create-shell-scheduler (assoc config
                                   :id->service-agent id->service-agent

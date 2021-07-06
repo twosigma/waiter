@@ -593,7 +593,7 @@
   [scheduler-name get-service->instances-fn service-id->service-description-fn available? failed-check-threshold service-id->health-check-context]
   (let [^DateTime request-services-time (t/now)
         timing-message-fn (fn [] (let [^DateTime now (t/now)]
-                                   (str "scheduler-syncer: sync took " (- (.getMillis now) (.getMillis request-services-time)) " ms")))]
+                                   (str "scheduler-syncer: " scheduler-name " sync took " (- (.getMillis now) (.getMillis request-services-time)) " ms")))]
     (log/trace "scheduler-syncer: querying" scheduler-name "scheduler")
     (if-let [service->service-instances (timers/start-stop-time!
                                           (metrics/waiter-timer "scheduler" scheduler-name "service->available-tasks")
@@ -688,8 +688,13 @@
    (let [health-check-context (get service-id->health-check-context service-id)]
      (assoc health-check-context :last-update-time last-update-time))))
 
+(defn scheduler-syncer-timer-chan
+  "Creates and returns a core.async channel that 'chimes' at the intervals of scheduler-syncer-interval-secs seconds."
+  [scheduler-syncer-interval-secs]
+  (-> scheduler-syncer-interval-secs t/seconds t/in-millis au/timer-chan))
+
 (defn start-scheduler-syncer
-  "Starts loop to query marathon for the service and instance statuses,
+  "Starts loop to query underlying scheduler for the service and instance statuses,
   maintains a state consisting of one map with elements of shape:
 
     service-id {:instance-id->unhealthy-instance        {...}
@@ -703,9 +708,9 @@
   The nested map has the following keys: :active-instances and :failed-instances.
   The active-instances should not be assumed to be healthy (or live).
   The failed-instances are guaranteed to be dead.\""
-  [clock timer-ch service-id->service-description-fn available? failed-check-threshold
+  [clock trigger-ch service-id->service-description-fn available? failed-check-threshold
    scheduler-name get-service->instances-fn scheduler-state-chan]
-  (log/info "starting scheduler syncer")
+  (log/info "starting scheduler-syncer" scheduler-name)
   (let [exit-chan (async/chan 1)
         state-query-chan (async/chan 32)
         syncer-state-atom (atom {})]
@@ -729,7 +734,7 @@
                                      (retrieve-syncer-state current-state)))
                          current-state)
 
-                       timer-ch
+                       trigger-ch
                        ([]
                          (try
                            (timers/start-stop-time!

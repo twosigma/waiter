@@ -558,8 +558,9 @@
         service-id->failed-instances-transient-store (atom {})
         get-service->instances-fn
         #(get-service->instances cook-api allowed-users search-interval service-id->failed-instances-transient-store)
+        syncer-trigger-chan (scheduler/scheduler-syncer-timer-chan scheduler-syncer-interval-secs)
         {:keys [retrieve-syncer-state-fn]}
-        (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan scheduler-syncer-interval-secs)
+        (start-scheduler-syncer-fn scheduler-name get-service->instances-fn scheduler-state-chan syncer-trigger-chan)
         scheduler (create-cook-scheduler config cook-api service-id->failed-instances-transient-store retrieve-syncer-state-fn)]
     (start-track-failed-instances service-id->failed-instances-transient-store scheduler failed-tracker-interval-ms)
     scheduler))
