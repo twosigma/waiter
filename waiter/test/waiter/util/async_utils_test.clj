@@ -351,3 +351,34 @@
       (is (every? #(>= % (- interval-ms tolerance-ms)) invocation-diffs)
           (str {:invocation-diffs invocation-diffs
                 :invocation-times invocation-times})))))
+
+(deftest test-throttle-chan
+  (let [num-iterations 10
+        source-delay-ms 100
+        target-throttle-ms 400
+        source-chan (latest-chan)
+        target-chan (throttle-chan target-throttle-ms [source-chan])
+        target-data-atom (atom [])
+        process-complete-promise (promise)]
+    (async/go-loop [iteration 0]
+      (if (< iteration num-iterations)
+        (do
+          (async/>! source-chan iteration)
+          (async/<! (async/timeout source-delay-ms))
+          (recur (inc iteration)))
+        (async/close! source-chan)))
+    (async/go-loop []
+      (let [target-data (async/<! target-chan)]
+        (if (nil? target-data)
+          (deliver process-complete-promise :ready)
+          (do
+            (swap! target-data-atom conj target-data)
+            (recur)))))
+    (is (= :ready (deref process-complete-promise 5000 :timeout)))
+    (let [target-data @target-data-atom]
+      (is (< (int (Math/ceil (/ (* 1.0 num-iterations source-delay-ms) target-throttle-ms)))
+             (count target-data)
+             num-iterations)
+          (str {:num-iterations num-iterations :target-data target-data}))
+      (is (zero? (first target-data)))
+      (is (= (dec num-iterations) (last target-data))))))
