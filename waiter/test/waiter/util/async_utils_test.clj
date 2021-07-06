@@ -20,7 +20,7 @@
             [full.async :refer [<? <?? go-try]]
             [metrics.histograms :as histograms]
             [waiter.util.async-utils :refer :all])
-  (:import (java.util.concurrent Executors CountDownLatch)))
+  (:import (java.util.concurrent Executors)))
 
 (deftest test-sliding-buffer-chan
   (let [buf-size 4
@@ -359,7 +359,7 @@
         source-chan (latest-chan)
         target-chan (throttle-chan target-throttle-ms [source-chan])
         target-data-atom (atom [])
-        process-complete-latch (CountDownLatch. 1)]
+        process-complete-promise (promise)]
     (async/go-loop [iteration 0]
       (if (< iteration num-iterations)
         (do
@@ -370,13 +370,13 @@
     (async/go-loop []
       (let [target-data (async/<! target-chan)]
         (if (nil? target-data)
-          (.countDown process-complete-latch)
+          (deliver process-complete-promise :ready)
           (do
             (swap! target-data-atom conj target-data)
             (recur)))))
-    (.await process-complete-latch)
+    (is (= :ready (deref process-complete-promise 5000 :timeout)))
     (let [target-data @target-data-atom]
-      (is (< (int (Math/ceil (/ (* 1.0 num-iterations) (/ target-throttle-ms source-delay-ms))))
+      (is (< (int (Math/ceil (/ (* 1.0 num-iterations source-delay-ms) target-throttle-ms)))
              (count target-data)
              num-iterations)
           (str {:num-iterations num-iterations :target-data target-data}))
