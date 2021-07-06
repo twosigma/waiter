@@ -273,12 +273,12 @@ def add_implicit_arguments(unknown_args, parser):
         arg = unknown_args[i]
         if arg.startswith(("-", "--")):
             arg_dest = arg.lstrip('-')
-            if any(arg.endswith(suffix) for suffix in INT_PARAM_SUFFIXES):
+            if any(arg_dest.startswith(prefix) for prefix in STRING_PARAM_PREFIXES):
+                arg_type = None
+            elif any(arg.endswith(suffix) for suffix in INT_PARAM_SUFFIXES):
                 arg_type = possible_int
             elif any(arg.endswith(suffix) for suffix in FLOAT_PARAM_SUFFIXES):
                 arg_type = possible_float
-            elif any(arg_dest.startswith(prefix) for prefix in STRING_PARAM_PREFIXES):
-                arg_type = None
             elif (i + 1) < num_unknown_args and unknown_args[i + 1].lower() in BOOL_STRINGS:
                 arg_type = str2bool
             else:

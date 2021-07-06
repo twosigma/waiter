@@ -1216,14 +1216,14 @@ class WaiterCliTest(util.WaiterTest):
     def test_create_env_metadata_are_parsed_as_strings(self):
         token_name = self.token_name()
         try:
-            create_flags = f'{token_name} --metadata.foo true --env.KEY_2 true --env.KEY_3 false'
+            create_flags = f'{token_name} --metadata.instances 5 --env.KEY_2 true --env.KEY_3 false'
             cp = cli.create(self.waiter_url, flags='--verbose', create_flags=create_flags)
             self.assertEqual(0, cp.returncode, cp.stderr)
             token_data = util.load_token(self.waiter_url, token_name)
             self.assertEqual({'KEY_2': 'true',
                               'KEY_3': 'false'},
                              token_data['env'])
-            self.assertEqual({'foo': 'true'},
+            self.assertEqual({'instances': '5'},
                              token_data['metadata'])
         finally:
             util.delete_token(self.waiter_url, token_name)
