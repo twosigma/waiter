@@ -17,6 +17,7 @@
   (:require [cheshire.core :as cheshire]
             [clj-http.client :as clj-http]
             [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.data :as data]
             [clojure.data.zip.xml :as zx]
             [clojure.java.io :as io]
@@ -24,6 +25,8 @@
             [clojure.tools.logging :as log]
             [clojure.xml :as xml]
             [clojure.zip :as zip]
+            [metrics.counters :as counters]
+            [metrics.meters :as meters]
             [metrics.timers :as timers]
             [plumbing.core :as pc]
             [schema.core :as s]
@@ -1252,41 +1255,48 @@
 (defn- start-k8s-watch!
   "Start a thread to continuously update the watch-state atom based on watched K8s events."
   [{:keys [api-server-url scheduler-name watch-state] :as scheduler}
-   {:keys [connect-timeout-ms exit-on-error? resource-key resource-name resource-url socket-timeout-ms
-           streaming-api-request-fn update-fn watch-retries] :as options}]
+   {:keys [connect-timeout-ms exit-on-error? resource-name resource-url socket-timeout-ms
+           streaming-api-request-fn update-fn watch-retries watch-trigger-chan] :as options}]
   (doto
     (Thread.
       (fn k8s-watch []
         (try
           ;; retry getting state updates forever
-          (while true
-            (retry-watch-runner
-              (fn k8s-watch-retried-thunk []
-                (try
-                  (log/info "prepping" resource-name "watch with global sync")
-                  (loop [version (reset-watch-state! scheduler options)
-                         iter 0]
-                    (log/info "starting" resource-name "watch connection, iteration" iter)
-                    (timers/start-stop-time!
-                      (metrics/waiter-timer "scheduler" scheduler-name "state-watch")
-                      (let [request-options (cond-> {}
-                                              connect-timeout-ms (assoc :conn-timeout connect-timeout-ms)
-                                              socket-timeout-ms (assoc :socket-timeout socket-timeout-ms))
-                            watch-url (str resource-url "&watch=true&resourceVersion=" version)]
-                        ;; process updates forever (unless there's an exception)
-                        (doseq [json-object (streaming-api-request-fn resource-name watch-url request-options)]
-                          (when json-object
-                            (if (= "ERROR" (:type json-object))
-                              (log/info "received error update in watch" resource-name json-object)
-                              (update-fn json-object))))))
-                    ;; when the watch connection closed normally (i.e., no HTTP error code response),
-                    ;; retry the watch (before falling back to the global query again) `watch-retries` times.
-                    (when (< iter watch-retries)
-                      (when-let [version' (latest-watch-state-version scheduler options)]
-                        (recur version' (inc iter)))))
-                  (catch Exception e
-                    (log/warn "error in" resource-name "state watch thread:" e)
-                    (throw e))))))
+          (let [resource-name-lower (str/lower-case resource-name)]
+            (while true
+              (retry-watch-runner
+                (fn k8s-watch-retried-thunk []
+                  (try
+                    (log/info "prepping" resource-name "watch with global sync")
+                    (loop [version (reset-watch-state! scheduler options)
+                           iter 0]
+                      (log/info "starting" resource-name "watch connection, iteration" iter)
+                      (timers/start-stop-time!
+                        (metrics/waiter-timer "scheduler" scheduler-name "state-watch")
+                        (timers/start-stop-time!
+                          (metrics/waiter-timer "scheduler" scheduler-name "state-watch" resource-name-lower)
+                          (let [request-options (cond-> {}
+                                                  connect-timeout-ms (assoc :conn-timeout connect-timeout-ms)
+                                                  socket-timeout-ms (assoc :socket-timeout socket-timeout-ms))
+                                watch-url (str resource-url "&watch=true&resourceVersion=" version)]
+                            ;; process updates forever (unless there's an exception)
+                            (doseq [json-object (streaming-api-request-fn resource-name watch-url request-options)]
+                              (when json-object
+                                (if (= "ERROR" (:type json-object))
+                                  (log/info "received error update in watch" resource-name json-object)
+                                  (do
+                                    (counters/inc! (metrics/waiter-counter "scheduler" scheduler-name "state-watch" resource-name-lower "update-count"))
+                                    (meters/mark! (metrics/waiter-meter "scheduler" scheduler-name "state-watch" resource-name-lower "update-rate"))
+                                    (update-fn json-object)
+                                    (async/>!! watch-trigger-chan {:object json-object :resource-name resource-name :time (t/now)}))))))))
+                      ;; when the watch connection closed normally (i.e., no HTTP error code response),
+                      ;; retry the watch (before falling back to the global query again) `watch-retries` times.
+                      (when (< iter watch-retries)
+                        (when-let [version' (latest-watch-state-version scheduler options)]
+                          (recur version' (inc iter)))))
+                    (catch Exception e
+                      (log/warn "error in" resource-name "state watch thread:" e)
+                      (throw e)))))))
           (catch Throwable t
             (when exit-on-error?
               (log/error t "unrecoverable error in" resource-name "state watch thread, terminating waiter.")
@@ -1418,7 +1428,7 @@
            log-bucket-url max-patch-retries max-name-length pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
            pod-suffix-length replicaset-api-version replicaset-spec-builder response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold
            reverse-proxy scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
-           service-id->password-fn start-scheduler-syncer-fn url watch-connect-timeout-ms watch-init-timeout-ms watch-retries watch-socket-timeout-ms]
+           service-id->password-fn start-scheduler-syncer-fn url watch-chan-throttle-interval-ms watch-connect-timeout-ms watch-init-timeout-ms watch-retries watch-socket-timeout-ms]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver
     {service-id->deployment-error-cache-threshold :threshold service-id->deployment-error-cache-ttl-sec :ttl} :service-id->deployment-error-cache
     :as context}]
@@ -1462,6 +1472,7 @@
          (fn? service-id->password-fn)
          (fn? service-id->service-description-fn)
          (fn? start-scheduler-syncer-fn)
+         (or (nil? watch-chan-throttle-interval-ms) (pos-int? watch-chan-throttle-interval-ms))
          (or (nil? watch-connect-timeout-ms) (integer? watch-connect-timeout-ms))
          (or (nil? watch-init-timeout-ms) (integer? watch-init-timeout-ms))
          (or (nil? watch-retries) (integer? watch-retries))
@@ -1494,7 +1505,8 @@
                                        (f scheduler service-id service-description replicaset-spec-builder-ctx)))
         response->deployment-error-msg-fn (-> response->deployment-error-msg-fn utils/resolve-symbol!)
         restart-kill-threshold (or restart-kill-threshold (+ 2 restart-expiry-threshold))
-        watch-options (cond-> default-watch-options
+        watch-trigger-chan (au/latest-chan)
+        watch-options (cond-> (assoc default-watch-options :watch-trigger-chan watch-trigger-chan)
                         (some? watch-retries) (assoc :watch-retries watch-retries)
                         watch-connect-timeout-ms (assoc :connect-timeout-ms watch-connect-timeout-ms)
                         watch-init-timeout-ms (assoc :init-timeout-ms watch-init-timeout-ms)
@@ -1507,7 +1519,9 @@
                                       (do
                                         (log/warn "scheduler instance has not yet been initialized")
                                         {})))
-        syncer-trigger-chan (scheduler/scheduler-syncer-timer-chan scheduler-syncer-interval-secs)
+        syncer-timer-chan (scheduler/scheduler-syncer-timer-chan scheduler-syncer-interval-secs)
+        watch-chan-throttle-interval-ms (or watch-chan-throttle-interval-ms 1000)
+        syncer-trigger-chan (au/throttle-chan watch-chan-throttle-interval-ms [syncer-timer-chan watch-trigger-chan])
         {:keys [retrieve-syncer-state-fn]} (start-scheduler-syncer-fn
                                              scheduler-name
                                              get-service->instances-fn

@@ -29,6 +29,7 @@
             [waiter.scheduler :as scheduler]
             [waiter.scheduler.kubernetes :refer :all]
             [waiter.status-codes :refer :all]
+            [waiter.util.async-utils :as au]
             [waiter.util.cache-utils :as cu]
             [waiter.util.client-tools :as ct]
             [waiter.util.date-utils :as du]
@@ -91,6 +92,7 @@
                                                                          "run-as-user" "myself"})
                                                             service-ids)
       :scheduler-name "dummy-scheduler"
+      :watch-chan-throttle-interval-ms 1
       :watch-init-timeout-ms 0
       :watch-state (atom nil)}
      (merge args)
@@ -1592,6 +1594,10 @@
                                     :service-id->service-description-fn
                                     (constantly {"image" "twosigma/waiter-test-apps"}))) nil))))))
 
+(defn- watch-trigger-chan->resource-version
+  [watch-trigger-chan]
+  (get-in (async/<!! watch-trigger-chan) [:object :object :metadata :resourceVersion]))
+
 (deftest test-start-k8s-watch!
   (let [service-id "test-app-1234"
         rs-response
@@ -1742,18 +1748,21 @@
         rs-watch-stream (make-watch-stream rs-watch-updates watch-update-signals)
 
         {:keys [watch-state] :as dummy-scheduler} (make-dummy-scheduler ["test-app-1234"])
+        watch-trigger-chan (au/latest-chan)
 
         rs-watch-thread (start-replicasets-watch!
                           dummy-scheduler
                           {:api-request-fn (constantly rs-response)
                            :exit-on-error? false
-                           :streaming-api-request-fn (constantly rs-watch-stream)})
+                           :streaming-api-request-fn (constantly rs-watch-stream)
+                           :watch-trigger-chan watch-trigger-chan})
 
         pods-watch-thread (start-pods-watch!
                             dummy-scheduler
                             {:api-request-fn (constantly pods-response)
                              :exit-on-error? false
-                             :streaming-api-request-fn (constantly pods-watch-stream)})
+                             :streaming-api-request-fn (constantly pods-watch-stream)
+                             :watch-trigger-chan watch-trigger-chan})
 
         get-instance (fn [{:keys [watch-state]} index]
                        (let [pod-id (str "test-app-1234-abcd" index)
@@ -1787,6 +1796,7 @@
     ;; instance 2 should now be healthy
     (deliver (get watch-update-signals 0) true)
     (is (wait-for-version :watch 1001))
+    (is (= "1001" (watch-trigger-chan->resource-version watch-trigger-chan)))
     (let [task-stats (get-in @watch-state [:service-id->service service-id :task-stats])
           {:keys [healthy running staged unhealthy]} task-stats
           inst1 (get-instance dummy-scheduler 1)
@@ -1803,6 +1813,7 @@
     ;; instance 3 should now be available
     (deliver (get watch-update-signals 1) true)
     (is (wait-for-version :watch 1002))
+    (is (= "1002" (watch-trigger-chan->resource-version watch-trigger-chan)))
     (let [task-stats (get-in @watch-state [:service-id->service service-id :task-stats])
           {:keys [healthy running staged unhealthy]} task-stats
           inst1 (get-instance dummy-scheduler 1)
@@ -1821,6 +1832,7 @@
     ;; instance 1 should now be gone
     (deliver (get watch-update-signals 2) true)
     (is (wait-for-version :watch 1003))
+    (is (= "1003" (watch-trigger-chan->resource-version watch-trigger-chan)))
     (let [task-stats (get-in @watch-state [:service-id->service service-id :task-stats])
           {:keys [healthy running staged unhealthy]} task-stats
           inst1 (get-instance dummy-scheduler 1)
@@ -2031,6 +2043,7 @@
                                  (concat signals [(promise)])))
 
         {:keys [watch-state] :as dummy-scheduler} (make-dummy-scheduler ["test-app-1234"])
+        watch-trigger-chan (au/latest-chan)
 
         ;; replicasets have a single uninterrupted stream of updates
         rs-watch-stream (make-watch-stream rs-watch-updates watch-update-signals)
@@ -2039,7 +2052,8 @@
                           dummy-scheduler
                           {:api-request-fn (constantly rs-response)
                            :exit-on-error? false
-                           :streaming-api-request-fn (constantly rs-watch-stream)})
+                           :streaming-api-request-fn (constantly rs-watch-stream)
+                           :watch-trigger-chan watch-trigger-chan})
 
         ;; pods global queries are called twice, and return a different value each time
         pods-global-update-signal (promise)
@@ -2073,7 +2087,8 @@
                             {:api-request-fn pods-global-query-fn
                              :exit-on-error? false
                              :streaming-api-request-fn pods-watch-query-fn
-                             :watch-retries 1})
+                             :watch-retries 1
+                             :watch-trigger-chan watch-trigger-chan})
 
         get-instance (fn [{:keys [watch-state]} index]
                        (let [pod-id (str "test-app-1234-abcd" index)
@@ -2108,6 +2123,7 @@
     (deliver (get watch-update-signals 0) true)
     (is (wait-for-version :rs-metadata :watch 1001))
     (is (wait-for-version :pods-metadata :watch 1001))
+    (is (= "1001" (watch-trigger-chan->resource-version watch-trigger-chan)))
     (let [task-stats (get-in @watch-state [:service-id->service service-id :task-stats])
           {:keys [healthy running staged unhealthy]} task-stats
           inst1 (get-instance dummy-scheduler 1)
@@ -2125,6 +2141,7 @@
     (deliver (get watch-update-signals 1) true)
     (is (wait-for-version :rs-metadata :watch 1002))
     (is (wait-for-version :pods-metadata :watch 1002))
+    (is (= "1002" (watch-trigger-chan->resource-version watch-trigger-chan)))
     (let [task-stats (get-in @watch-state [:service-id->service service-id :task-stats])
           {:keys [healthy running staged unhealthy]} task-stats
           inst1 (get-instance dummy-scheduler 1)
@@ -2161,6 +2178,7 @@
     (deliver (get watch-update-signals 2) true)
     (is (wait-for-version :rs-metadata :watch 1004))
     (is (wait-for-version :pods-metadata :watch 1004))
+    (is (= "1004" (watch-trigger-chan->resource-version watch-trigger-chan)))
     (let [task-stats (get-in @watch-state [:service-id->service service-id :task-stats])
           {:keys [healthy running staged unhealthy]} task-stats
           inst1 (get-instance dummy-scheduler 1)
