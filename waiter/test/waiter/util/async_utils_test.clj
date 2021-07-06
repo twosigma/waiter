@@ -20,7 +20,7 @@
             [full.async :refer [<? <?? go-try]]
             [metrics.histograms :as histograms]
             [waiter.util.async-utils :refer :all])
-  (:import (java.util.concurrent Executors)))
+  (:import (java.util.concurrent Executors CountDownLatch)))
 
 (deftest test-sliding-buffer-chan
   (let [buf-size 4
@@ -351,3 +351,34 @@
       (is (every? #(>= % (- interval-ms tolerance-ms)) invocation-diffs)
           (str {:invocation-diffs invocation-diffs
                 :invocation-times invocation-times})))))
+
+(deftest test-throttle-chan
+  (let [num-iterations 10
+        source-delay-ms 100
+        target-throttle-ms 400
+        source-chan (latest-chan)
+        target-chan (throttle-chan target-throttle-ms [source-chan])
+        target-data-atom (atom [])
+        process-complete-latch (CountDownLatch. 1)]
+    (async/go-loop [iteration 0]
+      (if (< iteration num-iterations)
+        (do
+          (async/>! source-chan iteration)
+          (async/<! (async/timeout source-delay-ms))
+          (recur (inc iteration)))
+        (async/close! source-chan)))
+    (async/go-loop []
+      (let [target-data (async/<! target-chan)]
+        (if (nil? target-data)
+          (.countDown process-complete-latch)
+          (do
+            (swap! target-data-atom conj target-data)
+            (recur)))))
+    (.await process-complete-latch)
+    (let [target-data @target-data-atom]
+      (is (< (int (Math/ceil (/ (* 1.0 num-iterations) (/ target-throttle-ms source-delay-ms))))
+             (count target-data)
+             num-iterations)
+          (str {:num-iterations num-iterations :target-data target-data}))
+      (is (zero? (first target-data)))
+      (is (= (dec num-iterations) (last target-data))))))

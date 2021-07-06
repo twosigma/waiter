@@ -30,6 +30,22 @@
   []
   (sliding-buffer-chan 1))
 
+(defn throttle-chan
+  "Returns a core.async channel (a new sliding buffer channel of size 1) that receives data from any of its
+   source channels no more frequently than at a rate of throttle-interval-ms ms.
+   The go block that is throttling the rate at which data is forwarded to the returned channel can be terminated
+   by closing any of the source channels or the returned channel."
+  [throttle-interval-ms source-chans]
+  (let [target-chan (latest-chan)]
+    (async/go-loop []
+      (let [[source-data _] (async/alts! source-chans)]
+        (if (nil? source-data)
+          (async/close! target-chan)
+          (when (async/>! target-chan source-data)
+            (async/<! (async/timeout throttle-interval-ms))
+            (recur)))))
+    target-chan))
+
 (defn timer-chan
   "Returns a core.async channel that 'chimes' at the specified intervals after the specified delay (default of 0 ms).
    The go block that is triggering the chimes can be terminated by closing the returned channel."
