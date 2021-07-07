@@ -535,7 +535,7 @@
                                                :status 200}}}
                (sync-token-on-clusters waiter-api cluster-urls test-token token-description opt-out-metadata-name cluster-url->token-data)))))
 
-    (testing "sync cluster skip on metadata field opt-out"
+    (testing "sync cluster skip on metadata field opt-out in latest"
       (let [opt-out-metadata-name "sync-opt-out"
             cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
             test-token "test-token-1"
@@ -552,6 +552,29 @@
                                                           :token-etag (str test-token-etag ".1")
                                                           :status 200}
                                      "www.cluster-2.com" {:description {"owner" "test-user-1"
+                                                                        "root" "test-cluster-1"}
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :success/skip-opt-out}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description opt-out-metadata-name cluster-url->token-data)))))
+
+    (testing "sync cluster skip on metadata field opt-out in sync cluster"
+      (let [opt-out-metadata-name "sync-opt-out"
+            cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {"last-update-user" "john.doe"
+                               "name" "test-name"
+                               "owner" "test-user-1"
+                               "root" "test-cluster-1"}
+            cluster-url->token-data {"www.cluster-1.com" {:description {"last-update-user" "john.doe"
+                                                                        "name" "test-name"
+                                                                        "owner" "test-user-1"
+                                                                        "root" "test-cluster-1"}
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description {"metadata" {"sync-opt-out" "true"}
+                                                                        "owner" "test-user-1"
                                                                         "root" "test-cluster-1"}
                                                           :token-etag (str test-token-etag ".2")
                                                           :status 200}}]
