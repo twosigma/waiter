@@ -109,7 +109,9 @@
                    :details {:message "soft-deleted tokens should have already been hard-deleted"}}
 
                   (and (some? opt-out-metadata-name)
-                       (= "true" (get-in latest-token-description ["metadata" opt-out-metadata-name])))
+                       ;; opt-out of syncing if any of the descriptions signal opt-out intent
+                       (or (= "true" (get-in latest-token-description ["metadata" opt-out-metadata-name]))
+                           (= "true" (get-in description ["metadata" opt-out-metadata-name]))))
                   {:code :success/skip-opt-out}
 
                   ;; active token, content the same irrespective of system metadata keys but roots different
