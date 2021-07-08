@@ -705,6 +705,11 @@
   (pc/map-from-keys #(instances-breakdown! scheduler %)
                     (get-services scheduler)))
 
+(defn- retrieve-service-log-bucket-url
+  "Retrieves the S3 bucket url where log files should be copied when a waiter service pod is terminated."
+  [{:strs [env]} log-bucket-url]
+  (get env "WAITER_CONFIG_LOG_BUCKET_URL" log-bucket-url))
+
 ; The Waiter Scheduler protocol implementation for Kubernetes
 (defrecord KubernetesScheduler [api-server-url
                                 authorizer
@@ -842,6 +847,7 @@
                         (not (str/starts-with? browse-path "/"))
                         (->> (str "/")))
           {:strs [run-as-user] :as service-description} (retrieve-service-description scheduler service-id)
+          base-bucket-url (retrieve-service-log-bucket-url service-description log-bucket-url)
           pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])]
       (ss/try+
         (cond
@@ -863,12 +869,12 @@
 
           ;; the pod is not live: try accessing logs through S3
           :else
-          (when log-bucket-url
+          (when base-bucket-url
             (let [prefix (str run-as-user "/" service-id "/" pod-name "/" instance-base-dir browse-path)
                   query-string (str "delimiter=/&prefix=" prefix)
                   result (hu/http-request
                            http-client
-                           log-bucket-url
+                           base-bucket-url
                            :query-string query-string
                            ;; Enabling Kerberos/SPNEGO when the bucket is not kerberized does not
                            ;; cause an error, and the extra flag is ignored on non-kerberized systems.
@@ -880,7 +886,7 @@
                     (let [path (zx/xml1-> f :Key zx/text)
                           size (Long/parseLong (zx/xml1-> f :Size zx/text))
                           basename (subs path (count prefix))]
-                      {:name basename :size size :type "file" :url (str log-bucket-url "/" path)}))
+                      {:name basename :size size :type "file" :url (str base-bucket-url "/" path)}))
                   (distinct
                     (for [d (zx/xml-> xml-listing :CommonPrefixes)]
                       (let [path (zx/xml1-> d :Prefix zx/text)
@@ -1011,8 +1017,9 @@
         base-env (scheduler/environment service-id service-description
                                         service-id->password-fn home-path)
         ;; We include the default log-bucket-sync-secs value in the total-sigkill-delay-secs
-        ;; delay iff the log-bucket-url setting was given the scheduler config.
-        log-bucket-sync-secs (if log-bucket-url (:log-bucket-sync-secs context) 0)
+        ;; delay iff the S3 bucket-url setting is configured for the service.
+        base-bucket-url (retrieve-service-log-bucket-url service-description log-bucket-url)
+        log-bucket-sync-secs (if base-bucket-url (:log-bucket-sync-secs context) 0)
         configured-pod-sigkill-delay-secs (max termination-grace-period-secs pod-sigkill-delay-secs)
         total-sigkill-delay-secs (+ configured-pod-sigkill-delay-secs log-bucket-sync-secs)
         envoy-sidecar-check-fn (:predicate-fn reverse-proxy)
@@ -1132,7 +1139,7 @@
         conj
         (let [{:keys [cmd image port] {:keys [cpu mem]} :resources} fileserver
               memory (str mem "Mi")
-              base-bucket-url (get base-env "WAITER_CONFIG_LOG_BUCKET_URL" log-bucket-url)]
+              base-bucket-url (retrieve-service-log-bucket-url service-description log-bucket-url)]
           {:command cmd
            :env (into [{:name "WAITER_FILESERVER_PORT" :value (str port)}
                        {:name "WAITER_GRACE_SECS" :value (str configured-pod-sigkill-delay-secs)}]
