@@ -713,18 +713,7 @@
     ; validate the profile when it is configured
     (let [{:strs [profile]} service-description-to-use]
       (when-not (str/blank? profile)
-        (validate-profile-parameter profile->defaults profile)))
-
-    ; validate scoped tokens must use strict mode
-    (let [{:strs [env metadata]} service-description-to-use
-          accept-scope? (= "true" (get metadata "accept-scoped-token"))
-          strict-mode? (= "strict" (get env "USE_OIDC_AUTH"))]
-      (when (and accept-scope? (not strict-mode?))
-        (sling/throw+ {:type :service-description-error
-                       :friendly-error-message (str "scoped tokens must be used with strict OIDC auth mode, "
-                                                    "please configure env.USE_OIDC_AUTH=strict")
-                       :status http-400-bad-request
-                       :log-level :warn})))))
+        (validate-profile-parameter profile->defaults profile)))))
 
 (defprotocol ServiceDescriptionBuilder
   "A protocol for constructing a service description from the various sources. Implementations
