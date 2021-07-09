@@ -252,7 +252,9 @@
     (cu/cache-get-or-load cache key #(retrieve inner-kv-store key refresh)))
   (store [_ key value]
     (cu/cache-evict cache key)
-    (store inner-kv-store key value))
+    (let [result (store inner-kv-store key value)]
+      (cu/cache-put! cache key value)
+      result))
   (delete [_ key]
     (log/info "evicting deleted entry" key "from cache")
     (cu/cache-evict cache key)
