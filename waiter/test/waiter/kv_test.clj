@@ -18,7 +18,8 @@
             [clojure.java.io :as io]
             [clojure.test :refer :all]
             [waiter.curator :as curator]
-            [waiter.kv :as kv])
+            [waiter.kv :as kv]
+            [waiter.util.cache-utils :as cu])
   (:import (java.util Arrays)
            (org.apache.curator.framework CuratorFramework CuratorFrameworkFactory)
            (org.apache.curator.retry RetryNTimes)))
@@ -111,7 +112,7 @@
 (deftest test-cached-kv-store
   (let [cache-config {:threshold 1000 :ttl (-> 60 t/seconds t/in-millis)}
         local-kv-store (kv/new-local-kv-store {})
-        cached-kv-store (kv/new-cached-kv-store cache-config local-kv-store)]
+        {:keys [cache] :as cached-kv-store} (kv/new-cached-kv-store cache-config local-kv-store)]
     (is (nil? (kv/fetch local-kv-store :a)))
     (is (nil? (kv/fetch cached-kv-store :a)))
     (kv/store local-kv-store :a 1)
@@ -121,6 +122,7 @@
     (is (nil? (kv/fetch cached-kv-store :a)))
     ; store to cache propagates to underlying store 
     (kv/store cached-kv-store :b 2)
+    (is (true? (cu/cache-contains? cache :b)))
     (is (= 2 (kv/fetch cached-kv-store :b)))
     (is (= 2 (kv/fetch local-kv-store :b)))
     (kv/store cached-kv-store :b 11)
@@ -128,6 +130,7 @@
     (is (= 11 (kv/fetch local-kv-store :b)))
     ; cache works with refresh call
     (kv/store cached-kv-store :b 13)
+    (is (true? (cu/cache-contains? cache :b)))
     (is (= 13 (kv/fetch cached-kv-store :b)))
     (kv/store local-kv-store :b 17)
     (is (= 13 (kv/fetch cached-kv-store :b)))
@@ -138,6 +141,7 @@
            (get-in (kv/state cached-kv-store) [:inner-state :store])))
     ; delete removes entry from cache
     (kv/delete cached-kv-store :b)
+    (is (false? (cu/cache-contains? cache :b)))
     (is (nil? (kv/fetch local-kv-store :b)))
     (is (nil? (kv/fetch cached-kv-store :b)))
     (is (nil? (kv/fetch cached-kv-store :b :refresh true)))
