@@ -53,7 +53,10 @@
 
 (defn- make-dummy-scheduler
   ([service-ids] (make-dummy-scheduler service-ids {}))
-  ([service-ids args]
+  ([service-ids {:keys [log-bucket-sync-secs log-bucket-url]
+                 :or {log-bucket-sync-secs 60
+                      log-bucket-url "http://waiter.example.com:8888/waiter-service-logs"}
+                 :as args}]
    (->
      {:api-server-url "https://k8s-api.example/"
       :authorizer {:kind :default
@@ -65,8 +68,8 @@
                    :predicate-fn fileserver-container-enabled?
                    :scheme "http"}
       :leader?-fn (constantly true)
-      :log-bucket-sync-secs 60
-      :log-bucket-url "http://waiter.example.com:8888/waiter-service-logs"
+      :log-bucket-sync-secs log-bucket-sync-secs
+      :log-bucket-url log-bucket-url
       :max-patch-retries 5
       :max-name-length 63
       :pdb-api-version "policy/v1beta1"
@@ -79,7 +82,9 @@
                                      %1 %2 %3
                                      {:container-init-commands ["waiter-k8s-init"]
                                       :default-namespace dummy-scheduler-default-namespace
-                                      :default-container-image "twosigma/waiter-test-apps:latest"})
+                                      :default-container-image "twosigma/waiter-test-apps:latest"
+                                      :log-bucket-sync-secs log-bucket-sync-secs
+                                      :log-bucket-url log-bucket-url})
       :retrieve-auth-token-state-fn (constantly nil)
       :retrieve-syncer-state-fn (constantly nil)
       :response->deployment-error-msg-fn waiter.scheduler.kubernetes/default-k8s-message-transform
@@ -192,11 +197,35 @@
                {:configured-termination-grace-period-secs 5 :spec-termination-grace-period-secs 5}
                {:configured-termination-grace-period-secs 15 :spec-termination-grace-period-secs 15}]]
         (let [service-description (assoc dummy-service-description "termination-grace-period-secs" configured-termination-grace-period-secs)
-              scheduler (make-dummy-scheduler ["test-service-id"]
-                                              {:service-id->service-description-fn (constantly service-description)})
-              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description)]
-          (is (= spec-termination-grace-period-secs
-                 (get-in replicaset-spec [:spec :template :spec :terminationGracePeriodSeconds]))))))))
+              {:keys [log-bucket-sync-secs replicaset-spec-builder-fn] :as scheduler}
+              (make-dummy-scheduler ["test-service-id"]
+                                    {:service-id->service-description-fn (constantly service-description)})
+              replicaset-spec (replicaset-spec-builder-fn scheduler "test-service-id" service-description)]
+          (is (= (+ log-bucket-sync-secs spec-termination-grace-period-secs)
+                 (get-in replicaset-spec [:spec :template :spec :terminationGracePeriodSeconds])))))
+
+      (let [service-description dummy-service-description
+            pod-sigkill-delay-secs 10
+            {:keys [replicaset-spec-builder-fn] :as scheduler}
+            (make-dummy-scheduler ["test-service-id"]
+                                  {:log-bucket-sync-secs 10
+                                   :log-bucket-url nil
+                                   :pod-sigkill-delay-secs pod-sigkill-delay-secs})
+            replicaset-spec (replicaset-spec-builder-fn scheduler "test-service-id" service-description)]
+        (is (= pod-sigkill-delay-secs (get-in replicaset-spec [:spec :template :spec :terminationGracePeriodSeconds]))))
+
+      (let [log-bucket-url "http://service.example.com:1234/service-logs"
+            service-description (assoc dummy-service-description "env" {"WAITER_CONFIG_LOG_BUCKET_URL" log-bucket-url})
+            pod-sigkill-delay-secs 5
+            log-bucket-sync-secs 10
+            {:keys [replicaset-spec-builder-fn] :as scheduler}
+            (make-dummy-scheduler ["test-service-id"]
+                                  {:log-bucket-sync-secs log-bucket-sync-secs
+                                   :log-bucket-url nil
+                                   :pod-sigkill-delay-secs pod-sigkill-delay-secs})
+            replicaset-spec (replicaset-spec-builder-fn scheduler "test-service-id" service-description)]
+        (is (= (+ pod-sigkill-delay-secs log-bucket-sync-secs)
+               (get-in replicaset-spec [:spec :template :spec :terminationGracePeriodSeconds])))))))
 
 (deftest test-get-port-range
   ;; this condition is critical for our sidecar-proxy logic,
@@ -1353,38 +1382,50 @@
 
 (deftest test-retrieve-directory-content
   ;; Killed pod
-  (let [service-id "service-id"
-        instance-id "service-id.instance-id-321"
-        path "/x/a"
-        expected [{:name "bar",
-                   :size 4,
-                   :type "file",
-                   :url
-                   "http://waiter.example.com:8888/waiter-service-logs/myself/service-id/instance-id/r321/x/a/bar"}
-                  {:name "baz",
-                   :size 4,
-                   :type "file",
-                   :url
-                   "http://waiter.example.com:8888/waiter-service-logs/myself/service-id/instance-id/r321/x/a/baz"}
-                  {:name "hello.txt",
-                   :size 6,
-                   :type "file",
-                   :url
-                   "http://waiter.example.com:8888/waiter-service-logs/myself/service-id/instance-id/r321/x/a/hello.txt"}
-                  {:name "aa",
-                   :path "/myself/service-id/instance-id/r321/x/a/aa",
-                   :type "directory"}
-                  {:name "bb",
-                   :path "/myself/service-id/instance-id/r321/x/a/bb",
-                   :type "directory"}]
-        xml-response "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>waiter-service-logs</Name><Prefix>myself/service-id/instance-id/r321/x/a/</Prefix><Marker/><MaxKeys>1000</MaxKeys><Delimiter>/</Delimiter><IsTruncated>false</IsTruncated><Contents><Key>myself/service-id/instance-id/r321/x/a/bar</Key><LastModified>2019-01-15T16:01:46.824Z</LastModified><ETag>&quot;c157a79031e1c40f85931829bc5fc552&quot;</ETag><Size>4</Size><Owner><ID>http://acs.amazonaws.com/groups/global/AllUsers</ID><DisplayName>undefined</DisplayName></Owner><StorageClass>STANDARD</StorageClass></Contents><Contents><Key>myself/service-id/instance-id/r321/x/a/baz</Key><LastModified>2019-01-15T16:01:46.995Z</LastModified><ETag>&quot;258622b1688250cb619f3c9ccaefb7eb&quot;</ETag><Size>4</Size><Owner><ID>http://acs.amazonaws.com/groups/global/AllUsers</ID><DisplayName>undefined</DisplayName></Owner><StorageClass>STANDARD</StorageClass></Contents><Contents><Key>myself/service-id/instance-id/r321/x/a/hello.txt</Key><LastModified>2019-01-15T16:01:46.950Z</LastModified><ETag>&quot;b1946ac92492d2347c6235b4d2611184&quot;</ETag><Size>6</Size><Owner><ID>http://acs.amazonaws.com/groups/global/AllUsers</ID><DisplayName>undefined</DisplayName></Owner><StorageClass>STANDARD</StorageClass></Contents><CommonPrefixes><Prefix>myself/service-id/instance-id/r321/x/a/aa/</Prefix></CommonPrefixes><CommonPrefixes><Prefix>myself/service-id/instance-id/r321/x/a/bb/</Prefix></CommonPrefixes></ListBucketResult>"
-        dummy-scheduler (make-dummy-scheduler [service-id])
-        host "host.local"]
-    (testing "s3 logs from killed pod"
-      (let [actual (with-redefs [hu/http-request (constantly xml-response)]
-                     (scheduler/retrieve-directory-content
-                       dummy-scheduler service-id instance-id host path))]
-        (is (= expected actual)))))
+  (let [get-expected-result (fn [log-bucket-url]
+                              [{:name "bar",
+                                :size 4,
+                                :type "file",
+                                :url (str log-bucket-url "/myself/service-id/instance-id/r321/x/a/bar")}
+                               {:name "baz",
+                                :size 4,
+                                :type "file",
+                                :url (str log-bucket-url "/myself/service-id/instance-id/r321/x/a/baz")}
+                               {:name "hello.txt",
+                                :size 6,
+                                :type "file",
+                                :url (str log-bucket-url "/myself/service-id/instance-id/r321/x/a/hello.txt")}
+                               {:name "aa",
+                                :path "/myself/service-id/instance-id/r321/x/a/aa",
+                                :type "directory"}
+                               {:name "bb",
+                                :path "/myself/service-id/instance-id/r321/x/a/bb",
+                                :type "directory"}])]
+    (let [service-id "service-id"
+          instance-id "service-id.instance-id-321"
+          path "/x/a"
+          xml-response "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>waiter-service-logs</Name><Prefix>myself/service-id/instance-id/r321/x/a/</Prefix><Marker/><MaxKeys>1000</MaxKeys><Delimiter>/</Delimiter><IsTruncated>false</IsTruncated><Contents><Key>myself/service-id/instance-id/r321/x/a/bar</Key><LastModified>2019-01-15T16:01:46.824Z</LastModified><ETag>&quot;c157a79031e1c40f85931829bc5fc552&quot;</ETag><Size>4</Size><Owner><ID>http://acs.amazonaws.com/groups/global/AllUsers</ID><DisplayName>undefined</DisplayName></Owner><StorageClass>STANDARD</StorageClass></Contents><Contents><Key>myself/service-id/instance-id/r321/x/a/baz</Key><LastModified>2019-01-15T16:01:46.995Z</LastModified><ETag>&quot;258622b1688250cb619f3c9ccaefb7eb&quot;</ETag><Size>4</Size><Owner><ID>http://acs.amazonaws.com/groups/global/AllUsers</ID><DisplayName>undefined</DisplayName></Owner><StorageClass>STANDARD</StorageClass></Contents><Contents><Key>myself/service-id/instance-id/r321/x/a/hello.txt</Key><LastModified>2019-01-15T16:01:46.950Z</LastModified><ETag>&quot;b1946ac92492d2347c6235b4d2611184&quot;</ETag><Size>6</Size><Owner><ID>http://acs.amazonaws.com/groups/global/AllUsers</ID><DisplayName>undefined</DisplayName></Owner><StorageClass>STANDARD</StorageClass></Contents><CommonPrefixes><Prefix>myself/service-id/instance-id/r321/x/a/aa/</Prefix></CommonPrefixes><CommonPrefixes><Prefix>myself/service-id/instance-id/r321/x/a/bb/</Prefix></CommonPrefixes></ListBucketResult>"
+          host "host.local"]
+      (testing "s3 logs from killed pod"
+        (testing "with default log bucket url"
+          (let [dummy-scheduler (make-dummy-scheduler [service-id])
+                expected (get-expected-result (:log-bucket-url dummy-scheduler))]
+            (let [actual (with-redefs [hu/http-request (constantly xml-response)]
+                           (scheduler/retrieve-directory-content
+                             dummy-scheduler service-id instance-id host path))]
+              (is (= expected actual)))))
+
+        (testing "with custom log bucket url"
+          (let [log-bucket-url "http://service.example.com:1234/service-logs"
+                dummy-scheduler (assoc (make-dummy-scheduler [service-id])
+                                  :service-id->service-description-fn {service-id {"env" {"WAITER_CONFIG_LOG_BUCKET_URL" log-bucket-url}
+                                                                                   "health-check-port-index" 0
+                                                                                   "run-as-user" "myself"}})
+                expected (get-expected-result log-bucket-url)]
+            (let [actual (with-redefs [hu/http-request (constantly xml-response)]
+                           (scheduler/retrieve-directory-content
+                             dummy-scheduler service-id instance-id host path))]
+              (is (= expected actual))))))))
 
   ;; Live pod
   (let [service-id "test-service-id"
