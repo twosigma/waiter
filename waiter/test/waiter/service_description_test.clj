@@ -2241,7 +2241,15 @@
       (doseq [termination-grace-period-secs [900 "5" -1]]
         (run-validate-schema-test
           (assoc valid-description "termination-grace-period-secs" termination-grace-period-secs)
-          constraints-schema profile->defaults config "termination-grace-period-secs must be an integer in the range [0, 300].")))))
+          constraints-schema profile->defaults config "termination-grace-period-secs must be an integer in the range [0, 300].")))
+
+    (testing "testing OIDC auth strict mode with accepting scoped tokens"
+      (doseq [oidc-auth-mode ["relaxed" "true"]]
+        (run-validate-schema-test
+          (-> valid-description
+            (assoc-in ["env" "USE_OIDC_AUTH"] oidc-auth-mode)
+            (assoc-in ["metadata" "accept-scoped-token"] "true"))
+          constraints-schema profile->defaults config "scoped tokens must be used with strict OIDC auth mode, please configure env.USE_OIDC_AUTH=strict")))))
 
 (deftest test-service-description-schema
   (testing "Service description schema"
