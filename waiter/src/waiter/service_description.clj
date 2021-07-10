@@ -114,7 +114,8 @@
    s/Str s/Any})
 
 (def user-metadata-schema
-  {(s/optional-key "cors-rules") [{(s/required-key "origin-regex") schema/regex-pattern
+  {(s/optional-key "cluster") schema/non-empty-string
+   (s/optional-key "cors-rules") [{(s/required-key "origin-regex") schema/regex-pattern
                                    (s/optional-key "target-path-regex") schema/regex-pattern
                                    (s/optional-key "methods") (s/both (s/pred not-empty) [schema/http-method])}]
    (s/optional-key "editor") schema/non-empty-string
@@ -160,10 +161,10 @@
 (def ^:const on-the-fly-service-description-keys (set/union service-parameter-keys #{"token"}))
 
 ; keys allowed in system metadata for tokens, these need to be distinct from service description keys
-(def ^:const system-metadata-keys #{"cluster" "deleted" "last-update-time" "last-update-user" "previous" "root"})
+(def ^:const system-metadata-keys #{"deleted" "last-update-time" "last-update-user" "previous" "root"})
 
 ; keys allowed in user metadata for tokens, these need to be distinct from service description keys
-(def ^:const user-metadata-keys #{"cors-rules" "editor" "fallback-period-secs" "https-redirect" "maintenance" "owner" "service-mapping" "stale-timeout-mins"})
+(def ^:const user-metadata-keys #{"cluster" "cors-rules" "editor" "fallback-period-secs" "https-redirect" "maintenance" "owner" "service-mapping" "stale-timeout-mins"})
 
 ; keys allowed in metadata for tokens, these need to be distinct from service description keys
 (def ^:const token-metadata-keys (set/union system-metadata-keys user-metadata-keys))

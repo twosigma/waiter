@@ -308,7 +308,9 @@
   (get-default-cluster [this]
     "Returns the default token root")
   (calculate-cluster [this request]
-    "Returns the token root computed by using the incoming request"))
+    "Returns the token root computed by using the incoming request")
+  (validate-cluster [this cluster]
+    "Returns nil if the provided cluster is valid. Throws exception otherwise."))
 
 (defn new-configured-cluster-calculator
   "Returns a cluster calculator that looks up the cluster name based on the host name when configured in host->cluster.
@@ -316,15 +318,23 @@
   [{:keys [default-cluster host->cluster]}]
   {:pre [(not (str/blank? default-cluster))
          host->cluster]}
-  (reify ClusterCalculator
-    (get-default-cluster [_] default-cluster)
-    (calculate-cluster [_ {:keys [headers]}]
-      (-> (get headers "host")
+  (let [allowed-clusters (-> host->cluster (vals) (set) (conj default-cluster))]
+    (reify ClusterCalculator
+      (get-default-cluster [_] default-cluster)
+      (calculate-cluster [_ {:keys [headers]}]
+        (-> (get headers "host")
           str
           (str/split #":")
           first
           host->cluster
-          (or default-cluster)))))
+          (or default-cluster)))
+      (validate-cluster [_ cluster]
+        (when-not (contains? allowed-clusters cluster)
+          (throw (ex-info "Invalid cluster provided"
+                          {:allowed-clusters allowed-clusters
+                           :cluster cluster
+                           :log-level :info
+                           :status http-400-bad-request})))))))
 
 (defn- parse-last-update-time
   "Parses input string as a ISO 8601 format date string."
@@ -475,21 +485,23 @@
                                          :service-parameter-with-service-defaults service-parameter-with-service-defaults
                                          :token token
                                          :update-mode (get request-params "update-mode")
+                                         :validate-cluster-fn #(validate-cluster cluster-calculator %)
                                          :validate-service-description-fn validate-service-description-fn
                                          :version-hash version-hash
                                          :waiter-hostnames waiter-hostnames})
 
     ; Store the token
     (let [{:strs [last-update-time] :as new-token-metadata}
-          (merge {"cluster" (calculate-cluster cluster-calculator request)
-                  "last-update-time" (.getMillis ^DateTime (clock))
+          (merge {"last-update-time" (.getMillis ^DateTime (clock))
                   "last-update-user" authenticated-user
                   "owner" owner
                   "root" (or (get existing-token-metadata "root") token-root)}
                  new-token-metadata)
           new-token-metadata (cond-> new-token-metadata
                                (string? last-update-time)
-                               (update "last-update-time" parse-last-update-time))
+                               (update "last-update-time" parse-last-update-time)
+                               (str/blank? (get new-token-metadata "cluster"))
+                               (assoc "cluster" (calculate-cluster cluster-calculator request)))
           new-user-editable-token-data (-> (merge new-service-parameter-template new-token-metadata)
                                            (select-keys sd/token-user-editable-keys))
           existing-token-description (sd/token->token-description kv-store token :include-deleted false)
