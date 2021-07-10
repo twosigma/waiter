@@ -24,7 +24,7 @@
 
   (validate [_ {:keys [authenticated-user existing-token-metadata headers new-service-parameter-template new-token-data
                        new-token-metadata new-user-metadata owner service-parameter-with-service-defaults token update-mode
-                       validate-service-description-fn version-hash waiter-hostnames]}]
+                       validate-cluster-fn validate-service-description-fn version-hash waiter-hostnames]}]
     (let [{:strs [authentication interstitial-secs permitted-user run-as-user]} new-service-parameter-template]
       (when (str/blank? token)
         (throw (ex-info "Must provide the token" {:status http-400-bad-request :log-level :warn})))
@@ -35,6 +35,8 @@
       (sd/validate-token token)
       (validate-service-description-fn new-service-parameter-template)
       (sd/validate-user-metadata-schema new-user-metadata new-service-parameter-template)
+      (when-let [cluster (get new-token-metadata "cluster")]
+        (validate-cluster-fn cluster))
       (let [unknown-keys (-> new-token-data
                              keys
                              set

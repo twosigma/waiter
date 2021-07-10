@@ -34,7 +34,7 @@
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import (clojure.lang ExceptionInfo)
-           (java.io StringBufferInputStream)
+           (java.io ByteArrayInputStream)
            (org.joda.time DateTime)))
 
 (def ^:const history-length 5)
@@ -57,6 +57,10 @@
     (authorized? [_ _ _ _]
       true)))
 
+(defn string->input-stream
+  [input-string]
+  (ByteArrayInputStream. (.getBytes input-string "UTF-8")))
+
 (deftest test-constant-cluster-calculator
   (let [default-cluster "test-cluster"
         cluster-calculator-1 (new-configured-cluster-calculator {:default-cluster default-cluster
@@ -66,6 +70,7 @@
                                                                                  "waiter-foo.localtest.me" "foo"}})]
     (is (= default-cluster (get-default-cluster cluster-calculator-1)))
     (is (= default-cluster (get-default-cluster cluster-calculator-2)))
+
     (is (= default-cluster (calculate-cluster cluster-calculator-1 {})))
     (is (= default-cluster (calculate-cluster cluster-calculator-2 {})))
     (is (= default-cluster (calculate-cluster cluster-calculator-1 {:headers {"host" "test.com"}})))
@@ -77,13 +82,23 @@
     (is (= default-cluster (calculate-cluster cluster-calculator-1 {:headers {"host" "waiter-foo-bar.localtest.me:1234"}})))
     (is (= default-cluster (calculate-cluster cluster-calculator-2 {:headers {"host" "waiter-foo-bar.localtest.me:1234"}})))
     (is (= default-cluster (calculate-cluster cluster-calculator-1 {:headers {"host" "waiter-foo.bar.localtest.me"}})))
-    (is (= default-cluster (calculate-cluster cluster-calculator-2 {:headers {"host" "waiter-foo.bar.localtest.me"}})))))
+    (is (= default-cluster (calculate-cluster cluster-calculator-2 {:headers {"host" "waiter-foo.bar.localtest.me"}})))
+
+    (is (nil? (validate-cluster cluster-calculator-1 default-cluster)))
+    (is (thrown-with-msg? ExceptionInfo #"Invalid cluster provided" (validate-cluster cluster-calculator-1 "foo")))
+    (is (thrown-with-msg? ExceptionInfo #"Invalid cluster provided" (validate-cluster cluster-calculator-1 "bar")))
+    (is (thrown-with-msg? ExceptionInfo #"Invalid cluster provided" (validate-cluster cluster-calculator-1 "baz")))
+    (is (nil? (validate-cluster cluster-calculator-2 default-cluster)))
+    (is (nil? (validate-cluster cluster-calculator-2 "foo")))
+    (is (nil? (validate-cluster cluster-calculator-2 "bar")))
+    (is (thrown-with-msg? ExceptionInfo #"Invalid cluster provided" (validate-cluster cluster-calculator-2 "baz")))))
 
 (defn- run-handle-token-request
   [kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
    attach-service-defaults-fn request]
   (let [cluster-calculator (new-configured-cluster-calculator {:default-cluster (str token-root "-cluster")
-                                                               :host->cluster {}})
+                                                               :host->cluster {"www.w8r-1234.com" "w8r-1234"
+                                                                               "www.w8r-5678.com" "w8r-5678"}})
         validator (token-validator/create-default-token-validator {:entitlement-manager entitlement-manager
                                                                    :kv-store kv-store})]
     (handle-token-request clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
@@ -357,7 +372,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description-1))
+                 :body (string->input-stream (utils/clj->json service-description-1))
                  :headers {}
                  :request-method :post})]
           (is (= http-200-ok status))
@@ -405,7 +420,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames (public-entitlement-manager) make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (-> service-description-1 (assoc "owner" "tu2" "token" token) utils/clj->json StringBufferInputStream.)
+                 :body (-> service-description-1 (assoc "owner" "tu2" "token" token) utils/clj->json string->input-stream)
                  :headers {}
                  :request-method :post})]
           (is (= http-200-ok status))
@@ -460,7 +475,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description-2))
+                 :body (string->input-stream (utils/clj->json service-description-2))
                  :headers {}
                  :request-method :post})]
           (is (= http-200-ok status))
@@ -480,28 +495,27 @@
           (is (empty? (sd/fetch-core kv-store service-id-2)))))
 
       (testing "post:update-service-description:no-changes"
-        (let [_ (kv/store kv-store token (-> service-description-1
-                                             (dissoc "token")
-                                             (assoc "owner" auth-user)))
+        (let [token-cluster (str token-root "-cluster")
+              _ (kv/store kv-store token (-> service-description-1
+                                           (dissoc "token")
+                                           (assoc "cluster" token-cluster "owner" auth-user)))
               existing-service-parameter-template (kv/fetch kv-store token :refresh true)
               {:keys [body status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json (assoc existing-service-parameter-template "token" token)))
+                 :body (string->input-stream (utils/clj->json (assoc existing-service-parameter-template "token" token)))
                  :headers {}
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body (str "No changes detected for " token)))
           (is (= (-> existing-service-parameter-template
-                     (dissoc "owner")
+                     (dissoc "cluster" "owner")
                      (select-keys sd/token-data-keys))
                  (sd/token->service-parameter-template kv-store token)))
           (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
-            (is (= (dissoc existing-service-parameter-template "owner") service-parameter-template))
-            (is (= {"owner" auth-user
-                    "previous" {}}
-                   token-metadata)))
+            (is (= (dissoc existing-service-parameter-template "cluster" "owner") service-parameter-template))
+            (is (= {"cluster" token-cluster "owner" auth-user "previous" {}} token-metadata)))
           (is (empty? (sd/fetch-core kv-store service-id-1)))
           (is (empty? (sd/fetch-core kv-store service-id-2)))))
 
@@ -514,7 +528,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames (public-entitlement-manager) make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json (assoc existing-service-parameter-template "owner" auth-user "token" token)))
+                 :body (string->input-stream (utils/clj->json (assoc existing-service-parameter-template "owner" auth-user "token" token)))
                  :headers {}
                  :request-method :post})]
           (is (= http-200-ok status))
@@ -540,7 +554,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames (public-entitlement-manager) make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json (assoc service-description-2 "owner" "tu2")))
+                 :body (string->input-stream (utils/clj->json (assoc service-description-2 "owner" "tu2")))
                  :headers {}
                  :request-method :post})]
           (is (= http-200-ok status))
@@ -565,7 +579,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames (public-entitlement-manager) make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description-2))
+                 :body (string->input-stream (utils/clj->json service-description-2))
                  :headers {}
                  :request-method :post})]
           (is (= http-200-ok status))
@@ -592,9 +606,9 @@
           (let [body-map (-> body str json/read-str)]
             (doseq [key sd/service-parameter-keys]
               (is (= (get service-description-2 key) (get body-map key))))
-            (doseq [key (disj required-metadata-keys "deleted")]
+            (doseq [key (-> required-metadata-keys (conj "cluster") (disj "deleted"))]
               (is (contains? body-map key) (str "Missing entry for " key)))
-            (doseq [key (conj optional-metadata-keys "deleted")]
+            (doseq [key (-> optional-metadata-keys (disj "cluster" ) (conj "deleted"))]
               (is (not (contains? body-map key)) (str "Existing entry for " key)))
             (is (not (contains? body-map "deleted"))))))
 
@@ -627,9 +641,9 @@
           (let [body-map (-> body str json/read-str)]
             (doseq [key sd/service-parameter-keys]
               (is (= (get service-description-2 key) (get body-map key))))
-            (doseq [key (disj required-metadata-keys "deleted")]
+            (doseq [key (-> required-metadata-keys (conj "cluster") (disj "deleted"))]
               (is (contains? body-map key) (str "Missing entry for " key)))
-            (doseq [key (conj optional-metadata-keys "deleted")]
+            (doseq [key (-> optional-metadata-keys (disj "cluster") (conj "deleted"))]
               (is (not (contains? body-map key)) (str "Existing entry for " key)))
             (is (not (contains? body-map "deleted"))))))
 
@@ -666,7 +680,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {}
                  :request-method :post})]
           (is (= http-200-ok status))
@@ -689,7 +703,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {}
                  :request-method :post})]
           (is (= http-200-ok status))
@@ -713,7 +727,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {}
                  :request-method :post})]
           (is (= http-200-ok status))
@@ -739,7 +753,7 @@
                  :body (-> service-description-1
                            (assoc "maintenance" {"message" "custom maintenance message"}
                                   "token" token)
-                           utils/clj->json StringBufferInputStream.)
+                           utils/clj->json string->input-stream)
                  :headers {}
                  :request-method :post})]
           (is (= http-200-ok status))
@@ -770,7 +784,7 @@
                 (run-handle-token-request
                   kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                   {:authorization/user auth-user
-                   :body (StringBufferInputStream. (utils/clj->json service-description))
+                   :body (string->input-stream (utils/clj->json service-description))
                    :headers {}
                    :request-method :post})]
             (is (= http-200-ok status))
@@ -801,8 +815,9 @@
             (let [body-map (-> body str json/read-str)]
               (doseq [key sd/service-parameter-keys]
                 (is (= (get service-description key) (get body-map key))))
-              (doseq [key (disj sd/user-metadata-keys "stale-timeout-mins")]
+              (doseq [key (disj sd/user-metadata-keys "cluster")]
                 (is (= (get service-description key) (get body-map key))))
+              (is (= (str token-root "-cluster") (get body-map "cluster")))
               (doseq [key sd/system-metadata-keys]
                 (is (not (contains? body-map key)) (str key)))))))
 
@@ -822,7 +837,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description-2))
+                 :body (string->input-stream (utils/clj->json service-description-2))
                  :headers {}
                  :request-method :post})]
           (is (= http-200-ok status))
@@ -842,11 +857,12 @@
 
       (testing "post:edit-user-metadata:fallback-period-secs-no-changes"
         (let [token (str token (rand-int 100000))
+              token-cluster (str token-root "-cluster")
               kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description-1 (walk/stringify-keys
                                       {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*"
                                        :fallback-period-secs 120
-                                       :last-update-time (- (clock-millis) 1000) :owner auth-user
+                                       :cluster token-cluster :last-update-time (- (clock-millis) 1000) :owner auth-user
                                        :token token})
               _ (kv/store kv-store token service-description-1)
               service-description-2 (dissoc service-description-1 "last-update-time" "owner")
@@ -854,7 +870,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description-2))
+                 :body (string->input-stream (utils/clj->json service-description-2))
                  :headers {}
                  :request-method :post})]
           (is (= http-200-ok status))
@@ -874,7 +890,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= http-200-ok status))
@@ -900,7 +916,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= http-200-ok status))
@@ -929,7 +945,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user test-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
                  :request-method :post})]
@@ -958,7 +974,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user test-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
                  :request-method :post})]
@@ -988,7 +1004,7 @@
                   (run-handle-token-request
                     kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                     {:authorization/user test-user
-                     :body (StringBufferInputStream. (utils/clj->json new-service-description))
+                     :body (string->input-stream (utils/clj->json new-service-description))
                      :headers {"x-waiter-token" token}
                      :request-method :post})]
               (is (= http-200-ok status))
@@ -1025,7 +1041,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user test-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
                  :request-method :post})]
@@ -1055,7 +1071,7 @@
                   (run-handle-token-request
                     kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                     {:authorization/user test-user
-                     :body (StringBufferInputStream. (str (utils/clj->json service-description)))
+                     :body (string->input-stream (str (utils/clj->json service-description)))
                      :headers {"x-waiter-token" token}
                      :query-params {}
                      :request-method :post})]
@@ -1078,7 +1094,7 @@
                       (run-handle-token-request
                         kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                         {:authorization/user test-user
-                         :body (StringBufferInputStream. (str (utils/clj->json service-description)))
+                         :body (string->input-stream (str (utils/clj->json service-description)))
                          :headers {"x-waiter-token" token}
                          :query-params {"update-mode" "admin"}
                          :request-method :post})]
@@ -1102,7 +1118,7 @@
                       (run-handle-token-request
                         kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                         {:authorization/user test-user
-                         :body (StringBufferInputStream. (str (utils/clj->json service-description)))
+                         :body (string->input-stream (str (utils/clj->json service-description)))
                          :headers {"x-waiter-token" token}
                          :query-params {"update-mode" "admin"}
                          :request-method :post})]
@@ -1125,7 +1141,7 @@
                       (run-handle-token-request
                         kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                         {:authorization/user test-user
-                         :body (StringBufferInputStream. (str (utils/clj->json service-description)))
+                         :body (string->input-stream (str (utils/clj->json service-description)))
                          :headers {"x-waiter-token" token}
                          :query-params {"update-mode" "admin"}
                          :request-method :post})]
@@ -1139,7 +1155,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (-> service-description-1 (dissoc "token") utils/clj->json StringBufferInputStream.)
+                 :body (-> service-description-1 (dissoc "token") utils/clj->json string->input-stream)
                  :headers {}
                  :query-params {"token" test-token}
                  :request-method :post})]
@@ -1167,7 +1183,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames (public-entitlement-manager) make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (-> service-description-1 (assoc "cors-rules" cors-rules "token" token) utils/clj->json StringBufferInputStream.)
+                 :body (-> service-description-1 (assoc "cors-rules" cors-rules "token" token) utils/clj->json string->input-stream)
                  :headers {}
                  :request-method :post})]
           (is (= http-200-ok status))
@@ -1203,7 +1219,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user "te1"
-                 :body (-> new-service-description utils/clj->json StringBufferInputStream.)
+                 :body (-> new-service-description utils/clj->json string->input-stream)
                  :headers {}
                  :request-method :post})]
           (is (= http-200-ok status))
@@ -1219,7 +1235,63 @@
                      "last-update-user" "te1"
                      "previous" cur-service-description
                      "root" token-root)
-                   token-metadata))))))))
+                   token-metadata)))))
+
+      (testing "post:edit-service-description:provide-cluster-explicitly"
+        (let [token (str token "-editor-test")
+              entitlement-manager (reify authz/EntitlementManager
+                                    (authorized? [_ subject verb {:keys [user]}]
+                                      (and (or (= :manage verb) (= :run-as verb))
+                                           (or (str/includes? subject user) (str/includes? user subject)))))
+              cur-cluster (str token-root "-cluster")
+              cur-service-description (walk/stringify-keys
+                                        {:cmd "cmd1" :mem 100 :permitted-user "tp1" :run-as-user "to1A" :version "v1"
+                                         :cluster cur-cluster :editor "te1" :owner "to1" :token token})]
+          (kv/store kv-store token cur-service-description)
+          (let [new-service-description cur-service-description
+                {:keys [body status]}
+                (run-handle-token-request
+                  kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
+                  {:authorization/user "te1"
+                   :body (-> new-service-description utils/clj->json string->input-stream)
+                   :headers {}
+                   :request-method :post})]
+            (is (= http-200-ok status))
+            (is (str/includes? body (str "No changes detected for " token)))
+            (is (= (select-keys new-service-description sd/service-parameter-keys)
+                   (sd/token->service-parameter-template kv-store token)))
+            (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
+              (is (= (select-keys new-service-description sd/service-parameter-keys)
+                     service-parameter-template))
+              ;; direct KV write is missing some metadata fields
+              (is (= (assoc (select-keys new-service-description sd/token-metadata-keys)
+                       "cluster" cur-cluster
+                       "previous" {})
+                     token-metadata)))
+            (is (= cur-service-description (kv/fetch kv-store token))))
+
+          (let [new-service-description (assoc cur-service-description "cluster" "w8r-1234")
+                {:keys [body status]}
+                (run-handle-token-request
+                  kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
+                  {:authorization/user "te1"
+                   :body (-> new-service-description utils/clj->json string->input-stream)
+                   :headers {}
+                   :request-method :post})]
+            (is (= http-200-ok status))
+            (is (str/includes? body (str "Successfully updated " token)))
+            (is (= (select-keys new-service-description sd/service-parameter-keys)
+                   (sd/token->service-parameter-template kv-store token)))
+            (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
+              (is (= (select-keys new-service-description sd/service-parameter-keys)
+                     service-parameter-template))
+              (is (= (assoc (select-keys new-service-description sd/token-metadata-keys)
+                       "cluster" "w8r-1234"
+                       "last-update-time" (clock-millis)
+                       "last-update-user" "te1"
+                       "previous" cur-service-description
+                       "root" token-root)
+                     token-metadata)))))))))
 
 (defmacro assert-bad-user-metadata-response
   "Asserts the response is due to invalid user-metadata for a specific key path"
@@ -1260,7 +1332,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {}
                  :request-method :post})]
           (is (= http-400-bad-request status))
@@ -1275,7 +1347,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {}
                  :request-method :post})]
           (is (= http-403-forbidden status))
@@ -1288,7 +1360,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :request-method :post})]
           (is (= http-400-bad-request status))
           (is (str/includes? body (str "No parameters provided for abcdefgh")))))
@@ -1302,7 +1374,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= http-400-bad-request status))
@@ -1318,7 +1390,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= http-403-forbidden status))
@@ -1334,7 +1406,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= http-403-forbidden status))
@@ -1349,7 +1421,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= http-403-forbidden status))
@@ -1369,7 +1441,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:request-method :post :authorization/user test-user :headers {"x-waiter-token" token}
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :query-params {"update-mode" "foobar"}})]
           (is (= http-400-bad-request status))
           (is (str/includes? body "Invalid update-mode"))
@@ -1391,7 +1463,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user test-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description'))
+                 :body (string->input-stream (utils/clj->json service-description'))
                  :headers {"x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
                  :request-method :post})]
@@ -1413,7 +1485,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user test-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"if-match" (str (clock-millis))
                            "x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
@@ -1435,7 +1507,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user test-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"if-match" (str (clock-millis))
                            "x-waiter-token" token}
                  :query-params {"update-mode" "admin"}
@@ -1454,7 +1526,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= http-400-bad-request status))
@@ -1470,7 +1542,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :request-method :post})]
           (is (= http-400-bad-request status))
           (is (str/includes? body "Token must match pattern"))))
@@ -1485,7 +1557,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :request-method :post})]
           (is (= http-400-bad-request status))
           (is (str/includes? body "Unsupported key(s) in token"))))
@@ -1500,7 +1572,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :request-method :post})]
           (is (= http-400-bad-request status))
           (is (str/includes? body "Cannot modify last-update-time token metadata"))))
@@ -1515,7 +1587,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :request-method :post})]
           (is (= http-400-bad-request status))
           (is (str/includes? body "Cannot modify root token metadata"))))
@@ -1531,7 +1603,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:request-method :post :authorization/user "tu1"
-                 :body (StringBufferInputStream. (utils/clj->json service-description))})]
+                 :body (string->input-stream (utils/clj->json service-description))})]
           (is (= http-400-bad-request status))
           (is (str/includes? body "Cannot modify previous token metadata"))))
 
@@ -1544,7 +1616,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
@@ -1561,7 +1633,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
@@ -1579,7 +1651,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
@@ -1596,7 +1668,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
@@ -1612,7 +1684,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (ByteArrayInputStream. (.getBytes (utils/clj->json service-description) "UTF-8"))
                  :headers {"accept" "application/json"}
                  :request-method :post})]
           (is (= http-200-ok status))))
@@ -1626,7 +1698,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})]
           (is (= http-200-ok status))))
@@ -1640,7 +1712,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
@@ -1656,7 +1728,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
@@ -1672,7 +1744,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [message]} "waiter-error"} (json/read-str body)]
@@ -1689,7 +1761,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})]
           (is (= http-200-ok status))))
@@ -1703,7 +1775,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [details message]} "waiter-error"} (json/read-str body)]
@@ -1721,7 +1793,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})
               {{:strs [details message]} "waiter-error"} (json/read-str body)]
@@ -1738,7 +1810,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :request-method :post})]
           (is (= http-200-ok status) (str body))))
@@ -1753,7 +1825,7 @@
                     (run-handle-token-request
                       kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                       {:authorization/user auth-user
-                       :body (StringBufferInputStream. (utils/clj->json service-description))
+                       :body (string->input-stream (utils/clj->json service-description))
                        :headers {"accept" "application/json"}
                        :request-method :post})
                     {{:strs [message]} "waiter-error"} (json/read-str body)]
@@ -1835,7 +1907,7 @@
                     (run-handle-token-request
                       kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                       {:authorization/user auth-user
-                       :body (StringBufferInputStream. (utils/clj->json service-description))
+                       :body (string->input-stream (utils/clj->json service-description))
                        :headers {"accept" "application/json"}
                        :request-method :post})]
                 response))]
@@ -1963,7 +2035,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user test-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description-2))
+                 :body (string->input-stream (utils/clj->json service-description-2))
                  :request-method :post})]
           (is (= http-403-forbidden status))
           (is (str/includes? body "You have reached the limit of number of tokens allowed"))
@@ -1976,7 +2048,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :query-params {"token" "abcdefgh"}
                  :request-method :post})
@@ -1994,7 +2066,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
                 {:authorization/user auth-user
-                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :body (string->input-stream (utils/clj->json service-description))
                  :headers {"accept" "application/json"}
                  :query-params {"token" "stuvwxyz"}
                  :request-method :post})
@@ -2019,7 +2091,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user "te2"
-                 :body (-> service-description utils/clj->json StringBufferInputStream.)
+                 :body (-> service-description utils/clj->json string->input-stream)
                  :headers {}
                  :request-method :post})]
           (is (= http-403-forbidden status))
@@ -2041,7 +2113,7 @@
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user "te2"
-                 :body (-> new-service-description utils/clj->json StringBufferInputStream.)
+                 :body (-> new-service-description utils/clj->json string->input-stream)
                  :headers {}
                  :request-method :post})]
           (is (= http-403-forbidden status))
@@ -2064,7 +2136,7 @@
                   (run-handle-token-request
                     kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                     {:authorization/user "te1"
-                     :body (-> new-service-description utils/clj->json StringBufferInputStream.)
+                     :body (-> new-service-description utils/clj->json string->input-stream)
                      :headers {}
                      :request-method :post})]
               (is (= http-403-forbidden status))
