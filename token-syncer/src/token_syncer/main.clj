@@ -63,6 +63,7 @@
                             {:status "dry-run"})
                           (partial waiter/hard-delete-token api-http-client))
      :health-check-token (partial waiter/health-check-token health-check-http-client)
+     :load-settings (partial waiter/load-settings api-http-client)
      :load-token (partial waiter/load-token api-http-client)
      :load-token-list (partial waiter/load-token-list api-http-client)
      :store-token (if dry-run

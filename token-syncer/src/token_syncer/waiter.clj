@@ -220,3 +220,12 @@
                  :deleted deleted
                  :health-check-url health-check-url
                  :token token}))))
+
+(defn load-settings
+  "Loads the waiter settings for provided keys on a specific cluster."
+  [^HttpClient http-client waiter-url settings-keys]
+  (-> (make-http-request http-client (str waiter-url "/settings") :headers {"accept" "application/json"})
+    (:body)
+    (async/<!!)
+    (json/read-str)
+    (get-in settings-keys)))
