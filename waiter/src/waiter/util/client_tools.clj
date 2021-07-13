@@ -535,10 +535,11 @@
     :or {body nil cookies {} debug true method :post path "/endpoint" query-params {}}}]
   (let [headers (cond->
                   (-> {:x-waiter-cpus 0.1
-                       :x-waiter-mem 256
                        :x-waiter-grace-period-secs 120
                        :x-waiter-health-check-url "/status"
-                       :x-waiter-idle-timeout-mins 10}
+                       :x-waiter-idle-timeout-mins 10
+                       :x-waiter-mem 256
+                       :x-waiter-metric-group "waiter_test"}
                       (merge custom-headers)
                       (ensure-cid-in-headers)
                       (walk/stringify-keys))
