@@ -1168,6 +1168,7 @@
                                      "FEE" "FIE"
                                      "FOO" "BAR"}
                                :name (rand-name)
+                               :metric-group "waiter_test"
                                :version "does-not-matter"}
           kitchen-request #(make-kitchen-request waiter-url % :path "/environment")]
       (try
