@@ -26,7 +26,8 @@
 
 (deftest test-local-kv-store
   (let [test-store (kv/new-local-kv-store {})
-        bytes (byte-array 10)]
+        bytes (byte-array 10)
+        include-flags #{"data"}]
     (Arrays/fill bytes (byte 1))
     (is (nil? (kv/fetch test-store :a)))
     (kv/store test-store :a bytes)
@@ -34,14 +35,18 @@
     (kv/store test-store :a 3)
     (is (= 3 (kv/fetch test-store :a)))
     (is (nil? (kv/fetch test-store :b)))
-    (is (= {:store {:count 1, :data {:a 3}}, :variant "in-memory"}
-           (kv/state test-store)))
+    (is (= {:store {:count 1, :data {:a 3}}
+            :supported-include-params ["data"]
+            :variant "in-memory"}
+           (kv/state test-store include-flags)))
     (kv/delete test-store :a)
     (is (nil? (kv/fetch test-store :a)))
     (is (nil? (kv/fetch test-store :b)))
     (kv/delete test-store :does-not-exist)
-    (is (= {:store {:count 0, :data {}}, :variant "in-memory"}
-           (kv/state test-store)))))
+    (is (= {:store {:count 0, :data {}}
+            :supported-include-params ["data"]
+            :variant "in-memory"}
+           (kv/state test-store include-flags)))))
 
 (defn work-dir
   "Returns the canonical path for the ./kv-store directory"
@@ -49,7 +54,8 @@
   (-> "./kv-store" (io/file) (.getCanonicalPath)))
 
 (deftest test-file-based-kv-store
-  (let [target-file (str (work-dir) "/foo.bin")]
+  (let [target-file (str (work-dir) "/foo.bin")
+        include-flags #{"data"}]
     (let [test-store (kv/new-file-based-kv-store {:target-file target-file})
           bytes (byte-array 10)]
       (Arrays/fill bytes (byte 1))
@@ -59,23 +65,30 @@
       (kv/store test-store :a 3)
       (is (= 3 (kv/fetch test-store :a)))
       (is (nil? (kv/fetch test-store :b)))
-      (is (= {:store {:count 1, :data {:a 3}}, :variant "file-based"}
-             (kv/state test-store))))
+      (is (= {:store {:count 1, :data {:a 3}}
+              :supported-include-params ["data"]
+              :variant "file-based"}
+             (kv/state test-store include-flags))))
     ;; testing data was persisted in the file
     (let [test-store (kv/new-file-based-kv-store {:target-file target-file})]
-      (is (= {:store {:count 1, :data {:a 3}}, :variant "file-based"}
-             (kv/state test-store)))
+      (is (= {:store {:count 1, :data {:a 3}}
+              :supported-include-params ["data"]
+              :variant "file-based"}
+             (kv/state test-store include-flags)))
       (kv/delete test-store :a)
       (is (nil? (kv/fetch test-store :a)))
       (is (nil? (kv/fetch test-store :b)))
       (kv/delete test-store :does-not-exist)
-      (is (= {:store {:count 0, :data {}}, :variant "file-based"}
-             (kv/state test-store))))))
+      (is (= {:store {:count 0, :data {}}
+              :supported-include-params ["data"]
+              :variant "file-based"}
+             (kv/state test-store include-flags))))))
 
 (deftest test-encrypted-kv-store
   (let [passwords ["test1" "test2" "test3"]
         processed-passwords (mapv #(vector :cached %) passwords)
         local-kv-store (kv/new-local-kv-store {})
+        include-flags #{"data"}
         encrypted-kv-store (kv/new-encrypted-kv-store processed-passwords local-kv-store)]
     (is (nil? (kv/fetch local-kv-store :a)))
     (is (nil? (kv/fetch encrypted-kv-store :a)))
@@ -95,9 +108,9 @@
     (kv/store encrypted-kv-store :b 11)
     (is (not (nil? (kv/fetch local-kv-store :b))))
     (is (= 11 (kv/fetch encrypted-kv-store :b)))
-    (is (= "encrypted" (get (kv/state encrypted-kv-store) :variant)))
-    (is (= 2 (get-in (kv/state encrypted-kv-store) [:inner-state :store :count])))
-    (is (= #{:a :b} (set (keys (get-in (kv/state encrypted-kv-store) [:inner-state :store :data])))))
+    (is (= "encrypted" (get (kv/state encrypted-kv-store include-flags) :variant)))
+    (is (= 2 (get-in (kv/state encrypted-kv-store include-flags) [:inner-state :store :count])))
+    (is (= #{:a :b} (set (keys (get-in (kv/state encrypted-kv-store include-flags) [:inner-state :store :data])))))
     ; delete :a and :b
     (kv/delete encrypted-kv-store :a)
     (is (nil? (kv/fetch local-kv-store :a)))
@@ -105,13 +118,14 @@
     (kv/delete encrypted-kv-store :b)
     (is (nil? (kv/fetch local-kv-store :b)))
     (is (nil? (kv/fetch encrypted-kv-store :b)))
-    (is (= "encrypted" (get (kv/state encrypted-kv-store) :variant)))
-    (is (= {:count 0, :data {}} (get-in (kv/state encrypted-kv-store) [:inner-state :store])))
+    (is (= "encrypted" (get (kv/state encrypted-kv-store include-flags) :variant)))
+    (is (= {:count 0, :data {}} (get-in (kv/state encrypted-kv-store include-flags) [:inner-state :store])))
     (kv/delete encrypted-kv-store :does-not-exist)))
 
 (deftest test-cached-kv-store
   (let [cache-config {:threshold 1000 :ttl (-> 60 t/seconds t/in-millis)}
         local-kv-store (kv/new-local-kv-store {})
+        include-flags #{"data"}
         {:keys [cache] :as cached-kv-store} (kv/new-cached-kv-store cache-config local-kv-store)]
     (is (nil? (kv/fetch local-kv-store :a)))
     (is (nil? (kv/fetch cached-kv-store :a)))
@@ -136,18 +150,18 @@
     (is (= 13 (kv/fetch cached-kv-store :b)))
     (is (= 17 (kv/fetch local-kv-store :b)))
     (is (= 17 (kv/fetch cached-kv-store :b :refresh true)))
-    (is (= "cache" (get (kv/state cached-kv-store) :variant)))
+    (is (= "cache" (get (kv/state cached-kv-store include-flags) :variant)))
     (is (= {:count 2, :data {:a 1, :b 17}}
-           (get-in (kv/state cached-kv-store) [:inner-state :store])))
+           (get-in (kv/state cached-kv-store include-flags) [:inner-state :store])))
     ; delete removes entry from cache
     (kv/delete cached-kv-store :b)
     (is (false? (cu/cache-contains? cache :b)))
     (is (nil? (kv/fetch local-kv-store :b)))
     (is (nil? (kv/fetch cached-kv-store :b)))
     (is (nil? (kv/fetch cached-kv-store :b :refresh true)))
-    (is (= "cache" (get (kv/state cached-kv-store) :variant)))
+    (is (= "cache" (get (kv/state cached-kv-store include-flags) :variant)))
     (is (= {:count 1, :data {:a 1}}
-           (get-in (kv/state cached-kv-store) [:inner-state :store])))))
+           (get-in (kv/state cached-kv-store include-flags) [:inner-state :store])))))
 
 (deftest test-validate-zk-key
   (kv/validate-zk-key "test-key")
@@ -175,7 +189,8 @@
               test-store (kv/new-zk-kv-store {:curator curator
                                               :base-path services-base-path
                                               :sync-timeout-ms 1})
-              bytes (byte-array 10)]
+              bytes (byte-array 10)
+              include-flags #{"data"}]
           (Arrays/fill bytes (byte 1))
           (is (nil? (kv/fetch test-store "a")))
           (is (nil? (get-value-from-curator "a")))
@@ -194,7 +209,7 @@
           (is (nil? (get-value-from-curator "b")))
           (kv/delete test-store "does-not-exist")
           (is (nil? (get-value-from-curator "does-not-exist")))
-          (is (= {:base-path services-base-path, :variant "zookeeper"} (kv/state test-store)))))
+          (is (= {:base-path services-base-path, :variant "zookeeper"} (kv/state test-store include-flags)))))
       (finally
         (.close curator)
         (.stop zk-server)))))

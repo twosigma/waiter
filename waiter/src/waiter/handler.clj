@@ -853,7 +853,9 @@
 (defn get-kv-store-state
   "Outputs the kv-store state."
   [router-id kv-store request]
-  (get-function-state #(kv/state kv-store) router-id request))
+  (let [{:strs [include]} (-> request ru/query-params-request :query-params)
+        include-flags (if (string? include) #{include} (set include))]
+    (get-function-state #(kv/state kv-store include-flags) router-id request)))
 
 (defn get-local-usage-state
   "Outputs the local metrics agent state."

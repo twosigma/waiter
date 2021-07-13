@@ -1362,10 +1362,11 @@
 
 (deftest test-get-kv-store-state
   (let [router-id "test-router-id"
+        include-flags #{}
         test-fn (wrap-handler-json-response get-kv-store-state)]
     (testing "successful response"
       (let [kv-store (kv/new-local-kv-store {})
-            state (walk/stringify-keys (kv/state kv-store))
+            state (walk/stringify-keys (kv/state kv-store include-flags))
             {:keys [body status]} (test-fn router-id kv-store {})]
         (is (= http-200-ok status))
         (is (= (json/read-str body) {"router-id" router-id, "state" state}))))
