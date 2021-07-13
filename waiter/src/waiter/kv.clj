@@ -19,6 +19,7 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [digest]
+            [metrics.counters :as counters]
             [metrics.meters :as meters]
             [metrics.timers :as timers]
             [taoensso.nippy :as nippy]
@@ -249,15 +250,22 @@
           (log/info "evicting entry for" key "from cache")
           (cu/cache-evict cache key))
         (log/info "refresh is a no-op as cache does not contain" key)))
-    (cu/cache-get-or-load cache key #(retrieve inner-kv-store key refresh)))
+    (counters/inc! (metrics/waiter-counter "core" "kv-cache" "retrieve" "total"))
+    (cu/cache-get-or-load cache key
+                          (fn on-retrieve-cache-miss []
+                            (counters/inc! (metrics/waiter-counter "core" "kv-cache" "retrieve" "miss"))
+                            (meters/mark! (metrics/waiter-meter "core" "kv-cache" "retrieve" "miss-rate"))
+                            (retrieve inner-kv-store key refresh))))
   (store [_ key value]
     (cu/cache-evict cache key)
     (let [result (store inner-kv-store key value)]
+      (counters/inc! (metrics/waiter-counter "core" "kv-cache" "store"))
       (cu/cache-put! cache key value)
       result))
   (delete [_ key]
     (log/info "evicting deleted entry" key "from cache")
     (cu/cache-evict cache key)
+    (counters/inc! (metrics/waiter-counter "core" "kv-cache" "delete"))
     (delete inner-kv-store key))
   (state [_]
     {:cache {:count (cu/cache-size cache)
