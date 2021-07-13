@@ -850,7 +850,7 @@
 (defn create-token-name
   "Creates a random token name using the waiter url."
   ([waiter-url separator]
-   (let [prefix (str "test-" java-pid "-" (System/nanoTime))]
+   (let [prefix (str "c" (System/nanoTime) "-w8r-")]
      (create-token-name waiter-url separator prefix)))
   ([waiter-url separator prefix]
    (str prefix "." (subs waiter-url 0 (str/index-of waiter-url separator)))))
