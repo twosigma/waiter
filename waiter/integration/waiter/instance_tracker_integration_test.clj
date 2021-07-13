@@ -216,7 +216,8 @@
       (testing "watch stream gets initial list of healthy instances that were created before watch started"
         (let [{:keys [service-id] :as response}
               (make-request-with-debug-info
-                {:x-waiter-name (rand-name)}
+                {:x-waiter-max-instances 1
+                 :x-waiter-name (rand-name)}
                 #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
           (with-service-cleanup
             service-id
@@ -236,7 +237,8 @@
         (let [watches (start-watches router-urls cookies)
               {:keys [service-id] :as response}
               (make-request-with-debug-info
-                {:x-waiter-name (rand-name)}
+                {:x-waiter-max-instances 1
+                 :x-waiter-name (rand-name)}
                 #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
           (with-service-cleanup
             service-id
@@ -256,6 +258,7 @@
               {:keys [service-id] :as response}
               (make-request-with-debug-info
                 {:x-kitchen-die-after-ms 10000
+                 :x-waiter-max-instances 1
                  :x-waiter-name (rand-name)}
                 #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
           (with-service-cleanup
@@ -277,7 +280,8 @@
         (let [watches (start-watches router-urls cookies)
               {:keys [service-id] :as response}
               (make-request-with-debug-info
-                {:x-waiter-name (rand-name)}
+                {:x-waiter-max-instances 1
+                 :x-waiter-name (rand-name)}
                 #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
           (with-service-cleanup
             service-id
@@ -297,11 +301,13 @@
       (testing "service-id filter provides initial healthy-instances only for a service"
         (let [{:keys [service-id] :as response}
               (make-request-with-debug-info
-                {:x-waiter-name (rand-name)}
+                {:x-waiter-max-instances 1
+                 :x-waiter-name (rand-name)}
                 #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))
               {service-id-filtered :service-id :as response-filtered}
               (make-request-with-debug-info
-                {:x-waiter-metadata-foo "baz"
+                {:x-waiter-max-instances 1
+                 :x-waiter-metadata-foo "baz"
                  :x-waiter-name (rand-name)}
                 #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
           (with-service-cleanup
@@ -332,11 +338,13 @@
       (testing "service-id filter provides [:healthy-instances :update] events only for a service"
         (let [{:keys [service-id] :as response}
               (make-request-with-debug-info
-                {:x-waiter-name (rand-name)}
+                {:x-waiter-max-instances 1
+                 :x-waiter-name (rand-name)}
                 #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))
               {service-id-filtered :service-id :as response-filtered}
               (make-request-with-debug-info
-                {:x-waiter-metadata-foo "baz"
+                {:x-waiter-max-instances 1
+                 :x-waiter-metadata-foo "baz"
                  :x-waiter-name (rand-name)}
                 #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))]
           (with-service-cleanup
@@ -367,7 +375,8 @@
       (testing "streams initial instances for service-ids that match service description filter"
         (let [{:keys [service-id] :as response}
               (make-request-with-debug-info
-                {:x-waiter-metadata-foo "testingfoo1013"
+                {:x-waiter-max-instances 1
+                 :x-waiter-metadata-foo "testingfoo1013"
                  :x-waiter-name (rand-name)}
                 #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))
               {service-id-filtered :service-id :as response-filtered}
@@ -407,7 +416,8 @@
                                                 "watch" "true"})
               {:keys [service-id] :as response}
               (make-request-with-debug-info
-                {:x-waiter-metadata-foo "random-value-required"
+                {:x-waiter-max-instances 1
+                 :x-waiter-metadata-foo "random-value-required"
                  :x-waiter-name (rand-name)}
                 #(make-kitchen-request waiter-url % :cookies cookies :path "/status"))
               {service-id-filtered :service-id :as response-filtered}
