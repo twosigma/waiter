@@ -154,7 +154,7 @@
                                 (log/info "new failed instances" {:new-failed-instances new-failed-instances})
                                 (handle-instances-event! instance-failure-handler-component {:new-failed-instances new-failed-instances}))
                               (when (not-empty updated-healthy-instances)
-                                (log/info "new healthy instances" {:new-healthy-instances (map :id new-healthy-instances)}))
+                                (log/info "new healthy instances" {:new-healthy-instances (map :id updated-healthy-instances)}))
                               (when (not-empty removed-healthy-instances)
                                 (log/info "removed healthy instances" {:removed-healthy-instances (map :id removed-healthy-instances)}))
                               (let [healthy-instances-event
