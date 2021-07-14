@@ -1788,12 +1788,11 @@
                                  (wrap-secure-request-fn
                                    (fn scheduler-state-handler-fn [request]
                                      (handler/get-scheduler-state router-id scheduler request))))
-   :state-service-description-builder-handler-fn (pc/fnk [[:state router-id service-description-builder]]
-                                                   (fn service-description-builder-state-handler-fn [request]
-                                                     (handler/get-query-fn-state
-                                                       router-id
-                                                       #(sd/state service-description-builder)
-                                                       request)))
+   :state-service-description-builder-handler-fn (pc/fnk [[:state router-id service-description-builder]
+                                                          wrap-secure-request-fn]
+                                                   (wrap-secure-request-fn
+                                                     (fn service-description-builder-state-handler-fn [request]
+                                                       (handler/get-service-description-builder-store-state router-id service-description-builder request))))
    :state-service-maintainer-handler-fn (pc/fnk [[:daemons service-chan-maintainer]
                                                  [:state router-id]
                                                  wrap-secure-request-fn]
@@ -1923,13 +1922,13 @@
                                  ; If adding new middleware for websocket upgrade requests, consider adding the same middleware to
                                  ; process-request-wrapper-fn
                                  (let [handler (-> #(ws/request-subprotocol-acceptor (:upgrade-request %) (:upgrade-response %))
-                                                   websocket-secure-request-acceptor-fn
-                                                   auth/wrap-auth-bypass-acceptor
-                                                   pr/wrap-maintenance-mode-acceptor
-                                                   handler/wrap-wss-redirect
-                                                   ws/wrap-service-discovery-data
-                                                   wrap-service-discovery-fn
-                                                   ws/wrap-ws-acceptor-error-handling)]
+                                                 websocket-secure-request-acceptor-fn
+                                                 auth/wrap-auth-bypass-acceptor
+                                                 pr/wrap-maintenance-mode-acceptor
+                                                 handler/wrap-wss-redirect
+                                                 ws/wrap-service-discovery-data
+                                                 wrap-service-discovery-fn
+                                                 ws/wrap-ws-acceptor-error-handling)]
                                    (ws/make-websocket-request-acceptor server-name handler)))
    :websocket-secure-request-acceptor-fn (pc/fnk [[:state passwords]]
                                            (fn websocket-secure-request-acceptor-fn

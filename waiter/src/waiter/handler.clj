@@ -886,6 +886,11 @@
   [router-id scheduler request]
   (get-function-state-with-include-flags #(scheduler/state scheduler %) router-id request))
 
+(defn get-service-description-builder-store-state
+  "Outputs the kv-store state."
+  [router-id service-description-builder request]
+  (get-function-state-with-include-flags #(sd/state service-description-builder %) router-id request))
+
 (defn get-statsd-state
   "Outputs the statsd state."
   [router-id request]
