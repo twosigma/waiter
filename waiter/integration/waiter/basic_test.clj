@@ -410,14 +410,14 @@
           (is (= (:x-waiter-cmd headers) (get-in service-settings [:service-description :cmd])))
           (is (not-empty (get service-settings :effective-parameters)))
           (is (= (:x-waiter-cmd headers) (get-in service-settings [:effective-parameters :cmd])))
-          (is (= "other" (get-in service-settings [:effective-parameters :metric-group])) service-id))
+          (is (= "waiter_test" (get-in service-settings [:effective-parameters :metric-group])) service-id))
 
         (let [service-settings (service-settings waiter-url service-id
                                                  :query-params {"include" "references"})]
           (is (= [{}] (get service-settings :references)) (str service-settings)))
 
-        (testing "metric group should be other"
-          (is (= "other" (service-id->metric-group waiter-url service-id))
+        (testing "metric group should be waiter_test"
+          (is (= "waiter_test" (service-id->metric-group waiter-url service-id))
               (str "Invalid metric group for " service-id)))))))
 
 (deftest ^:parallel ^:integration-fast test-basic-health-check-port-index
