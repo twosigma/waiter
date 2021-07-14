@@ -821,6 +821,13 @@
     (catch Exception ex
       (utils/exception->response ex request))))
 
+(defn- get-function-state-with-include-flags
+  "Outputs the state obtained by invoking `retrieve-state-fn` with the include flags as an argument."
+  [retrieve-state-fn router-id request]
+  (let [{:strs [include]} (-> request ru/query-params-request :query-params)
+        include-flags (if (string? include) #{include} (set include))]
+    (get-function-state #(retrieve-state-fn include-flags) router-id request)))
+
 (defn get-query-fn-state
   "Outputs the state retrieved by invoking the query-state-fn."
   [router-id query-state-fn request]
@@ -829,33 +836,25 @@
 (defn get-ejection-expiry-state
   "Outputs the ejection-expiry-tracker state."
   [router-id ejection-expiry-tracker request]
-  (let [{:strs [include]} (-> request ru/query-params-request :query-params)
-        include-flags (if (string? include) #{include} (set include))]
-    (get-function-state #(ejection-expiry/tracker-state ejection-expiry-tracker include-flags) router-id request)))
+  (get-function-state-with-include-flags #(ejection-expiry/tracker-state ejection-expiry-tracker %) router-id request))
 
 (defn get-entitlement-manager-state
   "Outputs the entitlement-manager state."
   [router-id entitlement-manager request]
-  (let [{:strs [include]} (-> request ru/query-params-request :query-params)
-        include-flags (if (string? include) #{include} (set include))]
-    (get-function-state #(authz/get-manager-state entitlement-manager include-flags) router-id request)))
+  (get-function-state-with-include-flags #(authz/get-manager-state entitlement-manager %) router-id request))
 
 (defn get-jwt-auth-server-state
   "Outputs the JWT auth server state."
   [router-id auth-server request]
-  (let [{:strs [include]} (-> request ru/query-params-request :query-params)
-        include-flags (if (string? include) #{include} (set include))
-        query-state-fn (if (nil? auth-server)
+  (let [query-state-fn (if (nil? auth-server)
                          (constantly :disabled)
-                         #(jwt/retrieve-server-state auth-server include-flags))]
-    (get-function-state query-state-fn router-id request)))
+                         #(jwt/retrieve-server-state auth-server %))]
+    (get-function-state-with-include-flags query-state-fn router-id request)))
 
 (defn get-kv-store-state
   "Outputs the kv-store state."
   [router-id kv-store request]
-  (let [{:strs [include]} (-> request ru/query-params-request :query-params)
-        include-flags (if (string? include) #{include} (set include))]
-    (get-function-state #(kv/state kv-store include-flags) router-id request)))
+  (get-function-state-with-include-flags #(kv/state kv-store %) router-id request))
 
 (defn get-local-usage-state
   "Outputs the local metrics agent state."
@@ -875,9 +874,7 @@
   "Using the query-state-fn, pass include-flags to get the daemon state and return
   streaming response"
   [router-id query-state-fn request]
-  (let [{:strs [include]} (-> request ru/query-params-request :query-params)
-        include-flags (if (string? include) #{include} (set include))]
-    (get-function-state #(query-state-fn include-flags) router-id request)))
+  (get-function-state-with-include-flags query-state-fn router-id request))
 
 (defn get-router-metrics-state
   "Outputs the router metrics state."
@@ -887,9 +884,7 @@
 (defn get-scheduler-state
   "Outputs the scheduler state."
   [router-id scheduler request]
-  (let [{:strs [include]} (-> request ru/query-params-request :query-params)
-        include-flags (if (string? include) #{include} (set include))]
-    (get-function-state #(scheduler/state scheduler include-flags) router-id request)))
+  (get-function-state-with-include-flags #(scheduler/state scheduler %) router-id request))
 
 (defn get-statsd-state
   "Outputs the statsd state."
