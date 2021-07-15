@@ -89,7 +89,7 @@
                     (is (t/before? start-time (du/str-to-date last-error-time)))))))))))))
 
 (defn- start-watch
-  [router-url cookies & {:keys [query-params] :or {query-params {"streaming-timeout" "1000000"
+  [router-url cookies & {:keys [query-params] :or {query-params {"streaming-timeout" "120000"
                                                                  "watch" "true"}}}]
   (let [{:keys [body error headers] :as response}
         (make-request router-url "/apps/instances" :async? true :cookies cookies :query-params query-params)
