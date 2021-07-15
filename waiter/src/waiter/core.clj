@@ -1922,13 +1922,13 @@
                                  ; If adding new middleware for websocket upgrade requests, consider adding the same middleware to
                                  ; process-request-wrapper-fn
                                  (let [handler (-> #(ws/request-subprotocol-acceptor (:upgrade-request %) (:upgrade-response %))
-                                                 websocket-secure-request-acceptor-fn
-                                                 auth/wrap-auth-bypass-acceptor
-                                                 pr/wrap-maintenance-mode-acceptor
-                                                 handler/wrap-wss-redirect
-                                                 ws/wrap-service-discovery-data
-                                                 wrap-service-discovery-fn
-                                                 ws/wrap-ws-acceptor-error-handling)]
+                                                   websocket-secure-request-acceptor-fn
+                                                   auth/wrap-auth-bypass-acceptor
+                                                   pr/wrap-maintenance-mode-acceptor
+                                                   handler/wrap-wss-redirect
+                                                   ws/wrap-service-discovery-data
+                                                   wrap-service-discovery-fn
+                                                   ws/wrap-ws-acceptor-error-handling)]
                                    (ws/make-websocket-request-acceptor server-name handler)))
    :websocket-secure-request-acceptor-fn (pc/fnk [[:state passwords]]
                                            (fn websocket-secure-request-acceptor-fn
