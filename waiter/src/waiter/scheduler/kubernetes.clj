@@ -1005,6 +1005,9 @@
     (throw (ex-info "Waiter configuration is missing a default image for Kubernetes pods" {})))
   (when-not (or namespace default-namespace scheduler-namespace)
     (throw (ex-info "Waiter configuration is missing a default namespace for Kubernetes pods" {})))
+  (when (and scheduler-namespace namespace (not= scheduler-namespace namespace))
+    (throw (ex-info "service namespace does not match scheduler namespace"
+                    {:scheduler-ns scheduler-namespace :service-ns namespace})))
   (let [work-path (str "/home/" run-as-user)
         home-path (str work-path "/latest")
         base-env (scheduler/environment service-id service-description
@@ -1420,7 +1423,7 @@
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
-  [{:keys [authentication authorizer cluster-name container-running-grace-secs custom-options http-options leader?-fn log-bucket-sync-secs
+  [{:keys [authentication authorizer cluster-name container-running-grace-secs custom-options default-namespace http-options leader?-fn log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length namespace pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
            pod-suffix-length replicaset-api-version replicaset-spec-builder response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold
            reverse-proxy scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
@@ -1447,6 +1450,7 @@
          (pos-int? max-name-length)
          (not (str/blank? cluster-name))
          (or (nil? namespace) (not (str/blank? namespace)))
+         (or (nil? namespace) (nil? default-namespace) (= namespace default-namespace))
          (or (nil? pdb-api-version) (not (str/blank? pdb-api-version)))
          (or (nil? pdb-spec-builder) (symbol? (:factory-fn pdb-spec-builder)))
          (integer? pod-base-port)
