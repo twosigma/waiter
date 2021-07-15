@@ -3136,7 +3136,7 @@
     (is (contains? (service-id->references kv-store service-id) references-4))))
 
 (deftest test-service-description-builder-state
-  (is {} (state (create-default-service-description-builder {}))))
+  (is {} (state (create-default-service-description-builder {}) #{})))
 
 (deftest test-retrieve-most-recently-modified-token-update-time
   (let [descriptor {:sources {:token->token-data {}}}]

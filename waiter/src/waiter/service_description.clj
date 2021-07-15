@@ -729,7 +729,7 @@
     "Returns a map of reference type to stale function for references of the specified type.
      The values are functions that have the following signature (fn reference-entry)")
 
-  (state [this]
+  (state [this include-flags]
     "Returns the global (i.e. non-service-specific) state the service description builder is maintaining")
 
   (validate [this service-description args-map]
@@ -839,7 +839,7 @@
   (retrieve-reference-type->stale-info-fn [_ {:keys [token->token-hash token->token-parameters]}]
     {:token (fn [{:keys [sources]}] (retrieve-token-stale-info token->token-hash token->token-parameters sources))})
 
-  (state [_]
+  (state [_ _]
     {})
 
   (validate [_ service-description args-map]

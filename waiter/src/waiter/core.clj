@@ -1788,12 +1788,11 @@
                                  (wrap-secure-request-fn
                                    (fn scheduler-state-handler-fn [request]
                                      (handler/get-scheduler-state router-id scheduler request))))
-   :state-service-description-builder-handler-fn (pc/fnk [[:state router-id service-description-builder]]
-                                                   (fn service-description-builder-state-handler-fn [request]
-                                                     (handler/get-query-fn-state
-                                                       router-id
-                                                       #(sd/state service-description-builder)
-                                                       request)))
+   :state-service-description-builder-handler-fn (pc/fnk [[:state router-id service-description-builder]
+                                                          wrap-secure-request-fn]
+                                                   (wrap-secure-request-fn
+                                                     (fn service-description-builder-state-handler-fn [request]
+                                                       (handler/get-service-description-builder-store-state router-id service-description-builder request))))
    :state-service-maintainer-handler-fn (pc/fnk [[:daemons service-chan-maintainer]
                                                  [:state router-id]
                                                  wrap-secure-request-fn]

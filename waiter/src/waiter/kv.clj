@@ -48,7 +48,7 @@
     "Deletes a key-value from the key value store if the key exists.
      There are no guarantees for what happens when the key does not
      exist in the store.")
-  (state [this]
+  (state [this include-flags]
     "Retrieves the state of the key-value store."))
 
 (defn fetch
@@ -76,9 +76,12 @@
                            (swap! store assoc key value)))
   (delete [_ key] (do (log/debug (str "(local) DELETE " key))
                       (swap! store dissoc key)))
-  (state [_]
+  (state [_ include-flags]
     (let [store-data @store]
-      {:store {:count (count store-data), :data store-data}
+      {:store (cond-> {:count (count store-data)}
+                (contains? include-flags "data")
+                (assoc :data store-data))
+       :supported-include-params ["data"]
        :variant "in-memory"})))
 
 (defn new-local-kv-store [_]
@@ -161,7 +164,7 @@
       (let [path (key->zk-path base-path key)]
         (log/debug "(zk) DELETE" path)
         (curator/delete-path curator-client path :ignore-does-not-exist true))))
-  (state [_]
+  (state [_ _]
     {:base-path base-path, :variant "zookeeper"}))
 
 (defn new-zk-kv-store
@@ -191,10 +194,12 @@
       (swap! store dissoc key)
       (log/info "writing latest data after delete to" target-file)
       (nippy/freeze-to-file target-file @store)))
-  (state [_]
+  (state [_ include-flags]
     (let [store-data @store]
-      {:store {:count (count store-data)
-               :data store-data}
+      {:store (cond-> {:count (count store-data)}
+                (contains? include-flags "data")
+                (assoc :data store-data))
+       :supported-include-params ["data"]
        :variant "file-based"})))
 
 (defn new-file-based-kv-store [{:keys [target-file]}]
@@ -230,8 +235,9 @@
       (store inner-kv-store key encrypted-value)))
   (delete [_ key]
     (delete inner-kv-store key))
-  (state [_]
-    {:inner-state (state inner-kv-store), :variant "encrypted"}))
+  (state [_ include-flags]
+    {:inner-state (state inner-kv-store include-flags)
+     :variant "encrypted"}))
 
 (defn new-encrypted-kv-store
   "Returns a new key/value store that decorates the provided kv-store with encryption/decryption of values."
@@ -267,10 +273,12 @@
     (cu/cache-evict cache key)
     (counters/inc! (metrics/waiter-counter "core" "kv-cache" "delete"))
     (delete inner-kv-store key))
-  (state [_]
-    {:cache {:count (cu/cache-size cache)
-             :data (cu/cache->map cache)}
-     :inner-state (state inner-kv-store)
+  (state [_ include-flags]
+    {:cache (cond-> {:count (cu/cache-size cache)}
+              (contains? include-flags "cache-data")
+              (assoc :data (cu/cache->map cache)))
+     :inner-state (state inner-kv-store include-flags)
+     :supported-include-params ["cache-data"]
      :variant "cache"}))
 
 (defn new-cached-kv-store
