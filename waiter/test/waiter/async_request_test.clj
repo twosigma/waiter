@@ -424,24 +424,29 @@
           (is (nil? (get @async-request-store-atom request-id))))))))
 
 (deftest test-route-params-and-uri-generation
-  (let [uri->route-params (fn [prefix uri]
+  (let [uri->route-params (fn [prefix proto? uri]
                             (when (str/starts-with? (str uri) prefix)
                               (let [route-uri (subs (str uri) (count prefix))
                                     [request-id router-id service-id host port & remaining] (str/split (str route-uri) #"/")
+                                    proto (when proto? (first remaining))
+                                    location-parts (cond-> remaining proto? rest)
                                     decode #(URLDecoder/decode %1 "UTF-8")]
                                 {:host (when-not (str/blank? host) host)
-                                 :location (when (seq remaining) (str "/" (str/join "/" remaining)))
+                                 :location (when (seq location-parts) (str "/" (str/join "/" location-parts)))
                                  :port (when-not (str/blank? port) port)
+                                 :proto (when (and proto? (not (str/blank? proto))) proto)
                                  :request-id (when-not (str/blank? request-id) (decode request-id))
                                  :router-id (when-not (str/blank? router-id) (decode router-id))
                                  :service-id (when-not (str/blank? service-id) service-id)})))
         execute-test (fn [params]
-                       (let [prefix "/my-test-prefix/"
-                             uri (route-params->uri prefix params)
-                             decoded-params (uri->route-params prefix uri)]
+                       (let [action :action
+                             proto? (contains? params :proto)
+                             prefix (str "/waiter-async/" (when proto? "v2/") (name action) "/")
+                             uri (route-params->uri action params)
+                             decoded-params (uri->route-params prefix proto? uri)]
                          (is (str/starts-with? uri prefix))
                          (is (every? (fn [v] (if v (str/includes? uri (str v)) true)) (vals params)))
-                         (is (= (merge {:host nil, :location nil, :port nil, :request-id nil, :router-id nil, :service-id nil}
+                         (is (= (merge {:host nil, :location nil, :port nil, :proto nil, :request-id nil, :router-id nil, :service-id nil}
                                        (pc/map-vals #(if (integer? %1) (str %1) %1) params))
                                 decoded-params))))]
     (testing "empty-params" (execute-test {}))
@@ -451,9 +456,16 @@
     (testing "only-request-id" (execute-test {:request-id "6546540.6406460"}))
     (testing "only-router-id" (execute-test {:router-id "6546540.6406460"}))
     (testing "only-service-id" (execute-test {:service-id "test-service-id"}))
+    (testing "all-but-proto" (execute-test {:host "105.123.025.36"
+                                            :location "/status-location"
+                                            :port 3254
+                                            :request-id "6546540.6406460"
+                                            :router-id "6546540.6406460"
+                                            :service-id "test-service-id"}))
     (testing "all-params" (execute-test {:host "105.123.025.36"
                                          :location "/status-location"
                                          :port 3254
+                                         :proto "h2"
                                          :request-id "6546540.6406460"
                                          :router-id "6546540.6406460"
                                          :service-id "test-service-id"}))))

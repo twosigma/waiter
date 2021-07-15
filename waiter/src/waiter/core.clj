@@ -148,10 +148,17 @@
                                "/owners" :token-owners-handler-fn
                                "/refresh" :token-refresh-handler-fn
                                "/reindex" :token-reindex-handler-fn}
-                     "waiter-async" {["/complete/" :request-id "/" :service-id] :async-complete-handler-fn
+                     "waiter-async" {;; async api version 1
+                                     ["/complete/" :request-id "/" :service-id] :async-complete-handler-fn
                                      ["/result/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
                                      :async-result-handler-fn
                                      ["/status/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
+                                     :async-status-handler-fn
+                                     ;; async api version 2
+                                     ["/v2/complete/" :request-id "/" :service-id] :async-complete-handler-fn
+                                     ["/v2/result/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" :proto "/" [#".+" :location]]
+                                     :async-result-handler-fn
+                                     ["/v2/status/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" :proto "/" [#".+" :location]]
                                      :async-status-handler-fn}
                      "waiter-auth" :waiter-auth-handler-fn
                      "waiter-consent" {"" :waiter-acknowledge-consent-handler-fn

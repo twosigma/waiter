@@ -160,11 +160,16 @@
 
 (defn route-params->uri
   "Converts the route params to a uri.
-   The function expects prefix to end with a slash and location to begin with a slash.
-   Returns a formatted url: prefix/{request-id}/{router-id}/{service-id}/{host}/{port}{location}"
-  [prefix {:keys [host location port request-id router-id service-id]}]
-  (let [encode #(if %1 (URLEncoder/encode %1 "UTF-8") (str %1))]
-    (str prefix (encode request-id) "/" (encode router-id) "/" service-id "/" (str host) "/" (str port) location)))
+   The function expects location to begin with a slash.
+   Returns a uri in one of the following formats (depending on whether :proto is set):
+   - /waiter-async/action/{request-id}/{router-id}/{service-id}/{host}/{port}{location}
+   - /waiter-async/v2/action/{request-id}/{router-id}/{service-id}/{host}/{port}/{proto}{location}"
+  [action {:keys [host location port proto request-id router-id service-id]}]
+  (let [encode #(if %1 (URLEncoder/encode %1 "UTF-8") (str %1))
+        version (when proto "/v2")]
+    (str "/waiter-async" version "/" (name action) "/"
+         (encode request-id) "/" (encode router-id) "/" service-id
+         "/" (str host) "/" (str port) (when proto (str "/" proto)) location)))
 
 (defn sanitize-check-interval
   "Computes the async-check-interval to use by restricting the total number of checks to be performed
@@ -221,11 +226,12 @@
    This method wires up the completion and status check callbacks for the monitoring system.
    It also modifies the status check endpoint in the response header."
   [router-id async-request-store-atom make-http-request-fn auth-params-map populate-maintainer-chan! user-agent
-   response {:keys [service-description service-id] :as descriptor} {:keys [host port] :as instance}
+   response {:keys [service-description service-id] :as descriptor} {:keys [host port proxy-protocol] :as instance}
    {:keys [request-id] :as reason-map} request-properties location query-string]
   (let [correlation-id (cid/get-correlation-id)
         {:strs [metric-group backend-proto]} service-description
-        status-endpoint (scheduler/end-point-url backend-proto host port location)
+        request-proto (or proxy-protocol backend-proto)
+        status-endpoint (scheduler/end-point-url request-proto host port location)
         _ (log/info "status endpoint for async request is" status-endpoint query-string)
         {:keys [async-check-interval-ms async-request-max-status-checks async-request-timeout-ms]} request-properties
         exit-chan (async/chan 1)]
@@ -252,8 +258,8 @@
         (monitor-async-request make-get-request-fn complete-async-request-fn request-still-active? status-endpoint
                                check-interval-ms async-request-timeout-ms correlation-id exit-chan)))
     ;; modify the location header in the response
-    (let [param-map {:host host, :location location, :port port, :request-id request-id, :router-id router-id, :service-id service-id}
-          status-location (route-params->uri "/waiter-async/status/" param-map)
+    (let [param-map {:host host :location location :port port :proto request-proto :request-id request-id :router-id router-id :service-id service-id}
+          status-location (route-params->uri :status param-map)
           status-url (cond-> status-location
                        query-string (str "?" query-string))]
       (log/info "updating status location to" status-location "from" location "with query string" query-string)

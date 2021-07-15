@@ -105,13 +105,15 @@
   "Helper function for async status/result handlers."
   [counter-name make-http-request-fn service-id->service-description-fn
    {:keys [route-params uri] :as request}]
-  (let [{:keys [host location port request-id router-id service-id]} route-params]
+  (let [{:keys [host location port proto request-id router-id service-id]} route-params]
     (when-not (and host location port request-id router-id service-id)
       (throw (ex-info "Missing host, location, port, request-id, router-id or service-id in uri"
                       {:log-level :info :route-params route-params :status http-400-bad-request :uri uri})))
     (counters/inc! (metrics/service-counter service-id "request-counts" counter-name))
     (let [{:strs [backend-proto metric-group] :as service-description} (service-id->service-description-fn service-id)
-          instance (scheduler/make-ServiceInstance {:host host :port port :service-id service-id})
+          request-proto (or proto backend-proto)
+          proxy-proto (when (not= proto backend-proto) proto)
+          instance (scheduler/make-ServiceInstance {:host host :port port :proxy-protocol proxy-proto :service-id service-id})
           _ (log/info request-id counter-name "relative location is" location)
           response-chan (make-http-request-fn instance request location metric-group backend-proto)]
       (async/go
@@ -161,12 +163,12 @@
    {:keys [request-method route-params] :as request}]
   (async/go
     (try
-      (let [{:keys [host location port request-id router-id service-id]} route-params
+      (let [{:keys [host location port proto request-id router-id service-id]} route-params
             {:keys [error status] :as backend-response}
             (async/<! (async-make-http-request "async-status" make-http-request-fn service-id->service-description-fn request))]
         (when error (throw error))
-        (let [{:strs [backend-proto]} (service-id->service-description-fn service-id)
-              endpoint (scheduler/end-point-url backend-proto host port location)
+        (let [request-proto (or proto (-> service-id service-id->service-description-fn (get "backend-proto")))
+              endpoint (scheduler/end-point-url request-proto host port location)
               location-header (get-in backend-response [:headers "location"])
               location-url (async-req/normalize-location-header endpoint location-header)
               relative-location? (str/starts-with? (str location-url) "/")]
@@ -178,7 +180,8 @@
                              (= http-204-no-content status))))
             (async-trigger-terminate-fn router-id service-id request-id))
           (if (and (= request-method :get) (= http-303-see-other status) relative-location?)
-            (let [result-location (async-req/route-params->uri "/waiter-async/result/" (assoc route-params :location location-url))]
+            (let [result-params (assoc route-params :location location-url :proto proto)
+                  result-location (async-req/route-params->uri :result result-params)]
               (assoc-in backend-response [:headers "location"] result-location))
             backend-response)))
       (catch Exception ex
