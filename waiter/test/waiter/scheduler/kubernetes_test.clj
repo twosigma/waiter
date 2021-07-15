@@ -435,7 +435,20 @@
                                               {:service-id->service-description-fn (constantly service-description)})
               replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description)]
           (is (nil? (scheduler/validate-service scheduler service-id)))
-          (is (= target-namespace (get-in replicaset-spec [:metadata :namespace]))))))))
+          (is (= target-namespace (get-in replicaset-spec [:metadata :namespace])))))
+      (testing "Custom namespace matches scheduler namespace"
+        (let [target-namespace "myself"
+              service-description (assoc dummy-service-description "namespace" target-namespace)
+              scheduler (make-dummy-scheduler [service-id] {:namespace target-namespace})
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description)]
+          (is (nil? (scheduler/validate-service scheduler service-id)))
+          (is (= target-namespace (get-in replicaset-spec [:metadata :namespace])))))
+      (testing "Custom namespace does not match scheduler namespace"
+        (let [target-namespace "myself"
+              service-description (assoc dummy-service-description "namespace" target-namespace)
+              scheduler (make-dummy-scheduler [service-id] {:namespace (str "x" target-namespace)})]
+          (is (thrown-with-msg? RuntimeException #"service namespace does not match scheduler namespace"
+              ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description))))))))
 
 (deftest test-replicaset-spec-no-image
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
@@ -1575,6 +1588,14 @@
             (is (thrown? Throwable (kubernetes-scheduler (dissoc base-config :response->deployment-error-msg-fn))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :response->deployment-error-msg-fn 1))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :response->deployment-error-msg-fn "string")))))
+
+          (testing "bad (non-matching) scheduler namespace and default-namespace"
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :default-namespace "x" :namespace "y")))))
+
+          (testing "good (non-conflicting) scheduler namespace and default-namespace"
+            (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :namespace "y"))))
+            (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :default-namespace "x"))))
+            (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :default-namespace "x" :namespace "x")))))
 
           (testing "bad service-id->deployment-error-cache-threshold"
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :service-id->deployment-error-cache {:threshold 1}))))

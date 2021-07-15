@@ -721,6 +721,7 @@
                                 http-client
                                 leader?-fn
                                 log-bucket-url
+                                namespace
                                 max-patch-retries
                                 max-name-length
                                 pdb-api-version
@@ -1000,7 +1001,8 @@
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
   [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
-           replicaset-api-version reverse-proxy service-id->password-fn] :as scheduler}
+           replicaset-api-version reverse-proxy service-id->password-fn]
+    scheduler-namespace :namespace :as scheduler}
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
@@ -1010,8 +1012,11 @@
     :as context}]
   (when-not (or image default-container-image)
     (throw (ex-info "Waiter configuration is missing a default image for Kubernetes pods" {})))
-  (when-not (or namespace default-namespace)
+  (when-not (or namespace default-namespace scheduler-namespace)
     (throw (ex-info "Waiter configuration is missing a default namespace for Kubernetes pods" {})))
+  (when (and scheduler-namespace namespace (not= scheduler-namespace namespace))
+    (throw (ex-info "service namespace does not match scheduler namespace"
+                    {:scheduler-ns scheduler-namespace :service-ns namespace})))
   (let [work-path (str "/home/" run-as-user)
         home-path (str work-path "/latest")
         base-env (scheduler/environment service-id service-description
@@ -1074,7 +1079,7 @@
                            :waiter/service-hash service-hash
                            :waiter/user run-as-user}
                   :name k8s-name
-                  :namespace (or namespace default-namespace)}
+                  :namespace (or namespace default-namespace scheduler-namespace)}
        :spec {:replicas min-instances
               :selector {:matchLabels {:app k8s-name
                                        :waiter/user run-as-user}}
@@ -1268,6 +1273,7 @@
     (Thread.
       (fn k8s-watch []
         (try
+          (log/info "starting" resource-name "watch at" resource-url)
           ;; retry getting state updates forever
           (let [resource-name-lower (str/lower-case resource-name)]
             (while true
@@ -1330,14 +1336,16 @@
 
 (defn start-pods-watch!
   "Start a thread to continuously update the watch-state atom based on watched Pod events."
-  [{:keys [api-server-url cluster-name watch-state] :as scheduler} options]
+  [{:keys [api-server-url cluster-name namespace watch-state] :as scheduler} options]
   (start-k8s-watch!
     scheduler
     (->
       {:query-fn global-pods-state-query
        :resource-key :service-id->pod-id->pod
        :resource-name "Pods"
-       :resource-url (str api-server-url "/api/v1/pods?labelSelector=waiter%2Fcluster=" cluster-name)
+       :resource-url (str api-server-url "/api/v1"
+                          (when namespace (str "/namespaces/" namespace))
+                          "/pods?labelSelector=waiter%2Fcluster=" cluster-name)
        :metadata-key :pods-metadata
        :update-fn (fn pods-watch-update [{pod :object update-type :type}]
                     (let [now (t/now)
@@ -1373,7 +1381,7 @@
 
 (defn start-replicasets-watch!
   "Start a thread to continuously update the watch-state atom based on watched ReplicaSet events."
-  [{:keys [api-server-url cluster-name replicaset-api-version watch-state] :as scheduler} options]
+  [{:keys [api-server-url cluster-name namespace replicaset-api-version watch-state] :as scheduler} options]
   (start-k8s-watch!
     scheduler
     (->
@@ -1381,6 +1389,7 @@
        :resource-key :service-id->service
        :resource-name "ReplicaSets"
        :resource-url (str api-server-url "/apis/" replicaset-api-version
+                          (when namespace (str "/namespaces/" namespace))
                           "/replicasets?labelSelector=waiter%2Fcluster="
                           cluster-name)
        :metadata-key :rs-metadata
@@ -1431,8 +1440,8 @@
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
-  [{:keys [authentication authorizer cluster-name container-running-grace-secs custom-options http-options leader?-fn log-bucket-sync-secs
-           log-bucket-url max-patch-retries max-name-length pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
+  [{:keys [authentication authorizer cluster-name container-running-grace-secs custom-options default-namespace http-options leader?-fn log-bucket-sync-secs
+           log-bucket-url max-patch-retries max-name-length namespace pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
            pod-suffix-length replicaset-api-version replicaset-spec-builder response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold
            reverse-proxy scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn start-scheduler-syncer-fn url watch-chan-throttle-interval-ms watch-connect-timeout-ms watch-init-timeout-ms watch-retries watch-socket-timeout-ms]
@@ -1457,6 +1466,8 @@
          (utils/non-neg-int? max-patch-retries)
          (pos-int? max-name-length)
          (not (str/blank? cluster-name))
+         (or (nil? namespace) (not (str/blank? namespace)))
+         (or (nil? namespace) (nil? default-namespace) (= namespace default-namespace))
          (or (nil? pdb-api-version) (not (str/blank? pdb-api-version)))
          (or (nil? pdb-spec-builder) (symbol? (:factory-fn pdb-spec-builder)))
          (integer? pod-base-port)
@@ -1557,6 +1568,7 @@
                             :log-bucket-url log-bucket-url
                             :max-patch-retries max-patch-retries
                             :max-name-length max-name-length
+                            :namespace namespace
                             :pdb-api-version pdb-api-version
                             :pdb-spec-builder-fn pdb-spec-builder-fn
                             :pod-base-port pod-base-port
