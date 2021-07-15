@@ -665,7 +665,7 @@
                                          (let [curr-exp-instance-ids (instances->ids expired-instances)
                                                prev-exp-instances (get service-id->expired-instances service-id)
                                                prev-exp-instance-ids (instances->ids prev-exp-instances)]
-                                           (when-not (not= prev-exp-instance-ids curr-exp-instance-ids)
+                                           (when (not= prev-exp-instance-ids curr-exp-instance-ids)
                                              (let [new-expired-instance-ids (set/difference curr-exp-instance-ids prev-exp-instance-ids)]
                                                (doseq [new-expired-instance (select-instances expired-instances new-expired-instance-ids)]
                                                  (scheduler/log-service-instance new-expired-instance :expire :info)))))
