@@ -64,7 +64,7 @@
 
 (defn- add-cached-auth
   "Adds the Waiter auth related cookies into the response."
-  [response password principal age-in-seconds metadata]
+  [response password principal age-in-seconds same-site metadata]
   (let [creation-time (t/now)
         creation-time-millis (tc/to-long creation-time)
         creation-time-secs (tc/to-epoch creation-time)
@@ -73,8 +73,8 @@
         cookie-value (create-auth-cookie-value principal creation-time-millis cookie-age-in-seconds metadata)]
     (-> response
       ;; x-auth-expires-at cookie allows javascript code to introspect when the auth cookie will expire and eagerly re-authenticate
-      (cookie-support/add-cookie AUTH-COOKIE-EXPIRES-AT (str expiry-time-secs) cookie-age-in-seconds false)
-      (cookie-support/add-encoded-cookie password AUTH-COOKIE-NAME cookie-value cookie-age-in-seconds))))
+      (cookie-support/add-cookie AUTH-COOKIE-EXPIRES-AT (str expiry-time-secs) cookie-age-in-seconds same-site false)
+      (cookie-support/add-encoded-cookie password AUTH-COOKIE-NAME cookie-value cookie-age-in-seconds same-site))))
 
 (defn select-auth-params
   "Returns a map that contains only the auth params from the input map"
@@ -100,15 +100,13 @@
 (defn handle-request-auth
   "Invokes the given request-handler on the given request, adding the necessary
   auth headers on the way in, and the x-waiter-auth cookie on the way out."
-  ([handler request auth-params-map password]
-   (handle-request-auth handler request auth-params-map password nil))
-  ([handler request auth-params-map password age-in-seconds]
-   (handle-request-auth handler request auth-params-map password age-in-seconds true))
   ([handler request auth-params-map password age-in-seconds add-auth-cookie?]
+   (handle-request-auth handler request auth-params-map password age-in-seconds add-auth-cookie? nil))
+  ([handler request auth-params-map password age-in-seconds add-auth-cookie? same-site]
    (let [{:keys [authorization/metadata authorization/principal]} auth-params-map
          handler' (middleware/wrap-merge handler auth-params-map)]
      (cond-> (handler' request)
-       add-auth-cookie? (add-cached-auth password principal age-in-seconds metadata)))))
+       add-auth-cookie? (add-cached-auth password principal age-in-seconds same-site metadata)))))
 
 (defn decode-auth-cookie
   "Decodes the provided cookie using the provided password.
@@ -202,7 +200,7 @@
               {:headers {} :status http-403-forbidden})
             (str/blank? auth-path)
             (let [auth-params-map (build-auth-params-map :single-user run-as-user)]
-              (handle-request-auth request-handler request auth-params-map password))
+              (handle-request-auth request-handler request auth-params-map password nil true))
             :else
             (utils/attach-waiter-source
               {:headers {"x-waiter-single-user" (str "unknown operation: " auth-path)} :status http-400-bad-request})))))))

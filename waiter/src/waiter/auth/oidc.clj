@@ -158,7 +158,8 @@
                                                  (- expiry-time (jwt/current-time-secs)))
                     auth-metadata {:jwt-access-token access-token
                                    :jwt-payload (utils/clj->json claims)}
-                    auth-params-map (auth/build-auth-params-map :oidc subject auth-metadata)]
+                    auth-params-map (auth/build-auth-params-map :oidc subject auth-metadata)
+                    same-site "None"]
                 (auth/handle-request-auth
                   (constantly
                     (let [waiter-token (utils/uri-string->host redirect-uri)
@@ -169,9 +170,9 @@
                            :waiter/oidc-mode oidc-mode
                            :waiter/oidc-redirect-uri redirect-uri
                            :waiter/token waiter-token}
-                        (cookie-support/add-encoded-cookie password oidc-challenge-cookie "" 0)
+                        (cookie-support/add-encoded-cookie password oidc-challenge-cookie "" 0 same-site)
                         (utils/attach-waiter-source))))
-                  request auth-params-map password auth-cookie-age-in-seconds)))
+                  request auth-params-map password auth-cookie-age-in-seconds true same-site)))
             (catch Throwable throwable
               (utils/exception->response
                 (ex-info (str "Error in retrieving access token: " (ex-message throwable))
@@ -218,7 +219,7 @@
           (update :headers assoc "location" authorize-uri)
           (update :headers attach-threat-remediation-headers)
           (cookie-support/add-encoded-cookie
-            password oidc-challenge-cookie challenge-cookie-value challenge-cookie-duration-secs)
+            password oidc-challenge-cookie challenge-cookie-value challenge-cookie-duration-secs "None")
           (assoc :waiter/oidc-identifier cookie-identifier
                  :waiter/oidc-mode oidc-mode
                  :waiter/oidc-redirect-uri oidc-redirect-uri)))

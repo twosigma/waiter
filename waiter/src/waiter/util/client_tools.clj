@@ -354,17 +354,18 @@
 
 (defmacro assert-waiter-authentication-cookies
   "Validates the waiter authentication cookies."
-  [cookies]
-  `(let [cookies# ~cookies]
+  [cookies secure?]
+  `(let [cookies# ~cookies
+         secure?# ~secure?]
      (if-let [waiter-auth-cookie# (extract-cookie cookies# "x-waiter-auth")]
        (do
-         (is (= {:http-only? true :path "/" :secure? false}
+         (is (= {:http-only? true :path "/" :secure? secure?#}
                 (select-keys waiter-auth-cookie# [:http-only? :path :secure?])))
          (is (pos? (:max-age waiter-auth-cookie#))))
        (is false "x-waiter-auth cookie is missing"))
      (if-let [auth-expires-at-cookie# (extract-cookie cookies# "x-auth-expires-at")]
        (do
-         (is (= {:http-only? false :path "/" :secure? false}
+         (is (= {:http-only? false :path "/" :secure? secure?#}
                 (select-keys auth-expires-at-cookie# [:http-only? :path :secure?])))
          (is (pos? (:max-age auth-expires-at-cookie#)))
          (when-let [waiter-auth-cookie# (extract-cookie cookies# "x-waiter-auth")]

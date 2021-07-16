@@ -65,12 +65,15 @@
 
 (defn add-cookie
   "Inserts the provided name-value pair as a Set-Cookie header in the response."
-  [response name value age-in-seconds http-only?]
+  [response name value age-in-seconds same-site http-only?]
   (letfn [(add-cookie-into-response [response]
             (let [encoded-cookie (UrlEncoded/encodeString value)
                   path "/"
+                  secure? (= "None" same-site) ;; Cookies with SameSite=None must now also specify the Secure attribute
                   set-cookie-header (str name "=" encoded-cookie ";Max-Age=" age-in-seconds ";Path=" path
-                                         (when http-only? ";HttpOnly=true"))
+                                         (when http-only? ";HttpOnly=true")
+                                         (when same-site (str ";SameSite=" same-site))
+                                         (when secure? ";Secure"))
                   existing-header (get-in response [:headers "set-cookie"])
                   new-header (cond
                                (nil? existing-header) set-cookie-header
@@ -81,9 +84,9 @@
 
 (defn add-encoded-cookie
   "Inserts the provided name-value pair as a Set-Cookie header in the response after encoding the value."
-  [response password name value age-in-seconds]
+  [response password name value age-in-seconds same-site]
   (let [encoded-value (encode-cookie value password)]
-    (add-cookie response name encoded-value age-in-seconds true)))
+    (add-cookie response name encoded-value age-in-seconds same-site true)))
 
 (defn decode-cookie
   "Decode Waiter encoded cookie."
