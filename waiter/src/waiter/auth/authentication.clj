@@ -73,8 +73,8 @@
         cookie-value (create-auth-cookie-value principal creation-time-millis cookie-age-in-seconds metadata)]
     (-> response
       ;; x-auth-expires-at cookie allows javascript code to introspect when the auth cookie will expire and eagerly re-authenticate
-      (cookie-support/add-cookie AUTH-COOKIE-EXPIRES-AT (str expiry-time-secs) cookie-age-in-seconds false)
-      (cookie-support/add-encoded-cookie password AUTH-COOKIE-NAME cookie-value cookie-age-in-seconds))))
+      (cookie-support/add-cookie AUTH-COOKIE-EXPIRES-AT (str expiry-time-secs) cookie-age-in-seconds nil false nil)
+      (cookie-support/add-encoded-cookie password AUTH-COOKIE-NAME cookie-value cookie-age-in-seconds nil nil))))
 
 (defn select-auth-params
   "Returns a map that contains only the auth params from the input map"

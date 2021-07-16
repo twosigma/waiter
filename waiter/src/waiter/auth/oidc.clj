@@ -169,7 +169,7 @@
                            :waiter/oidc-mode oidc-mode
                            :waiter/oidc-redirect-uri redirect-uri
                            :waiter/token waiter-token}
-                        (cookie-support/add-encoded-cookie password oidc-challenge-cookie "" 0)
+                        (cookie-support/add-encoded-cookie password oidc-challenge-cookie "" 0 "None" true)
                         (utils/attach-waiter-source))))
                   request auth-params-map password auth-cookie-age-in-seconds)))
             (catch Throwable throwable
@@ -218,7 +218,7 @@
           (update :headers assoc "location" authorize-uri)
           (update :headers attach-threat-remediation-headers)
           (cookie-support/add-encoded-cookie
-            password oidc-challenge-cookie challenge-cookie-value challenge-cookie-duration-secs)
+            password oidc-challenge-cookie challenge-cookie-value challenge-cookie-duration-secs "None" true)
           (assoc :waiter/oidc-identifier cookie-identifier
                  :waiter/oidc-mode oidc-mode
                  :waiter/oidc-redirect-uri oidc-redirect-uri)))

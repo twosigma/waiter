@@ -160,10 +160,23 @@
           jwt-payload {:id identifier
                        :sub jwt-subject}]
 
-      (with-redefs [cookie-support/add-cookie (fn [response name value age-in-seconds http-only?]
-                                                (is (if (= name auth/AUTH-COOKIE-EXPIRES-AT)
-                                                      (false? http-only?)
-                                                      (true? http-only?)))
+      (with-redefs [cookie-support/add-cookie (fn [response name value age-in-seconds same-site http-only? secure?]
+                                                (cond
+                                                  (= name auth/AUTH-COOKIE-EXPIRES-AT)
+                                                  (do
+                                                    (is (nil? same-site))
+                                                    (false? http-only?)
+                                                    (is (nil? secure?)))
+                                                  (str/starts-with? name oidc-challenge-cookie-prefix)
+                                                  (do
+                                                    (is (= "None" same-site))
+                                                    (true? http-only?)
+                                                    (is (true? secure?)))
+                                                  :else
+                                                  (do
+                                                    (is (nil? same-site))
+                                                    (true? http-only?)
+                                                    (is (nil? secure?))))
                                                 (assoc-in response
                                                           [:cookies name]
                                                           {:age (int age-in-seconds)
@@ -294,9 +307,11 @@
                                                     :redirect-uri oidc-redirect-uri}
                                                    state-data))
                                             state-code)
-                        cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
+                        cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds same-site secure?]
                                                             (is (= password in-password))
                                                             (is (= challenge-cookie-duration-secs age-in-seconds))
+                                                            (is (= "None" same-site))
+                                                            (is (true? secure?))
                                                             (assoc response :cookie {name value}))
                         jwt/retrieve-authorize-url (fn [in-server request oidc-callback-uri code-verifier state-code]
                                                      (is (= jwt-auth-server in-server))
@@ -341,9 +356,11 @@
         current-time-ms (System/currentTimeMillis)
         identifier-prefix "code-identifier-"]
     (doseq [oidc-default-mode [:relaxed :strict]]
-      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds]
+      (with-redefs [cookie-support/add-encoded-cookie (fn [response in-password name value age-in-seconds same-site secure?]
                                                         (is (= password in-password))
                                                         (is (= challenge-cookie-duration-secs age-in-seconds))
+                                                        (is (= "None" same-site))
+                                                        (is (true? secure?))
                                                         (assoc response :cookie {name value}))
                     utils/unique-identifier (constantly "123456")
                     t/now (constantly (tc/from-long current-time-ms))
