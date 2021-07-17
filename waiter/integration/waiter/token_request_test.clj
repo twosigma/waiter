@@ -122,6 +122,7 @@
    `(assert-token-response ~response ~token-root ~token-cluster ~service-id-prefix ~deleted true))
   ([response token-root token-cluster service-id-prefix deleted include-metadata]
    `(let [body# (:body ~response)
+          token-cluster# ~token-cluster
           token-description# (parse-token-description body#)]
       (assert-response-status ~response http-200-ok)
       (when ~include-metadata
@@ -130,11 +131,11 @@
         (is (contains? token-description# :last-update-user))
         (is (contains? token-description# :owner))
         (is (contains? token-description# :root)))
-      (is (= (cond-> {:health-check-url "/probe"
+      (is (= (cond-> {:cluster token-cluster#
+                      :health-check-url "/probe"
                       :name ~service-id-prefix
                       :owner (retrieve-username)}
-               ~include-metadata (assoc :cluster ~token-cluster
-                                        :last-update-user (retrieve-username)
+               ~include-metadata (assoc :last-update-user (retrieve-username)
                                         :root ~token-root)
                (and ~deleted ~include-metadata) (assoc :deleted ~deleted))
              (dissoc token-description# :last-update-time :previous))))))
@@ -163,7 +164,7 @@
           (is (str/includes? (str body) (str "Successfully created " token)) (str body))
           (let [{:keys [body] :as response}  (get-token waiter-url token :cookies cookies :query-params {"token" token})]
             (assert-response-status response http-200-ok)
-            (is (= {"fallback-period-secs" 60 "owner" (retrieve-username)} (json/read-str body)) (str body)))
+            (is (= {"cluster" token-cluster "fallback-period-secs" 60 "owner" (retrieve-username)} (json/read-str body)) (str body)))
           (delete-token-and-assert waiter-url token))
 
         (let [token (str service-id-prefix ".https-redirect")
@@ -172,7 +173,7 @@
           (is (str/includes? (str body) (str "Successfully created " token)) (str body))
           (let [{:keys [body] :as response}  (get-token waiter-url token :cookies cookies :query-params {"token" token})]
             (assert-response-status response http-200-ok)
-            (is (= {"https-redirect" true "owner" (retrieve-username)} (json/read-str body)) (str body)))
+            (is (= {"cluster" token-cluster "https-redirect" true "owner" (retrieve-username)} (json/read-str body)) (str body)))
           (delete-token-and-assert waiter-url token)))
 
       (log/info "creating the tokens")
@@ -1726,9 +1727,10 @@
               service-id-1 (retrieve-service-id waiter-url service-id-headers)]
 
           (testing "token response contains fallback and owner"
-            (let [{:keys [body] :as response} (get-token waiter-url token :query-params {})]
+            (let [token-cluster (retrieve-token-cluster waiter-url)
+                  {:keys [body] :as response} (get-token waiter-url token :query-params {})]
               (assert-response-status response http-200-ok)
-              (is (= (assoc service-description-1 :owner (retrieve-username))
+              (is (= (assoc service-description-1 :cluster token-cluster :owner (retrieve-username))
                      (-> body json/read-str walk/keywordize-keys)))))
 
           (with-service-cleanup
@@ -1920,9 +1922,10 @@
             (let [token-description (assoc base-description :min-instances 50 :namespace current-user)
                   register-response (post-token waiter-url token-description)]
               (assert-response-status register-response http-200-ok)
-              (let [{:keys [body]} (get-token waiter-url token :query-params {})
+              (let [token-cluster (retrieve-token-cluster waiter-url)
+                    {:keys [body]} (get-token waiter-url token :query-params {})
                     parsed-description (some-> body str json/read-str walk/keywordize-keys)]
-                (is (= (-> token-description (dissoc :token) (assoc :owner current-user)) parsed-description))))))
+                (is (= (-> token-description (dissoc :token) (assoc :cluster token-cluster :owner current-user)) parsed-description))))))
         (finally
           (delete-token-and-assert waiter-url token))))))
 
