@@ -24,19 +24,20 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.logging.Logger;
 
 public class HealthCheckServer {
 
     private final static Logger LOGGER = Logger.getLogger(HealthCheckServer.class.getName());
 
-    void start(final int port) throws IOException {
+    void start(final int port, final boolean authenticateRequests) throws IOException {
         LOGGER.info("starting health check server on port " + port);
 
         final InetSocketAddress address = new InetSocketAddress(port);
         final HttpServer server = HttpServer.create(address, 0);
 
-        server.createContext("/status", new HealthCheckHandler());
+        server.createContext("/status", new HealthCheckHandler(authenticateRequests));
         server.setExecutor(null);
         server.start();
 
@@ -44,6 +45,25 @@ public class HealthCheckServer {
     }
 
     private static class HealthCheckHandler implements HttpHandler {
+
+        private final Authenticator authenticator;
+
+        public HealthCheckHandler(boolean authenticateRequests) {
+            if (authenticateRequests) {
+                final String username = System.getenv("WAITER_USERNAME");
+                if (username == null || username.isEmpty()) {
+                    throw new IllegalStateException("Cannot enable authentication when WAITER_USERNAME is missing!");
+                }
+                final String password = System.getenv("WAITER_PASSWORD");
+                if (password == null || password.isEmpty()) {
+                    throw new IllegalStateException("Cannot enable authentication when WAITER_PASSWORD is missing!");
+                }
+                authenticator = new Authenticator.BasicAuthenticator(username, password);
+            } else {
+                authenticator = new Authenticator.DisabledAuthenticator();
+            }
+        }
+
         @Override
         public void handle(final HttpExchange httpExchange) throws IOException {
 
@@ -57,14 +77,24 @@ public class HealthCheckServer {
                 responseHeaders.add("x-cid", correlationId);
             }
 
-            final String response = "OK";
-            httpExchange.sendResponseHeaders(200, response.getBytes("UTF-8").length);
+            final boolean authSuccessful = authenticator.authenticate(httpExchange.getRequestHeaders());
+
+            final String responseBody;
+            final int responseStatus;
+            if (authSuccessful) {
+                responseBody = "OK";
+                responseStatus = 200;
+            } else {
+                responseBody = "Unauthorized";
+                responseStatus = 401;
+            }
+            httpExchange.sendResponseHeaders(responseStatus, responseBody.getBytes(StandardCharsets.UTF_8).length);
 
             final OutputStream os = httpExchange.getResponseBody();
-            os.write(response.getBytes());
+            os.write(responseBody.getBytes(StandardCharsets.UTF_8));
             os.close();
 
-            LOGGER.info(correlationId + " responded with 200 OK");
+            LOGGER.info(correlationId + " responded with " + responseStatus + " " + responseBody);
         }
     }
 
