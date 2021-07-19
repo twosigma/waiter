@@ -972,7 +972,7 @@
       (is (empty? (get service-id->expired-instances service-id-2))))
     (async/>!! exit-chan :exit)))
 
-(deftest test-router-state-maintainer-removes-killed-instances
+(deftest test-router-state-maintainer-removes-killed-and-failed-instances
   (let [scheduler-state-chan (async/chan 1)
         router-chan (async/chan 1)
         router-id "router.0"
@@ -1085,6 +1085,72 @@
         (is (= {service-id [instance-2a instance-2b instance-2c instance-3 instance-4 instance-5]} service-id->healthy-instances))
         (is (= [instance-1 instance-0] (get service-id->killed-instances service-id)))
         (is (= {service-id [instance-0 instance-1]} service-id->unhealthy-instances)))
+
+      (let [failed-instances [instance-2a instance-2b]
+            healthy-instances [instance-2c instance-3 instance-4 instance-5]
+            unhealthy-instances [instance-0 instance-1]
+            sorted-instance-ids (->> (concat healthy-instances unhealthy-instances) (map :id) sort)]
+        (async/>!! scheduler-state-chan [[:update-service-instances {:failed-instances failed-instances
+                                                                     :healthy-instances healthy-instances
+                                                                     :unhealthy-instances unhealthy-instances
+                                                                     :sorted-instance-ids sorted-instance-ids
+                                                                     :service-id service-id
+                                                                     :scheduler-sync-time (t/now)}]])
+        (let [{:keys [all-available-service-ids service-id->expired-instances service-id->failed-instances
+                      service-id->healthy-instances service-id->killed-instances service-id->unhealthy-instances]}
+              (async/<!! router-state-push-chan)]
+          (is (= #{service-id} all-available-service-ids))
+          (is (= {service-id [instance-4 instance-5]} service-id->expired-instances))
+          (is (= #{instance-2a instance-2b} (set (get service-id->failed-instances service-id))))
+          (is (= {service-id [instance-2c instance-3 instance-4 instance-5]} service-id->healthy-instances))
+          (is (= #{instance-0 instance-1} (set (get service-id->killed-instances service-id))))
+          (is (= {service-id [instance-0 instance-1]} service-id->unhealthy-instances))))
+
+      (let [_ (-> instance-2a notify-instance-killed-fn async/<!!)
+            response-chan (async/promise-chan)
+            _ (async/>!! query-chan response-chan)
+            {:keys [all-available-service-ids service-id->expired-instances service-id->failed-instances
+                    service-id->healthy-instances service-id->killed-instances service-id->unhealthy-instances]}
+            (async/<!! response-chan)]
+        (is (= #{service-id} all-available-service-ids))
+        (is (= {service-id [instance-4 instance-5]} service-id->expired-instances))
+        (is (= #{instance-2b} (set (get service-id->failed-instances service-id))))
+        (is (= {service-id [instance-2c instance-3 instance-4 instance-5]} service-id->healthy-instances))
+        (is (= #{instance-0 instance-1 instance-2a} (set (get service-id->killed-instances service-id))))
+        (is (= {service-id [instance-0 instance-1]} service-id->unhealthy-instances)))
+
+      (let [_ (-> instance-2c notify-instance-killed-fn async/<!!)
+            response-chan (async/promise-chan)
+            _ (async/>!! query-chan response-chan)
+            {:keys [all-available-service-ids service-id->expired-instances service-id->failed-instances
+                    service-id->healthy-instances service-id->killed-instances service-id->unhealthy-instances]}
+            (async/<!! response-chan)]
+        (is (= #{service-id} all-available-service-ids))
+        (is (= {service-id [instance-4 instance-5]} service-id->expired-instances))
+        (is (= #{instance-2b} (set (get service-id->failed-instances service-id))))
+        (is (= {service-id [instance-2c instance-3 instance-4 instance-5]} service-id->healthy-instances))
+        (is (= #{instance-0 instance-1 instance-2a instance-2c} (set (get service-id->killed-instances service-id))))
+        (is (= {service-id [instance-0 instance-1]} service-id->unhealthy-instances)))
+
+      (let [failed-instances [instance-2a instance-2b instance-2c]
+            healthy-instances [instance-3 instance-4 instance-5]
+            unhealthy-instances [instance-0 instance-1]
+            sorted-instance-ids (->> (concat healthy-instances unhealthy-instances) (map :id) sort)]
+        (async/>!! scheduler-state-chan [[:update-service-instances {:failed-instances failed-instances
+                                                                     :healthy-instances healthy-instances
+                                                                     :unhealthy-instances unhealthy-instances
+                                                                     :sorted-instance-ids sorted-instance-ids
+                                                                     :service-id service-id
+                                                                     :scheduler-sync-time (t/now)}]])
+        (let [{:keys [all-available-service-ids service-id->expired-instances service-id->failed-instances
+                      service-id->healthy-instances service-id->killed-instances service-id->unhealthy-instances]}
+              (async/<!! router-state-push-chan)]
+          (is (= #{service-id} all-available-service-ids))
+          (is (= {service-id [instance-4 instance-5]} service-id->expired-instances))
+          (is (= #{instance-2b} (set (get service-id->failed-instances service-id))))
+          (is (= {service-id [instance-3 instance-4 instance-5]} service-id->healthy-instances))
+          (is (= #{instance-0 instance-1 instance-2a instance-2c} (set (get service-id->killed-instances service-id))))
+          (is (= {service-id [instance-0 instance-1]} service-id->unhealthy-instances))))
 
       (async/>!! exit-chan :exit))))
 

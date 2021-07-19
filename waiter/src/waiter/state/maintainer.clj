@@ -510,6 +510,21 @@
       (cond
         (some-instances-flagged-with? :memory-limit-exceeded) :not-enough-memory))))
 
+(defn- instances->ids
+  "Converts the instance sequence to a set of instance IDs."
+  [instances]
+  (set (map :id instances)))
+
+(defn- filter-instances
+  "Returns a filtered lazy sequence of the provided instances whose id is in keep-ids."
+  [instances keep-ids]
+  (filter #(->> % :id (contains? keep-ids)) instances))
+
+(defn- remove-instances
+  "Returns a filtered lazy sequence of the provided instances whose id is not in drop-ids."
+  [instances drop-ids]
+  (remove #(->> % :id (contains? drop-ids)) instances))
+
 (defn start-router-state-maintainer
   "Start the instance state maintainer.
    Maintains the state of the router as well as the state of marathon and the existence of other routers.
@@ -520,9 +535,7 @@
    ejection-expiry-tracker]
   (cid/with-correlation-id
     "router-state-maintainer"
-    (let [killed-instances-to-keep 10
-          failed-instances-to-keep 1000
-          state-atom (atom {:all-available-service-ids #{}
+    (let [state-atom (atom {:all-available-service-ids #{}
                             :iteration 0
                             :routers []
                             :service-id->deployment-error {}
@@ -619,7 +632,11 @@
                                              starting-instances (filter #(not (du/older-than? scheduler-sync-time grace-period-secs %)) unhealthy-instances)
                                              service-id->expired-instances' (assoc service-id->expired-instances service-id expired-instances)
                                              service-id->starting-instances' (assoc service-id->starting-instances service-id starting-instances)
-                                             top-failed-instances (->> failed-instances (scheduler/sort-instances) (take failed-instances-to-keep))
+                                             curr-killed-instance-ids (instances->ids (get service-id->killed-instances service-id))
+                                             ;; do not track known killed instances as failed instances
+                                             top-failed-instances (->> (remove-instances failed-instances curr-killed-instance-ids)
+                                                                    (scheduler/sort-instances)
+                                                                    (take scheduler/max-failed-instances-to-keep))
                                              service-id->failed-instances' (assoc service-id->failed-instances service-id top-failed-instances)
                                              service-id->instance-counts' (assoc service-id->instance-counts service-id instance-counts)
                                              deployment-error-config (merge default-deployment-error-config
@@ -631,10 +648,7 @@
                                              instability-issue (get-instability-issue failed-instances)
                                              service-id->instability-issue' (if instability-issue
                                                                               (assoc service-id->instability-issue service-id instability-issue)
-                                                                              (dissoc service-id->instability-issue service-id))
-                                             instances->ids (fn instances->ids-set [instances] (set (map :id instances)))
-                                             select-instances (fn select-instances-from-ids [instances selected-ids]
-                                                                (filter #(->> % :id (contains? selected-ids)) instances))]
+                                                                              (dissoc service-id->instability-issue service-id))]
                                          (ejection-expiry/select-instances! ejection-expiry-tracker service-id (map :id expired-instances))
                                          (let [prev-healthy-instances (get service-id->healthy-instances service-id)
                                                prev-unhealthy-instances (get service-id->unhealthy-instances service-id)
@@ -647,11 +661,11 @@
                                              (let [new-healthy-instance-ids (set/difference curr-healthy-instance-ids prev-healthy-instance-ids)
                                                    rem-healthy-instance-ids (set/difference prev-healthy-instance-ids curr-healthy-instance-ids)
                                                    new-unhealthy-instance-ids (set/difference curr-unhealthy-instance-ids prev-unhealthy-instance-ids)]
-                                               (doseq [rem-instance (select-instances prev-healthy-instances rem-healthy-instance-ids)]
+                                               (doseq [rem-instance (filter-instances prev-healthy-instances rem-healthy-instance-ids)]
                                                  (scheduler/log-service-instance rem-instance :remove :info))
-                                               (doseq [new-healthy-instance (select-instances healthy-instances new-healthy-instance-ids)]
+                                               (doseq [new-healthy-instance (filter-instances healthy-instances new-healthy-instance-ids)]
                                                  (scheduler/log-service-instance new-healthy-instance :healthy :info))
-                                               (doseq [new-unhealthy-instance (select-instances unhealthy-instances new-unhealthy-instance-ids)]
+                                               (doseq [new-unhealthy-instance (filter-instances unhealthy-instances new-unhealthy-instance-ids)]
                                                  (scheduler/log-service-instance new-unhealthy-instance :unhealthy :info))
                                                (log/info "update-healthy-instances:" service-id "has"
                                                          {:num-expired-healthy-instances (count expired-healthy-instances)
@@ -667,7 +681,7 @@
                                                prev-exp-instance-ids (instances->ids prev-exp-instances)]
                                            (when (not= prev-exp-instance-ids curr-exp-instance-ids)
                                              (let [new-expired-instance-ids (set/difference curr-exp-instance-ids prev-exp-instance-ids)]
-                                               (doseq [new-expired-instance (select-instances expired-instances new-expired-instance-ids)]
+                                               (doseq [new-expired-instance (filter-instances expired-instances new-expired-instance-ids)]
                                                  (scheduler/log-service-instance new-expired-instance :expire :info)))))
                                          (assoc loop-state
                                            :service-id->deployment-error service-id->deployment-error'
@@ -705,10 +719,18 @@
                                         (fn [killed-instances]
                                           (vec
                                             (take
-                                              killed-instances-to-keep
+                                              scheduler/max-killed-instances-to-keep
                                               (conj
                                                 (filterv (fn [i] (not= (:id i) id)) killed-instances)
-                                                instance))))))))
+                                                instance)))))
+                             (update-in [:service-id->failed-instances service-id]
+                                        (fn [failed-instances]
+                                          (filterv (fn [i]
+                                                     (let [result (not= (:id i) id)]
+                                                       (when result
+                                                         (log/info "no longer tracking killed instance" id "of service" service-id "as failed"))
+                                                       result))
+                                                   failed-instances))))))
 
                         query-chan
                         ([response-chan]

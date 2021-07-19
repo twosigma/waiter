@@ -78,7 +78,7 @@
                                     :healthy? false
                                     :port 0
                                     :started-at (some-> failed-marathon-task :timestamp (du/str-to-date formatter-marathon))))
-                max-instances-to-keep 10]
+                max-instances-to-keep scheduler/max-failed-instances-to-keep]
             (scheduler/add-to-store-and-track-failed-instance!
               service-id->failed-instances-transient-store max-instances-to-keep service-id failed-instance)))))
     (when (some failed-instance-ids (map :id active-instances))

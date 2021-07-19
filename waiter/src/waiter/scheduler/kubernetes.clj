@@ -64,10 +64,6 @@
   "Kubernetes reports dates in ISO8061 format, sans the milliseconds component."
   (DateTimeFormat/forPattern "yyyy-MM-dd'T'HH:mm:ss'Z'"))
 
-(def max-failed-instances-to-keep
-  "The maximum number of failed instances tracked per service."
-  10)
-
 (defn timestamp-str->datetime
   "Parse a Kubernetes API timestamp string."
   [k8s-timestamp-str]
@@ -240,7 +236,7 @@
                                               (not (killed-by-k8s? newest-failure))
                                               (assoc :exit-code (:exitCode newest-failure)))]
                 (scheduler/add-to-store-and-track-failed-instance!
-                  service-id->failed-instances-transient-store max-failed-instances-to-keep service-id newest-failure-instance)))))))
+                  service-id->failed-instances-transient-store scheduler/max-failed-instances-to-keep service-id newest-failure-instance)))))))
     (catch Throwable e
       (log/error e "error converting failed pod to waiter service instance" pod)
       (comment "Returning nil on failure."))))
@@ -493,7 +489,7 @@
     (doseq [{:keys [service-id] :as failed-instance} failed-instances]
       (->> (assoc failed-instance :healthy? false)
         (scheduler/add-to-store-and-track-failed-instance!
-          service-id->failed-instances-transient-store max-failed-instances-to-keep service-id)))
+          service-id->failed-instances-transient-store scheduler/max-failed-instances-to-keep service-id)))
     ;; returns only pods with non-Failed phase
     (vec active-instances)))
 
