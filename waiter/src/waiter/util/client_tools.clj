@@ -1084,11 +1084,6 @@
         app-info-map (walk/keywordize-keys (try-parse-json (:body app-info-response)))]
     (:gracePeriodSeconds (first (:healthChecks (:app app-info-map))))))
 
-(defn using-cook?
-  "Returns true if Waiter is configured to use Cook for scheduling"
-  [waiter-url]
-  (= "cook" (retrieve-default-scheduler-name waiter-url)))
-
 (defn using-k8s?
   "Returns true if Waiter is configured to use Kubernetes for scheduling"
   [waiter-url]

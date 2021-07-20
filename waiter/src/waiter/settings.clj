@@ -366,20 +366,6 @@
              :quanta-constraints {:cpus 64
                                   :mem (* 512 1024)}}
    :scheduler-config {:kind :marathon
-                      :cook {:factory-fn 'waiter.scheduler.cook/cook-scheduler
-                             :authorizer {:kind :default
-                                          :default {:factory-fn 'waiter.authorization/noop-authorizer}}
-                             :failed-tracker-interval-ms 10000
-                             :home-path-prefix "/home/"
-                             :http-options {:conn-timeout 10000
-                                            :socket-timeout 10000
-                                            :spnego-auth false}
-                             :impersonate false
-                             :instance-priorities {:delta 5
-                                                   :max 75
-                                                   :min 25}
-                             :mesos-agent-port 5051
-                             :search-interval-days 10}
                       :kubernetes {; Default values are not provided below for the following keys:
                                    ; :authentication [:fileserver :port] :log-bucket-url :url
                                    :factory-fn 'waiter.scheduler.kubernetes/kubernetes-scheduler
