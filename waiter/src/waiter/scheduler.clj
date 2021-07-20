@@ -42,6 +42,16 @@
            (org.eclipse.jetty.client HttpClient)
            (org.joda.time DateTime)))
 
+(def ^:const max-failed-instances-to-keep
+  "The maximum number of failed instances tracked per service."
+  10)
+
+(def ^:const max-killed-instances-to-keep
+  "The maximum number of kill instances tracked per service."
+  ;; track more killed instances than failed instances
+  (+ max-failed-instances-to-keep 2))
+
+
 (defmacro log
   "Log Scheduler-specific messages."
   [& args]

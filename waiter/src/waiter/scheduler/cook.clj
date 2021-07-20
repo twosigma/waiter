@@ -319,7 +319,7 @@
   "Launches a timer task that tracks failed instances."
   [service-id->failed-instances-transient-store scheduler failed-tracker-interval-ms]
   (let [last-start-time-atom (atom nil)
-        max-instances-to-keep 10]
+        max-instances-to-keep scheduler/max-failed-instances-to-keep]
     (du/start-timer-task
       (t/millis failed-tracker-interval-ms)
       (fn track-failed-instances-fn []
