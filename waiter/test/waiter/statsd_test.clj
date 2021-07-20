@@ -102,7 +102,7 @@
                                                          :qux [:i :i :i]}
                           :service-id->healthy-instances {:eek [:i]
                                                           :fee [:i]
-                                                          :fie [:i]
+                                                          :fie []
                                                           :foe [:i :i :i]
                                                           :fum [:i :i :i]
                                                           :qux [:i :i :i]}
@@ -118,25 +118,37 @@
                                                  :fum {"metric-group" "baz", "cpus" 0.8, "mem" 1024}
                                                  :qux {"metric-group" "baz", "cpus" 1.6, "mem" 2048}
                                                  :eek {"metric-group" "baz", "cpus" 3.2, "mem" 4096}})]
-        (is (= {"foo" {:healthy-instances 1
-                       :unhealthy-instances 2
-                       :failed-instances 3
-                       :cpus (* 3 0.1)
-                       :mem 384}
-                "bar" {:healthy-instances 4
-                       :unhealthy-instances 5
+        (is (= {"bar" {:active-services 1
+                       :cpus (+ (* 2 0.2) (* 6 0.4))
                        :failed-instances 6
-                       :cpus (+ (* 3 0.2) (* 6 0.4))
-                       :mem 3840}
-                "baz" {:healthy-instances 7
-                       :unhealthy-instances 8
-                       :failed-instances 9
+                       :healthy-instances 3
+                       :mem (+ (* 2 256) (* 6 512))
+                       :total-services 2
+                       :unhealthy-instances 5}
+                "baz" {:active-services 3
                        :cpus (+ (* 6 0.8) (* 6 1.6) (* 3 3.2))
-                       :mem 30720}}
+                       :failed-instances 9
+                       :healthy-instances 7
+                       :mem (+ (* 6 1024) (* 6 2048) (* 3 4096))
+                       :total-services 3
+                       :unhealthy-instances 8}
+                "foo" {:active-services 1
+                       :cpus (* 3 0.1)
+                       :failed-instances 3
+                       :healthy-instances 1
+                       :mem 384
+                       :total-services 1
+                       :unhealthy-instances 2}}
                (statsd/router-state->metric-group->counts service-id->service-description router-state)))))
 
     (testing "should be resilient to empty service description"
-      (is (= {nil {:healthy-instances 1, :unhealthy-instances 2, :failed-instances 3, :cpus 0, :mem 0}}
+      (is (= {nil {:active-services 1
+                   :cpus 0
+                   :failed-instances 3
+                   :healthy-instances 1
+                   :mem 0
+                   :total-services 1
+                   :unhealthy-instances 2}}
              (statsd/router-state->metric-group->counts
                (constantly {})
                {:all-available-service-ids #{:fee}
@@ -175,42 +187,47 @@
   (testing "Publishing instance counts"
     (testing "should send a gauge for each of healthy, unhealthy, failed"
       (teardown-setup)
-      (let [metrics (atom [])]
+      (let [metric-group->counts {"foo" {:active-services 1
+                                         :cpus (* 3 0.1)
+                                         :failed-instances 3
+                                         :healthy-instances 1
+                                         :mem 384
+                                         :total-services 1
+                                         :unhealthy-instances 2}
+                                  "bar" {:active-services 2
+                                         :cpus (+ (* 3 0.2) (* 6 0.4))
+                                         :failed-instances 6
+                                         :healthy-instances 4
+                                         :mem 3840
+                                         :total-services 1
+                                         :unhealthy-instances 5}
+                                  "baz" {:active-services 3
+                                         :cpus (+ (* 6 0.8) (* 6 1.6) (* 3 3.2))
+                                         :failed-instances 9
+                                         :healthy-instances 7
+                                         :mem 30720
+                                         :total-services 1
+                                         :unhealthy-instances 8}}
+            metrics (atom [])]
         (with-redefs [statsd/add-value (fn [_ metric-group metric value metric-type]
                                          (swap! metrics #(conj %1 [metric-group metric value metric-type]))
                                          {})]
-          (statsd/publish-metric-group->counts {"foo" {:healthy-instances 1
-                                                       :unhealthy-instances 2
-                                                       :failed-instances 3
-                                                       :cpus (* 3 0.1)
-                                                       :mem 384}
-                                                "bar" {:healthy-instances 4
-                                                       :unhealthy-instances 5
-                                                       :failed-instances 6
-                                                       :cpus (+ (* 3 0.2) (* 6 0.4))
-                                                       :mem 3840}
-                                                "baz" {:healthy-instances 7
-                                                       :unhealthy-instances 8
-                                                       :failed-instances 9
-                                                       :cpus (+ (* 6 0.8) (* 6 1.6) (* 3 3.2))
-                                                       :mem 30720}}))
+          (statsd/publish-metric-group->counts metric-group->counts))
         (statsd/drain)
-        (is (= 15 (count @metrics)))
-        (is (= ["foo" "instances.healthy" 1 statsd/gauge-metric] (nth @metrics 0)))
-        (is (= ["foo" "instances.unhealthy" 2 statsd/gauge-metric] (nth @metrics 1)))
-        (is (= ["foo" "instances.failed" 3 statsd/gauge-metric] (nth @metrics 2)))
-        (is (= ["foo" "cpus" (* 3 0.1) statsd/gauge-metric] (nth @metrics 3)))
-        (is (= ["foo" "mem" 384 statsd/gauge-metric] (nth @metrics 4)))
-        (is (= ["bar" "instances.healthy" 4 statsd/gauge-metric] (nth @metrics 5)))
-        (is (= ["bar" "instances.unhealthy" 5 statsd/gauge-metric] (nth @metrics 6)))
-        (is (= ["bar" "instances.failed" 6 statsd/gauge-metric] (nth @metrics 7)))
-        (is (= ["bar" "cpus" (+ (* 3 0.2) (* 6 0.4)) statsd/gauge-metric] (nth @metrics 8)))
-        (is (= ["bar" "mem" 3840 statsd/gauge-metric] (nth @metrics 9)))
-        (is (= ["baz" "instances.healthy" 7 statsd/gauge-metric] (nth @metrics 10)))
-        (is (= ["baz" "instances.unhealthy" 8 statsd/gauge-metric] (nth @metrics 11)))
-        (is (= ["baz" "instances.failed" 9 statsd/gauge-metric] (nth @metrics 12)))
-        (is (= ["baz" "cpus" (+ (* 6 0.8) (* 6 1.6) (* 3 3.2)) statsd/gauge-metric] (nth @metrics 13)))
-        (is (= ["baz" "mem" 30720 statsd/gauge-metric] (nth @metrics 14))))
+        (is (= (* (count metric-group->counts) 7) (count @metrics)))
+        (let [counter (atom 0)]
+          (doseq [metric-group ["foo" "bar" "baz"]]
+            (doseq [[metric-name count-name]
+                    [["cpus" :cpus]
+                     ["instances.failed" :failed-instances]
+                     ["instances.healthy" :healthy-instances]
+                     ["instances.unhealthy" :unhealthy-instances]
+                     ["mem" :mem]
+                     ["services.active" :active-services]
+                     ["services.total" :total-services]]]
+              (is (= [metric-group metric-name (get-in metric-group->counts [metric-group count-name]) statsd/gauge-metric]
+                     (nth @metrics @counter)))
+              (swap! counter inc)))))
       (teardown))))
 
 (deftest test-unique!
