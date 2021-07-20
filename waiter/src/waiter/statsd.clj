@@ -349,12 +349,14 @@
   "Publishes a gauge for the number of cpus, mem, healthy instances, unhealthy instances, and
    failed instances corresponding to each metric group in the provided map."
   [metric-group->counts]
-  (run! (fn [[metric-group {:keys [healthy-instances unhealthy-instances failed-instances cpus mem]}]]
+  (run! (fn [[metric-group {:keys [active-services cpus failed-instances healthy-instances mem total-services unhealthy-instances]}]]
+          (gauge! metric-group "cpus" cpus)
+          (gauge! metric-group "instances.failed" failed-instances)
           (gauge! metric-group "instances.healthy" healthy-instances)
           (gauge! metric-group "instances.unhealthy" unhealthy-instances)
-          (gauge! metric-group "instances.failed" failed-instances)
-          (gauge! metric-group "cpus" cpus)
-          (gauge! metric-group "mem" mem))
+          (gauge! metric-group "mem" mem)
+          (gauge! metric-group "services.active" active-services)
+          (gauge! metric-group "services.total" total-services))
         metric-group->counts))
 
 (defn merge-service-state
@@ -367,11 +369,13 @@
             unhealthy (count unhealthy-instances)
             failed (count failed-instances)
             active (+ healthy unhealthy)
-            counts {:healthy-instances healthy
-                    :unhealthy-instances unhealthy
-                    :failed-instances failed
+            counts {:active-services (if (pos? healthy) 1 0)
                     :cpus (* active (or cpus 0))
-                    :mem (* active (or mem 0))}]
+                    :failed-instances failed
+                    :healthy-instances healthy
+                    :mem (* active (or mem 0))
+                    :total-services 1
+                    :unhealthy-instances unhealthy}]
         (merge-with #(merge-with + %1 %2) metric-group->counts {metric-group counts}))
       (do
         (log/warn "no service description found for service id" service-id)
