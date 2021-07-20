@@ -1122,3 +1122,16 @@
               (testing "request payload received by courier"
                 ;; response payload ends with the 8 bytes "received" (ascii/utf8)
                 (is (= received-msg-bytes (take-last 8 response-body-bytes )))))))))))
+
+(deftest ^:parallel ^:integration-slow test-grpc-health-check-authentication
+  (testing-using-waiter-url
+    (when (using-k8s? waiter-url)
+      (let [courier-command (courier-server-command "${PORT0} ${PORT1} true")
+            request-headers (-> (basic-grpc-service-parameters)
+                              (assoc "x-waiter-cmd" courier-command
+                                     "x-waiter-health-check-authentication" "standard"))
+            {:keys [service-id]} (start-courier-instance waiter-url request-headers)]
+        (with-service-cleanup
+          service-id
+          ;; start-courier-instance already asserted on the ping response
+          (is (some? service-id)))))))

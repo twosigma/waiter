@@ -15,6 +15,7 @@
  */
 package com.twosigma.waiter.courier;
 
+import java.util.Arrays;
 import java.util.logging.Logger;
 
 public class Main {
@@ -23,19 +24,22 @@ public class Main {
 
     // In order to run this, you need the alpn-boot-XXX.jar in the bootstrap classpath.
     public static void main(final String... args) throws Exception {
+        LOGGER.info("gRPC server command-line arguments: " + Arrays.toString(args));
         final int port0 = args.length > 0 ? Integer.parseInt(args[0]) : 8080;
         final int port1 = args.length > 1 ? Integer.parseInt(args[1]) : 8081;
+        final boolean healthCheckAuthentication = args.length > 2 && Boolean.parseBoolean(args[2]);
 
         LoggingConfig.initializeLogging();
 
         LOGGER.info("gRPC server configured to run on port " + port0);
-        LOGGER.info("health-check (http) server configured to run on port " + port1);
+        LOGGER.info("health-check (http, authentication=" + healthCheckAuthentication + ") " +
+            "server configured to run on port " + port1);
 
         final GrpcServer grpcServer = new GrpcServer();
         grpcServer.start(port0);
 
         final HealthCheckServer healthCheckServer = new HealthCheckServer();
-        healthCheckServer.start(port1);
+        healthCheckServer.start(port1, healthCheckAuthentication);
 
         grpcServer.blockUntilShutdown();
     }

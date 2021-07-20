@@ -9,6 +9,7 @@ set -ux
 
 GRPC_SERVER_PORT=${1:-${PORT0:-8080}}
 HEALTH_CHECK_SERVER_PORT=${2:-${PORT1:-8081}}
+HEALTH_CHECK_AUTH=${3:-false}
 
 # Log a message to stdout
 function courier_log() {
@@ -34,6 +35,7 @@ if [[ -z "${JAVA_CMD}" ]]; then
 fi
 
 courier_log "launching courier grpc and health checks servers at ports ${GRPC_SERVER_PORT} and ${HEALTH_CHECK_SERVER_PORT}"
-${JAVA_CMD} -jar ${COURIER_JAR} ${GRPC_SERVER_PORT} ${HEALTH_CHECK_SERVER_PORT}
+courier_log "server health check authentication enabled: ${HEALTH_CHECK_AUTH}"
+${JAVA_CMD} -jar ${COURIER_JAR} ${GRPC_SERVER_PORT} ${HEALTH_CHECK_SERVER_PORT} ${HEALTH_CHECK_AUTH}
 
 courier_log "exiting."
