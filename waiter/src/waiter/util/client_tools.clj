@@ -151,6 +151,19 @@
   (not= (retrieve-waiter-port waiter-url)
         (retrieve-h2c-port waiter-url)))
 
+(defn raven-response-flags
+  "Returns the response flags from a backend sidecar proxy,
+   or nil if no backend proxy is present.
+   See the Envoy Proxy documentation for details on the response flags format:
+   https://www.envoyproxy.io/docs/envoy/latest/configuration/observability/access_log/usage#config-access-log-format-response-flags"
+  [response]
+  (get-in response [:headers "x-raven-response-flags"]))
+
+(defn raven-proxy-response?
+  "Returns true if the response is from a backend sidecar proxy."
+  [response]
+  (boolean (raven-response-flags response)))
+
 (defn grpc-cancellations-supported?
   "Returns true if gRPC cancellations are supported.
    Waiter routers support gRPC client and server cancellation.

@@ -429,7 +429,7 @@
                 (let [response-body (try-parse-json (:body response))
                       response-headers (:headers response)]
                   ;; x-envoy-expected-rq-timeout-ms is absent when timeouts are disabled
-                  (is (contains? (get response-body "headers") "x-envoy-external-address"))
+                  (is (some (get response-body "headers") ["x-envoy-external-address" "x-envoy-internal"]))
                   (is (contains? response-headers "x-envoy-upstream-service-time")))))
 
             (let [response (make-request-with-debug-info

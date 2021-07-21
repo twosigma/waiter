@@ -865,3 +865,13 @@
   [names]
   (let [filter-fns (map str->filter-fn names)]
     (fn [value] (some #(%1 value) filter-fns))))
+
+(defn string-yes?
+  "Check if string matches a yes-like value."
+  [s]
+  (some? (re-find #"^(?:[TtYy]|[Oo][Nn])" (str s))))
+
+(defn string-no?
+  "Check if string matches a no-like value."
+  [s]
+  (some? (re-find #"^(?:[FfNn]|[Oo][Ff])" (str s))))

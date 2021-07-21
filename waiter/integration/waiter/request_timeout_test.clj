@@ -102,10 +102,15 @@
                 {:keys [headers] :as response} (make-kitchen-request waiter-url extra-headers :path "/die")
                 response-body (:body response)
                 error-message (-> (waiter-settings waiter-url) :messages :backend-request-failed)]
-            (assert-response-status response http-502-bad-gateway)
-            (is error-message)
-            (is (str/includes? response-body error-message))
-            (is (not (str/blank? (get headers "server"))))
+            (if-let [raven-flags (raven-response-flags response)]
+              (do
+                (assert-response-status response http-503-service-unavailable)
+                (is (= raven-flags "UC")))
+              (do
+                (is error-message)
+                (assert-response-status response http-502-bad-gateway)
+                (is (str/includes? response-body error-message))
+                (is (not (str/blank? (get headers "server"))))))
             (is (not (str/blank? (get headers "x-waiter-backend-id"))))
             (is (not (str/blank? (get headers "x-waiter-backend-host"))))
             (is (not (str/blank? (get headers "x-waiter-backend-port"))))
