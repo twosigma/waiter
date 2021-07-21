@@ -313,8 +313,12 @@
           service-id (k8s-object->service-id pod)
           instance-id (pod->instance-id pod primary-container-restart-count)
           node-name (get-in pod [:spec :nodeName])
-          port0 (or (some-> (get-in pod [:metadata :annotations :waiter/service-port]) (Integer/parseInt))
+          pod-labels (get-in pod [:metadata :labels])
+          pod-annotations (get-in pod [:metadata :annotations])
+          port0 (or (some-> pod-annotations :waiter/service-port (Integer/parseInt))
                     (get-in pod [:spec :containers 0 :ports 0 :containerPort]))
+          port->protocol (some-> pod-annotations :waiter/port-onto-protocol utils/try-parse-json)
+          proxy-sidecar (get pod-labels :waiter/proxy-sidecar "disabled")
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
                           (k8s-object->namespace pod))
@@ -332,7 +336,6 @@
                               (reduce max (map :restartCount unready-init-containers-statuses))
                               primary-container-restart-count)
           primary-container-status (first app-container-statuses)
-          pod-annotations (get-in pod [:metadata :annotations])
           pod-started-at (-> pod (get-in [:status :startTime]) timestamp-str->datetime)
           {:keys [waiter/revision-timestamp]} (get-in pod [:metadata :annotations])
           pod-name (k8s-object->id pod)
@@ -352,6 +355,8 @@
                               :k8s/app-name (get-in pod [:metadata :labels :app])
                               :k8s/namespace (k8s-object->namespace pod)
                               :k8s/pod-name pod-name
+                              :k8s/port->protocol port->protocol
+                              :k8s/proxy-sidecar proxy-sidecar
                               :k8s/restart-count primary-container-restart-count
                               :k8s/user run-as-user
                               :log-directory (log-dir-path run-as-user primary-container-restart-count)
@@ -815,8 +820,10 @@
     ;; container restarts repeatedly within a single Pod, normally not switching hosts.
     {:min-hosts 1})
 
-  (request-protocol [_ _ port-index service-description]
-    (scheduler/retrieve-protocol port-index service-description))
+  (request-protocol [_ {:keys [k8s/port->protocol port] :as instance} port-index service-description]
+    (if port->protocol
+      (get port->protocol (str (+ port port-index)))
+      (scheduler/retrieve-protocol port-index service-description)))
 
   (use-authenticated-health-checks? [this service-id]
     (retrieve-use-authenticated-health-checks? this service-id))
@@ -966,17 +973,35 @@
    :periodSeconds health-check-interval-secs
    :timeoutSeconds 1})
 
+(defn- envoy-sidecar-env?
+  "Check environment flags to see if envoy sidecar should be enabled.
+   Used to build other predicate functions by providing defaults."
+  [env proxy-default tls-default]
+  (let [reverse-proxy? (-> env (get "REVERSE_PROXY" proxy-default) utils/string-yes?)
+        strict-tls? (-> env (get "RAVEN_FORCE_INGRESS_TLS" tls-default) utils/string-yes?)]
+    (when reverse-proxy?
+      (if strict-tls? :strict-tls :enabled))))
+
 (defn envoy-sidecar-enabled?
-  "Returns true if the envoy sidecar is enabled, and false otherwise"
+  "Returns nil to disable the envoy sidecar unless explicitly enabled."
   [_ _ {:strs [env]} _]
-  (let [reverse-proxy-flag "REVERSE_PROXY"]
-    (contains? env reverse-proxy-flag)))
+  (envoy-sidecar-env? env "F" "F"))
+
+(defn envoy-sidecar-always-on
+  "Returns true to enable the envoy sidecar unless explicitly disabled."
+  [_ _ {:strs [env]} _]
+  (envoy-sidecar-env? env "T" "F"))
+
+(defn envoy-sidecar-always-on-strict-tls
+  "Always returns :strict-tls to enable the envoy sidecar with TLS unless explicitly disabled."
+  [_ _ {:strs [env]} _]
+  (envoy-sidecar-env? env "T" "T"))
 
 (defn attach-envoy-sidecar
   "Attaches envoy sidecar to replicaset"
   [replicaset reverse-proxy
-   {:strs [backend-proto health-check-port-index] :as service-description}
-   base-env service-port port0]
+   {:strs [backend-proto health-check-port-index health-check-proto] :as service-description}
+   base-env service-port port0 force-tls?]
   (update-in replicaset
     [:spec :template :spec :containers]
     conj
@@ -985,9 +1010,11 @@
           env-map (-> user-env
                       (merge base-env)
                       (assoc "HEALTH_CHECK_PORT_INDEX" (str health-check-port-index)
+                             "HEALTH_CHECK_PROTOCOL" health-check-proto
                              "PORT0" (str port0)
                              "SERVICE_PORT" (str service-port)
-                             "SERVICE_PROTOCOL" backend-proto))
+                             "SERVICE_PROTOCOL" backend-proto
+                             "FORCE_TLS_TERMINATION" (str force-tls?)))
           env (into []
                     (concat (for [[k v] env-map]
                               {:name k :value v})))
@@ -1003,6 +1030,14 @@
 
 (def ^:const service-ports-index 0)
 (def ^:const proxied-ports-index 1)
+
+(defn- proto->tls-proto
+  "Return equivalent TLS protocol for given protocol"
+  [proto]
+  (case proto
+    "http" "https"
+    "h2c" "h2"
+    proto))
 
 (defn get-port-range
   "0th port in a range of up to 10 for a given service-id's hash.
@@ -1040,16 +1075,34 @@
         log-bucket-sync-secs (if base-bucket-url (:log-bucket-sync-secs context) 0)
         configured-pod-sigkill-delay-secs (max termination-grace-period-secs pod-sigkill-delay-secs)
         total-sigkill-delay-secs (+ configured-pod-sigkill-delay-secs log-bucket-sync-secs)
-        envoy-sidecar-check-fn (:predicate-fn reverse-proxy)
-        has-reverse-proxy? (when reverse-proxy
-                             (envoy-sidecar-check-fn scheduler service-id service-description context))
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
         service-id-hash (hash service-id)
         service-port (get-port-range service-id-hash service-ports-index pod-base-port)
+        reverse-proxy-mode (when-let [envoy-sidecar-check-fn (:predicate-fn reverse-proxy)]
+                             (envoy-sidecar-check-fn scheduler service-id service-description context))
+        has-reverse-proxy? (boolean reverse-proxy-mode)
+        proxy-label (cond
+                      (not has-reverse-proxy?) "disabled"
+                      (keyword? reverse-proxy-mode) (name reverse-proxy-mode)
+                      :else "enabled")
+        raven-force-ingress-tls? (= :strict-tls reverse-proxy-mode)
         port0 (if has-reverse-proxy?
                 (get-port-range service-id-hash proxied-ports-index pod-base-port)
                 service-port)
+        health-check-port (when (pos? health-check-port-index)
+                            (+ service-port health-check-port-index))
+        ;; Determine actual protocols on the service port and health-check port.
+        ;; Note that these may differ from the protocols in the service-description
+        ;; if the Raven sidecar is using TLS where the backend process uses clear text.
+        actual-backend-proto (cond-> backend-proto raven-force-ingress-tls? proto->tls-proto)
+        actual-health-check-proto (if-not health-check-port
+                                    actual-backend-proto
+                                    (cond-> (or health-check-proto backend-proto)
+                                      raven-force-ingress-tls? proto->tls-proto))
+        port->protocol (cond-> {service-port actual-backend-proto}
+                         health-check-port
+                         (assoc health-check-port actual-health-check-proto))
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
                    {:name "MESOS_DIRECTORY" :value home-path}
@@ -1070,12 +1123,14 @@
         k8s-name (service-id->k8s-app-name scheduler service-id)
         revision-timestamp (du/date-to-str (t/now)) ;; we use a monotonically increasing version string
         authenticate-health-check? (retrieve-use-authenticated-health-checks? scheduler service-id)
-        health-check-scheme (-> (or health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
+        liveness-scheme (-> (or health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
+        readiness-scheme (-> (or actual-health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
         health-check-url (sd/service-description->health-check-url service-description)
         memory (str mem "Mi")
         service-hash (service-id->service-hash service-id)
         fileserver-predicate-fn (-> fileserver :predicate-fn)
-        fileserver-enabled? (fileserver-predicate-fn scheduler service-id service-description context)]
+        fileserver-enabled? (fileserver-predicate-fn scheduler service-id service-description context)
+        fileserver-label (if fileserver-enabled? "enabled" "disabled")]
     (cond->
       {:kind "ReplicaSet"
        :apiVersion replicaset-api-version
@@ -1088,8 +1143,8 @@
                                 :waiter/service-id service-id}
                   :labels {:app k8s-name
                            :waiter/cluster cluster-name
-                           :waiter/fileserver (if fileserver-enabled? "enabled" "disabled")
-                           :waiter/proxy-sidecar (if has-reverse-proxy? "enabled" "disabled")
+                           :waiter/fileserver fileserver-label
+                           :waiter/proxy-sidecar proxy-label
                            :waiter/service-hash service-hash
                            :waiter/user run-as-user}
                   :name k8s-name
@@ -1098,11 +1153,14 @@
               :selector {:matchLabels {:app k8s-name
                                        :waiter/user run-as-user}}
               :template {:metadata {:annotations {:waiter/port-count (str ports)
+                                                  :waiter/port-onto-protocol (utils/clj->json port->protocol)
                                                   :waiter/revision-timestamp revision-timestamp
                                                   :waiter/service-id service-id
                                                   :waiter/service-port (str service-port)}
                                     :labels {:app k8s-name
                                              :waiter/cluster cluster-name
+                                             :waiter/fileserver fileserver-label
+                                             :waiter/proxy-sidecar proxy-label
                                              :waiter/service-hash service-hash
                                              :waiter/user run-as-user}}
                          :spec {;; Service account tokens allow easy access to the k8s api server,
@@ -1121,7 +1179,7 @@
                                               :readinessProbe (-> (prepare-health-check-probe
                                                                     service-id->password-fn service-id
                                                                     authenticate-health-check?
-                                                                    health-check-scheme health-check-url
+                                                                    readiness-scheme health-check-url
                                                                     (+ service-port health-check-port-index)
                                                                     health-check-interval-secs)
                                                                 (assoc :failureThreshold 1))
@@ -1141,7 +1199,7 @@
         assoc :livenessProbe (-> (prepare-health-check-probe
                                    service-id->password-fn service-id
                                    authenticate-health-check?
-                                   health-check-scheme health-check-url
+                                   liveness-scheme health-check-url
                                    (+ port0 health-check-port-index)
                                    health-check-interval-secs)
                                (assoc
@@ -1180,7 +1238,7 @@
 
       ;; Optional envoy sidecar container
       has-reverse-proxy?
-      (attach-envoy-sidecar reverse-proxy service-description base-env service-port port0))))
+      (attach-envoy-sidecar reverse-proxy service-description base-env service-port port0 raven-force-ingress-tls?))))
 
 (defn default-pdb-spec-builder
   "Factory function which creates a Kubernetes PodDisruptionBudget spec for the given ReplicaSet."

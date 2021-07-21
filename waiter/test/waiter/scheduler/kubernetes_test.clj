@@ -113,6 +113,7 @@
    "health-check-interval-secs" 10
    "health-check-max-consecutive-failures" 2
    "health-check-port-index" 0
+   "health-check-proto" "http"
    "mem" 1024
    "min-instances" 1
    "ports" 2
@@ -128,7 +129,7 @@
         (instance? Service x)
         (dissoc x :k8s/app-name :k8s/namespace :k8s/replicaset-uid)
         (instance? ServiceInstance x)
-        (dissoc x :k8s/api-server-url :k8s/app-name :k8s/namespace :k8s/pod-name :k8s/restart-count :k8s/user)
+        (dissoc x :k8s/api-server-url :k8s/app-name :k8s/namespace :k8s/pod-name :k8s/port->protocol :k8s/restart-count :k8s/user)
         :else x))
     walkable-collection))
 
@@ -182,6 +183,7 @@
                                             {:service-id->service-description-fn (constantly service-description)})
             replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description)]
         (is (= {:waiter/port-count "3"
+                :waiter/port-onto-protocol "{\"8330\":\"http\",\"8332\":\"http\"}"
                 :waiter/revision-timestamp (du/date-to-str current-time)
                 :waiter/service-id "test-service-id"
                 :waiter/service-port "8330"}
@@ -260,7 +262,7 @@
         (is (contains? (get-in replicaset-spec [:spec :template :metadata :annotations]) :waiter/service-port)))
 
       (testing "sidecar container is present in replicaset"
-        (is (not= nil sidecar-container)))
+        (is (some? sidecar-container)))
 
       (testing "sidecar container has unique entries in environment"
         (is (= (count sidecar-env) (-> sidecar-container :env count))))
@@ -2358,6 +2360,7 @@
                       :k8s/container-statuses [{:name service-id :ready true}]
                       :k8s/namespace "myself"
                       :k8s/pod-name "test-app-1234-abcd1"
+                      :k8s/port->protocol nil
                       :k8s/revision-timestamp revision-timestamp-1
                       :k8s/restart-count 9
                       :k8s/user "myself"}

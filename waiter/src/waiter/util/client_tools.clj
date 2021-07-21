@@ -1245,6 +1245,14 @@
      (doseq [[_# router-url#] (routers waiter-url#)]
        (is (wait-for #(= etag# (token->etag router-url# token# :cookies cookies#)))))))
 
+(defn has-raven-proxy-instance?
+  "Returns true if the service has an active instance with a sidecar proxy."
+  [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
+  (assert-service-on-all-routers waiter-url service-id cookies)
+  (let [instance (active-instances waiter-url service-id :cookies cookies)
+        proxy-mode (:k8s/proxy-sidecar instance)]
+  (not= "disabled" proxy-mode)))
+
 (defn make-chunked-body
   "Returns a channel that receives chunks from the input body string.
    Introducing the delay affects the jetty behavior of converting chunked encoding to non-chunked."

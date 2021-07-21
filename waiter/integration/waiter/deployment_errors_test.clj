@@ -93,9 +93,10 @@
                    :x-waiter-health-check-interval-secs 5
                    :x-waiter-health-check-max-consecutive-failures 1
                    :x-waiter-queue-timeout 600000}
-          response (make-request-with-debug-info headers #(make-shell-request waiter-url % :method :post :path "/waiter-ping"))]
-      (with-service-cleanup
-        (response->service-id response)
+          {:keys [cookies service-id] :as response}
+          (make-request-with-debug-info headers #(make-shell-request waiter-url % :method :post :path "/waiter-ping"))]
+      (do ;with-service-cleanup
+        service-id
         (assert-deployment-error response :cannot-connect)))))
 
 (deftest ^:parallel ^:integration-slow test-health-check-timed-out

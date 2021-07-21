@@ -310,6 +310,9 @@
                                 backend-directory (:log-directory instance)
                                 backend-log-url (when backend-directory
                                                   (generate-log-url-fn instance))
+                                has-raven? (comment TODO (boolean (:proxy-protocol instance)))
+                                direct-port (comment TODO (:??? instance))
+                                direct-proto (comment TODO)
                                 request-date (when request-time
                                                (du/date-to-str request-time du/formatter-rfc822))]
                             (update (auth/attach-authorization-headers response)

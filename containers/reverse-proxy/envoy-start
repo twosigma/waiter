@@ -2,57 +2,122 @@
 # This script takes no argument and uses SERVICE_PORT and PORT0 environment variables
 # to setup /etc/envoy/envoy.yaml file.
 # SERVICE_PORT and PORT0 must be set
-# SERVICE_POROTOCOL is optional (http|h2c, default http)
+# FORCE_TLS_TERMINATION is optional (true|false, default false)
+# HEALTH_CHECK_POROTOCOL is optional (https|http|h2|h2c, default to SERVICE_PROTOCOL)
 # HEALTH_CHECK_PORT_INDEX is optional ([0-9], default 0)
+# SERVICE_POROTOCOL is optional (https|http|h2|h2c, default http)
 
-now() {
-    date -u +%FT%TZ
+: ${CONFIG_DEBUG:=0}
+: ${FORCE_TLS_TERMINATION:=false}
+: ${SERVICE_PROTOCOL:=http}
+: ${HEALTH_CHECK_PORT_INDEX:=0}
+: ${HEALTH_CHECK_PROTOCOL:=${SERVICE_PROTOCOL}}
+
+log() {
+    printf '[%s] %s\n' $(date -u +%FT%TZ) "$*"
+}
+
+die() {
+    log "$@"
+    exit 1
+}
+
+drop_config_section() {
+    awk "
+    /# BEGIN ${1}/ { drop=1 }
+    { if (!drop) { print \$0 } }
+    /# END ${1}/ { drop=0 }
+    " ${CONFIG_YAML} >${CONFIG_YAML_TMP}
+    mv ${CONFIG_YAML_TMP} ${CONFIG_YAML}
+}
+
+is_http2() {
+    echo $1 | grep -iq h2
+}
+
+is_tls() {
+    [ $1 == true ] || ( echo $2 | grep -iqE '^(https|h2)$' )
 }
 
 # check if SERVICE_PORT is present
-if [ "$SERVICE_PORT" ]; then
-  echo "$(now) SERVICE_PORT is set"
+if [ "${SERVICE_PORT}" ]; then
+  log "SERVICE_PORT=${SERVICE_PORT}"
 else
-  echo "$(now) SERVICE_PORT is not set. Exiting envoy-start"
-  exit 1
+  die 'SERVICE_PORT is not set. Exiting envoy-start'
 fi
 
 # check if PORT0 is present
-if [ "$PORT0" ]; then
-  echo "$(now) PORT0 is set"
+if [ "${PORT0}" ]; then
+  log "PORT0=${PORT0}"
 else
-  echo "$(now) PORT0 is not set. Exiting envoy-start"
-  exit 1
+  die 'PORT0 is not set. Exiting envoy-start'
 fi
 
-if [ ${HEALTH_CHECK_PORT_INDEX:-0} -gt 0 ]; then
-    echo "$(now) HEALTH_CHECK_PORT_INDEX is positive: ${HEALTH_CHECK_PORT_INDEX}"
-    PROXY_PORT_COUNT=two-ports
-else
-    PROXY_PORT_COUNT=one-port
-fi
+CONFIG_YAML=/etc/envoy/envoy.yaml
+CONFIG_YAML_TMP=/etc/envoy/envoy.temporary.yaml
+CONFIG_YAML_TEMPLATE=/etc/envoy/envoy.template.yaml
 
-CONFIG_YAML=/etc/envoy/envoy-${PROXY_PORT_COUNT}.yaml
+SSL_KEY=/var/tmp/certs/sidecar.key
+SSL_CERT=/var/tmp/certs/sidecar.cert
 
-echo "$(now) Substituting variables in configuration template"
+mkdir -p $(dirname ${SSL_KEY})
+openssl req -x509 -nodes -days 30 -newkey rsa:2048 \
+  -keyout ${SSL_KEY} -out ${SSL_CERT} \
+  -subj "/CN=$(hostname -f)"
 
-# change the SERVICE_PORT and PORT0 values in /etc/envoy/envoy.yaml to respective env variables
-(
-set -x
-sed -i \
-    -e "s/{{SERVICE_PORT}}/${PORT0}/g" \
+log 'Substituting variables in configuration template'
+sed -e "s/{{SERVICE_PORT}}/${PORT0}/g" \
     -e "s/{{HEALTH_CHECK_PORT}}/$(( PORT0 + HEALTH_CHECK_PORT_INDEX ))/g" \
     -e "s/{{PROXY_SERVICE_PORT}}/${SERVICE_PORT}/g" \
     -e "s/{{PROXY_HEALTH_CHECK_PORT}}/$(( SERVICE_PORT + HEALTH_CHECK_PORT_INDEX ))/g" \
-    ${CONFIG_YAML}
-)
+    -e "s/{{HOST}}/$(hostname -f)/g" \
+    -e "s%{{SSL_KEY}}%${SSL_KEY}%g" \
+    -e "s%{{SSL_CERT}}%${SSL_CERT}%g" \
+    ${CONFIG_YAML_TEMPLATE} >${CONFIG_YAML}
 
-# disable http2 upstream for non-http2 backends
-( echo "${SERVICE_PROTOCOL}" | grep -iq h2 ) || (
-set -x
-sed -i '/http2_protocol_options/d' ${CONFIG_YAML}
-)
+if [ ${HEALTH_CHECK_PORT_INDEX} -gt 0 ]; then
+    log "HEALTH_CHECK_PORT_INDEX is positive: ${HEALTH_CHECK_PORT_INDEX}"
+else
+    log 'Removing separate health-check port'
+    drop_config_section 'health-check backend'
+fi
 
-# start envoy with /etc/envoy/envoy.yaml config file
-echo "$(now) Starting envoy"
+# use either http1 or http2 to talk to back-end cluster
+if is_http2 ${SERVICE_PROTOCOL}; then
+    log 'Removing http1 options for http2 cluster'
+    sed -i -E '/# WHEN (up|down)stream-http1/d' ${CONFIG_YAML}
+else
+    log 'Removing http2 options for http1 cluster'
+    sed -i -E '/# WHEN (up|down)stream-http2/d' ${CONFIG_YAML}
+fi
+
+if ! is_tls false ${SERVICE_PROTOCOL}; then
+    log 'Removing app upstream TLS options'
+    drop_config_section 'app upstream-tls'
+fi
+
+if ! is_tls false ${HEALTH_CHECK_PROTOCOL}; then
+    log 'Removing health-check upstream TLS options'
+    drop_config_section 'health-check upstream-tls'
+fi
+
+if ! is_tls ${FORCE_TLS_TERMINATION} ${SERVICE_PROTOCOL}; then
+    log 'Removing app downstream TLS options'
+    drop_config_section 'app downstream-tls'
+fi
+
+if ! is_tls ${FORCE_TLS_TERMINATION} ${HEALTH_CHECK_PROTOCOL}; then
+    log 'Removing health-check downstream TLS options'
+    drop_config_section 'health-check downstream-tls'
+fi
+
+if [[ ${CONFIG_DEBUG} != 0 ]]; then
+    log 'Dumping final envoy config yaml'
+    echo '>>>>>'
+    cat ${CONFIG_YAML}
+    echo '<<<<<'
+fi
+
+# start envoy with config file
+log 'Starting envoy'
 exec envoy -c ${CONFIG_YAML} --base-id 1

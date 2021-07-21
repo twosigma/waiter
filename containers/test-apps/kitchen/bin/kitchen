@@ -588,6 +588,8 @@ class Kitchen(HTTPWebSocketsHandler):
             for k, v in self.__headers.items():
                 if k.lower() not in self.__excluded_headers:
                     self.send_header(k, v)
+            for trailer_key, _ in self.__response_trailers.items():
+                self.send_header('Trailer', trailer_key)
             self.end_headers()
 
             if response_bytes is not None:

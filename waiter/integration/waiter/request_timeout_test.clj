@@ -20,7 +20,8 @@
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [waiter.status-codes :refer :all]
-            [waiter.util.client-tools :refer :all])
+            [waiter.util.client-tools :refer :all]
+            [waiter.util.utils :as utils])
   (:import java.util.concurrent.CountDownLatch))
 
 (defmacro assert-failed-request [service-name response-body start-time-ms timeout-period-sec unhealthy-app?]
@@ -102,10 +103,15 @@
                 {:keys [headers] :as response} (make-kitchen-request waiter-url extra-headers :path "/die")
                 response-body (:body response)
                 error-message (-> (waiter-settings waiter-url) :messages :backend-request-failed)]
-            (assert-response-status response http-502-bad-gateway)
-            (is error-message)
-            (is (str/includes? response-body error-message))
-            (is (not (str/blank? (get headers "server"))))
+            (if-let [raven-flags (utils/raven-response-flags response)]
+              (do
+                (assert-response-status response http-503-service-unavailable)
+                (is (= raven-flags utils/envoy-upstream-connection-termination)))
+              (do
+                (is error-message)
+                (assert-response-status response http-502-bad-gateway)
+                (is (str/includes? response-body error-message))
+                (is (not (str/blank? (get headers "server"))))))
             (is (not (str/blank? (get headers "x-waiter-backend-id"))))
             (is (not (str/blank? (get headers "x-waiter-backend-host"))))
             (is (not (str/blank? (get headers "x-waiter-backend-port"))))

@@ -45,6 +45,14 @@
            (org.joda.time DateTime)
            (schema.utils ValidationError)))
 
+;; Envoy "%RESPONSE_FLAGS%" values returned by Raven for error diagnostics
+;; https://www.envoyproxy.io/docs/envoy/latest/configuration/observability/access_log/usage#config-access-log-format-response-flags
+(def ^:const envoy-empty-response-flags "-")
+(def ^:const envoy-stream-idle-timeout "SI")
+(def ^:const envoy-upstream-connection-failure "UF")
+(def ^:const envoy-upstream-connection-termination "UC")
+(def ^:const envoy-upstream-request-timeout "UT")
+
 (defn select-keys-pred
   "Returns a map with only the keys, k, for which (pred k) is true."
   [pred m]
@@ -865,3 +873,28 @@
   [names]
   (let [filter-fns (map str->filter-fn names)]
     (fn [value] (some #(%1 value) filter-fns))))
+
+(defn string-yes?
+  "Check if string matches a yes-like value."
+  [s]
+  (some? (re-find #"^(?:[TtYy]|[Oo][Nn])" (str s))))
+
+(defn string-no?
+  "Check if string matches a no-like value."
+  [s]
+  (some? (re-find #"^(?:[FfNn]|[Oo][Ff])" (str s))))
+
+(defn raven-response-flags
+  "Returns the response flags from a backend sidecar proxy,
+   and nil when no flags were set or no backend proxy is present.
+   See the Envoy Proxy documentation for details on the response flags format:
+   https://www.envoyproxy.io/docs/envoy/latest/configuration/observability/access_log/usage#config-access-log-format-response-flags"
+  [response]
+  (when-let [result (get-in response [:headers "x-raven-response-flags"])]
+    (when (not= result envoy-empty-response-flags)
+      result)))
+
+(defn raven-proxy-response?
+  "Returns true if the response is from a backend sidecar proxy."
+  [response]
+  (boolean (get-in response [:headers "x-raven-response-flags"])))
