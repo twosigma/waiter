@@ -84,6 +84,12 @@
         service-id->scheduler
         (scheduler/deployment-error-config service-id)))
 
+  (request-protocol [_ instance port-index service-description]
+    (-> instance
+        :service-id
+        service-id->scheduler
+        (scheduler/request-protocol instance port-index service-description)))
+
   (scale-service [_ service-id target-instances force]
     (-> service-id
         service-id->scheduler

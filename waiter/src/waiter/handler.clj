@@ -93,13 +93,13 @@
 (defn async-make-request-helper
   "Helper function that returns a function that can invoke make-request-fn."
   [http-clients instance-request-properties make-basic-auth-fn service-id->password-fn prepare-request-properties-fn make-request-fn]
-  (fn async-make-request-fn [instance {:keys [headers] :as request} end-route metric-group backend-proto]
+  (fn async-make-request-fn [instance {:keys [headers] :as request} end-route metric-group request-proto]
     (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers headers)
           instance-request-properties (prepare-request-properties-fn instance-request-properties waiter-headers)
-          proto-version (hu/backend-protocol->http-version backend-proto)]
+          proto-version (hu/backend-protocol->http-version request-proto)]
       (make-request-fn http-clients make-basic-auth-fn service-id->password-fn instance request
                        instance-request-properties passthrough-headers end-route metric-group
-                       backend-proto proto-version))))
+                       request-proto proto-version))))
 
 (defn- async-make-http-request
   "Helper function for async status/result handlers."

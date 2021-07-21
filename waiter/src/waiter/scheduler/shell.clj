@@ -311,11 +311,10 @@
 
 (defn perform-health-check
   "Runs a synchronous health check against instance and returns true if it was successful"
-  [{:keys [port] :as instance} health-check-proto health-check-port-index health-check-path http-client]
+  [scheduler {:keys [port] :as instance} service-description http-client]
   (if (pos? port)
     (let [_ (log/debug "running health check against" instance)
-          instance-health-check-url (scheduler/build-health-check-url
-                                      instance health-check-proto health-check-port-index health-check-path)
+          instance-health-check-url (scheduler/build-health-check-url scheduler instance service-description)
           {:keys [status error] :as response} (async/<!! (http/get http-client instance-health-check-url))]
       (scheduler/log-health-check-issues instance instance-health-check-url response)
       (and (not error) (hu/status-2XX? status)))
@@ -323,9 +322,9 @@
 
 (defn- update-instance-health
   "Runs a health check against instance"
-  [instance health-check-proto health-check-port-index health-check-url http-client]
+  [scheduler instance service-description http-client]
   (if (active? instance)
-    (assoc instance :healthy? (perform-health-check instance health-check-proto health-check-port-index health-check-url http-client))
+    (assoc instance :healthy? (perform-health-check scheduler instance service-description http-client))
     instance))
 
 (defn- alive?
@@ -443,7 +442,7 @@
 
 (defn update-service-health
   "Runs health checks against all active instances of service and returns the updated service-entry"
-  [id->service scheduler-name port->reservation-atom port-grace-period-ms http-client]
+  [id->service scheduler scheduler-name port->reservation-atom port-grace-period-ms http-client]
   (try
     (timers/start-stop-time!
       (metrics/waiter-timer "scheduler" scheduler-name "update-health")
@@ -451,9 +450,8 @@
             exit-codes-check #(associate-exit-codes % port->reservation-atom port-grace-period-ms)]
         (reduce
           (fn [id->service' {:keys [service id->instance] :as service-entry}]
-            (let [{:strs [backend-proto health-check-port-index health-check-proto health-check-url grace-period-secs]} (:service-description service)
-                  protocol (or health-check-proto backend-proto)
-                  health-check #(update-instance-health % protocol health-check-port-index health-check-url http-client)
+            (let [{:strs [grace-period-secs] :as service-description} (:service-description service)
+                  health-check #(update-instance-health scheduler % service-description http-client)
                   limits-check #(enforce-instance-limits % (:shell-scheduler/mem service) pid->memory port->reservation-atom port-grace-period-ms)
                   grace-period-check #(enforce-grace-period % grace-period-secs port->reservation-atom port-grace-period-ms)
                   id->instance' (pc/map-vals (comp grace-period-check health-check limits-check exit-codes-check) id->instance)
@@ -469,12 +467,12 @@
 
 (defn- start-updating-health
   "Runs health checks against all active instances of all services in a loop"
-  [scheduler-name id->service-agent port->reservation-atom port-grace-period-ms timeout-ms http-client]
+  [scheduler scheduler-name id->service-agent port->reservation-atom port-grace-period-ms timeout-ms http-client]
   (log/info "starting update-health")
   (du/start-timer-task
     (t/millis timeout-ms)
     (fn []
-      (send id->service-agent update-service-health scheduler-name port->reservation-atom port-grace-period-ms http-client))))
+      (send id->service-agent update-service-health scheduler scheduler-name port->reservation-atom port-grace-period-ms http-client))))
 
 (defn- set-service-scale
   "Given the current id->service map, sets the scale of the service-id to the
@@ -662,6 +660,9 @@
 
   (deployment-error-config [_ _]
     (comment ":deployment-error-config overrides currently not supported."))
+
+  (request-protocol [_ _ port-index service-description]
+    (scheduler/port-index-protocol port-index service-description))
 
   (scale-service [this service-id scale-to-instances _]
     (if (scheduler/service-exists? this service-id)
@@ -874,6 +875,6 @@
                    (fn backup-state-watch [_ _ id->service id->service']
                      (when-not (= id->service id->service')
                        (backup-state scheduler-name id->service' @port->reservation-atom backup-file-path))))))
-    (start-updating-health scheduler-name id->service-agent port->reservation-atom port-grace-period-ms health-check-interval-ms http-client)
+    (start-updating-health scheduler scheduler-name id->service-agent port->reservation-atom port-grace-period-ms health-check-interval-ms http-client)
     (start-retry-failed-instances scheduler-name id->service-agent port->reservation-atom port-range failed-instance-retry-interval-ms)
     scheduler))

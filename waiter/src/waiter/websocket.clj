@@ -255,7 +255,7 @@
 (defn make-request
   "Makes an asynchronous websocket request to the instance endpoint and returns a channel."
   [websocket-client service-id->password-fn {:keys [host port] :as instance} {:keys [query-string] :as ws-request}
-   request-properties passthrough-headers end-route _ backend-proto proto-version]
+   request-properties passthrough-headers end-route _ request-proto proto-version]
   (let [ws-middleware (fn ws-middleware [_ ^UpgradeRequest request]
                         (let [service-password (-> instance scheduler/instance->service-id service-id->password-fn)
                               {:keys [authorization/metadata authorization/principal]} ws-request
@@ -278,7 +278,7 @@
                                        :middleware ws-middleware}
                                 (not (str/blank? sec-websocket-protocol))
                                 (assoc :subprotocols (str/split sec-websocket-protocol #",")))
-        ws-protocol (if (= "https" (hu/backend-proto->scheme backend-proto)) "wss" "ws")
+        ws-protocol (if (= "https" (hu/backend-proto->scheme request-proto)) "wss" "ws")
         instance-url (cond-> (scheduler/end-point-url ws-protocol host port end-route)
                        (not (str/blank? query-string))
                        (str "?" query-string))

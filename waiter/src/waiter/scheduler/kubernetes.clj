@@ -804,6 +804,9 @@
     ;; container restarts repeadly within a single Pod, normally not switching hosts.
     {:min-hosts 1})
 
+  (request-protocol [_ _ port-index service-description]
+    (scheduler/port-index-protocol port-index service-description))
+
   (scale-service [this service-id scale-to-instances _]
     (ss/try+
       (if-let [service (service-id->service this service-id)]

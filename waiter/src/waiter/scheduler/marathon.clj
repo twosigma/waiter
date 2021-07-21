@@ -415,6 +415,9 @@
   (deployment-error-config [_ _]
     (comment ":deployment-error-config overrides currently not supported."))
 
+  (request-protocol [_ _ port-index service-description]
+    (scheduler/port-index-protocol port-index service-description))
+
   (scale-service [_ service-id scale-to-instances force]
     (ss/try+
       (scheduler/suppress-transient-server-exceptions

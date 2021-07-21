@@ -550,14 +550,19 @@
   (let [http-client (HttpClient.)
         service-password "test-password"
         service-id->password-fn (constantly service-password)
+        scheduler (reify ServiceScheduler
+                    (request-protocol [_ _ i sd]
+                      (port-index-protocol i sd)))
+        scheduler-promise-chan (au/singleton-chan scheduler)
         scheduler-name "test-scheduler"
         waiter-principal "waiter@test.com"
         health-check-proto "http"
         available-fn? (fn available-fn? [service-instance service-description]
-                        (available? service-id->password-fn http-client scheduler-name
-                                    service-instance service-description))
+                        (available? service-id->password-fn http-client scheduler-promise-chan
+                                    scheduler-name service-instance service-description))
         service-instance {:extra-ports [81] :host "www.example.com" :port 80}
-        service-description {"health-check-proto" health-check-proto
+        service-description {"backend-proto" health-check-proto
+                             "health-check-proto" health-check-proto
                              "health-check-port-index" 0
                              "health-check-url" "/health-check"}]
 

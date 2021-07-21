@@ -66,15 +66,17 @@
       first
       :task-stats))
 
+(def ^:const max-agent-wait-ms (-> 1 t/minutes t/in-millis))
+
 (defn- ensure-agent-finished
   "Awaits the scheduler's agent"
   [{:keys [id->service-agent]}]
-  (await id->service-agent))
+  (is (await-for max-agent-wait-ms id->service-agent)))
 
 (defn- force-update-service-health
   "Forces a call to update-service-health"
   [{:keys [id->service-agent port->reservation-atom scheduler-name] :as scheduler} {:keys [port-grace-period-ms]}]
-  (send id->service-agent update-service-health scheduler-name port->reservation-atom port-grace-period-ms nil)
+  (send id->service-agent update-service-health scheduler scheduler-name port->reservation-atom port-grace-period-ms nil)
   (ensure-agent-finished scheduler))
 
 (defn- force-maintain-instance-scale

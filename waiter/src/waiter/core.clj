@@ -864,8 +864,10 @@
                                      (f))))))))))})
 
 (def scheduler
-  {:scheduler (pc/fnk [[:settings scheduler-config scheduler-syncer-interval-secs]
+  {:scheduler-promise-chan (pc/fnk [] (async/promise-chan))
+   :scheduler (pc/fnk [[:settings scheduler-config scheduler-syncer-interval-secs]
                        [:state custom-components leader?-fn scheduler-state-chan service-id-prefix]
+                       scheduler-promise-chan
                        service-id->password-fn*
                        service-id->service-description-fn*
                        start-scheduler-syncer-fn]
@@ -880,8 +882,10 @@
                                          :scheduler-syncer-interval-secs scheduler-syncer-interval-secs
                                          :service-id->password-fn service-id->password-fn*
                                          :service-id->service-description-fn service-id->service-description-fn*
-                                         :start-scheduler-syncer-fn start-scheduler-syncer-fn}]
-                  (utils/create-component scheduler-config :context scheduler-context)))
+                                         :start-scheduler-syncer-fn start-scheduler-syncer-fn}
+                      scheduler (utils/create-component scheduler-config :context scheduler-context)]
+                  (async/>!! scheduler-promise-chan scheduler)
+                  scheduler))
    ; This function is only included here for initializing the scheduler above.
    ; Prefer accessing the non-starred version of this function through the routines map.
    :service-id->password-fn* (pc/fnk [[:state passwords]]
@@ -897,7 +901,7 @@
                                               service-description-builder kv-store service-id :effective? effective?)))
    :start-scheduler-syncer-fn (pc/fnk [[:settings [:health-check-config health-check-timeout-ms failed-check-threshold]]
                                        [:state clock user-agent-version]
-                                       service-id->password-fn* service-id->service-description-fn*]
+                                       scheduler-promise-chan service-id->password-fn* service-id->service-description-fn*]
                                 (let [http-client (hu/http-client-factory
                                                     {:client-name (str "waiter-syncer-" user-agent-version)
                                                      :conn-timeout health-check-timeout-ms
@@ -905,7 +909,7 @@
                                                      :user-agent (str "waiter-syncer/" user-agent-version)})
                                       available? (fn scheduler-available?
                                                    [scheduler-name service-instance service-description]
-                                                   (scheduler/available? service-id->password-fn* http-client
+                                                   (scheduler/available? service-id->password-fn* http-client scheduler-promise-chan
                                                                          scheduler-name service-instance service-description))]
                                   (fn start-scheduler-syncer-fn
                                     [scheduler-name get-service->instances-fn scheduler-state-chan trigger-chan]
@@ -1295,6 +1299,7 @@
                                   populate-maintainer-chan!))
    ;; This function is defined in daemons as it depends upon from daemons/populate-maintainer-chan!.
    :post-process-async-request-response-fn (pc/fnk [[:routines make-http-request-fn]
+                                                    [:scheduler scheduler]
                                                     [:settings waiter-principal]
                                                     [:state async-request-store-atom router-id user-agent-version]
                                                     populate-maintainer-chan!]
@@ -1304,7 +1309,7 @@
                                                  [response descriptor instance _
                                                   reason-map request-properties location query-string]
                                                  (async-req/post-process-async-request-response
-                                                   router-id async-request-store-atom make-http-request-fn auth-params-map
+                                                   scheduler router-id async-request-store-atom make-http-request-fn auth-params-map
                                                    populate-maintainer-chan! user-agent response descriptor instance
                                                    reason-map request-properties location query-string))))
    :router-list-maintainer (pc/fnk [[:settings router-syncer]
@@ -1460,17 +1465,18 @@
                                      (auth/process-auth-keep-alive-request token->token-parameters waiter-hostnames password auth-handler request))))
    :default-websocket-handler-fn (pc/fnk [[:daemons populate-maintainer-chan!]
                                           [:routines determine-priority-fn service-id->password-fn start-new-service-fn]
+                                          [:scheduler scheduler]
                                           [:settings instance-request-properties]
                                           [:state local-usage-agent passwords websocket-client]
                                           wrap-descriptor-fn]
                                    (let [password (first passwords)
                                          make-request-fn (fn make-ws-request
                                                            [instance request request-properties passthrough-headers end-route metric-group
-                                                            backend-proto proto-version]
+                                                            request-proto proto-version]
                                                            (ws/make-request websocket-client service-id->password-fn instance request request-properties
-                                                                            passthrough-headers end-route metric-group backend-proto proto-version))
+                                                                            passthrough-headers end-route metric-group request-proto proto-version))
                                          process-request-fn (fn process-request-fn [request]
-                                                              (pr/process make-request-fn populate-maintainer-chan! start-new-service-fn
+                                                              (pr/process scheduler make-request-fn populate-maintainer-chan! start-new-service-fn
                                                                           instance-request-properties determine-priority-fn ws/process-response!
                                                                           ws/abort-request-callback-factory local-usage-agent request))]
                                      (->> process-request-fn
@@ -1551,17 +1557,18 @@
                          (process-request-wrapper-fn process-request-handler-fn))
    :process-request-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! post-process-async-request-response-fn]
                                         [:routines determine-priority-fn make-basic-auth-fn service-id->password-fn start-new-service-fn]
+                                        [:scheduler scheduler]
                                         [:settings instance-request-properties]
                                         [:state http-clients local-usage-agent]]
                                  (let [make-request-fn (fn [instance request request-properties passthrough-headers end-route metric-group
-                                                            backend-proto proto-version]
+                                                            request-proto proto-version]
                                                          (pr/make-request
                                                            http-clients make-basic-auth-fn service-id->password-fn
                                                            instance request request-properties passthrough-headers end-route metric-group
-                                                           backend-proto proto-version))
+                                                           request-proto proto-version))
                                        process-response-fn (partial pr/process-http-response post-process-async-request-response-fn)]
                                    (fn inner-process-request [request]
-                                     (pr/process make-request-fn populate-maintainer-chan! start-new-service-fn
+                                     (pr/process scheduler make-request-fn populate-maintainer-chan! start-new-service-fn
                                                  instance-request-properties determine-priority-fn process-response-fn
                                                  pr/abort-http-request-callback-factory local-usage-agent request))))
    :process-request-wrapper-fn (pc/fnk [[:routines wrap-service-discovery-fn]
