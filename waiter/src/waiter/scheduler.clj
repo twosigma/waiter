@@ -339,10 +339,10 @@
     (utils/raven-proxy-response? response)
     (when-let [raven-error (utils/raven-response-flags response)]
       (cond
-        (= raven-error utils/envoy-upstream-connection-failure) :connect-exception
-        (= raven-error utils/envoy-upstream-connection-termination) :hangup-exception
-        (= raven-error utils/envoy-stream-idle-timeout) :timeout-exception
-        (= raven-error utils/envoy-upstream-request-timeout) :timeout-exception))))
+        (= raven-error envoy-upstream-connection-failure) :connect-exception
+        (= raven-error envoy-upstream-connection-termination) :hangup-exception
+        (= raven-error envoy-stream-idle-timeout) :timeout-exception
+        (= raven-error envoy-upstream-request-timeout) :timeout-exception))))
 
 (defn available?
   "Async go block which returns the status code and success of a health check.

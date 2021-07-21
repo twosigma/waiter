@@ -117,6 +117,7 @@
    "health-check-interval-secs" 10
    "health-check-max-consecutive-failures" 2
    "health-check-port-index" 0
+   "health-check-proto" "http"
    "mem" 1024
    "min-instances" 1
    "ports" 2
@@ -132,7 +133,7 @@
         (instance? Service x)
         (dissoc x :k8s/app-name :k8s/namespace :k8s/replicaset-uid)
         (instance? ServiceInstance x)
-        (dissoc x :k8s/api-server-url :k8s/app-name :k8s/namespace :k8s/pod-name :k8s/restart-count :k8s/user)
+        (dissoc x :k8s/api-server-url :k8s/app-name :k8s/namespace :k8s/pod-name :k8s/port->protocol :k8s/raven :k8s/restart-count :k8s/user)
         :else x))
     walkable-collection))
 
@@ -187,6 +188,7 @@
                                             {:service-id->service-description-fn (constantly service-description)})
             replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description {})]
         (is (= {:waiter/port-count "3"
+                :waiter/port-onto-protocol "{\"8330\":\"http\",\"8332\":\"http\"}"
                 :waiter/revision-timestamp (du/date-to-str current-time)
                 :waiter/revision-version "0"
                 :waiter/service-id "test-service-id"
@@ -295,7 +297,7 @@
         (is (contains? (get-in replicaset-spec [:spec :template :metadata :annotations]) :waiter/service-port)))
 
       (testing "sidecar container is present in replicaset"
-        (is (not= nil sidecar-container)))
+        (is (some? sidecar-container)))
 
       (testing "sidecar container has unique entries in environment"
         (is (= (count sidecar-env) (-> sidecar-container :env count))))
@@ -343,6 +345,54 @@
 
       (testing "raven pod container image is correct"
         (is (= "twosigma/waiter-raven" (:image sidecar-container)))))))
+
+(deftest test-raven-env-flags
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                config/retrieve-waiter-principal (constantly "waiter@test.com")]
+    (let [service-id "raven-test-service-id"
+          custom-raven-flag "MY_RAVEN_FLAG"
+          custom-raven-tls-flag "MY_RAVEN_TLS_FLAG"
+          scheduler (make-dummy-scheduler [service-id] {:raven-sidecar {:cmd ["/opt/waiter/raven/bin/raven-start"]
+                                                                        :env-vars {:flags [custom-raven-flag]
+                                                                                   :tls-flags [custom-raven-tls-flag]}
+                                                                        :image "twosigma/waiter-raven"
+                                                                        :predicate-fn raven-sidecar-opt-in?
+                                                                        :resources {:cpu 0.1 :mem 256}}})]
+      (doseq [raven? [true false]
+              tls? [true false]]
+        (let [service-description (assoc dummy-service-description "env" {custom-raven-flag (str raven?)
+                                                                          custom-raven-tls-flag (str tls?)
+                                                                          "PORT0" "to-be-overwritten"
+                                                                          "SERVICE_PORT" "to-be-overwritten"})
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description {})
+              app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
+              app-env (get-container-env-map app-container)
+              readiness-probe-scheme (get-in app-container [:readinessProbe :httpGet :scheme])
+              liveness-probe-scheme (get-in app-container [:livenessProbe :httpGet :scheme])
+              raven-container (some
+                                #(if (= waiter-raven-sidecar-name (:name %)) %)
+                                (get-in replicaset-spec [:spec :template :spec :containers]))]
+
+          (testing "raven opt-in flag recognized in service env"
+            (is (has-raven-config-in-env? app-env (:raven-sidecar scheduler))))
+
+          (testing "waiter/raven label is set"
+            (let [raven-mode (get-in replicaset-spec [:metadata :labels :waiter/raven])]
+              (cond
+                (not raven?) (is (= "disabled" raven-mode))
+                (not tls?) (is (= "enabled" raven-mode))
+                :else (is (= "strict-tls" raven-mode)))))
+
+          (testing "raven container present iff raven is enabled"
+            (is (= raven? (some? raven-container))))
+
+          (testing "liveness probe protocol is correct (always unproxied)"
+            (is (= "HTTP" liveness-probe-scheme)))
+
+          (testing "readiness probe protocol is correct (can be proxied)"
+            (if (and raven? tls?)
+              (is (= "HTTPS" readiness-probe-scheme))
+              (is (= "HTTP" readiness-probe-scheme)))))))))
 
 (deftest test-replicaset-spec-with-raven-health-check
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
@@ -2492,6 +2542,8 @@
                       :k8s/container-statuses [{:name waiter-primary-container-name :ready true}]
                       :k8s/namespace "myself"
                       :k8s/pod-name "test-app-1234-abcd1"
+                      :k8s/port->protocol nil
+                      :k8s/raven "disabled"
                       :k8s/revision-timestamp revision-timestamp-1
                       :k8s/restart-count 9
                       :k8s/user "myself"}

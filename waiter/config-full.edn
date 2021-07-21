@@ -516,7 +516,10 @@
                                                             ;; "false"-like values disable raven
                                                             :flags ["RAVEN_ENABLED"]
                                                             ;; configuring a raven feature implicitly enables raven
-                                                            :features ["RAVEN_OVERRIDE_IMAGE"]}
+                                                            :features ["RAVEN_OVERRIDE_IMAGE"]
+                                                            ;; flag env vars for specifically toggling tls downstream on/off
+                                                            ;; (these do not enable the raven sidecar on their own)
+                                                            :tls-flags ["RAVEN_FORCE_INGRESS_TLS"]}
                                                  :image "twosigma/waiter-raven"
                                                  :predicate-fn waiter.scheduler.kubernetes/raven-sidecar-opt-in?
                                                  :resources {:cpu 0.1 :mem 256}}

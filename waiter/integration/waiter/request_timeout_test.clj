@@ -106,7 +106,7 @@
             (if-let [raven-flags (utils/raven-response-flags response)]
               (do
                 (assert-response-status response http-503-service-unavailable)
-                (is (= raven-flags utils/envoy-upstream-connection-termination)))
+                (is (= raven-flags envoy-upstream-connection-termination)))
               (do
                 (is error-message)
                 (assert-response-status response http-502-bad-gateway)

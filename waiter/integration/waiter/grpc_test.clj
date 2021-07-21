@@ -130,12 +130,12 @@
   "Asserts that the status represents a grpc OK status."
   [status message assertion-message]
   `(let [status# ~status
-         message# ~message
+         msg# ~message
          assertion-message# ~assertion-message]
      (is status# assertion-message#)
      (when status#
        (is (= "CANCELLED" (-> status# .getCode str)) assertion-message#)
-       (is (= message# (.getDescription status#)) assertion-message#))))
+       (is (= msg# (.getDescription status#)) assertion-message#))))
 
 (defmacro assert-grpc-deadline-exceeded-status
   "Asserts that the status represents a grpc OK status."

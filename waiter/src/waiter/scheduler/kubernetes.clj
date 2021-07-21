@@ -343,8 +343,12 @@
           service-id (k8s-object->service-id pod)
           instance-id (pod->instance-id pod primary-container-restart-count)
           node-name (get-in pod [:spec :nodeName])
-          port0 (or (some-> (get-in pod [:metadata :annotations :waiter/service-port]) (Integer/parseInt))
+          pod-labels (get-in pod [:metadata :labels])
+          pod-annotations (get-in pod [:metadata :annotations])
+          port0 (or (some-> pod-annotations :waiter/service-port (Integer/parseInt))
                     (get-in pod [:spec :containers 0 :ports 0 :containerPort]))
+          port->protocol (some-> pod-annotations :waiter/port-onto-protocol utils/try-parse-json)
+          raven-mode (get pod-labels :waiter/raven "disabled")
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
                           (k8s-object->namespace pod))
@@ -361,7 +365,6 @@
           pod-restart-count (if (seq unready-init-containers-statuses)
                               (reduce max (map :restartCount unready-init-containers-statuses))
                               primary-container-restart-count)
-          pod-annotations (get-in pod [:metadata :annotations])
           pod-started-at (-> pod (get-in [:status :startTime]) timestamp-str->datetime)
           {:keys [waiter/revision-timestamp waiter/revision-version]} (get-in pod [:metadata :annotations])
           pod-name (k8s-object->id pod)
@@ -381,6 +384,8 @@
                               :k8s/app-name (get-in pod [:metadata :labels :app])
                               :k8s/namespace (k8s-object->namespace pod)
                               :k8s/pod-name pod-name
+                              :k8s/port->protocol port->protocol
+                              :k8s/raven raven-mode
                               :k8s/restart-count primary-container-restart-count
                               :k8s/user run-as-user
                               :log-directory (log-dir-path run-as-user primary-container-restart-count)
@@ -854,8 +859,10 @@
     ;; container restarts repeatedly within a single Pod, normally not switching hosts.
     {:min-hosts 1})
 
-  (request-protocol [_ _ port-index service-description]
-    (scheduler/retrieve-protocol port-index service-description))
+  (request-protocol [_ {:keys [k8s/port->protocol port] :as instance} port-index service-description]
+    (if port->protocol
+      (get port->protocol (str (+ port port-index)))
+      (scheduler/retrieve-protocol port-index service-description)))
 
   (use-authenticated-health-checks? [this service-id]
     (retrieve-use-authenticated-health-checks? this service-id))
@@ -1006,6 +1013,7 @@
    :timeoutSeconds 1})
 
 (def ^:const default-raven-env-flag "RAVEN_ENABLED")
+(def ^:const default-raven-tls-env-flag "RAVEN_FORCE_INGRESS_TLS")
 
 (defn has-raven-config-in-env?
   "Check if the env has any explicit raven sidecar config."
@@ -1018,58 +1026,87 @@
    Returns the first env var name and value matched
    as {:name var-name :match match-fn-result},
    or default-result if none of the configured env vars are found."
-  [env {{:keys [flags features]} :env-vars :as x} default-result]
-  (or (first (for [flag flags
-                   :let [flag-value (get env flag)]
-                   :when (some? flag-value)]
-               {:name flag :match (utils/match-yes-like flag-value)}))
-      (first (for [feature features
-                   :let [feature-value (get env feature)]
-                   :when (some? feature-value)]
-               {:name feature :match feature-value}))
-      default-result))
+  [env {{:keys [flags features tls-flags]} :env-vars} default-result]
+  (merge
+    default-result
+    ;; sidecar on/off
+    (or (first (for [flag flags
+                     :let [flag-value (get env flag)]
+                     :when (some? flag-value)]
+                 {:name flag :match (utils/match-yes-like flag-value)}))
+        (first (for [feature features
+                     :let [feature-value (get env feature)]
+                     :when (some? feature-value)]
+                 {:name feature :match feature-value})))
+    ;; strict-tls on/off
+    (first (for [flag tls-flags
+                 :let [flag-value (get env flag)]
+                 :when (some? flag-value)]
+             {:tls-name flag :tls-match (utils/match-yes-like flag-value)}))))
+
+(defn raven-mode-helper
+  "Returns one of the following based on env flags set:
+   - nil when Raven is disabled
+   - :strict-tls when Raven is enabled with tls enforced on the downstream connection
+     (i.e., forced tls ingress on the pod via the Raven sidecar)
+   - :enabled when Raven is enabled, but configured to use tls only when the upstream service is also using tls"
+  [env raven-sidecar-config default-env-match]
+  (let [{:keys [match tls-match]} (raven-env-config-helper env raven-sidecar-config default-env-match)]
+    (when match
+      (if tls-match :strict-tls :enabled))))
 
 (defn raven-sidecar-opt-in?
   "Returns nil to disable the raven sidecar unless explicitly enabled."
   [{raven-sidecar-config :raven-sidecar} _ {:strs [env]} _]
-  (when (:match (raven-env-config-helper env raven-sidecar-config nil))
-    :enabled))
+  (raven-mode-helper env raven-sidecar-config nil))
 
 (defn raven-sidecar-opt-out?
   "Returns :enabled to enable the raven sidecar unless explicitly disabled."
   [{raven-sidecar-config :raven-sidecar} _ {:strs [env]} _]
-  (when (:match (raven-env-config-helper env raven-sidecar-config {:match :enabled}))
-    :enabled))
+  (raven-mode-helper env raven-sidecar-config {:match "yes"}))
+
+(defn raven-sidecar-strict-tls-opt-out?
+  "Always returns :strict-tls to enable the raven sidecar with TLS, unless explicitly disabled."
+  [{raven-sidecar-config :raven-sidecar} _ {:strs [env]} _]
+  (raven-mode-helper env raven-sidecar-config {:match "yes" :tls-match "yes"}))
 
 (defn attach-raven-sidecar
   "Attaches raven sidecar to replicaset"
   [replicaset raven-sidecar
    {:strs [backend-proto health-check-port-index health-check-proto] :as service-description}
-   base-env service-port port0]
+   base-env service-port port0 force-tls?]
   (update-in replicaset
-    [:spec :template :spec :containers]
-    conj
-    (let [{:keys [cmd resources image]} raven-sidecar
-          user-env (:env service-description)
-          env-map (-> user-env
-                      (merge base-env)
-                      (assoc "HEALTH_CHECK_PORT_INDEX" (str health-check-port-index)
-                             "HEALTH_CHECK_PROTOCOL" health-check-proto
-                             "PORT0" (str port0)
-                             "SERVICE_PORT" (str service-port)
-                             "SERVICE_PROTOCOL" backend-proto))
-          env (into []
-                    (concat (for [[k v] env-map]
-                              {:name k :value v})))
-          raven-container {:command cmd
-                           :env env
-                           :image image
-                           :imagePullPolicy "IfNotPresent"
-                           :name waiter-raven-sidecar-name
-                           :ports [{:containerPort service-port}]
-                           :resources {:limits {:memory (str (:mem resources) "Mi")}
-                                       :requests {:cpu (str (:cpu resources)) :memory (str (:mem resources) "Mi")}}}]
-      raven-container)))
+             [:spec :template :spec :containers]
+             conj
+             (let [{:keys [cmd resources image]} raven-sidecar
+                   user-env (:env service-description)
+                   env-map (-> user-env
+                               (merge base-env)
+                               (assoc "FORCE_TLS_TERMINATION" (str force-tls?)
+                                      "HEALTH_CHECK_PORT_INDEX" (str health-check-port-index)
+                                      "HEALTH_CHECK_PROTOCOL" health-check-proto
+                                      "PORT0" (str port0)
+                                      "SERVICE_PORT" (str service-port)
+                                      "SERVICE_PROTOCOL" backend-proto))
+                   env (vec (for [[k v] env-map]
+                              {:name k :value v}))
+                   raven-container {:command cmd
+                                    :env env
+                                    :image image
+                                    :imagePullPolicy "IfNotPresent"
+                                    :name waiter-raven-sidecar-name
+                                    :ports [{:containerPort service-port}]
+                                    :resources {:limits {:memory (str (:mem resources) "Mi")}
+                                                :requests {:cpu (str (:cpu resources)) :memory (str (:mem resources) "Mi")}}}]
+               raven-container)))
+
+(defn- proto->tls-proto
+  "Return equivalent TLS protocol for given protocol"
+  [proto]
+  (case proto
+    "http" "https"
+    "h2c" "h2"
+    proto))
 
 (def ^:const service-ports-index 0)
 (def ^:const proxied-ports-index 1)
@@ -1130,7 +1167,8 @@
         raven-mode (when-let [raven-sidecar-check-fn (:predicate-fn raven-sidecar)]
                      (raven-sidecar-check-fn scheduler service-id service-description context))
         has-raven? (boolean raven-mode)
-        proxy-label (cond
+        raven-force-downstream-tls? (= :strict-tls raven-mode)
+        raven-label (cond
                       (not has-raven?) "disabled"
                       (keyword? raven-mode) (name raven-mode)
                       :else "enabled")
@@ -1139,6 +1177,17 @@
                 service-port)
         health-check-port (when (pos? health-check-port-index)
                             (+ service-port health-check-port-index))
+        ;; Determine actual protocols on the service port and health-check port.
+        ;; Note that these may differ from the protocols in the service-description
+        ;; if the Raven sidecar is using TLS where the backend process uses clear text.
+        actual-backend-proto (cond-> backend-proto raven-force-downstream-tls? proto->tls-proto)
+        actual-health-check-proto (if-not health-check-port
+                                    actual-backend-proto
+                                    (cond-> (or health-check-proto backend-proto)
+                                      raven-force-downstream-tls? proto->tls-proto))
+        port->protocol (cond-> {service-port actual-backend-proto}
+                         health-check-port
+                         (assoc health-check-port actual-health-check-proto))
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
                    {:name "MESOS_DIRECTORY" :value home-path}
@@ -1160,12 +1209,14 @@
         revision-timestamp (du/date-to-str (t/now)) ;; we use a monotonically increasing version string
         revision-version "0"
         authenticate-health-check? (retrieve-use-authenticated-health-checks? scheduler service-id)
-        health-check-scheme (-> (or health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
+        liveness-scheme (-> (or health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
+        readiness-scheme (-> (or actual-health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
         health-check-url (sd/service-description->health-check-url service-description)
         memory (str mem "Mi")
         service-hash (service-id->service-hash service-id)
         fileserver-predicate-fn (-> fileserver :predicate-fn)
-        fileserver-enabled? (fileserver-predicate-fn scheduler service-id service-description context)]
+        fileserver-enabled? (fileserver-predicate-fn scheduler service-id service-description context)
+        fileserver-label (if fileserver-enabled? "enabled" "disabled")]
     (cond->
       {:kind "ReplicaSet"
        :apiVersion replicaset-api-version
@@ -1179,8 +1230,8 @@
                                 :waiter/service-id service-id}
                   :labels {:app k8s-name
                            :waiter/cluster cluster-name
-                           :waiter/fileserver (if fileserver-enabled? "enabled" "disabled")
-                           :waiter/raven (if has-raven? "enabled" "disabled")
+                           :waiter/fileserver fileserver-label
+                           :waiter/raven raven-label
                            :waiter/service-hash service-hash
                            :waiter/user run-as-user}
                   :name k8s-name
@@ -1189,12 +1240,15 @@
               :selector {:matchLabels {:app k8s-name
                                        :waiter/user run-as-user}}
               :template {:metadata {:annotations {:waiter/port-count (str ports)
+                                                  :waiter/port-onto-protocol (utils/clj->json port->protocol)
                                                   :waiter/revision-timestamp revision-timestamp
                                                   :waiter/revision-version revision-version
                                                   :waiter/service-id service-id
                                                   :waiter/service-port (str service-port)}
                                     :labels {:app k8s-name
                                              :waiter/cluster cluster-name
+                                             :waiter/fileserver fileserver-label
+                                             :waiter/raven raven-label
                                              :waiter/service-hash service-hash
                                              :waiter/user run-as-user}}
                          :spec {;; Service account tokens allow easy access to the k8s api server,
@@ -1210,7 +1264,7 @@
                                               :readinessProbe (-> (prepare-health-check-probe
                                                                     service-id->password-fn service-id
                                                                     authenticate-health-check?
-                                                                    health-check-scheme health-check-url
+                                                                    readiness-scheme health-check-url
                                                                     (+ service-port health-check-port-index)
                                                                     health-check-interval-secs)
                                                                 (assoc :failureThreshold 1))
@@ -1230,7 +1284,7 @@
         assoc :livenessProbe (-> (prepare-health-check-probe
                                    service-id->password-fn service-id
                                    authenticate-health-check?
-                                   health-check-scheme health-check-url
+                                   liveness-scheme health-check-url
                                    (+ port0 health-check-port-index)
                                    health-check-interval-secs)
                                (assoc
@@ -1269,7 +1323,7 @@
 
       ;; Optional raven sidecar container
       has-raven?
-      (attach-raven-sidecar raven-sidecar service-description base-env service-port port0))))
+      (attach-raven-sidecar raven-sidecar service-description base-env service-port port0 raven-force-downstream-tls?))))
 
 (defn default-pdb-spec-builder
   "Factory function which creates a Kubernetes PodDisruptionBudget spec for the given ReplicaSet."
@@ -1661,7 +1715,8 @@
         raven-sidecar (when raven-sidecar
                         (cond-> (update raven-sidecar :predicate-fn utils/resolve-symbol!)
                           (not (:env-vars raven-sidecar))
-                          (assoc :env-vars {:flags [default-raven-env-flag]})))
+                          (assoc :env-vars {:flags [default-raven-env-flag]
+                                            :tls-flags [default-raven-tls-env-flag]})))
         determine-replicaset-namespace-fn (if determine-replicaset-namespace-fn
                                             (utils/resolve-symbol! determine-replicaset-namespace-fn)
                                             determine-replicaset-namespace)]
