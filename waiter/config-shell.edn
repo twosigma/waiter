@@ -34,4 +34,9 @@
  :cors-config {:kind :allow-all}
 
  ;; Require fewer failed health checks
- :health-check-config {:failed-check-threshold 2}}
+ :health-check-config {:failed-check-threshold 2}
+
+ ; ---------- Miscellaneous ----------
+ :token-config {:cluster-calculator {:kind :configured
+                                     :configured {:factory-fn waiter.token/new-configured-cluster-calculator
+                                                  :host->cluster {"127.0.0.1" "localhost"}}}}}
