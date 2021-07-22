@@ -333,7 +333,9 @@
          (is (str/starts-with? set-cookie# "x-waiter-oidc-challenge-") assertion-message#)
          (is (str/includes? set-cookie# ";Max-Age=") assertion-message#)
          (is (str/includes? set-cookie# ";Path=/") assertion-message#)
-         (is (str/includes? set-cookie# ";HttpOnly=true") assertion-message#)))))
+         (is (str/includes? set-cookie# ";HttpOnly=true") assertion-message#)
+         (is (str/includes? set-cookie# ";SameSite=None") assertion-message#)
+         (is (str/includes? set-cookie# ";Secure") assertion-message#)))))
 
 (defn- follow-authorize-redirects
   "Asserts for query parameters on the redirect url.
@@ -429,10 +431,10 @@
                     (assert-response-status callback-response http-302-moved-temporarily)
                     (is (= 3 (count cookies)) (str cookies))
                     (if-let [oidc-challenge-cookie (first (filter #(str/starts-with? (:name %) "x-waiter-oidc-challenge-") cookies))]
-                      (is (= {:http-only? true :max-age 0 :path "/" :secure? false}
+                      (is (= {:http-only? true :max-age 0 :path "/" :secure? true}
                              (select-keys oidc-challenge-cookie [:http-only? :max-age :path :secure?])))
                       (is false "OIDC challenge cookie is missing"))
-                    (assert-waiter-authentication-cookies cookies)
+                    (assert-waiter-authentication-cookies cookies true)
                     (if-let [waiter-auth-cookie (first (filter #(= (:name %) "x-waiter-auth") cookies))]
                       (let [x-waiter-auth-max-age (:max-age waiter-auth-cookie)
                             one-day-in-secs (-> 1 t/days t/in-seconds)]

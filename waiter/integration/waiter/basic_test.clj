@@ -846,7 +846,7 @@
       (is (str/includes? set-cookie "Path=/"))
       (is (str/includes? set-cookie "HttpOnly=true"))
       (is (= (System/getProperty "user.name") (str body)))
-      (assert-waiter-authentication-cookies cookies)
+      (assert-waiter-authentication-cookies cookies false)
 
       (let [{:keys [body headers] :as response} (make-request waiter-url "/waiter-auth" :cookies cookies)
             set-cookie (get headers "set-cookie")]
@@ -921,7 +921,7 @@
                   response-waiter-auth-cookie (extract-cookie cookies "x-waiter-auth")]
               (assert-response-status response http-204-no-content)
               (assert-waiter-response response)
-              (assert-waiter-authentication-cookies cookies)
+              (assert-waiter-authentication-cookies cookies false)
               (is (contains? headers "x-waiter-auth-method") (str headers))
               (is (contains? headers "x-waiter-auth-principal") (str headers))
               (is (= (get headers "x-waiter-auth-user") current-user) (str headers))
@@ -938,7 +938,7 @@
                   response-waiter-auth-cookie (extract-cookie cookies "x-waiter-auth")]
               (assert-response-status response http-204-no-content)
               (assert-waiter-response response)
-              (assert-waiter-authentication-cookies cookies)
+              (assert-waiter-authentication-cookies cookies false)
               (is (contains? headers "x-waiter-auth-method") (str headers))
               (is (contains? headers "x-waiter-auth-principal") (str headers))
               (is (= (get headers "x-waiter-auth-user") current-user) (str headers))
