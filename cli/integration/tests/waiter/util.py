@@ -151,6 +151,11 @@ def post_token(waiter_url, token_name, token_definition, assert_response=True,
             expected_status_code == response.status_code, \
             f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
         fetched_token = load_token(waiter_url, token_name, params={})
+        cluster_name = retrieve_waiter_cluster_name(waiter_url)
+        assert \
+            cluster_name == fetched_token['cluster'], \
+            f'Expected cluster {cluster_name}, got {fetched_token["cluster"]}'
+        del fetched_token['cluster']
         del fetched_token['owner']
         if 'cluster' in token_definition:
             del token_definition['cluster']
