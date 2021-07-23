@@ -681,6 +681,18 @@
                        :friendly-error-message (str "Command type " cmd-type " is not supported")
                        :status http-400-bad-request})))
 
+    ; validate authentication and health-check-authentication combination
+    (let [{:strs [authentication health-check-authentication]} service-description-to-use]
+      (when (and authentication
+                 health-check-authentication
+                 (= authentication "disabled")
+                 (= health-check-authentication "standard"))
+        (sling/throw+ {:type :service-description-error
+                       :friendly-error-message (str "The health check authentication (" health-check-authentication ") "
+                                                    "cannot be enabled when authentication (" authentication ") is disabled")
+                       :status http-400-bad-request
+                       :log-level :warn})))
+
     ; validate the health-check-port-index
     (let [{:strs [health-check-port-index ports]} service-description-to-use]
       (when (and health-check-port-index ports (>= health-check-port-index ports))

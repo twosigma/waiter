@@ -2071,3 +2071,52 @@
             (delete-token-and-assert waiter-url token-2)))
         (finally
           (delete-token-and-assert waiter-url token-1))))))
+
+(deftest ^:parallel ^:integration-fast test-invalid-authentication-health-check-authentication-combo
+  (testing-using-waiter-url
+    (let [token (rand-name)
+          base-description (dissoc (kitchen-params) :authentication :health-check-authentication)
+          error-msg "The health check authentication (standard) cannot be enabled when authentication (disabled) is disabled"]
+      (testing "invalid authentication and health-check-authentication"
+        (try
+          (let [token-description (assoc base-description
+                                    :authentication "disabled"
+                                    :health-check-authentication "standard"
+                                    :token token)
+                {:keys [body] :as register-response} (post-token waiter-url token-description)]
+            (assert-response-status register-response http-400-bad-request)
+            (is (str/includes? (str body) error-msg)))
+          (delete-token-and-assert waiter-url token :response-status http-404-not-found)))
+
+      (let [{:keys [profile-config]} (waiter-settings waiter-url)]
+        (doseq [[profile {:keys [defaults]}] (seq profile-config)]
+          (doseq [{:keys [other-parameter-name other-parameter-value trigger-parameter-name trigger-parameter-value]}
+                  [{:other-parameter-name :health-check-authentication
+                    :other-parameter-value "standard"
+                    :trigger-parameter-name :authentication
+                    :trigger-parameter-value "disabled"}
+                   {:other-parameter-name :authentication
+                    :other-parameter-value "disabled"
+                    :trigger-parameter-name :health-check-authentication
+                    :trigger-parameter-value "standard"}]]
+            (when (= trigger-parameter-value (get defaults trigger-parameter-name))
+              (testing (str "invalid " (name other-parameter-name) " with profile " (name profile))
+                (try
+                  (let [token-description (assoc base-description
+                                            other-parameter-name other-parameter-value
+                                            :https-redirect false
+                                            :permitted-user "*"
+                                            :profile (name profile)
+                                            :run-as-user (retrieve-username)
+                                            :token token)
+                        register-response (post-token waiter-url token-description)]
+                    (assert-response-status register-response http-200-ok)
+                    (let [{:keys [body service-id] :as response}
+                          (make-request-with-debug-info {:x-waiter-token token} #(make-request waiter-url "/hello" :headers %))]
+                      (assert-response-status response http-400-bad-request)
+                      (is (str/includes? (str body) error-msg))
+                      (when service-id
+                        (delete-service waiter-url service-id)
+                        (is false (str "Unexpected service " service-id " was started!")))))
+                  (finally
+                    (delete-token-and-assert waiter-url token)))))))))))

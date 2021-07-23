@@ -873,7 +873,7 @@
 
 (defn delete-token-and-assert
   "Deletes and token and asserts that the delete was successful."
-  [waiter-url token & {:keys [hard-delete headers] :or {hard-delete true}}]
+  [waiter-url token & {:keys [hard-delete headers response-status] :or {hard-delete true response-status http-200-ok}}]
   (log/info "deleting token" token {:hard-delete hard-delete})
   (let [headers (cond->> headers
                   (and hard-delete (nil? headers)) (attach-token-etag waiter-url token))
@@ -881,7 +881,7 @@
                                :headers (assoc headers "host" token)
                                :method :delete
                                :query-params (if hard-delete {"hard-delete" true} {}))]
-    (assert-response-status response http-200-ok)))
+    (assert-response-status response response-status)))
 
 (defn wait-for
   "Invoke predicate every interval (default 10) seconds until it returns true,

@@ -2183,6 +2183,12 @@
         constraints-schema profile->defaults config
         "min-instances (3) must be less than or equal to max-instances (2)"))
 
+    (testing "testing invalid health check authentication"
+      (run-validate-schema-test
+        (assoc valid-description "authentication" "disabled" "health-check-authentication" "standard")
+        constraints-schema profile->defaults config
+        "The health check authentication (standard) cannot be enabled when authentication (disabled) is disabled"))
+
     (testing "testing invalid health check port index"
       (run-validate-schema-test
         (assoc valid-description "health-check-port-index" 1 "ports" 1)
