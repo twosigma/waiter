@@ -1305,8 +1305,7 @@
             (let [kitchen-image (System/getenv "INTEGRATION_TEST_KITCHEN_IMAGE")
                   _ (is (not (str/blank? kitchen-image)) "You must provide a kitchen image in the INTEGRATION_TEST_KITCHEN_IMAGE environment variable")]
               (make-kitchen-request-fn kitchen-image http-200-ok))
-            (or (using-cook? waiter-url)
-                (using-shell? waiter-url))
+            (using-shell? waiter-url)
             (make-kitchen-request-fn "dummy/image" http-500-internal-server-error)))))
 
 (deftest ^:parallel ^:integration-fast test-self-service-cors
