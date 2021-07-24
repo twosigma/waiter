@@ -15,6 +15,7 @@
 ;;
 (ns waiter.health-check-test
   (:require [clojure.data.json :as json]
+            [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
             [waiter.status-codes :refer :all]
@@ -85,6 +86,21 @@
       (run-ping-service-test waiter-url idle-timeout command backend-proto health-check-proto num-ports health-check-port-index
                              :query-params {"exclude" "service-state"}))))
 
+(deftest ^:parallel ^:integration-fast test-invalid-backend-proto-health-check-proto-combo
+  (testing-using-waiter-url
+    (let [supported-protocols #{"http" "https" "h2c" "h2"}]
+      (doseq [backend-proto supported-protocols]
+        (doseq [health-check-proto (disj supported-protocols backend-proto)]
+          (doseq [health-check-port-index [nil 0]]
+            (let [request-headers (cond-> {:x-waiter-backend-proto backend-proto
+                                           :x-waiter-health-check-proto health-check-proto}
+                                    health-check-port-index (assoc :x-waiter-health-check-port-index health-check-port-index))
+                  {:keys [body] :as response} (make-kitchen-request waiter-url request-headers)
+                  error-msg (str "The backend-proto (" backend-proto ") and health check proto (" health-check-proto
+                                 ") must match when health-check-port-index is zero")]
+              (assert-response-status response http-400-bad-request)
+              (is (str/includes? (str body) error-msg)))))))))
+
 (deftest ^:parallel ^:integration-fast test-ping-http-http-port0-timeout
   (testing-using-waiter-url
     (let [idle-timeout 20000
@@ -115,13 +131,13 @@
           idle-timeout nil]
       (run-ping-service-test waiter-url idle-timeout command backend-proto health-check-proto num-ports health-check-port-index))))
 
-(deftest ^:parallel ^:integration-fast test-ping-h2c-http-port0
+(deftest ^:parallel ^:integration-fast test-ping-h2c-http-port1
   (testing-using-waiter-url
-    (let [command (kitchen-cmd "-p $PORT0")
+    (let [command (kitchen-cmd "-p $PORT1")
           backend-proto "h2c"
           health-check-proto "http"
-          num-ports nil
-          health-check-port-index nil
+          num-ports 3
+          health-check-port-index 1
           idle-timeout nil]
       (run-ping-service-test waiter-url idle-timeout command backend-proto health-check-proto num-ports health-check-port-index))))
 

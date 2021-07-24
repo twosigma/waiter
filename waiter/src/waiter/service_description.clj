@@ -702,6 +702,16 @@
                        :status http-400-bad-request
                        :log-level :warn})))
 
+    ; validate the backend-proto and health-check-proto combination on same port
+    (let [{:strs [backend-proto health-check-port-index health-check-proto]} service-description-to-use]
+      (when (and backend-proto health-check-port-index health-check-proto
+                 (zero? health-check-port-index) (not= backend-proto health-check-proto))
+        (sling/throw+ {:type :service-description-error
+                       :friendly-error-message (str "The backend-proto (" backend-proto ") and health check proto (" health-check-proto ") "
+                                                    "must match when health-check-port-index is zero")
+                       :status http-400-bad-request
+                       :log-level :warn})))
+
     ;; currently, if manually specified, the namespace *must* match the run-as-user
     ;; (but we expect the common case to be falling back to the default)
     (let [{:strs [namespace run-as-user]} service-description-to-use]

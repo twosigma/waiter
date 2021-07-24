@@ -2199,6 +2199,25 @@
         constraints-schema profile->defaults config
         "The health check port index (5) must be smaller than ports (3)"))
 
+    (testing "testing invalid backend proto and health check proto combination"
+      (let [supported-protocols #{"http" "https" "h2c" "h2"}]
+        (doseq [backend-proto supported-protocols]
+          (doseq [health-check-proto (disj supported-protocols backend-proto)]
+            (run-validate-schema-test
+              (assoc valid-description
+                "backend-proto" backend-proto
+                "health-check-port-index" 0
+                "health-check-proto" health-check-proto)
+              constraints-schema profile->defaults config
+              (str "The backend-proto (" backend-proto ") and health check proto (" health-check-proto
+                   ") must match when health-check-port-index is zero"))
+            (is (nil? (validate-schema (assoc valid-description
+                                         "backend-proto" backend-proto
+                                         "health-check-port-index" 1
+                                         "health-check-proto" health-check-proto
+                                         "ports" 2)
+                                       constraints-schema profile->defaults config)))))))
+
     (testing "testing invalid metric-group"
       (run-validate-schema-test
         (assoc valid-description "metric-group" (str/join "" (repeat 100 "m")))
