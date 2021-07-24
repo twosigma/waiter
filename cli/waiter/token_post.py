@@ -6,7 +6,7 @@ from enum import Enum
 import requests
 
 from waiter import terminal, http_util
-from waiter.data_format import load_data
+from waiter.data_format import determine_format, display_data, load_data
 from waiter.querying import get_token, query_token, get_target_cluster_from_token
 from waiter.util import deep_merge, FALSE_STRINGS, is_admin_enabled, print_info, response_message, TRUE_STRINGS, \
     guard_no_cluster, str2bool, update_in
@@ -70,14 +70,15 @@ def merge_token_fields_from_args(token_fields_base, token_fields_from_args):
     return token_fields
 
 
-def create_or_update(cluster, token_name, token_fields, admin_mode, action, fields_from_args_only):
+def create_or_update(cluster, token_name, token_fields, admin_mode, action, fields_from_args_only, output):
     """Creates (or updates) the given token on the given cluster"""
     cluster_name = cluster['name']
     cluster_url = cluster['url']
 
     existing_token_data, existing_token_etag = get_token(cluster, token_name)
     try:
-        print_info(f'Attempting to {action} token{(" in ADMIN mode" if admin_mode else "")} on {terminal.bold(cluster_name)}...')
+        print_info(f'Attempting to {action} token {("in ADMIN mode " if admin_mode else "")}'
+                   f'{("with dry-run enabled " if output else "")}on {terminal.bold(cluster_name)}...')
         params = {'token': token_name}
         if admin_mode:
             params['update-mode'] = 'admin'
@@ -86,9 +87,20 @@ def create_or_update(cluster, token_name, token_fields, admin_mode, action, fiel
             json_body = deep_merge(json_body, token_fields)
         else:
             json_body.update(token_fields)
-        headers = {'If-Match': existing_token_etag or ''}
-        resp = http_util.post(cluster, 'token', json_body, params=params, headers=headers)
-        process_post_result(resp)
+        if output is None:
+            headers = {'If-Match': existing_token_etag or ''}
+            resp = http_util.post(cluster, 'token', json_body, params=params, headers=headers)
+            process_post_result(resp)
+        elif output == '-':
+            print_info('Token configuration (as json) is:')
+            display_data({'json': True}, json_body)
+        else:
+            output_format = 'json' if output.endswith('.json') else 'yaml'
+            output_options = {output_format: True}
+            data_format = determine_format(output_options)
+            print_info(f'Writing token configuration (as {output_format}) to {output}')
+            with open(output, 'w') as out_file:
+                data_format.dump(json_body, out_file)
         return 0
     except requests.exceptions.ReadTimeout as rt:
         logging.exception(rt)
@@ -123,6 +135,7 @@ def create_or_update_token(clusters, args, _, enforce_cluster, action):
     yaml_file = args.pop('yaml', None)
     input_file = args.pop('input', None)
     admin_mode = args.pop('admin', None)
+    output = args.pop('output', None)
     allow_override = args.pop('override', False)
     context_file = args.pop('context', None)
     context_overrides = pop_context_override_args(args)
@@ -186,7 +199,7 @@ def create_or_update_token(clusters, args, _, enforce_cluster, action):
     else:
         cluster = clusters[0]
 
-    return create_or_update(cluster, token_name, token_fields, admin_mode, action, fields_from_args_only)
+    return create_or_update(cluster, token_name, token_fields, admin_mode, action, fields_from_args_only, output)
 
 
 def add_arguments(parser):
@@ -199,6 +212,8 @@ def add_arguments(parser):
     format_group.add_argument('--json', help='provide the data in a JSON file', dest='json')
     format_group.add_argument('--yaml', help='provide the data in a YAML file', dest='yaml')
     format_group.add_argument('--input', help='provide the data in a JSON/YAML file', dest='input')
+    parser.add_argument('--output', help='outputs the computed token configuration in a JSON/YAML file without '
+                                         'performing any write operations')
     parser.add_argument('--context', dest='context',
                         help='can be used only when a data file has been provided via --input, --json, or --yaml; '
                              'this JSON/YAML file provides the context variables used '

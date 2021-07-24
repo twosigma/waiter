@@ -1528,6 +1528,110 @@ class WaiterCliTest(util.WaiterTest):
             util.delete_token(self.waiter_url, token_name_1, kill_services=True)
             util.delete_token(self.waiter_url, token_name_2, kill_services=True)
 
+    def test_create_token_output_stdout(self):
+        token_name = self.token_name()
+        token_fields = {
+            'cpus': 0.2,
+            'mem': 256,
+            'run-as-user': 'FAKE_USERNAME'
+        }
+        file_format = 'yaml'
+        stdin = cli.dump(file_format, token_fields)
+        flags = f'--output - --{file_format} -'
+        try:
+            cp = cli.create(self.waiter_url, token_name, flags='-v', stdin=stdin, create_flags=flags)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            util.load_token(self.waiter_url, token_name, expected_status_code=404)
+            stdout = cli.stdout(cp)
+            self.assertIn('Token configuration (as json) is:', stdout)
+            json_str = stdout[(stdout.rindex('is:') + 3):]
+            printed_token_fields = json.loads(json_str)
+            self.assertEqual(token_fields, printed_token_fields)
+        finally:
+            util.delete_token(self.waiter_url, token_name, expected_status_code=404)
+
+    def test_create_token_output_json(self):
+        token_name = self.token_name()
+        token_fields = {
+            'cpus': 0.2,
+            'mem': 256,
+            'run-as-user': 'FAKE_USERNAME'
+        }
+        file_format = 'yaml'
+        stdin = cli.dump(file_format, token_fields)
+        try:
+            with tempfile.NamedTemporaryFile(delete=True, suffix='.json') as output_file:
+                flags = f'--output {output_file.name} --{file_format} -'
+                cp = cli.create(self.waiter_url, token_name, flags='-v', stdin=stdin, create_flags=flags)
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                util.load_token(self.waiter_url, token_name, expected_status_code=404)
+                stdout = cli.stdout(cp)
+                self.assertIn(f'Writing token configuration (as json) to {output_file.name}', stdout)
+                printed_token_fields = util.load_file('json', output_file.name)
+                self.assertEqual(token_fields, printed_token_fields)
+        finally:
+            util.delete_token(self.waiter_url, token_name, expected_status_code=404)
+
+    def test_update_token_output_stdout(self):
+        token_name = self.token_name()
+        base_fields = {
+            'cpus': 1.0,
+            'health-check-url': '/health',
+            'permitted-user': '*'
+        }
+        util.post_token(self.waiter_url, token_name, base_fields)
+
+        token_fields = {
+            'cpus': 0.2,
+            'mem': 256,
+            'run-as-user': 'FAKE_USERNAME'
+        }
+        file_format = 'yaml'
+        stdin = cli.dump(file_format, token_fields)
+        flags = f'--output - --{file_format} -'
+        try:
+            cp = cli.update(self.waiter_url, token_name, flags='-v', stdin=stdin, update_flags=flags)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            util.load_token(self.waiter_url, token_name)
+            stdout = cli.stdout(cp)
+            self.assertIn('Token configuration (as json) is:', stdout)
+            json_str = stdout[(stdout.rindex('is:') + 3):]
+            printed_token_fields = json.loads(json_str)
+            expected_fields = {**base_fields, **token_fields, 'owner': getpass.getuser()}
+            self.assertEqual(expected_fields, printed_token_fields)
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_update_token_output_yaml(self):
+        token_name = self.token_name()
+        base_fields = {
+            'cpus': 1.0,
+            'health-check-url': '/health',
+            'permitted-user': '*'
+        }
+        util.post_token(self.waiter_url, token_name, base_fields)
+
+        token_fields = {
+            'cpus': 0.2,
+            'mem': 256,
+            'run-as-user': 'FAKE_USERNAME'
+        }
+        file_format = 'yaml'
+        stdin = cli.dump(file_format, token_fields)
+        try:
+            with tempfile.NamedTemporaryFile(delete=True, suffix='.yaml') as output_file:
+                flags = f'--output {output_file.name} --{file_format} -'
+                cp = cli.update(self.waiter_url, token_name, flags='-v', stdin=stdin, update_flags=flags)
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                util.load_token(self.waiter_url, token_name)
+                stdout = cli.stdout(cp)
+                self.assertIn(f'Writing token configuration (as yaml) to {output_file.name}', stdout)
+                printed_token_fields = util.load_file('yaml', output_file.name)
+                expected_fields = {**base_fields, **token_fields, 'owner': getpass.getuser()}
+                self.assertEqual(expected_fields, printed_token_fields)
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
     def __test_create_update_token_admin_mode(self, action, token_name, admin_mode):
         token_fields = {
             'cpus': 0.2,
