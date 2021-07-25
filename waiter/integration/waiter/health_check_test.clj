@@ -89,17 +89,17 @@
 (deftest ^:parallel ^:integration-fast test-invalid-backend-proto-health-check-proto-combo
   (testing-using-waiter-url
     (let [supported-protocols #{"http" "https" "h2c" "h2"}]
-      (doseq [backend-proto supported-protocols]
-        (doseq [health-check-proto (disj supported-protocols backend-proto)]
-          (doseq [health-check-port-index [nil 0]]
-            (let [request-headers (cond-> {:x-waiter-backend-proto backend-proto
-                                           :x-waiter-health-check-proto health-check-proto}
-                                    health-check-port-index (assoc :x-waiter-health-check-port-index health-check-port-index))
-                  {:keys [body] :as response} (make-kitchen-request waiter-url request-headers)
-                  error-msg (str "The backend-proto (" backend-proto ") and health check proto (" health-check-proto
-                                 ") must match when health-check-port-index is zero")]
-              (assert-response-status response http-400-bad-request)
-              (is (str/includes? (str body) error-msg)))))))))
+      (for [backend-proto supported-protocols
+            health-check-proto (disj supported-protocols backend-proto)
+            health-check-port-index [nil 0]]
+        (let [request-headers (cond-> {:x-waiter-backend-proto backend-proto
+                                       :x-waiter-health-check-proto health-check-proto}
+                                health-check-port-index (assoc :x-waiter-health-check-port-index health-check-port-index))
+              {:keys [body] :as response} (make-kitchen-request waiter-url request-headers)
+              error-msg (str "The backend-proto (" backend-proto ") and health check proto (" health-check-proto
+                             ") must match when health-check-port-index is zero")]
+          (assert-response-status response http-400-bad-request)
+          (is (str/includes? (str body) error-msg)))))))
 
 (deftest ^:parallel ^:integration-fast test-ping-http-http-port0-timeout
   (testing-using-waiter-url

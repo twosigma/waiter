@@ -679,7 +679,8 @@
       (when (and (not (str/blank? cmd-type)) (not ((:valid-cmd-types args-map) cmd-type)))
         (sling/throw+ {:type :service-description-error
                        :friendly-error-message (str "Command type " cmd-type " is not supported")
-                       :status http-400-bad-request})))
+                       :status http-400-bad-request
+                       :log-level :info})))
 
     ; validate authentication and health-check-authentication combination
     (let [{:strs [authentication health-check-authentication]} service-description-to-use]
@@ -691,7 +692,7 @@
                        :friendly-error-message (str "The health check authentication (" health-check-authentication ") "
                                                     "cannot be enabled when authentication (" authentication ") is disabled")
                        :status http-400-bad-request
-                       :log-level :warn})))
+                       :log-level :info})))
 
     ; validate the health-check-port-index
     (let [{:strs [health-check-port-index ports]} service-description-to-use]
@@ -700,7 +701,7 @@
                        :friendly-error-message (str "The health check port index (" health-check-port-index ") "
                                                     "must be smaller than ports (" ports ")")
                        :status http-400-bad-request
-                       :log-level :warn})))
+                       :log-level :info})))
 
     ; validate the backend-proto and health-check-proto combination on same port
     (let [{:strs [backend-proto health-check-port-index health-check-proto]} service-description-to-use]
@@ -710,7 +711,7 @@
                        :friendly-error-message (str "The backend-proto (" backend-proto ") and health check proto (" health-check-proto ") "
                                                     "must match when health-check-port-index is zero")
                        :status http-400-bad-request
-                       :log-level :warn})))
+                       :log-level :info})))
 
     ;; currently, if manually specified, the namespace *must* match the run-as-user
     ;; (but we expect the common case to be falling back to the default)
@@ -719,7 +720,7 @@
         (sling/throw+ {:type :service-description-error
                        :friendly-error-message "Service namespace must either be omitted or match the run-as-user."
                        :status http-400-bad-request
-                       :log-level :warn})))
+                       :log-level :info})))
 
     ;; when using the default namespace, there are stricter restrictions on min-instances
     (let [{:strs [min-instances namespace]} service-description-to-use]
@@ -730,7 +731,7 @@
                        :friendly-error-message (str "min-instances (" min-instances ") in the default namespace "
                                                     "must be less than or equal to " maximum-default-namespace-min-instances)
                        :status http-400-bad-request
-                       :log-level :warn})))
+                       :log-level :info})))
 
     ; validate the profile when it is configured
     (let [{:strs [profile]} service-description-to-use]
