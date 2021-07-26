@@ -89,7 +89,7 @@
 (deftest ^:parallel ^:integration-fast test-invalid-backend-proto-health-check-proto-combo
   (testing-using-waiter-url
     (let [supported-protocols #{"http" "https" "h2c" "h2"}]
-      (for [backend-proto supported-protocols
+      (doseq [backend-proto supported-protocols
             health-check-proto (disj supported-protocols backend-proto)
             health-check-port-index [nil 0]]
         (let [request-headers (cond-> {:x-waiter-backend-proto backend-proto
