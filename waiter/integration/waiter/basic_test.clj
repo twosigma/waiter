@@ -328,7 +328,7 @@
                    :concurrency-level 10
                    :cpus 1
                    :distribution-scheme "simple"
-                   :health-check-proto "h2"
+                   :health-check-proto "h2c"
                    :health-check-url "/status"
                    :mem 512
                    :metric-group "waiter_test"
