@@ -2202,7 +2202,7 @@
     (testing "testing invalid backend proto and health check proto combination"
       (let [supported-protocols #{"http" "https" "h2c" "h2"}]
         (doseq [backend-proto supported-protocols
-              health-check-proto (disj supported-protocols backend-proto)]
+                health-check-proto (disj supported-protocols backend-proto)]
           (do
             (run-validate-schema-test
               (assoc valid-description
