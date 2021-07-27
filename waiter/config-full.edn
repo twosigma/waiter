@@ -277,7 +277,7 @@
                               ;; The default value is #{"chrome" "mozilla"}
                               :oidc-redirect-user-agent-products #{"chrome" "mozilla"}
                               ;; (optional) the same-site attribute configured on cookies emitted as result of OIDC auth
-                              ;; The default value is "None"
+                              ;; Valid values are "Lax", "None", "Strict" or nil. The default value is "None"
                               :oidc-same-site-attribute "None"
                               ;; (optional) url of the authorization server get token endpoint:
                               :oidc-token-uri "http://127.0.0.1:8040/id-token"
