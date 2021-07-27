@@ -132,7 +132,7 @@
    (preserved in the state) before the auth flow was triggered.
    Unsuccessful authentication returns either a 400 Bad request, the downstream auth server
    response, or a 401 unauthorized with appropriate details."
-  [{:keys [jwt-auth-server jwt-validator password] :as oidc-authenticator} request]
+  [{:keys [jwt-auth-server jwt-validator oidc-same-site-attribute password] :as oidc-authenticator} request]
   (if (nil? oidc-authenticator)
     (utils/exception->response
       (throw (ex-info "OIDC authentication disabled" {:status http-501-not-implemented}))
@@ -158,8 +158,7 @@
                                                  (- expiry-time (jwt/current-time-secs)))
                     auth-metadata {:jwt-access-token access-token
                                    :jwt-payload (utils/clj->json claims)}
-                    auth-params-map (auth/build-auth-params-map :oidc subject auth-metadata)
-                    same-site "None"]
+                    auth-params-map (auth/build-auth-params-map :oidc subject auth-metadata)]
                 (auth/handle-request-auth
                   (constantly
                     (let [waiter-token (utils/uri-string->host redirect-uri)
@@ -170,9 +169,9 @@
                            :waiter/oidc-mode oidc-mode
                            :waiter/oidc-redirect-uri redirect-uri
                            :waiter/token waiter-token}
-                        (cookie-support/add-encoded-cookie password oidc-challenge-cookie "" 0 same-site)
+                        (cookie-support/add-encoded-cookie password oidc-challenge-cookie "" 0 oidc-same-site-attribute)
                         (utils/attach-waiter-source))))
-                  request auth-params-map password auth-cookie-age-in-seconds true same-site)))
+                  request auth-params-map password auth-cookie-age-in-seconds true oidc-same-site-attribute)))
             (catch Throwable throwable
               (utils/exception->response
                 (ex-info (str "Error in retrieving access token: " (ex-message throwable))
@@ -188,7 +187,7 @@
 
 (defn trigger-authorize-redirect
   "Triggers a 302 temporary redirect response to the authorize endpoint."
-  [jwt-auth-server oidc-mode password {:keys [request-method uri] :as request} response]
+  [jwt-auth-server oidc-mode oidc-same-site-attribute password {:keys [request-method uri] :as request} response]
   (let [request-host (utils/request->host request)
         request-scheme (utils/request->scheme request)
         make-redirect-uri (fn make-oidc-redirect-uri [transform-host in-query-string]
@@ -219,7 +218,7 @@
           (update :headers assoc "location" authorize-uri)
           (update :headers attach-threat-remediation-headers)
           (cookie-support/add-encoded-cookie
-            password oidc-challenge-cookie challenge-cookie-value challenge-cookie-duration-secs "None")
+            password oidc-challenge-cookie challenge-cookie-value challenge-cookie-duration-secs oidc-same-site-attribute)
           (assoc :waiter/oidc-identifier cookie-identifier
                  :waiter/oidc-mode oidc-mode
                  :waiter/oidc-redirect-uri oidc-redirect-uri)))
@@ -232,12 +231,12 @@
 
 (defn make-oidc-auth-response-updater
   "Returns a response updater that rewrites 401 waiter responses to 302 redirects."
-  [jwt-auth-server oidc-mode password request]
+  [jwt-auth-server oidc-mode oidc-same-site-attribute password request]
   (fn update-oidc-auth-response [{:keys [status] :as response}]
     (if (and (= status http-401-unauthorized)
              (utils/waiter-generated-response? response))
       ;; issue 302 redirect
-      (trigger-authorize-redirect jwt-auth-server oidc-mode password request response)
+      (trigger-authorize-redirect jwt-auth-server oidc-mode oidc-same-site-attribute password request response)
       ;; non-401 response, avoid authentication challenge
       response)))
 
@@ -319,8 +318,9 @@
 
 (defn wrap-auth-handler
   "Wraps the request handler with a handler to trigger OIDC+PKCE authentication."
-  [{:keys [allow-oidc-auth-api? allow-oidc-auth-services? jwt-auth-server oidc-authorize-uri
-           oidc-default-mode oidc-num-challenge-cookies-allowed-in-request oidc-redirect-user-agent-products password]}
+  [{:keys [allow-oidc-auth-api? allow-oidc-auth-services? jwt-auth-server oidc-authorize-uri oidc-default-mode
+           oidc-num-challenge-cookies-allowed-in-request oidc-redirect-user-agent-products oidc-same-site-attribute
+           password]}
    request-handler]
   (let [oidc-authority (utils/uri-string->host oidc-authorize-uri)]
     (fn oidc-auth-handler [request]
@@ -337,22 +337,24 @@
           :else
           (ru/update-response
             (request-handler request)
-            (make-oidc-auth-response-updater jwt-auth-server @oidc-mode-delay password request)))))))
+            (make-oidc-auth-response-updater jwt-auth-server @oidc-mode-delay oidc-same-site-attribute password request)))))))
 
 (defrecord OidcAuthenticator [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri oidc-default-mode
                               jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request
-                              oidc-redirect-user-agent-products password])
+                              oidc-redirect-user-agent-products oidc-same-site-attribute password])
 
 (defn create-oidc-authenticator
   "Factory function for creating OIDC authenticator middleware"
   [jwt-auth-server jwt-validator
    {:keys [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri oidc-default-mode
-           oidc-num-challenge-cookies-allowed-in-request oidc-redirect-user-agent-products password]
+           oidc-num-challenge-cookies-allowed-in-request oidc-redirect-user-agent-products
+           oidc-same-site-attribute password]
     :or {allow-oidc-auth-api? false
          allow-oidc-auth-services? false
          oidc-default-mode :relaxed
          oidc-num-challenge-cookies-allowed-in-request 20
-         oidc-redirect-user-agent-products #{"chrome" "mozilla"}}}]
+         oidc-redirect-user-agent-products #{"chrome" "mozilla"}
+         oidc-same-site-attribute "None"}}]
   {:pre [(satisfies? jwt/AuthServer jwt-auth-server)
          (some? jwt-validator)
          (boolean? allow-oidc-auth-api?)
@@ -360,9 +362,10 @@
          (integer? oidc-num-challenge-cookies-allowed-in-request)
          (pos-int? oidc-num-challenge-cookies-allowed-in-request)
          (set? oidc-redirect-user-agent-products)
+         (contains? #{"Lax" "None" "Strict" nil} oidc-same-site-attribute)
          (not (str/blank? oidc-authorize-uri))
          (contains? #{:relaxed :strict} oidc-default-mode)
          (not-empty password)]}
   (->OidcAuthenticator allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri oidc-default-mode
                        jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request
-                       oidc-redirect-user-agent-products password))
+                       oidc-redirect-user-agent-products oidc-same-site-attribute password))
