@@ -213,7 +213,7 @@ def add_arguments(parser):
     format_group.add_argument('--yaml', help='provide the data in a YAML file', dest='yaml')
     format_group.add_argument('--input', help='provide the data in a JSON/YAML file', dest='input')
     parser.add_argument('--output', help='outputs the computed token configuration in a JSON/YAML file without '
-                                         'performing any write operations')
+                                         'performing any token edit operations')
     parser.add_argument('--context', dest='context',
                         help='can be used only when a data file has been provided via --input, --json, or --yaml; '
                              'this JSON/YAML file provides the context variables used '
