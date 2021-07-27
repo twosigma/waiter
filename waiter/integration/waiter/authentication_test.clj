@@ -324,9 +324,10 @@
 
 (defmacro assert-oidc-challenge-cookie
   "Helper macro to assert the value of x-waiter-oidc-challenge in the set-cookie header."
-  [set-cookie assertion-message]
+  [set-cookie assertion-message oidc-same-site-attribute]
   `(let [set-cookie# ~set-cookie
-         assertion-message# ~assertion-message]
+         assertion-message# ~assertion-message
+         oidc-same-site-attribute# ~oidc-same-site-attribute]
      (if (str/blank? set-cookie#)
        (is false "set-cookie is blank")
        (do
@@ -334,8 +335,10 @@
          (is (str/includes? set-cookie# ";Max-Age=") assertion-message#)
          (is (str/includes? set-cookie# ";Path=/") assertion-message#)
          (is (str/includes? set-cookie# ";HttpOnly=true") assertion-message#)
-         (is (str/includes? set-cookie# ";SameSite=None") assertion-message#)
-         (is (str/includes? set-cookie# ";Secure") assertion-message#)))))
+         (when oidc-same-site-attribute#
+           (is (str/includes? set-cookie# ";SameSite=None") assertion-message#))
+         (when (= "None" oidc-same-site-attribute#)
+           (is (str/includes? set-cookie# ";Secure") assertion-message#))))))
 
 (defn- follow-authorize-redirects
   "Asserts for query parameters on the redirect url.
@@ -379,6 +382,10 @@
             location
             (recur (inc iteration) location)))))))
 
+(defn- retrieve-oidc-same-site-attribute
+  [waiter-url]
+  (or (setting waiter-url [:authenticator-config :jwt :oidc-same-site-attribute]) "None"))
+
 (deftest ^:parallel ^:integration-fast test-oidc-authentication-redirect
   (testing-using-waiter-url
     (if (oidc-auth-enabled? waiter-url)
@@ -413,9 +420,10 @@
                     assertion-message (str {:headers (:headers initial-response)
                                             :oidc-auth-env oidc-auth-env
                                             :set-cookie set-cookie
-                                            :status (:status initial-response)})]
+                                            :status (:status initial-response)})
+                    oidc-same-site-attribute (retrieve-oidc-same-site-attribute waiter-url)]
                 (is (not (str/blank? location)) assertion-message)
-                (assert-oidc-challenge-cookie set-cookie assertion-message)
+                (assert-oidc-challenge-cookie set-cookie assertion-message oidc-same-site-attribute)
 
                 (when-let [callback-location (follow-authorize-redirects location)]
                   (is (not (str/blank? callback-location)) assertion-message)
@@ -517,9 +525,10 @@
             (let [{:strs [location set-cookie]} (:headers initial-response)
                   assertion-message (str {:headers (:headers initial-response)
                                           :set-cookie set-cookie
-                                          :status (:status initial-response)})]
+                                          :status (:status initial-response)})
+                  oidc-same-site-attribute (retrieve-oidc-same-site-attribute waiter-url)]
               (is (not (str/blank? location)) assertion-message)
-              (assert-oidc-challenge-cookie set-cookie assertion-message)
+              (assert-oidc-challenge-cookie set-cookie assertion-message oidc-same-site-attribute)
               (swap! challenge-cookies-atom conj (str (first (str/split set-cookie #"=" 2))))))
           (is (= (* num-threads num-iterations) (count @challenge-cookies-atom)) (str @challenge-cookies-atom))
           (finally

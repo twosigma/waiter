@@ -129,6 +129,11 @@
    Valid values are :disabled, :relaxed or :strict."
   (s/pred #(contains? #{:relaxed :strict} %) 'invalid-oidc-mode))
 
+(def valid-same-site-attribute
+  "Validator for the OIDC SameSite cookie attribute.
+   Valid values are Lax, None, Strict or `nil`."
+  (s/pred #(contains? #{"Lax" "None" "Strict" nil} %) 'invalid-oidc-same-site-attribute))
+
 (def valid-jwt-authenticator-config
   "Validator for the Zookeeper connection configuration. We allow either
   a non-empty string (representing a connection string), or the keyword
@@ -147,6 +152,7 @@
      (s/optional-key :oidc-default-mode) valid-oidc-mode
      (s/optional-key :oidc-num-challenge-cookies-allowed-in-request) positive-int
      (s/optional-key :oidc-redirect-user-agent-products) #{non-empty-string}
+     (s/optional-key :oidc-same-site-attribute) valid-same-site-attribute
      (s/optional-key :oidc-token-uri) non-empty-string
      (s/required-key :subject-key) s/Keyword
      (s/optional-key :subject-regex) s/Regex
