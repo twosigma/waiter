@@ -117,6 +117,10 @@ public class GrpcServer {
         }
     }
 
+    private static Metadata.Key<String> newMetadataKey(String keyName) {
+        return Metadata.Key.of(keyName, ASCII_STRING_MARSHALLER);
+    }
+
     private Server server;
 
     void start(final int port) throws IOException {
@@ -351,7 +355,7 @@ public class GrpcServer {
             final Metadata requestMetadata,
             final ServerCallHandler<ReqT, RespT> serverCallHandler) {
 
-            final Metadata.Key<String> xCidKey = Metadata.Key.of("x-cid", ASCII_STRING_MARSHALLER);
+            final Metadata.Key<String> xCidKey = newMetadataKey("x-cid");
             String correlationId = requestMetadata.get(xCidKey);
             if (correlationId == null) {
                 correlationId = "courier-" + System.nanoTime();
@@ -374,6 +378,7 @@ public class GrpcServer {
             final ServerCallHandler<ReqT, RespT> serverCallHandler) {
 
             logMetadata(requestMetadata, "request");
+            final String prevAttempsVal = requestMetadata.get(newMetadataKey("grpc-previous-rpc-attempts"));
 
             final CidTimestamp cidTimestamp = CID_TIMESTAMP.get();
             final String correlationId = cidTimestamp.correlationId;
@@ -390,8 +395,9 @@ public class GrpcServer {
                         logMetadata(requestMetadata, "response");
                         if (correlationId != null) {
                             LOGGER.info("response linked to cid: " + correlationId);
-                            responseHeaders.put(Metadata.Key.of("x-cid", ASCII_STRING_MARSHALLER), correlationId);
+                            responseHeaders.put(newMetadataKey("x-cid"), correlationId);
                             trackState(correlationId, timestamp, "SEND_HEADERS");
+                            responseHeaders.put(newMetadataKey("courier-previous-rpc-attempts"), prevAttempsVal == null ? "0" : prevAttempsVal);
                         }
                         super.sendHeaders(responseHeaders);
                     }
@@ -450,7 +456,7 @@ public class GrpcServer {
             final Set<String> metadataKeys = metadata.keys();
             LOGGER.info(label + "@" + metadata.hashCode() + " metadata keys = " + metadataKeys);
             for (final String key : metadataKeys) {
-                final String value = metadata.get(Metadata.Key.of(key, ASCII_STRING_MARSHALLER));
+                final String value = metadata.get(newMetadataKey(key));
                 LOGGER.info(label + " metadata " + key + " = " + value);
             }
         }

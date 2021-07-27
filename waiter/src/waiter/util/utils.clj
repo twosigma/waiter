@@ -359,7 +359,7 @@
     (str/replace #"\n" "\n  ")
     (str/replace #"\n  $" "\n")))
 
-(defn add-grpc-headers-and-trailers
+(defn add-grpc-status-headers
   "Finds and attaches the equivalent grpc status codes for the provided http status code."
   [{:keys [headers status] :as response} {:keys [message]}]
   (if-let [grpc-status-data (cond
@@ -376,16 +376,8 @@
           new-headers (assoc headers
                         "content-type" "application/grpc"
                         "grpc-message" grpc-message
-                        "grpc-status" (str grpc-status))
-          ;; when only headers are provided jetty terminates the request with an empty data frame,
-          ;; we work around that limitation by sending trailers that carry the same grpc error message.
-          trailers-ch (async/promise-chan)
-          trailers-data {"grpc-message" grpc-message
-                         "grpc-status" (str grpc-status)}]
-      (async/>!! trailers-ch trailers-data)
-      (assoc response
-        :headers new-headers
-        :trailers trailers-ch))
+                        "grpc-status" (str grpc-status))]
+      (assoc response :headers new-headers))
     response))
 
 (defn attach-grpc-status
@@ -393,7 +385,7 @@
   [response error-context {:keys [client-protocol headers]}]
   (cond-> response
     (hu/grpc? headers client-protocol)
-    (add-grpc-headers-and-trailers error-context)))
+    (add-grpc-status-headers error-context)))
 
 (defn attach-error-class
   "Attaches error-class on Waiter generated responses when it is available in the provided error data."
@@ -409,7 +401,7 @@
         content-type (request->content-type request)]
     (-> {:body (case content-type
                  ;; grpc error responses should not have a body as the client will try to parse it into a proto object
-                 "application/grpc" nil
+                 "application/grpc" (byte-array 0) ;; ensures header frames are emitted with endStream=true
                  "application/json" (error-context->json-body error-context)
                  "text/html" (error-context->html-body error-context render-html-fn)
                  "text/plain" (error-context->text-body error-context render-text-fn))

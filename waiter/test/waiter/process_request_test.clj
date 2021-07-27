@@ -143,7 +143,7 @@
         (async/close! body)
 
         (stream-http-response
-          response confirm-live-connection request-abort-callback resp-chan instance-request-properties
+          response confirm-live-connection request-abort-callback false resp-chan instance-request-properties
           reservation-status-promise request-state-chan metric-group waiter-debug-enabled?
           (metrics/stream-metric-map service-id))
 
@@ -161,7 +161,7 @@
 (defn- stream-response
   "Calls stream-http-response with statsd/inc! redefined to simply store the count of
   response bytes that it gets called with, and returns these counts in a vector"
-  [bytes]
+  [bytes skip-streaming?]
   (let [bytes-reported (atom [])]
     (with-redefs [statsd/inc! (fn [_ metric value]
                                 (when (= metric "response_bytes")
@@ -187,8 +187,11 @@
             (let [bytes-to-stream (min 1024 (- bytes bytes-streamed))]
               (async/>! body (byte-array (repeat bytes-to-stream 0)))
               (recur (+ bytes-streamed bytes-to-stream)))))
-        (stream-http-response response confirm-live-connection request-abort-callback resp-chan instance-request-properties
-                              reservation-status-promise request-state-chan metric-group
+        (when skip-streaming?
+          (Thread/sleep 100)
+          (async/close! resp-chan))
+        (stream-http-response response confirm-live-connection request-abort-callback skip-streaming? resp-chan
+                              instance-request-properties reservation-status-promise request-state-chan metric-group
                               waiter-debug-enabled? (metrics/stream-metric-map service-id))
         (loop []
           (let [message (async/<!! resp-chan)]
@@ -198,20 +201,24 @@
 
 (deftest test-stream-http-response
   (testing "Streaming the response"
+    (testing "skipping should stream no bytes"
+      (let [bytes-reported (stream-response 2048 true)]
+        (is (zero? (count bytes-reported)))))
+
     (testing "should throttle calls to statsd to report bytes streamed"
-      (let [bytes-reported (stream-response 1)]
+      (let [bytes-reported (stream-response 1 false)]
         (is (= 1 (count bytes-reported)))
         (is (= [1] bytes-reported)))
 
-      (let [bytes-reported (stream-response (* 1024 977))]
+      (let [bytes-reported (stream-response (* 1024 977) false)]
         (is (= 1 (count bytes-reported)))
         (is (= [1000448] bytes-reported)))
 
-      (let [bytes-reported (stream-response (-> 1024 (* 977) (inc)))]
+      (let [bytes-reported (stream-response (-> 1024 (* 977) (inc)) false)]
         (is (= 2 (count bytes-reported)))
         (is (= [1000448 1] bytes-reported)))
 
-      (let [bytes-reported (stream-response 10000000)]
+      (let [bytes-reported (stream-response 10000000 false)]
         (is (= 10 (count bytes-reported)))
         (is (= 10000000 (reduce + bytes-reported)))
         (is (= [1000448 1000448 1000448 1000448 1000448 1000448 1000448 1000448 1000448 995968] bytes-reported))))))
