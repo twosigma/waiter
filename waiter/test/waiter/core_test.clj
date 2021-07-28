@@ -827,6 +827,9 @@
       (is (waiter-request? {:uri "/waiter-async/complete/remaining-parts"}))
       (is (waiter-request? {:uri "/waiter-async/result/remaining-parts"}))
       (is (waiter-request? {:uri "/waiter-async/status/remaining-parts"}))
+      (is (waiter-request? {:uri "/waiter-async/v2/complete/remaining-parts"}))
+      (is (waiter-request? {:uri "/waiter-async/v2/result/remaining-parts"}))
+      (is (waiter-request? {:uri "/waiter-async/v2/status/remaining-parts"}))
       (is (not (waiter-request? {:headers {"host" "service.example.com"}})))
       (is (not (waiter-request? {:headers {"host" "service.example.com:80"}})))
       (is (not (waiter-request? {:headers {"host" "waiter-cluster.example.com"
@@ -988,6 +991,52 @@
               handlers {:async-complete-handler-fn async-complete-handler-fn}]
           (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request))))))))
 
+(deftest test-async-result-v2-handler-call
+  (testing "test-async-result-v2-handler-call"
+    (let [request {:uri "/waiter-async/v2/result/test-request-id/BASE64-ENCODED-PARAMS/some/test/location"}
+          response-map {:source :async-result-v2-handler-fn}
+          waiter-request?-fn (fn [_] true)
+          handlers {:async-result-v2-handler-fn
+                    (fn [in-request]
+                      (is (= request (select-keys in-request (keys request))))
+                      response-map)}]
+      (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request))))))
+
+(deftest test-async-status-v2-handler-call
+  (testing "test-async-status-v2-handler-call"
+    (let [request {:uri "/waiter-async/v2/status/test-request-id/BASE64-ENCODED-PARAMS/some/test/location"}
+          response-map {:source :async-status-v2-handler-fn}
+          waiter-request?-fn (fn [_] true)
+          handlers {:async-status-v2-handler-fn
+                    (fn [in-request]
+                      (is (= request (select-keys in-request (keys request))))
+                      response-map)}]
+      (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request))))))
+
+(deftest test-async-complete-v2-handler-call
+  (testing "test-async-complete-v2-handler-call"
+    (let [request {:authorization/user "test-user"
+                   :request-method :get
+                   :uri "/waiter-async/v2/complete/request-id/BASE64-ENCODED-PARAMS"}
+          response-map {:source :async-complete-v2-handler-fn}
+          async-request-terminate-fn (Object.)]
+      (with-redefs [handler/complete-async-handler
+                    (fn [in-async-request-terminate-fn {{:keys [src-router-id]} :basic-authentication :as in-request}]
+                      (is (= async-request-terminate-fn in-async-request-terminate-fn))
+                      (is (= "router-id" src-router-id))
+                      (is (= request (select-keys in-request (keys request))))
+                      response-map)]
+        (let [waiter-request?-fn (fn [_] true)
+              configuration {:routines {:async-request-terminate-fn async-request-terminate-fn}
+                             :wrap-router-auth-fn (fn [handler]
+                                                    (fn [request]
+                                                      (-> request
+                                                          (assoc :basic-authentication {:src-router-id "router-id"})
+                                                          handler)))}
+              async-complete-handler-fn ((:async-complete-handler-fn request-handlers) configuration)
+              handlers {:async-complete-v2-handler-fn async-complete-handler-fn}]
+          (is (= response-map ((ring-handler-factory waiter-request?-fn handlers) request))))))))
+
 (deftest test-routes-mapper
   (let [exec-routes-mapper (fn [uri] (routes-mapper {:uri uri}))]
     (is (= {:handler :welcome-handler-fn}
@@ -1084,6 +1133,14 @@
                            :router-id "test-router-id"
                            :service-id "test-service-id"}}
            (exec-routes-mapper "/waiter-async/status/test-request-id/test-router-id/test-service-id/test-host/test-port/some/test/location?a=b")))
+    (is (= {:handler :async-complete-v2-handler-fn, :route-params {:request-id "test-request-id" :request-data "BASE64-ENCODED-DATA"}}
+           (exec-routes-mapper "/waiter-async/v2/complete/test-request-id/BASE64-ENCODED-DATA")))
+    (is (= {:handler :async-result-v2-handler-fn
+            :route-params {:location "some/test/location" :request-id "test-request-id" :request-data "BASE64-ENCODED-DATA"}}
+           (exec-routes-mapper "/waiter-async/v2/result/test-request-id/BASE64-ENCODED-DATA/some/test/location?a=b")))
+    (is (= {:handler :async-status-v2-handler-fn
+            :route-params {:location "some/test/location" :request-id "test-request-id" :request-data "BASE64-ENCODED-DATA"}}
+           (exec-routes-mapper "/waiter-async/v2/status/test-request-id/BASE64-ENCODED-DATA/some/test/location?a=b")))
     (is (= {:handler :waiter-auth-handler-fn}
            (exec-routes-mapper "/waiter-auth")))
     (is (= {:handler :waiter-acknowledge-consent-handler-fn}

@@ -22,6 +22,11 @@
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
            (java.util.concurrent ExecutorService)))
 
+(defn singleton-chan [v]
+  "Creates a channel for returning the single value v."
+  (doto (async/promise-chan)
+    (async/>!! v)))
+
 (defn sliding-buffer-chan [n]
   (async/chan (async/sliding-buffer n)))
 

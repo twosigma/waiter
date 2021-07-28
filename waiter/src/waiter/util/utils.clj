@@ -187,11 +187,12 @@
 
 (defn try-parse-json
   "parses json and throws exception with the input string"
-  [s]
-  (try
-    (json/read-str s)
-    (catch Exception e
-      (throw (ex-info "Couldn't parse JSON" {:string s} e)))))
+  ([s] (try-parse-json s identity))
+  ([s key-fn]
+   (try
+     (json/read-str s :key-fn key-fn)
+     (catch Exception e
+       (throw (ex-info "Couldn't parse JSON" {:string s} e))))))
 
 (defn clj->json
   "Convert the input Clojure data structure into a json string."
@@ -234,6 +235,21 @@
                        (.flush writer)))))}
       (attach-waiter-namespace-keys data-map)
       (attach-waiter-source))))
+
+(let [b64-decoder (java.util.Base64/getUrlDecoder)]
+  (defn b64-url-json-decode [^String json-str]
+    "Decode a URL-safe Base64 JSON string into a Clojure data structure."
+    (-> (.decode b64-decoder json-str)
+        (String. StandardCharsets/UTF_8)
+        (try-parse-json keyword))))
+
+(let [b64-encoder (.withoutPadding (java.util.Base64/getUrlEncoder))]
+  (defn b64-url-json-encode [data]
+    "Encode a Clojure data structure as a JSON object in a URL-safe Base64 string."
+    (as-> data $
+      (clj->json $)
+      (.getBytes $ StandardCharsets/UTF_8)
+      (.encodeToString b64-encoder $))))
 
 (defn escape-html
   "Change special characters into HTML character entities to prevent XSS."

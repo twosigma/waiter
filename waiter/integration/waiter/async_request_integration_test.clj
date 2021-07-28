@@ -91,7 +91,7 @@
           async-request-cid (get-in response [:headers "x-cid"] "")]
       (assert-response-status response http-202-accepted)
       (is (not (str/blank? status-location)))
-      (is (str/starts-with? (str status-location) "/waiter-async/status/") (str status-location))
+      (is (re-find #"^/waiter-async/(v2/)?status/" (str status-location)) (str status-location))
       (log/info async-request-cid "status-location:" status-location)
       (with-service-cleanup
         service-id
@@ -139,8 +139,9 @@
           (testing "validate-async-result"
             (let [[router-id endpoint-url] (first (seq routers))
                   {:keys [result-location]} (async-status [router-id endpoint-url] status-location cookies)]
-              (is (str/starts-with? (str result-location) "/waiter-async/result/") (str result-location))
-              (is (str/includes? (str result-location) service-id) (str result-location))
+              (is (re-find #"^/waiter-async/(v2/)?result/" (str result-location)) (str result-location))
+              (when-not (str/starts-with? (str result-location) "/waiter-async/v2/")
+                (is (str/includes? (str result-location) service-id) (str result-location)))
               (log/info "validating async result from router" router-id "at" endpoint-url)
               (let [{:keys [body] :as response} (make-request endpoint-url result-location :headers request-headers :cookies cookies)]
                 (assert-response-status response http-200-ok)
@@ -164,7 +165,7 @@
           (make-async-request waiter-url processing-time-ms)]
       (assert-response-status response http-202-accepted)
       (is (not (str/blank? status-location)))
-      (is (str/starts-with? (str status-location) "/waiter-async/status/") (str status-location))
+      (is (re-find #"^/waiter-async/(v2/)?status/" (str status-location)) (str status-location))
       (with-service-cleanup
         service-id
         (let [routers (routers waiter-url)]
@@ -266,8 +267,9 @@
               (let [[router-id endpoint-url] (rand-nth (seq routers))
                     {:keys [result-location response]} (async-status [router-id endpoint-url] status-location cookies)]
                 (when (not= http-410-gone (:status response))
-                  (is (str/starts-with? (str result-location) "/waiter-async/result/") (str result-location))
-                  (is (str/includes? (str result-location) service-id) (str result-location))
+                  (is (re-find #"^/waiter-async/(v2/)?result/" (str result-location)) (str result-location))
+                  (when-not (str/starts-with? (str result-location) "/waiter-async/v2/")
+                    (is (str/includes? (str result-location) service-id) (str result-location)))
                   (log/info "validating async result via router" router-id "at" endpoint-url)
                   (let [response (make-request endpoint-url result-location :cookies cookies :method :get)]
                     (assert-response-status response http-200-ok))))))
