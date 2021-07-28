@@ -373,7 +373,8 @@
                                :x-waiter-max-instances 1
                                :x-waiter-min-instances 1
                                :x-waiter-name (rand-name)
-                               :x-waiter-timeout 30000)
+                               :x-waiter-timeout 30000
+                               :x-waiter-queue-timeout 30000)
               service-id (retrieve-service-id waiter-url waiter-headers)
               timeout-secs 150]
           (cond
