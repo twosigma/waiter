@@ -240,7 +240,7 @@
   (defn b64-url-json-decode [^String json-str]
     "Decode a URL-safe Base64 JSON string into a Clojure data structure."
     (-> (.decode b64-decoder json-str)
-        (String. java.nio.charset.StandardCharsets/UTF_8)
+        (String. StandardCharsets/UTF_8)
         (try-parse-json keyword))))
 
 (let [b64-encoder (.withoutPadding (java.util.Base64/getUrlEncoder))]
@@ -248,7 +248,7 @@
     "Encode a Clojure data structure as a JSON object in a URL-safe Base64 string."
     (as-> data $
       (clj->json $)
-      (.getBytes $ java.nio.charset.StandardCharsets/UTF_8)
+      (.getBytes $ StandardCharsets/UTF_8)
       (.encodeToString b64-encoder $))))
 
 (defn escape-html

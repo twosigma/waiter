@@ -24,7 +24,7 @@
 
 (defn singleton-chan [v]
   "Creates a channel for returning the single value v."
-  (doto (async/chan 1)
+  (doto (async/promise-chan)
     (async/>!! v)))
 
 (defn sliding-buffer-chan [n]
