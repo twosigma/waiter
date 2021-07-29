@@ -110,8 +110,8 @@ def determine_format(options):
     """
     validate_options(options)
     as_yaml = options.get(YAML.name())
-    input_format = YAML if as_yaml else JSON
-    return input_format
+    data_format = YAML if as_yaml else JSON
+    return data_format
 
 
 def read_from_standard_input(input_format):
