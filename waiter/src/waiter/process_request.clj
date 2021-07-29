@@ -487,109 +487,117 @@
         (log/info "response status 202, not treating as an async request as location is" location)))))
 
 (defn stream-http-response
-  "Writes byte data to the resp-chan. If the body is a string, just writes the string.
+  "Writes byte data to the resp-body when skip-streaming? is not true,
+   else closes request state and response body channels without streaming any data to resp-body.
+   If the body is a string, just writes the string.
    Otherwise, it is assumed the body is a input stream, in which case, the function
    buffers bytes, and push byte input streams onto the channel until the body input
    stream is exhausted."
-  [{:keys [body error-chan]} confirm-live-connection request-abort-callback resp-chan
+  [{:keys [body error-chan]} confirm-live-connection request-abort-callback skip-streaming? resp-body
    {:keys [streaming-timeout-ms]}
    reservation-status-promise request-state-chan metric-group waiter-debug-enabled?
    {:keys [requests-streaming requests-waiting-to-stream service-id
            stream stream-back-pressure stream-complete-rate stream-exception-meter
            stream-onto-resp-chan stream-read-body stream-request-rate
            throughput-iterations-meter throughput-iterations-meter-global throughput-meter throughput-meter-global]}]
-  (async/go
-    (let [output-stream-atom (atom nil)]
-      (try
-        (counters/dec! requests-waiting-to-stream)
-        ; configure the idle timeout to the value specified by streaming-timeout-ms
-        (async/>! resp-chan (configure-idle-timeout-pill-fn (cid/get-correlation-id) streaming-timeout-ms))
-        (async/>! resp-chan (fn [output-stream] (reset! output-stream-atom output-stream)))
-        (metrics/with-meter
-          stream-request-rate
-          stream-complete-rate
-          (metrics/with-counter
-            requests-streaming
-            (timers/start-stop-time!
-              stream
-              (loop [bytes-streamed 0
-                     bytes-reported-to-statsd 0]
-                (let [[bytes-streamed' more-bytes-possibly-available?]
-                      (try
-                        (confirm-live-connection)
-                        (let [buffer (timers/start-stop-time! stream-read-body (async/<! body))
-                              bytes-read (if buffer (count buffer) -1)]
-                          (if-not (= -1 bytes-read)
-                            (do
-                              (meters/mark! throughput-meter bytes-read)
-                              (meters/mark! throughput-meter-global bytes-read)
-                              (meters/mark! throughput-iterations-meter)
-                              (meters/mark! throughput-iterations-meter-global)
-                              (if (or (zero? bytes-read) ;; don't write empty buffer, channel may be potentially closed
-                                      (timers/start-stop-time!
-                                        stream-onto-resp-chan
-                                        ;; don't wait forever to write to server
-                                        (au/timed-offer! resp-chan buffer streaming-timeout-ms)))
-                                [(+ bytes-streamed bytes-read) true]
-                                (let [timeout-ch (async/timeout 5000)
-                                      [{:keys [error]} source-ch] (async/alts! [error-chan timeout-ch] :priority true)
-                                      _ (when (= timeout-ch source-ch)
-                                          (log/warn "timeout while reading from error-chan"))
-                                      ex (ex-info "Unable to stream, back pressure in resp-chan. Is connection live?"
-                                                  {:body-source-closed? (protocols/closed? body)
-                                                   :body-target-closed? (protocols/closed? resp-chan)
-                                                   :bytes-pending bytes-read
-                                                   :bytes-streamed bytes-streamed
-                                                   :correlation-id (cid/get-correlation-id)
-                                                   :error-cause :client-error}
-                                                  error)]
-                                  (meters/mark! stream-back-pressure)
-                                  (deliver reservation-status-promise :client-error)
-                                  (request-abort-callback (IOException. ^Exception ex))
-                                  (when waiter-debug-enabled?
-                                    (log/info "unable to stream, back pressure in resp-chan"))
-                                  (throw ex))))
-                            (do
-                              (let [{:keys [error]} (async/alt!
-                                                      error-chan ([error] error)
-                                                      (async/timeout 5000) ([_] {:error (IllegalStateException. "Timeout while waiting on error chan")}))]
-                                (when error
-                                  (throw error)))
-                              (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
-                              (log/info bytes-streamed "bytes streamed in response")
-                              (deliver reservation-status-promise :success)
-                              [bytes-streamed false])))
-                        (catch Exception e
-                          (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
-                          ; Handle lower down
-                          (throw (ex-info (str "error occurred after streaming " bytes-streamed " bytes in response") {} e))))]
-                  (let [bytes-reported-to-statsd'
-                        (let [unreported-bytes (- bytes-streamed' bytes-reported-to-statsd)]
-                          (if (or (and (not more-bytes-possibly-available?) (pos? unreported-bytes))
-                                  (>= unreported-bytes 1000000))
-                            (do
-                              (statsd/inc! metric-group "response_bytes" unreported-bytes)
-                              bytes-streamed')
-                            bytes-reported-to-statsd))]
-                    (when more-bytes-possibly-available?
-                      (recur bytes-streamed' bytes-reported-to-statsd'))))))))
-        (catch Exception e
-          (log/info e "exception occurred while streaming response for" service-id)
-          (meters/mark! stream-exception-meter)
-          (let [[error-cause _ _] (classify-error e)]
-            (deliver reservation-status-promise error-cause)
-            (when-not (= :client-eagerly-closed error-cause)
-              (log/info "sending poison pill to response channel")
-              (let [poison-pill-function (poison-pill-fn (cid/get-correlation-id))]
-                (when-not (au/timed-offer! resp-chan poison-pill-function 5000)
-                  (log/info "poison pill offer on response channel timed out!")
-                  (when-let [output-stream @output-stream-atom]
-                    (log/info "invoking poison pill directly on output stream")
-                    (poison-pill-function output-stream)))))))
-        (finally
-          (async/close! resp-chan)
-          (async/close! body)
-          (async/close! request-state-chan))))))
+  (if skip-streaming?
+    (do
+      (log/info "skipping streaming response body")
+      (counters/dec! requests-waiting-to-stream)
+      (async/close! body)
+      (async/close! request-state-chan))
+    (async/go
+      (let [output-stream-atom (atom nil)]
+        (try
+          (counters/dec! requests-waiting-to-stream)
+          ; configure the idle timeout to the value specified by streaming-timeout-ms
+          (async/>! resp-body (configure-idle-timeout-pill-fn (cid/get-correlation-id) streaming-timeout-ms))
+          (async/>! resp-body (fn [output-stream] (reset! output-stream-atom output-stream)))
+          (metrics/with-meter
+            stream-request-rate
+            stream-complete-rate
+            (metrics/with-counter
+              requests-streaming
+              (timers/start-stop-time!
+                stream
+                (loop [bytes-streamed 0
+                       bytes-reported-to-statsd 0]
+                  (let [[bytes-streamed' more-bytes-possibly-available?]
+                        (try
+                          (confirm-live-connection)
+                          (let [buffer (timers/start-stop-time! stream-read-body (async/<! body))
+                                bytes-read (if buffer (count buffer) -1)]
+                            (if-not (= -1 bytes-read)
+                              (do
+                                (meters/mark! throughput-meter bytes-read)
+                                (meters/mark! throughput-meter-global bytes-read)
+                                (meters/mark! throughput-iterations-meter)
+                                (meters/mark! throughput-iterations-meter-global)
+                                (if (or (zero? bytes-read) ;; don't write empty buffer, channel may be potentially closed
+                                        (timers/start-stop-time!
+                                          stream-onto-resp-chan
+                                          ;; don't wait forever to write to server
+                                          (au/timed-offer! resp-body buffer streaming-timeout-ms)))
+                                  [(+ bytes-streamed bytes-read) true]
+                                  (let [timeout-ch (async/timeout 5000)
+                                        [{:keys [error]} source-ch] (async/alts! [error-chan timeout-ch] :priority true)
+                                        _ (when (= timeout-ch source-ch)
+                                            (log/warn "timeout while reading from error-chan"))
+                                        ex (ex-info "Unable to stream, back pressure in resp-chan. Is connection live?"
+                                                    {:body-source-closed? (protocols/closed? body)
+                                                     :body-target-closed? (protocols/closed? resp-body)
+                                                     :bytes-pending bytes-read
+                                                     :bytes-streamed bytes-streamed
+                                                     :correlation-id (cid/get-correlation-id)
+                                                     :error-cause :client-error}
+                                                    error)]
+                                    (meters/mark! stream-back-pressure)
+                                    (deliver reservation-status-promise :client-error)
+                                    (request-abort-callback (IOException. ^Exception ex))
+                                    (when waiter-debug-enabled?
+                                      (log/info "unable to stream, back pressure in resp-chan"))
+                                    (throw ex))))
+                              (do
+                                (let [{:keys [error]} (async/alt!
+                                                        error-chan ([error] error)
+                                                        (async/timeout 5000) ([_] {:error (IllegalStateException. "Timeout while waiting on error chan")}))]
+                                  (when error
+                                    (throw error)))
+                                (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
+                                (log/info bytes-streamed "bytes streamed in response")
+                                (deliver reservation-status-promise :success)
+                                [bytes-streamed false])))
+                          (catch Exception e
+                            (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
+                            ; Handle lower down
+                            (throw (ex-info (str "error occurred after streaming " bytes-streamed " bytes in response") {} e))))]
+                    (let [bytes-reported-to-statsd'
+                          (let [unreported-bytes (- bytes-streamed' bytes-reported-to-statsd)]
+                            (if (or (and (not more-bytes-possibly-available?) (pos? unreported-bytes))
+                                    (>= unreported-bytes 1000000))
+                              (do
+                                (statsd/inc! metric-group "response_bytes" unreported-bytes)
+                                bytes-streamed')
+                              bytes-reported-to-statsd))]
+                      (when more-bytes-possibly-available?
+                        (recur bytes-streamed' bytes-reported-to-statsd'))))))))
+          (catch Exception e
+            (log/info e "exception occurred while streaming response for" service-id)
+            (meters/mark! stream-exception-meter)
+            (let [[error-cause _ _] (classify-error e)]
+              (deliver reservation-status-promise error-cause)
+              (when-not (= :client-eagerly-closed error-cause)
+                (log/info "sending poison pill to response channel")
+                (let [poison-pill-function (poison-pill-fn (cid/get-correlation-id))]
+                  (when-not (au/timed-offer! resp-body poison-pill-function 5000)
+                    (log/info "poison pill offer on response channel timed out!")
+                    (when-let [output-stream @output-stream-atom]
+                      (log/info "invoking poison pill directly on output stream")
+                      (poison-pill-function output-stream)))))))
+          (finally
+            (async/close! resp-body)
+            (async/close! body)
+            (async/close! request-state-chan)))))))
 
 (defn wrap-response-status-metrics
   "Wraps a handler and updates service metrics based upon the result."
@@ -637,7 +645,7 @@
       (assoc response :trailers trailers-ch))
     response))
 
-(defn- forward-grpc-status-headers-in-trailers
+(defn- forward-successful-grpc-status-headers-in-trailers
   "Adds logging for tracking response trailers for requests.
    When only headers are provided jetty terminates the request with an empty data frame,
    we work around that limitation by sending trailers that carry the same grpc error message."
@@ -645,8 +653,8 @@
   (if trailers
     (let [correlation-id (cid/get-correlation-id)
           trailers-copy-ch (async/chan 1)
-          grpc-headers (select-keys headers ["grpc-message" "grpc-status"])]
-      (if (seq grpc-headers)
+          {:keys [grpc-status] :as grpc-headers} (select-keys headers ["grpc-message" "grpc-status"])]
+      (if (hu/grpc-status-success? grpc-status)
         (do
           (async/go
             (cid/with-correlation-id
@@ -664,17 +672,22 @@
         response))
     response))
 
+(defn- grpc-response-error?
+  "Returns true if a grpc response signals an error."
+  [request response backend-proto]
+  (let [request-headers (:headers request)
+        {:strs [grpc-status]} (:headers response)
+        proto-version (hu/backend-protocol->http-version backend-proto)]
+    (and (hu/grpc? request-headers proto-version)
+         (hu/grpc-status-error? grpc-status))))
+
 (defn- handle-grpc-error-response
   "Eagerly terminates grpc requests with error status headers.
    We cannot rely on jetty to close the request for us in a timely manner,
    please see https://github.com/eclipse/jetty.project/issues/3842 for details."
   [{:keys [abort-ch body error-chan trailers] :as response} request backend-proto reservation-status-promise]
-  (let [request-headers (:headers request)
-        {:strs [grpc-status]} (:headers response)
-        proto-version (hu/backend-protocol->http-version backend-proto)]
-    (when (and (hu/grpc? request-headers proto-version)
-               (not (str/blank? grpc-status))
-               (not= (str grpc-0-ok) grpc-status)
+  (let [{:strs [grpc-status]} (:headers response)]
+    (when (and (grpc-response-error? request response backend-proto)
                (au/chan? body))
       (log/info "eagerly closing response body as grpc status is" grpc-status)
       ;; mark the request as successful, grpc failures are reported in the headers
@@ -702,8 +715,7 @@
     (log/info "backend response status:" (:status response) "and headers:" (:headers response)))
   (let [{:keys [service-description service-id]} descriptor
         {:strs [backend-proto metric-group]} service-description
-        waiter-debug-enabled? (utils/request->debug-enabled? request)
-        resp-chan (async/chan 5)]
+        waiter-debug-enabled? (utils/request->debug-enabled? request)]
     (when (hu/service-unavailable? request response)
       (log/info "service unavailable according to response status"
                 {:instance instance
@@ -713,14 +725,17 @@
     (counters/inc! (metrics/service-counter service-id "request-counts" "waiting-to-stream"))
     (confirm-live-connection-with-abort)
     (let [{:keys [location query-string]} (extract-async-request-response-data response uri)
-          request-abort-callback (abort-http-request-callback-factory response)]
+          request-abort-callback (abort-http-request-callback-factory response)
+          grpc-error? (grpc-response-error? request response backend-proto)
+          resp-body (if grpc-error? (byte-array 0) (async/chan 5))]
       (when location
         ;; backend is processing as an asynchronous request, eagerly trigger the write to the promise
         (deliver reservation-status-promise :success-async))
+      ;; A grpc error will be propagated with an empty body to allow the gRPC retry mechanism to function.
+      ;; Stream the http response in all other scenarios.
       (stream-http-response response confirm-live-connection-with-abort request-abort-callback
-                            resp-chan instance-request-properties reservation-status-promise
-                            request-state-chan metric-group waiter-debug-enabled?
-                            (metrics/stream-metric-map service-id))
+                            grpc-error? resp-body instance-request-properties reservation-status-promise
+                            request-state-chan metric-group waiter-debug-enabled? (metrics/stream-metric-map service-id))
       (-> (cond-> response
             location (post-process-async-request-response-fn
                        descriptor instance (make-auth-user-map request)
@@ -728,8 +743,8 @@
         (utils/attach-waiter-source :backend)
         (introspect-trailers)
         (handle-grpc-error-response request backend-proto reservation-status-promise)
-        (forward-grpc-status-headers-in-trailers)
-        (assoc :body resp-chan)
+        (forward-successful-grpc-status-headers-in-trailers)
+        (assoc :body resp-body)
         (update-in [:headers] (fn update-response-headers [headers]
                                 (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)))))))
 

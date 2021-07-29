@@ -26,6 +26,7 @@
             [waiter.util.client-tools :refer :all])
   (:import (com.twosigma.waiter.courier CourierReply CourierSummary GrpcClient GrpcClient$CancellationPolicy GrpcClient$RpcResult StateReply)
            (io.grpc Status)
+           (java.util ArrayList)
            (java.util.concurrent CountDownLatch)
            (java.util.function Function)))
 
@@ -447,7 +448,61 @@
                                     str)]
             (is (nil? reply) assertion-message)
             (assert-grpc-cancel-status status "Cancelled by server" assertion-message)
-            (assert-request-state grpc-client request-headers service-id correlation-id ::server-cancel)))))))
+            (assert-request-state grpc-client request-headers service-id correlation-id ::server-cancel)
+            (Thread/sleep 2500) ;; allow time for metrics from multiple routers to sync
+            (let [settings (service-settings waiter-url service-id :query-params {"include" "metrics"})
+                  {:keys [outstanding streaming total] :as request-counts} (get-in settings [:metrics :aggregate :counters :request-counts])
+                  assertion-message (str request-counts)]
+              (is (zero? outstanding) assertion-message)
+              (is (zero? streaming) assertion-message)
+              ;; expect no retries: one ping, one cancelled request and one status query
+              (is (= total 3) assertion-message))))))))
+
+(deftest ^:parallel ^:integration-fast test-grpc-unary-call-server-retry-on-cancellation
+  (testing-using-waiter-url
+    (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)]
+      (with-service-cleanup
+        service-id
+        (testing "grpc retries"
+          (Thread/sleep 2500) ;; allow time for metrics from multiple routers to sync
+          (let [settings (service-settings waiter-url service-id :query-params {"include" "metrics"})
+                {:keys [outstanding streaming total] :as request-counts} (get-in settings [:metrics :aggregate :counters :request-counts])
+                assertion-message (str request-counts)]
+            (is (zero? outstanding) assertion-message)
+            (is (zero? streaming) assertion-message)
+            ;; only the ping request
+            (is (= total 1) assertion-message))
+          (log/info "starting small request and reply test with retry config")
+          (let [id (str (rand-name "m-retry") ".SEND_ERROR")
+                from (rand-name "f")
+                content (rand-str 1000)
+                correlation-id (rand-name)
+                _ (log/info "cid:" correlation-id)
+                request-headers (assoc request-headers "x-cid" correlation-id)
+                grpc-client (initialize-grpc-client correlation-id host h2c-port)
+                retryable-status-codes (ArrayList. ["CANCELLED" "UNAVAILABLE"])
+                rpc-result (.sendPackage grpc-client request-headers id from content 1000 60000 retryable-status-codes)
+                ^CourierReply reply (.result rpc-result)
+                ^Status status (.status rpc-result)
+                assertion-message (->> (cond-> {:correlation-id correlation-id
+                                                :service-id service-id}
+                                         reply (assoc :reply {:id (.getId reply)
+                                                              :response (.getResponse reply)})
+                                         status (assoc :status {:code (-> status .getCode str)
+                                                                :description (.getDescription status)}))
+                                    (into (sorted-map))
+                                    str)]
+            (is (nil? reply) assertion-message)
+            (assert-grpc-cancel-status status "Cancelled by server" assertion-message)
+            (assert-request-state grpc-client request-headers service-id correlation-id ::server-cancel)
+            (Thread/sleep 2500) ;; allow time for metrics from multiple routers to sync
+            (let [settings (service-settings waiter-url service-id :query-params {"include" "metrics"})
+                  {:keys [outstanding streaming total] :as request-counts} (get-in settings [:metrics :aggregate :counters :request-counts])
+                  assertion-message (str request-counts)]
+              (is (zero? outstanding) assertion-message)
+              (is (zero? streaming) assertion-message)
+              ;; expect at least one retry on the cancelled request along with the ping and status requests
+              (is (>= total 4) assertion-message))))))))
 
 (deftest ^:parallel ^:integration-fast test-grpc-unary-call-server-exit
   (testing-using-waiter-url

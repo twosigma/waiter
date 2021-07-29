@@ -35,6 +35,7 @@ import io.grpc.stub.MetadataUtils;
 import io.grpc.stub.StreamObserver;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -162,11 +163,35 @@ public class GrpcClient {
     }
 
     private ManagedChannel initializeChannel() {
+        return initializeChannel(Arrays.asList());
+    }
+
+    private ManagedChannel initializeChannel(final List<String> retryableStatusCodes) {
         logFunction.apply("initializing plaintext client at " + host + ":" + port);
-        return ManagedChannelBuilder
+
+        final ManagedChannelBuilder<?> channelBuilder = ManagedChannelBuilder
             .forAddress(host, port)
-            .usePlaintext()
-            .build();
+            .usePlaintext();
+
+        if (!retryableStatusCodes.isEmpty()) {
+            Map<String, Object> rawServiceConfig = new HashMap<>();
+            Map<String, Object> methodConfig = new HashMap<>();
+            Map<String, Object> name = new HashMap<>();
+            name.put("service", "courier.Courier");
+            methodConfig.put("name", Arrays.<Object>asList(name));
+            Map<String, Object> retryPolicy = new HashMap<>();
+            retryPolicy.put("maxAttempts", 3D);
+            retryPolicy.put("initialBackoff", "10s");
+            retryPolicy.put("maxBackoff", "30s");
+            retryPolicy.put("backoffMultiplier", 2D);
+            retryPolicy.put("retryableStatusCodes", retryableStatusCodes);
+            methodConfig.put("retryPolicy", retryPolicy);
+            rawServiceConfig.put("methodConfig", Arrays.<Object>asList(methodConfig));
+
+            channelBuilder.defaultServiceConfig(rawServiceConfig).enableRetry();
+        }
+
+        return channelBuilder.build();
     }
 
     private void shutdownChannel(final ManagedChannel channel) {
@@ -279,7 +304,18 @@ public class GrpcClient {
                                                final String message,
                                                final long sleepDurationMillis,
                                                final long deadlineDurationMillis) {
-        final ManagedChannel channel = initializeChannel();
+        final List<String> retryableStatusCodes = Arrays.asList();
+        return sendPackage(headers, id, from, message, sleepDurationMillis, deadlineDurationMillis, retryableStatusCodes);
+    }
+
+    public RpcResult<CourierReply> sendPackage(final Map<String, Object> headers,
+                                               final String id,
+                                               final String from,
+                                               final String message,
+                                               final long sleepDurationMillis,
+                                               final long deadlineDurationMillis,
+                                               final List<String> retryableStatusCodes) {
+        final ManagedChannel channel = initializeChannel(retryableStatusCodes);
 
         try {
             final Channel wrappedChannel = wrapResponseLogger(channel);
@@ -614,7 +650,7 @@ public class GrpcClient {
         /* Access a service running on the local machine on port 8080 */
         final String host = args.length > 0 ? args[0] : "localhost";
         final int port = args.length > 1 ? Integer.parseInt(args[1]) : 8080;
-        final String methodName = args.length > 2 ? args[2] : "runCollectPackagesClientCancelObserver";
+        final String methodName = args.length > 2 ? args[2] : "runSendPackageSendErrorRetry";
         final String correlationId = args.length > 3 ? args[3] : ("courier-request-" + System.nanoTime());
 
         System.out.println("host = " + host);
@@ -668,7 +704,10 @@ public class GrpcClient {
                 runCollectPackagesSuccess(client, correlationId);
                 break;
             case "runSendPackageSendError":
-                runSendPackageSendError(client, correlationId);
+                runSendPackageSendError(client, correlationId, Arrays.asList());
+                break;
+            case "runSendPackageSendErrorRetry":
+                runSendPackageSendError(client, correlationId, Arrays.asList("CANCELLED", "UNAVAILABLE"));
                 break;
             case "runSendPackageSuccess":
                 runSendPackageSuccess(client, correlationId);
@@ -703,7 +742,7 @@ public class GrpcClient {
 
         final HashMap<String, Object> headers = new HashMap<>();
         headers.put("x-cid", correlationId);
-        final RpcResult<CourierReply> rpcResult = client.sendPackage(headers, id, user, sb.toString(), 10, 1000);
+        final RpcResult<CourierReply> rpcResult = client.sendPackage(headers, id, user, sb.toString(), 10, 30000);
         final CourierReply courierReply = rpcResult.result();
         client.logFunction.apply("sendPackage response = " + courierReply);
         final Status status = rpcResult.status();
@@ -711,7 +750,7 @@ public class GrpcClient {
         retrieveStateForCid(client, headers, correlationId);
     }
 
-    private static void runSendPackageSendError(final GrpcClient client, final String correlationId) {
+    private static void runSendPackageSendError(final GrpcClient client, final String correlationId, final List<String> retryableStatusCodes) {
         final String id = UUID.randomUUID().toString() + ".SEND_ERROR";
         final String user = "Jim";
         final StringBuilder sb = new StringBuilder();
@@ -724,7 +763,7 @@ public class GrpcClient {
 
         final HashMap<String, Object> headers = new HashMap<>();
         headers.put("x-cid", correlationId);
-        final RpcResult<CourierReply> rpcResult = client.sendPackage(headers, id, user, sb.toString(), 10, 1000);
+        final RpcResult<CourierReply> rpcResult = client.sendPackage(headers, id, user, sb.toString(), 1000, 300000, retryableStatusCodes);
         final CourierReply courierReply = rpcResult.result();
         client.logFunction.apply("sendPackage response = " + courierReply);
         final Status status = rpcResult.status();

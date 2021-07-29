@@ -36,7 +36,7 @@
                   :exclusions [[commons-codec]]]
                  ;; resolve the cheshire dependency used by buddy and jet
                  [cheshire "5.10.0"]
-                 [twosigma/courier "1.5.15"
+                 [twosigma/courier "1.5.19"
                   :exclusions [com.google.guava/guava io.grpc/grpc-core]
                   :scope "test"]
                  ;; avoids the following:
@@ -45,7 +45,7 @@
                  [io.grpc/grpc-core "1.20.0"
                   :exclusions [com.google.guava/guava]
                   :scope "test"]
-                 [twosigma/jet "0.7.10-20210714_175127-g9b2f58a"
+                 [twosigma/jet "0.7.10-20210727_221451-g7742bea"
                   :exclusions [org.mortbay.jetty.alpn/alpn-boot]]
                  [twosigma/clj-http "1.0.2-20180124_201819-gcdf23e5"
                   :exclusions [commons-codec commons-io org.clojure/tools.reader potemkin slingshot]]

@@ -222,6 +222,18 @@
   [{:strs [content-type]} proto-version]
   (and (= "HTTP/2.0" proto-version) (= content-type "application/grpc")))
 
+(defn grpc-status-error?
+  "Returns true if the grpc-status is not blank and represents an error."
+  [grpc-status]
+  (and (not (str/blank? grpc-status))
+       (not= (str grpc-0-ok) grpc-status)))
+
+(defn grpc-status-success?
+  "Returns true if the grpc-status is not blank and represents a success."
+  [grpc-status]
+  (and (not (str/blank? grpc-status))
+       (= (str grpc-0-ok) grpc-status)))
+
 (defn service-unavailable?
   "Returns true if the response represents the service is unavailable.
    This means either the response status is 503 or the grpc response status is UNAVAILABLE, i.e. 14."
