@@ -441,10 +441,10 @@
   [http-clients make-basic-auth-fn service-id->password-fn {:keys [host] :as instance}
    {:keys [body ctrl-mult instance-request-overrides query-string request-method trailers-fn] :as request}
    {:keys [initial-socket-timeout-ms output-buffer-size streaming-timeout-ms]}
-   passthrough-headers end-route metric-group backend-proto proto-version]
+   passthrough-headers end-route metric-group request-proto proto-version]
   (let [port-index (get instance-request-overrides :port-index 0)
         port (scheduler/instance->port instance port-index)
-        instance-endpoint (scheduler/end-point-url backend-proto host port end-route)
+        instance-endpoint (scheduler/end-point-url request-proto host port end-route)
         service-id (scheduler/instance->service-id instance)
         service-password (service-id->password-fn service-id)
         ; Removing expect may be dangerous http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html, but makes requests 3x faster =}
@@ -467,7 +467,7 @@
     (when waiter-debug-enabled?
       (log/info "connecting to" instance-endpoint "using" proto-version))
     (let [auth-user-map (make-auth-user-map request)
-          http-client (hu/select-http-client backend-proto http-clients)]
+          http-client (hu/select-http-client request-proto http-clients)]
       (make-http-request
         http-client make-basic-auth-fn request-method instance-endpoint query-string headers body trailers-fn
         service-id service-password metric-group auth-user-map initial-socket-timeout-ms streaming-timeout-ms
@@ -770,7 +770,7 @@
 (let [process-timer (metrics/waiter-timer "core" "process")]
   (defn process
     "Process the incoming request and stream back the response."
-    [make-request-fn populate-maintainer-chan! start-new-service-fn
+    [scheduler make-request-fn populate-maintainer-chan! start-new-service-fn
      instance-request-properties determine-priority-fn process-backend-response-fn
      request-abort-callback-factory local-usage-agent
      {:keys [ctrl descriptor request-id request-time] :as request}]
@@ -793,9 +793,7 @@
         (timers/start-stop-time!
           process-timer
           (let [{:keys [service-id service-description]} descriptor
-                {:strs [metric-group]} service-description
-                backend-proto (or (get-in request [:instance-request-overrides :backend-proto])
-                                  (get service-description "backend-proto"))]
+                {:strs [metric-group]} service-description]
             (send local-usage-agent metrics/update-last-request-time-usage-metric service-id request-time)
             (try
               (let [{:keys [waiter-headers passthrough-headers]} descriptor]
@@ -829,7 +827,10 @@
                                                                   reservation-status-promise metric-group)))
                         instance (:out timed-instance)
                         instance-elapsed (:elapsed timed-instance)
-                        proto-version (hu/backend-protocol->http-version backend-proto)]
+                        port-index (get-in request [:instance-request-overrides :port-index] 0)
+                        request-proto (or (get-in request [:instance-request-overrides :backend-proto])
+                                          (scheduler/request-protocol scheduler instance port-index service-description))
+                        proto-version (hu/backend-protocol->http-version request-proto)]
                     (when-not instance
                       (throw (ex-info "Suggested instance was nil" reason-map)))
                     (statsd/histo! metric-group "get_instance" instance-elapsed)
@@ -840,7 +841,8 @@
                                                  (metrics/service-timer service-id "backend-response")
                                                  (async/<!
                                                    (make-request-fn instance request instance-request-properties
-                                                                    passthrough-headers uri metric-group backend-proto proto-version)))
+                                                                    passthrough-headers uri metric-group
+                                                                    request-proto proto-version)))
                                 response-elapsed (:elapsed timed-response)
                                 {:keys [error] :as response} (assoc (:out timed-response)
                                                                :backend-response-latency-ns response-elapsed)]
@@ -867,7 +869,7 @@
                         (update :headers headers/dissoc-hop-by-hop-headers proto-version)
                         (assoc :get-instance-latency-ns instance-elapsed
                                :instance instance
-                               :instance-proto backend-proto
+                               :instance-proto request-proto
                                :protocol proto-version)
                         (assoc-debug-header "x-waiter-get-available-instance-ns" (str instance-elapsed))))))
               (catch Exception e ; Handle case where we couldn't get an instance
@@ -962,7 +964,7 @@
 (defn make-health-check-request
   "Makes a health check request to the backend using the specified proto and port from the descriptor.
    Returns the health check response from an arbitrary backend or the failure response."
-  [process-request-handler-fn idle-timeout-ms {:keys [descriptor] :as request} health-check-protocol health-check-accept-header]
+  [process-request-handler-fn idle-timeout-ms {:keys [descriptor] :as request} health-check-accept-header]
   (async/go
     (try
       (let [{:keys [service-description]} descriptor
@@ -997,8 +999,7 @@
                           (attach-empty-content)
                           (assoc :ctrl ctrl-ch
                                  ;; override the protocol and port used while talking to the backend
-                                 :instance-request-overrides {:backend-proto health-check-protocol
-                                                              :port-index health-check-port-index}
+                                 :instance-request-overrides {:port-index health-check-port-index}
                                  :request-method :get
                                  :uri health-check-url))
             pr-response (process-request-handler-fn new-request)
@@ -1033,9 +1034,9 @@
       (let [{:keys [core-service-description service-description service-id]} descriptor
             request (assoc-in request [:headers "user-agent"] user-agent)
             idle-timeout-ms (Integer/parseInt (get headers "x-waiter-timeout" "300000"))
-            health-check-protocol (scheduler/service-description->health-check-protocol service-description)
-            ping-response (async/<! (make-health-check-request process-request-handler-fn idle-timeout-ms request health-check-protocol health-check-accept-header))]
+            ping-response (async/<! (make-health-check-request process-request-handler-fn idle-timeout-ms request health-check-accept-header))]
         (let [{:strs [health-check-url]} service-description
+              health-check-protocol (scheduler/service-description->health-check-protocol service-description)
               backend-protocol (hu/backend-protocol->http-version health-check-protocol)
               backend-scheme (hu/backend-proto->scheme health-check-protocol)
               request (assoc request

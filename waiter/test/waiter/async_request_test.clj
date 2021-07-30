@@ -20,6 +20,7 @@
             [plumbing.core :as pc]
             [waiter.async-request :refer :all]
             [waiter.auth.authentication :as auth]
+            [waiter.scheduler :as scheduler]
             [waiter.service :as service]
             [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
@@ -329,10 +330,8 @@
             populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
             complete-async-request-atom (atom nil)
             response {}
-            b64-url-json-encode* utils/b64-url-json-encode
-            get-async-request-protocol* get-async-request-protocol]
-        (with-redefs [get-async-request-protocol (if v2? (constantly "https") get-async-request-protocol*)
-                      service/release-instance-go (constantly nil)
+            b64-url-json-encode* utils/b64-url-json-encode]
+        (with-redefs [service/release-instance-go (constantly nil)
                       utils/b64-url-json-encode #(->> % (into (sorted-map)) b64-url-json-encode*)
                       monitor-async-request
                       (fn [make-get-request-fn complete-async-request-fn request-still-active? _
@@ -347,8 +346,11 @@
           (let [descriptor {:service-description {"backend-proto" backend-proto
                                                   "metric-group" metric-group}
                             :service-id service-id}
+                scheduler (reify scheduler/ServiceScheduler
+                            (request-protocol [_ _ i sd]
+                              (if v2? "https" (scheduler/retrieve-protocol i sd))))
                 {:keys [headers]} (post-process-async-request-response
-                                    router-id async-request-store-atom make-http-request-fn auth-params-map
+                                    scheduler router-id async-request-store-atom make-http-request-fn auth-params-map
                                     populate-maintainer-chan! user-agent response descriptor instance reason-map
                                     request-properties location query-string)]
             (is (get @async-request-store-atom request-id))
@@ -424,8 +426,11 @@
             descriptor {:service-description {"backend-proto" backend-proto
                                               "metric-group" metric-group}
                         :service-id service-id}
+            scheduler (reify scheduler/ServiceScheduler
+                        (request-protocol [_ _ i sd]
+                          (scheduler/retrieve-protocol i sd)))
             {:keys [headers]} (post-process-async-request-response
-                                router-id async-request-store-atom make-http-request-fn auth-params-map
+                                scheduler router-id async-request-store-atom make-http-request-fn auth-params-map
                                 populate-maintainer-chan! user-agent response descriptor instance
                                 reason-map request-properties location query-string)]
         (is (get @async-request-store-atom request-id))

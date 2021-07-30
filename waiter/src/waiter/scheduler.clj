@@ -30,6 +30,7 @@
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.request-log :as rlog]
+            [waiter.service-description :as sd]
             [waiter.statsd :as statsd]
             [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
@@ -149,6 +150,10 @@
      These options should be merged (to override) the global :deployment-error-config options
      in the waiter.state module when computing the deployment errors for the given service-id.")
 
+  (request-protocol [this instance port-index service-description]
+     "Returns the protocol to use for a request to the given instance on the given port.
+      Will return one of the following values: http, https, h2, h2c")
+
   (scale-service [this ^String service-id target-instances force]
     "Instructs the scheduler to scale up/down instances of the specified service to the specified number
      of instances. The force flag can be used enforce the scaling by ignoring previous pending operations.")
@@ -247,7 +252,19 @@
     (->> port-index dec (nth extra-ports))
     port))
 
-(defn base-url
+(defn retrieve-protocol
+  "Get the protocol for the given port index based off the service description.
+   Used as the default implementation for the request-protocol function
+   on most ServiceScheduler protocol implementations."
+  [port-index {:strs [backend-proto health-check-port-index health-check-proto] :as service-description}]
+  (cond
+    (zero? port-index) backend-proto
+    (= port-index health-check-port-index) (or health-check-proto backend-proto)
+    :else (throw (ex-info "Unrecognized port index"
+                          {:port-index port-index
+                           :service-description service-description}))))
+
+(defn- base-url
   "Returns the url at which the service definition resides."
   [^String protocol ^String host port]
   (let [scheme (hu/backend-proto->scheme protocol)]
@@ -261,9 +278,11 @@
 
 (defn build-health-check-url
   "Returns the health check url which can be queried on the service instance."
-  [{:keys [host] :as instance} health-check-proto health-check-port-index health-check-path]
-  (let [url-port (instance->port instance health-check-port-index)]
-    (end-point-url health-check-proto host url-port health-check-path)))
+  [scheduler {:keys [host] :as instance} {:strs [health-check-port-index] :as service-description}]
+  (let [health-check-path (sd/service-description->health-check-url service-description)
+        proto (request-protocol scheduler instance health-check-port-index service-description)
+        url-port (instance->port instance health-check-port-index)]
+    (end-point-url proto host url-port health-check-path)))
 
 (defn log-health-check-issues
   "Logs messages based on the type of error (if any) encountered by a health check"
@@ -307,13 +326,15 @@
 (defn available?
   "Async go block which returns the status code and success of a health check.
    Returns {:healthy? false} if such a connection cannot be established."
-  [service-id->password-fn ^HttpClient http-client scheduler-name {:keys [host port service-id] :as service-instance}
-   {:strs [health-check-authentication health-check-port-index health-check-url] :as service-description}]
+  [service-id->password-fn ^HttpClient http-client scheduler scheduler-name
+   {:keys [host port service-id] :as service-instance}
+   {:strs [health-check-authentication health-check-port-index health-check-url]
+    :or {health-check-port-index 0} :as service-description}]
   (async/go
     (try
       (if (and port (pos? port) host (not= UNKNOWN-IP host))
-        (let [protocol (service-description->health-check-protocol service-description)
-              instance-health-check-url (build-health-check-url service-instance protocol health-check-port-index health-check-url)
+        (let [protocol (request-protocol scheduler service-instance health-check-port-index service-description)
+              instance-health-check-url (build-health-check-url scheduler service-instance service-description)
               request-timeout-ms (max (+ (.getConnectTimeout http-client) (.getIdleTimeout http-client)) http-200-ok )
               request-abort-chan (async/chan 1)
               request-time (t/now)
@@ -340,15 +361,15 @@
                                     (instance? SocketTimeoutException error) :timeout-exception
                                     (instance? TimeoutException error) :timeout-exception)]
                    (log-health-check-issues service-instance instance-health-check-url response)
-                   (let [backend-protocol (hu/backend-protocol->http-version protocol)
-                         backend-scheme (hu/backend-proto->scheme protocol)
-                         request {:client-protocol backend-protocol
+                   (let [proto-version (hu/backend-protocol->http-version protocol)
+                         proto-scheme (hu/backend-proto->scheme protocol)
+                         request {:client-protocol proto-version
                                   :headers request-headers
-                                  :internal-protocol backend-protocol
+                                  :internal-protocol proto-version
                                   :request-id correlation-id
                                   :request-method :get
                                   :request-time request-time
-                                  :scheme backend-scheme
+                                  :scheme proto-scheme
                                   :uri health-check-url}
                          backend-response-latency-ns (- response-time-ns request-time-ns)
                          response (assoc response
@@ -359,7 +380,7 @@
                                     :instance service-instance
                                     :instance-proto protocol
                                     :latest-service-id service-id
-                                    :protocol protocol
+                                    :protocol proto-version
                                     :request-type "health-check"
                                     :waiter-api-call? false)]
                      (rlog/log-request! request response))

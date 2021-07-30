@@ -237,7 +237,7 @@
                          (utils/assoc-if-absent :instance instance)
                          (assoc :descriptor descriptor
                                 :error-class (some-> error .getClass .getCanonicalName)
-                                :instance-proto backend-proto
+                                :instance-proto request-proto
                                 :latest-service-id service-id
                                 :protocol request-protocol
                                 :request-type "async-status-check"
@@ -245,24 +245,18 @@
           (rlog/log-request! request-stub response))
         response))))
 
-(defn get-async-request-protocol
-  "Select the protocol for a waiter async request.
-   Currently always returns the configured backend-proto for the service,
-   but tests are able to redef this funcion to do something else."
-  [instance port service-description]
-  (get service-description "backend-proto"))
-
 (defn post-process-async-request-response
   "Triggers execution of monitoring system for an async request.
    The function assumes location begins with a slash.
    This method wires up the completion and status check callbacks for the monitoring system.
    It also modifies the status check endpoint in the response header."
-  [router-id async-request-store-atom make-http-request-fn auth-params-map populate-maintainer-chan! user-agent
+  [scheduler router-id async-request-store-atom make-http-request-fn auth-params-map populate-maintainer-chan! user-agent
    response {:keys [service-description service-id] :as descriptor} {:keys [host port] :as instance}
    {:keys [request-id] :as reason-map} request-properties location query-string]
   (let [correlation-id (cid/get-correlation-id)
         {:strs [metric-group backend-proto]} service-description
-        request-proto (get-async-request-protocol instance port service-description)
+        port-index 0
+        request-proto (scheduler/request-protocol scheduler instance port-index service-description)
         proto (when (not= request-proto backend-proto) request-proto)
         status-endpoint (scheduler/end-point-url request-proto host port location)
         _ (log/info "status endpoint for async request is" status-endpoint query-string)
