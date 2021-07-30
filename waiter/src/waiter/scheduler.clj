@@ -259,7 +259,7 @@
   [port-index {:strs [backend-proto health-check-port-index health-check-proto] :as service-description}]
   (cond
     (zero? port-index) backend-proto
-    (= port-index health-check-port-index) health-check-proto
+    (= port-index health-check-port-index) (or health-check-proto backend-proto)
     :else (throw (ex-info "Unrecognized port index"
                           {:port-index port-index
                            :service-description service-description}))))
