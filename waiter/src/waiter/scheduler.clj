@@ -252,7 +252,7 @@
     (->> port-index dec (nth extra-ports))
     port))
 
-(defn port-index-protocol
+(defn retrieve-protocol
   "Get the protocol for the given port index based off the service description.
    Used as the default implementation for the request-protocol function
    on most ServiceScheduler protocol implementations."
@@ -326,15 +326,14 @@
 (defn available?
   "Async go block which returns the status code and success of a health check.
    Returns {:healthy? false} if such a connection cannot be established."
-  [service-id->password-fn ^HttpClient http-client scheduler-promise-chan scheduler-name
+  [service-id->password-fn ^HttpClient http-client scheduler scheduler-name
    {:keys [host port service-id] :as service-instance}
    {:strs [health-check-authentication health-check-port-index health-check-url]
     :or {health-check-port-index 0} :as service-description}]
   (async/go
     (try
       (if (and port (pos? port) host (not= UNKNOWN-IP host))
-        (let [scheduler (async/<! scheduler-promise-chan)
-              protocol (request-protocol scheduler service-instance health-check-port-index service-description)
+        (let [protocol (request-protocol scheduler service-instance health-check-port-index service-description)
               instance-health-check-url (build-health-check-url scheduler service-instance service-description)
               request-timeout-ms (max (+ (.getConnectTimeout http-client) (.getIdleTimeout http-client)) http-200-ok )
               request-abort-chan (async/chan 1)

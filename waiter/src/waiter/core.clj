@@ -864,7 +864,8 @@
                                      (f))))))))))})
 
 (def scheduler
-  {:scheduler-promise-chan (pc/fnk [] (async/promise-chan))
+  {;; promise used to break cyclic dependency between scheduler and start-scheduler-syncer-fn
+   :scheduler-promise-chan (pc/fnk [] (async/promise-chan))
    :scheduler (pc/fnk [[:settings scheduler-config scheduler-syncer-interval-secs]
                        [:state custom-components leader?-fn scheduler-state-chan service-id-prefix]
                        scheduler-promise-chan
@@ -909,8 +910,9 @@
                                                      :user-agent (str "waiter-syncer/" user-agent-version)})
                                       available? (fn scheduler-available?
                                                    [scheduler-name service-instance service-description]
-                                                   (scheduler/available? service-id->password-fn* http-client scheduler-promise-chan
-                                                                         scheduler-name service-instance service-description))]
+                                                   (let [scheduler (async/<!! scheduler-promise-chan)]
+                                                     (scheduler/available? service-id->password-fn* http-client scheduler
+                                                                           scheduler-name service-instance service-description)))]
                                   (fn start-scheduler-syncer-fn
                                     [scheduler-name get-service->instances-fn scheduler-state-chan trigger-chan]
                                     (scheduler/start-scheduler-syncer

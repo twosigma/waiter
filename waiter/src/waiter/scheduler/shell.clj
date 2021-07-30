@@ -662,7 +662,7 @@
     (comment ":deployment-error-config overrides currently not supported."))
 
   (request-protocol [_ _ port-index service-description]
-    (scheduler/port-index-protocol port-index service-description))
+    (scheduler/retrieve-protocol port-index service-description))
 
   (scale-service [this service-id scale-to-instances _]
     (if (scheduler/service-exists? this service-id)

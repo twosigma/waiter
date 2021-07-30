@@ -348,7 +348,7 @@
                             :service-id service-id}
                 scheduler (reify scheduler/ServiceScheduler
                             (request-protocol [_ _ i sd]
-                              (if v2? "https" (scheduler/port-index-protocol i sd))))
+                              (if v2? "https" (scheduler/retrieve-protocol i sd))))
                 {:keys [headers]} (post-process-async-request-response
                                     scheduler router-id async-request-store-atom make-http-request-fn auth-params-map
                                     populate-maintainer-chan! user-agent response descriptor instance reason-map
@@ -428,7 +428,7 @@
                         :service-id service-id}
             scheduler (reify scheduler/ServiceScheduler
                         (request-protocol [_ _ i sd]
-                          (scheduler/port-index-protocol i sd)))
+                          (scheduler/retrieve-protocol i sd)))
             {:keys [headers]} (post-process-async-request-response
                                 scheduler router-id async-request-store-atom make-http-request-fn auth-params-map
                                 populate-maintainer-chan! user-agent response descriptor instance
