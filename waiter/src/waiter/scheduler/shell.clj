@@ -664,6 +664,10 @@
   (request-protocol [_ _ port-index service-description]
     (scheduler/retrieve-protocol port-index service-description))
 
+  (use-authenticated-health-checks? [this service-id]
+    (let [service-description (service-id->service-description-fn service-id)]
+      (scheduler/authenticated-health-check-configured? service-description)))
+
   (scale-service [this service-id scale-to-instances _]
     (if (scheduler/service-exists? this service-id)
       (let [completion-promise (promise)]

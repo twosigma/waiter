@@ -765,3 +765,15 @@
                             :task-stats {:healthy 1 :running 1 :staged 0 :unhealthy 0}))
              @id->service-agent))
       (is (= port->reservation @port->reservation-atom)))))
+
+(deftest test-use-authenticated-health-checks?
+  (doseq [{:keys [expected-result health-check-authentication]}
+          [{:expected-result true
+            :health-check-authentication "standard"}
+           {:expected-result false
+            :health-check-authentication "disabled"}]]
+    (let [service-id->service-description (constantly {"health-check-authentication" health-check-authentication})
+          valid-config (-> (common-scheduler-config)
+                         (assoc :service-id->service-description-fn service-id->service-description))
+          marathon-scheduler (create-shell-scheduler valid-config)]
+      (is (= expected-result (scheduler/use-authenticated-health-checks? marathon-scheduler "s1"))))))

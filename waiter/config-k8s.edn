@@ -47,7 +47,8 @@
  ; ---------- Scheduling ----------
 
  :scheduler-config {:kind :kubernetes
-                    :kubernetes {:authorizer {:kind :sanity-check
+                    :kubernetes {:authenticate-health-checks? true
+                                 :authorizer {:kind :sanity-check
                                               :sanity-check {:factory-fn waiter.authorization/sanity-check-authorizer}}
                                  :container-running-grace-secs 90
                                  :fileserver {:port 591}

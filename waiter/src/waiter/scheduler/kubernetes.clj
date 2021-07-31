@@ -706,8 +706,17 @@
   [{:strs [env]} log-bucket-url]
   (get env "WAITER_CONFIG_LOG_BUCKET_URL" log-bucket-url))
 
+(defn retrieve-use-authenticated-health-checks?
+  "Computes whether to use authenticated health checks for pods."
+  [{:keys [authenticate-health-checks? service-id->service-description-fn]} service-id]
+  (or authenticate-health-checks?
+      (-> service-id
+        (service-id->service-description-fn)
+        (scheduler/authenticated-health-check-configured?))))
+
 ; The Waiter Scheduler protocol implementation for Kubernetes
 (defrecord KubernetesScheduler [api-server-url
+                                authenticate-health-checks?
                                 authorizer
                                 cluster-name
                                 container-running-grace-secs
@@ -801,11 +810,14 @@
 
   (deployment-error-config [_ _]
     ;; The min-hosts count currently MUST be 1 on Kubernetes since a failing service's
-    ;; container restarts repeadly within a single Pod, normally not switching hosts.
+    ;; container restarts repeatedly within a single Pod, normally not switching hosts.
     {:min-hosts 1})
 
   (request-protocol [_ _ port-index service-description]
     (scheduler/retrieve-protocol port-index service-description))
+
+  (use-authenticated-health-checks? [this service-id]
+    (retrieve-use-authenticated-health-checks? this service-id))
 
   (scale-service [this service-id scale-to-instances _]
     (ss/try+
@@ -940,12 +952,12 @@
 
 (defn prepare-health-check-probe
   "Returns the configuration for a basic health check probe."
-  [service-id->password-fn service-id health-check-authentication
+  [service-id->password-fn service-id authenticate-health-check?
    health-check-scheme health-check-url health-check-port health-check-interval-secs]
   {:httpGet (cond-> {:path health-check-url
                      :port health-check-port
                      :scheme health-check-scheme}
-              (= "standard" health-check-authentication)
+              authenticate-health-check?
               (assoc :httpHeaders
                      (->> (scheduler/retrieve-auth-headers service-id->password-fn service-id)
                        (map (fn [[k v]] {:name k :value v})))))
@@ -1003,7 +1015,7 @@
            replicaset-api-version reverse-proxy service-id->password-fn]
     scheduler-namespace :namespace :as scheduler}
    service-id
-   {:strs [backend-proto cmd cpus grace-period-secs health-check-authentication health-check-interval-secs
+   {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
            mem min-instances namespace ports run-as-user termination-grace-period-secs]
     :as service-description}
@@ -1055,6 +1067,7 @@
                       {:name (str "PORT" i) :value (str (+ port0 i))})))
         k8s-name (service-id->k8s-app-name scheduler service-id)
         revision-timestamp (du/date-to-str (t/now)) ;; we use a monotonically increasing version string
+        authenticate-health-check? (retrieve-use-authenticated-health-checks? scheduler service-id)
         health-check-scheme (-> (or health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
         health-check-url (sd/service-description->health-check-url service-description)
         memory (str mem "Mi")
@@ -1105,7 +1118,7 @@
                                               :ports [{:containerPort port0}]
                                               :readinessProbe (-> (prepare-health-check-probe
                                                                     service-id->password-fn service-id
-                                                                    health-check-authentication
+                                                                    authenticate-health-check?
                                                                     health-check-scheme health-check-url
                                                                     (+ service-port health-check-port-index)
                                                                     health-check-interval-secs)
@@ -1125,7 +1138,7 @@
         [:spec :template :spec :containers 0]
         assoc :livenessProbe (-> (prepare-health-check-probe
                                    service-id->password-fn service-id
-                                   health-check-authentication
+                                   authenticate-health-check?
                                    health-check-scheme health-check-url
                                    (+ port0 health-check-port-index)
                                    health-check-interval-secs)
@@ -1439,7 +1452,7 @@
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
-  [{:keys [authentication authorizer cluster-name container-running-grace-secs custom-options default-namespace http-options leader?-fn log-bucket-sync-secs
+  [{:keys [authenticate-health-checks? authentication authorizer cluster-name container-running-grace-secs custom-options default-namespace http-options leader?-fn log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length namespace pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
            pod-suffix-length replicaset-api-version replicaset-spec-builder response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold
            reverse-proxy scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
@@ -1447,7 +1460,8 @@
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver
     {service-id->deployment-error-cache-threshold :threshold service-id->deployment-error-cache-ttl-sec :ttl} :service-id->deployment-error-cache
     :as context}]
-  {:pre [(schema/contains-kind-sub-map? authorizer)
+  {:pre [(or (nil? authenticate-health-checks?) (boolean? authenticate-health-checks?))
+         (schema/contains-kind-sub-map? authorizer)
          (or (zero? container-running-grace-secs) (pos-int? container-running-grace-secs))
          (or (nil? custom-options) (map? custom-options))
          (or (nil? reverse-proxy) (nil? (s/check schema/valid-reverse-proxy-config reverse-proxy)))
@@ -1495,6 +1509,7 @@
          (or (nil? watch-retries) (integer? watch-retries))
          (or (nil? watch-socket-timeout-ms) (integer? watch-socket-timeout-ms))]}
   (let [authorizer (utils/create-component authorizer)
+        authenticate-health-checks? (if (some? authenticate-health-checks?) authenticate-health-checks? false)
         http-client (-> http-options
                       (utils/assoc-if-absent :client-name "waiter-k8s")
                       (utils/assoc-if-absent :user-agent "waiter-k8s")
@@ -1556,6 +1571,7 @@
                          (start-auth-renewer authentication))
           retrieve-auth-token-state-fn (or (:query-state-fn auth-renewer) (constantly nil))
           scheduler-config {:api-server-url url
+                            :authenticate-health-checks? authenticate-health-checks?
                             :authorizer authorizer
                             :cluster-name cluster-name
                             :container-running-grace-secs container-running-grace-secs

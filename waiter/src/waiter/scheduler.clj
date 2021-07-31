@@ -154,6 +154,9 @@
      "Returns the protocol to use for a request to the given instance on the given port.
       Will return one of the following values: http, https, h2, h2c")
 
+  (use-authenticated-health-checks? [this ^String service-id]
+    "Returns whether to use authenticated requests while performing health checks.")
+
   (scale-service [this ^String service-id target-instances force]
     "Instructs the scheduler to scale up/down instances of the specified service to the specified number
      of instances. The force flag can be used enforce the scaling by ignoring previous pending operations.")
@@ -335,15 +338,16 @@
       (if (and port (pos? port) host (not= UNKNOWN-IP host))
         (let [protocol (request-protocol scheduler service-instance health-check-port-index service-description)
               instance-health-check-url (build-health-check-url scheduler service-instance service-description)
-              request-timeout-ms (max (+ (.getConnectTimeout http-client) (.getIdleTimeout http-client)) http-200-ok )
+              request-timeout-ms (max (+ (.getConnectTimeout http-client) (.getIdleTimeout http-client)) http-200-ok)
               request-abort-chan (async/chan 1)
               request-time (t/now)
               request-time-ns (System/nanoTime)
               correlation-id (str "waiter-health-check-" (utils/unique-identifier))
+              authenticate-health-check? (use-authenticated-health-checks? scheduler service-id)
               request-headers (cond-> {"host" host
                                        "user-agent" (some-> http-client .getUserAgentField .getValue)
                                        "x-cid" correlation-id}
-                                (= "standard" health-check-authentication)
+                                authenticate-health-check?
                                 (merge-auth-headers service-id->password-fn service-id))
               health-check-response-chan (http/get http-client instance-health-check-url
                                                    {:abort-ch request-abort-chan
@@ -410,6 +414,11 @@
         (log/error e "exception thrown while performing health check" {:instance service-instance
                                                                        :health-check-url health-check-url})
         {:healthy? false}))))
+
+(defn authenticated-health-check-configured?
+  "Returns true if service is configured authenticated health checks."
+  [{:strs [health-check-authentication]}]
+  (= "standard" health-check-authentication))
 
 (defn instance-comparator
   "The comparison order is: service-id, started-at, and finally id."
