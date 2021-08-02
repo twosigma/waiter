@@ -550,15 +550,20 @@
   (let [http-client (HttpClient.)
         service-password "test-password"
         service-id->password-fn (constantly service-password)
-        scheduler (reify ServiceScheduler
-                    (request-protocol [_ _ i sd]
-                      (retrieve-protocol i sd)))
+        make-scheduler (fn [service-id->service-description]
+                         (reify ServiceScheduler
+                           (request-protocol [_ _ i sd]
+                             (retrieve-protocol i sd))
+                           (use-authenticated-health-checks? [_ service-id]
+                             (-> (service-id->service-description service-id)
+                               (authenticated-health-check-configured?)))))
         scheduler-name "test-scheduler"
         waiter-principal "waiter@test.com"
         health-check-proto "http"
         available-fn? (fn available-fn? [service-instance service-description]
-                        (available? service-id->password-fn http-client scheduler
-                                    scheduler-name service-instance service-description))
+                        (let [scheduler (make-scheduler (constantly service-description))]
+                          (available? service-id->password-fn http-client scheduler
+                                      scheduler-name service-instance service-description)))
         service-instance {:extra-ports [81] :host "www.example.com" :port 80}
         service-description {"backend-proto" health-check-proto
                              "health-check-proto" health-check-proto

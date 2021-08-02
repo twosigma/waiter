@@ -1432,3 +1432,13 @@
                                                    :version newish-version}])]
           (is (nil? (start-new-service-wrapper marathon-api service-id marathon-descriptor)))
           (is (= 1 @create-call-counter)))))))
+
+(deftest test-use-authenticated-health-checks?
+  (doseq [{:keys [expected-result health-check-authentication]}
+          [{:expected-result true
+            :health-check-authentication "standard"}
+           {:expected-result false
+            :health-check-authentication "disabled"}]]
+    (let [service-id->service-description (constantly {"health-check-authentication" health-check-authentication})
+          marathon-scheduler (create-marathon-scheduler :service-id->service-description-fn service-id->service-description)]
+      (is (= expected-result (scheduler/use-authenticated-health-checks? marathon-scheduler "s1"))))))

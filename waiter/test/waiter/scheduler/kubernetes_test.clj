@@ -59,6 +59,7 @@
                  :as args}]
    (->
      {:api-server-url "https://k8s-api.example/"
+      :authenticate-health-checks? false
       :authorizer {:kind :default
                    :default {:factory-fn 'waiter.authorization/noop-authorizer}}
       :daemon-state (atom nil)
@@ -516,7 +517,7 @@
               :periodSeconds health-check-interval-secs
               :timeoutSeconds 1}
              (prepare-health-check-probe
-               service-id->password-fn service-id "standard"
+               service-id->password-fn service-id true
                health-check-scheme health-check-url health-check-port health-check-interval-secs)))
       (is (= {:httpGet {:path health-check-url
                         :port health-check-port
@@ -524,7 +525,7 @@
               :periodSeconds health-check-interval-secs
               :timeoutSeconds 1}
              (prepare-health-check-probe
-               service-id->password-fn service-id "disabled"
+               service-id->password-fn service-id false
                health-check-scheme health-check-url health-check-port health-check-interval-secs))))))
 
 (deftest test-service-id->k8s-app-name
@@ -2492,3 +2493,24 @@
                      :service-id->health-check-context {}}
             :type "KubernetesScheduler"}
            (scheduler/state kubernetes-scheduler #{"authorizer" "service-id->failed-instances" "syncer" "syncer-details"})))))
+
+(deftest test-use-authenticated-health-checks?
+  (doseq [{:keys [authenticate-health-checks? expected-result health-check-authentication]}
+          [{:authenticate-health-checks? false
+            :expected-result true
+            :health-check-authentication "standard"}
+           {:authenticate-health-checks? false
+            :expected-result false
+            :health-check-authentication "disabled"}
+           {:authenticate-health-checks? true
+            :expected-result true
+            :health-check-authentication "standard"}
+           {:authenticate-health-checks? true
+            :expected-result true
+            :health-check-authentication "disabled"}]]
+    (let [service-id "test-service-id"
+          service-id->service-description (constantly {"health-check-authentication" health-check-authentication})
+          scheduler (make-dummy-scheduler [service-id]
+                                          {:authenticate-health-checks? authenticate-health-checks?
+                                           :service-id->service-description-fn service-id->service-description})]
+      (is (= expected-result (scheduler/use-authenticated-health-checks? scheduler service-id))))))

@@ -90,6 +90,11 @@
         service-id->scheduler
         (scheduler/request-protocol instance port-index service-description)))
 
+  (use-authenticated-health-checks? [_ service-id]
+    (-> service-id
+      service-id->scheduler
+      (scheduler/use-authenticated-health-checks? service-id)))
+
   (scale-service [_ service-id target-instances force]
     (-> service-id
         service-id->scheduler
