@@ -1,0 +1,9 @@
+{:reverse-proxy {:excludes [{:entries [{:run-as-user "jane.doe"}]}
+                            {:entries [{:run-as-user "john.doe"}]
+                             :start-time "2021-08-02T01:23:45.000Z"}
+                            {:entries [{:run-as-user "jose.doe"}]
+                             :start-time "2021-08-03T01:34:45.000Z"}]
+                 :includes [{:entries [{:run-as-user "jill.doe"}]
+                             :start-time "2021-08-02T01:54:45.000Z"}
+                            {:entries [{:run-as-user "john.doe"}]
+                             :start-time "2021-08-03T01:43:45.000Z"}]}}
