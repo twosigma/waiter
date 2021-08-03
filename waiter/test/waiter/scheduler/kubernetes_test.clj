@@ -633,12 +633,14 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-1234"
                                     :instances 2
+                                    :k8s/containers []
                                     :k8s/replicaset-creation-timestamp "2019-08-01T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :task-count 2
                                     :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
            (scheduler/make-Service {:id "test-app-6789"
                                     :instances 3
+                                    :k8s/containers []
                                     :k8s/replicaset-creation-timestamp "2019-08-05T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :task-count 3
@@ -679,12 +681,14 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-abcd"
                                     :instances 2
+                                    :k8s/containers []
                                     :k8s/replicaset-creation-timestamp "2019-09-07T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :task-count 2
                                     :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
            (scheduler/make-Service {:id "test-app-wxyz"
                                     :instances 3
+                                    :k8s/containers []
                                     :k8s/replicaset-creation-timestamp "2019-10-15T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :task-count 3
@@ -711,6 +715,7 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-4321"
                                     :instances 3
+                                    :k8s/containers []
                                     :k8s/replicaset-creation-timestamp "2020-03-04T05:06:07.000Z"
                                     :k8s/replicaset-annotations {}
                                     :task-count 3
@@ -730,13 +735,15 @@
                                :uid "test-app-9999-uid"}
                     :spec {:replicas 0
                            :selector {:matchLabels {:app "test-app-9999"
-                                                    :waiter/cluster "waiter"}}}
+                                                    :waiter/cluster "waiter"}}
+                           :template {:spec {:containers [{:name "waiter-app"}]}}}
                     :status {:replicas 0
                              :readyReplicas 0
                              :availableReplicas 0}}]}
           :expected-result
           [(scheduler/make-Service {:id "test-app-9999"
                                     :instances 0
+                                    :k8s/containers ["waiter-app"]
                                     :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                     :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"}
                                     :task-count 0
@@ -777,7 +784,9 @@
                              :annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"
                                            :waiter/service-id "test-app-1234"}
                              :uid "test-app-1234-uid"}
-                  :spec {:replicas 2}
+                  :spec {:replicas 2
+                         :template {:spec {:containers [{:name "waiter-app"}
+                                                        {:name "waiter-fileserver"}]}}}
                   :status {:replicas 2
                            :readyReplicas 2
                            :availableReplicas 2}}
@@ -789,7 +798,10 @@
                                       :waiter/service-hash "test-app-6789"}
                              :annotations {:waiter/service-id "test-app-6789"}
                              :uid "test-app-6789-uid"}
-                  :spec {:replicas 3}
+                  :spec {:replicas 3
+                         :template {:spec {:containers [{:name "waiter-app"}
+                                                        {:name "waiter-fileserver"}
+                                                        {:name "waiter-envoy-sidecar"}]}}}
                   :status {:replicas 3
                            :readyReplicas 1
                            :availableReplicas 2
@@ -928,6 +940,7 @@
         expected (hash-map
                    (scheduler/make-Service {:id "test-app-1234"
                                             :instances 2
+                                            :k8s/containers ["waiter-app" "waiter-fileserver"]
                                             :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                             :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"}
                                             :task-count 2
@@ -986,6 +999,7 @@
 
                    (scheduler/make-Service {:id "test-app-6789"
                                             :instances 3
+                                            :k8s/containers ["waiter-app" "waiter-fileserver" "waiter-envoy-sidecar"]
                                             :k8s/replicaset-creation-timestamp "2020-09-08T07:06:05.000Z"
                                             :k8s/replicaset-annotations {}
                                             :task-count 3
