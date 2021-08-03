@@ -93,7 +93,8 @@
               health-check-proto (disj supported-protocols backend-proto)
               health-check-port-index [nil 0]]
         (let [request-headers (cond-> {:x-waiter-backend-proto backend-proto
-                                       :x-waiter-health-check-proto health-check-proto}
+                                       :x-waiter-health-check-proto health-check-proto
+                                       :x-waiter-name (rand-name)}
                                 health-check-port-index (assoc :x-waiter-health-check-port-index health-check-port-index))
               {:keys [body] :as response} (make-kitchen-request waiter-url request-headers)
               error-msg (str "The backend-proto (" backend-proto ") and health check proto (" health-check-proto
