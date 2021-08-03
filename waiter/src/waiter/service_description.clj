@@ -1619,23 +1619,21 @@
 
 (defn query-params->service-description-filter-predicate
   "Creates the filter function for service descriptions that matches every parameter provided in the request-params map."
-  ([request-params]
-   (query-params->service-description-filter-predicate request-params service-parameter-keys))
-  ([request-params parameter-keys]
-   (let [service-description-params (utils/filterm
-                                      (fn [[param-name _]]
-                                        (->> (str/split param-name #"\.")
-                                          (first)
-                                          (contains? parameter-keys)))
-                                      request-params)
-         param-predicates (map (fn [[param-name param-value]]
-                                 (let [param-predicate (param-value->filter-fn param-value)]
-                                   (fn [service-description]
-                                     (->> (str/split param-name #"\.")
-                                       (get-in service-description)
-                                       (str)
-                                       (param-predicate)))))
-                               (seq service-description-params))]
-     (fn [service-description]
-       (or (empty? param-predicates)
-           (every? #(%1 service-description) param-predicates))))))
+  [request-params]
+  (let [service-description-params (utils/filterm
+                                     (fn [[param-name _]]
+                                       (->> (str/split param-name #"\.")
+                                            (first)
+                                            (contains? service-parameter-keys)))
+                                     request-params)
+        param-predicates (map (fn [[param-name param-value]]
+                                (let [param-predicate (param-value->filter-fn param-value)]
+                                  (fn [service-description]
+                                    (->> (str/split param-name #"\.")
+                                         (get-in service-description)
+                                         (str)
+                                         (param-predicate)))))
+                              (seq service-description-params))]
+    (fn [service-description]
+      (or (empty? param-predicates)
+          (every? #(%1 service-description) param-predicates)))))
