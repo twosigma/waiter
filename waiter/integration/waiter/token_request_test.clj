@@ -2082,6 +2082,7 @@
           (let [token-description (assoc base-description
                                     :authentication "disabled"
                                     :health-check-authentication "standard"
+                                    :name (rand-name)
                                     :token token)
                 {:keys [body] :as register-response} (post-token waiter-url token-description)]
             (assert-response-status register-response http-400-bad-request)
@@ -2105,6 +2106,7 @@
                   (let [token-description (assoc base-description
                                             other-parameter-name other-parameter-value
                                             :https-redirect false
+                                            :name (rand-name)
                                             :permitted-user "*"
                                             :profile (name profile)
                                             :run-as-user (retrieve-username)
