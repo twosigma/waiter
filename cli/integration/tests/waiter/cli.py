@@ -400,7 +400,7 @@ def tokens_data(waiter_url=None, flags=None):
 
 
 def maintenance(subcommand, token_name, waiter_url=None, flags=None, maintenance_flags=None, stdin=None, env=None):
-    """Creates or updates a token via the CLI"""
+    """Starts or stops maintenance on a token via the CLI"""
     args = f"maintenance {subcommand} {token_name} {maintenance_flags or ''}"
     cp = cli(args, waiter_url, flags, stdin, env=env)
     return cp
@@ -411,4 +411,18 @@ def ssh(waiter_url=None, token_or_service_id_or_instance_id=None, ssh_command=No
     """Attempts to ssh to token, service_id, or instance_id"""
     args = f"ssh {ssh_flags or ''} {token_or_service_id_or_instance_id or ''} {ssh_command or ''}"
     cp = cli(args, waiter_url, flags, stdin=stdin, env=env)
+    return cp
+
+
+def start(token_name, waiter_url=None, flags=None, maintenance_flags=None, stdin=None, env=None):
+    """Stops maintenance on a token via the CLI"""
+    args = f"start {token_name} {maintenance_flags or ''}"
+    cp = cli(args, waiter_url, flags, stdin, env=env)
+    return cp
+
+
+def stop(token_name, waiter_url=None, flags=None, maintenance_flags=None, stdin=None, env=None):
+    """Starts maintenance on a token via the CLI"""
+    args = f"stop {token_name} {maintenance_flags or ''}"
+    cp = cli(args, waiter_url, flags, stdin, env=env)
     return cp
