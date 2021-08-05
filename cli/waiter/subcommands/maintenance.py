@@ -96,7 +96,7 @@ def stop_maintenance(clusters, args, enforce_cluster):
     token_name = args['token']
     ping_token = args.pop('ping_token', True)
     timeout = args.pop('timeout', 300)
-    wait_for_ping = True
+    wait_for_ping = args.pop('wait', True)
     cluster, existing_token_data, existing_token_etag = _get_existing_token_data(clusters, token_name, enforce_cluster)
     maintenance_mode_active = _is_token_in_maintenance_mode(existing_token_data)
     if not maintenance_mode_active:
@@ -151,6 +151,8 @@ def register_stop(add_parser):
                             help='Ping the token after stopping maintenance.')
     parser.add_argument('--timeout', '-t', default=300, help='read timeout (in seconds) for ping request.',
                         type=check_positive)
+    parser.add_argument('--no-wait', '-n', help='do not wait for ping request to return',
+                        dest='wait', action='store_false')
     parser.add_argument('token')
     parser.set_defaults(sub_func=stop_maintenance)
 
