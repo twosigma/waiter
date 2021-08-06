@@ -1996,15 +1996,40 @@ class WaiterCliTest(util.WaiterTest):
     def test_maintenance_stop_no_cluster(self):
         self.__test_no_cluster(partial(cli.maintenance, 'stop'))
 
-    def test_maintenance_stop_not_in_maintenance(self):
+    def run_maintenance_stop_enforce_check_not_in_maintenance_test(self, cli_fn):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, {'cpus': 0.1, 'mem': 128, 'cmd': 'foo'})
         try:
-            cp = cli.maintenance('stop', token_name, self.waiter_url)
+            cp = cli_fn(token_name, self.waiter_url, maintenance_flags='--check')
             self.assertEqual(1, cp.returncode, cp.stderr)
             self.assertIn('Token is not in maintenance mode', cli.stderr(cp))
         finally:
             util.delete_token(self.waiter_url, token_name)
+
+    def test_maintenance_stop_enforce_check_not_in_maintenance(self):
+        self.run_maintenance_stop_enforce_check_not_in_maintenance_test(partial(cli.maintenance, 'stop'))
+
+    def run_maintenance_stop_skip_check_not_in_maintenance_test(self, cli_fn):
+        token_name = self.token_name()
+        token_fields = util.minimal_service_description()
+        util.post_token(self.waiter_url, token_name, token_fields)
+        try:
+            cp = cli_fn(token_name, self.waiter_url)
+            stdout = cli.stdout(cp)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn(f'Token {token_name} does not have maintenance mode activated', stdout)
+            self.assertIn(f'Pinging token {token_name}', stdout)
+            self.assertIn('Service is currently Running', stdout)
+            token_data = util.load_token(self.waiter_url, token_name)
+            self.assertEqual(None, token_data.get('maintenance', None))
+            for key, value in token_fields.items():
+                self.assertEqual(value, token_data[key])
+            self.assertEqual(1, len(util.wait_until_services_for_token(self.waiter_url, token_name, 1)))
+        finally:
+            util.delete_token(self.waiter_url, token_name)
+
+    def test_maintenance_stop_skip_check_not_in_maintenance(self):
+        self.run_maintenance_stop_skip_check_not_in_maintenance_test(partial(cli.maintenance, 'stop'))
 
     def __test_maintenance_check(self, maintenance_active):
         token_name = self.token_name()
@@ -2217,6 +2242,12 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_start_with_ping_no_wait(self):
         self.run_maintenance_stop_with_ping_no_wait_test(cli.start)
+
+    def test_start_enforce_check_not_in_maintenance(self):
+        self.run_maintenance_stop_enforce_check_not_in_maintenance_test(cli.start)
+
+    def test_start_skip_check_not_in_maintenance(self):
+        self.run_maintenance_stop_skip_check_not_in_maintenance_test(cli.start)
 
     def test_stop_no_cluster(self):
         custom_maintenance_message = "custom maintenance message"
