@@ -1974,7 +1974,6 @@ class WaiterCliTest(util.WaiterTest):
         try:
             cp = cli.maintenance('stop', token_name, self.waiter_url, maintenance_flags='--no-wait')
             stdout = cli.stdout(cp)
-            print(stdout)
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn(f'Pinging token {token_name}', stdout)
             self.assertIn('Service is currently Starting', stdout)
