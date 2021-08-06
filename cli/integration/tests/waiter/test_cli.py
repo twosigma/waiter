@@ -1966,7 +1966,10 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
-    def test_maintenance_stop_with_ping_no_wait(self):
+    def test_maintenance_stop_with_ping(self):
+        self.run_maintenance_stop_with_ping_test(partial(cli.maintenance, 'stop'))
+
+    def run_maintenance_stop_with_ping_no_wait_test(self, cli_fn):
         token_name = self.token_name()
         token_fields = util.minimal_service_description()
         token_fields['cmd'] = f"sleep 30 && {token_fields['cmd']}"
@@ -1974,7 +1977,7 @@ class WaiterCliTest(util.WaiterTest):
         util.post_token(self.waiter_url, token_name,
                         {**token_fields, 'maintenance': {'message': custom_maintenance_message}})
         try:
-            cp = cli.maintenance('stop', token_name, self.waiter_url, maintenance_flags='--no-wait')
+            cp = cli_fn(token_name, self.waiter_url, maintenance_flags='--no-wait')
             stdout = cli.stdout(cp)
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn(f'Pinging token {token_name}', stdout)
@@ -1987,8 +1990,8 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
-    def test_maintenance_stop_with_ping(self):
-        self.run_maintenance_stop_with_ping_test(partial(cli.maintenance, 'stop'))
+    def test_maintenance_stop_with_ping_no_wait(self):
+        self.run_maintenance_stop_with_ping_no_wait_test(partial(cli.maintenance, 'stop'))
 
     def test_maintenance_stop_no_cluster(self):
         self.__test_no_cluster(partial(cli.maintenance, 'stop'))
@@ -2211,6 +2214,9 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_start_with_ping(self):
         self.run_maintenance_stop_with_ping_test(cli.start)
+
+    def test_start_with_ping_no_wait(self):
+        self.run_maintenance_stop_with_ping_no_wait_test(cli.start)
 
     def test_stop_no_cluster(self):
         custom_maintenance_message = "custom maintenance message"
