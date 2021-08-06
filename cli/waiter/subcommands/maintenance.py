@@ -1,4 +1,3 @@
-import argparse
 from functools import partial
 
 import requests
@@ -44,7 +43,7 @@ def _update_token(cluster, token_name, existing_token_etag, body):
         return 1, None
 
 
-def check_maintenance(clusters, args, enforce_cluster):
+def check_maintenance(clusters, args, _, enforce_cluster):
     """Checks if a token is in maintenance mode and displays the result. Returns 0 if the token is in maintenance mode
     and returns 1 if the token is NOT in maintenance mode."""
     token_name = args['token']
@@ -54,7 +53,7 @@ def check_maintenance(clusters, args, enforce_cluster):
     return 0 if maintenance_mode_active else 1
 
 
-def start_maintenance(clusters, args, enforce_cluster):
+def start_maintenance(clusters, args, _, enforce_cluster):
     """Sets the token in maintenance mode by updating the token user metadata fields"""
     token_name = args['token']
     timeout_secs = args['timeout']
@@ -91,7 +90,7 @@ def start_maintenance(clusters, args, enforce_cluster):
         return return_code
 
 
-def stop_maintenance(clusters, args, enforce_cluster):
+def stop_maintenance(clusters, args, _, enforce_cluster):
     """Stops maintenance mode for a token by deleting the 'maintenance' user metadata field in the token data"""
     token_name = args['token']
     ping_token = args.pop('ping_token', True)
@@ -127,23 +126,24 @@ def maintenance(parser, clusters, args, _, enforce_cluster):
         parser.print_help()
         return 0
     else:
-        return sub_func(clusters, args, enforce_cluster)
+        return sub_func(clusters, args, _, enforce_cluster)
 
 
 def register_check(add_parser):
     """Registers the maintenance check parser"""
     parser = add_parser('check',
-                        help='Checks if a token is in maintenance mode. Exits with code 0 if the token is in '
+                        help='checks if a token is in maintenance mode. Exits with code 0 if the token is in '
                              'maintenance mode and 1 if the token is not in maintenance mode')
     parser.add_argument('token')
     parser.set_defaults(sub_func=check_maintenance)
 
 
-def register_stop(add_parser):
+def register_stop(command_name, add_parser):
     """Registers the maintenance stop parser"""
-    parser = add_parser('stop', help='Stop maintenance mode for a token. '
-                                     'Requests to the token will be handled normally.'
-                                     'By default, also ping the token to ensure a running service.')
+    parser = add_parser(command_name,
+                        help='stop maintenance mode for a token. '
+                             'Requests to the token will be handled normally. '
+                             'By default, also ping the token to ensure a running service.')
     ping_group = parser.add_mutually_exclusive_group(required=False)
     ping_group.add_argument('--no-ping', action='store_false', dest='ping_token',
                             help='Skip pinging the token. Pinging the token is enabled by default.')
@@ -155,12 +155,13 @@ def register_stop(add_parser):
                         dest='wait', action='store_false')
     parser.add_argument('token')
     parser.set_defaults(sub_func=stop_maintenance)
+    return stop_maintenance
 
 
-def register_start(add_parser):
+def register_start(command_name, add_parser):
     """Registers the maintenance start parser"""
-    parser = add_parser('start',
-                        help='Start maintenance mode for a token. '
+    parser = add_parser(command_name,
+                        help='start maintenance mode for a token. '
                              'All requests to this token will begin to receive a 503 response. '
                              "By default, also kill the token's currently running services.")
     kill_group = parser.add_mutually_exclusive_group(required=False)
@@ -178,6 +179,7 @@ def register_start(add_parser):
                         help='Your message will be provided in a 503 response for requests to the token. '
                              'The message cannot be more than 512 characters.')
     parser.set_defaults(sub_func=start_maintenance)
+    return start_maintenance
 
 
 def register(add_parser):
@@ -187,6 +189,6 @@ def register(add_parser):
                         description='Manage maintenance mode for a Waiter token.')
     subparsers = parser.add_subparsers()
     register_check(subparsers.add_parser)
-    register_start(subparsers.add_parser)
-    register_stop(subparsers.add_parser)
+    register_start('start', subparsers.add_parser)
+    register_stop('stop', subparsers.add_parser)
     return partial(maintenance, parser)

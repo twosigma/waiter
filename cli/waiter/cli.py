@@ -44,6 +44,12 @@ actions = {
     'ssh': {
         'run-function': ssh.register(subparsers.add_parser)
     },
+    'start': {
+        'run-function': maintenance.register_stop('start', subparsers.add_parser)
+    },
+    'stop': {
+        'run-function': maintenance.register_start('stop', subparsers.add_parser)
+    },
     'tokens': {
         'run-function': tokens.register(subparsers.add_parser)
     },
