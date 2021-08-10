@@ -96,13 +96,20 @@ def stop_maintenance(clusters, args, _, enforce_cluster):
     ping_token = args.pop('ping_token', True)
     timeout = args.pop('timeout', 300)
     wait_for_ping = args.pop('wait', True)
+    check_maintenance_mode = args.pop('check', False)
     cluster, existing_token_data, existing_token_etag = _get_existing_token_data(clusters, token_name, enforce_cluster)
     maintenance_mode_active = _is_token_in_maintenance_mode(existing_token_data)
-    if not maintenance_mode_active:
+    logging.debug(f'Token {token_name} in {cluster} with etag {existing_token_etag} '
+                  f'is {"" if maintenance_mode_active else "not"} in maintenance mode')
+    if not maintenance_mode_active and check_maintenance_mode:
         raise Exception("Token is not in maintenance mode")
-    json_body = existing_token_data
-    json_body.pop("maintenance")
-    return_code, token_etag = _update_token(cluster, token_name, existing_token_etag, json_body)
+    if maintenance_mode_active:
+        json_body = existing_token_data
+        json_body.pop("maintenance")
+        return_code, token_etag = _update_token(cluster, token_name, existing_token_etag, json_body)
+    else:
+        print(f'Token {terminal.bold(token_name)} does not have maintenance mode activated')
+        return_code, token_etag = 0, existing_token_etag
     if return_code == 0:
         if ping_token:
             if token_etag:
@@ -146,13 +153,18 @@ def register_stop(command_name, add_parser):
                              'By default, also ping the token to ensure a running service.')
     ping_group = parser.add_mutually_exclusive_group(required=False)
     ping_group.add_argument('--no-ping', action='store_false', dest='ping_token',
-                            help='Skip pinging the token. Pinging the token is enabled by default.')
+                            help='skips pinging the token; pinging the token is enabled by default')
     ping_group.add_argument('--ping', action='store_true', dest='ping_token',
-                            help='Ping the token after stopping maintenance.')
-    parser.add_argument('--timeout', '-t', default=300, help='read timeout (in seconds) for ping request.',
+                            help='pings the token after stopping maintenance.')
+    parser.add_argument('--timeout', '-t', default=300, help='read timeout (in seconds) for ping request',
                         type=check_positive)
     parser.add_argument('--no-wait', '-n', help='do not wait for ping request to return',
                         dest='wait', action='store_false')
+    check_group = parser.add_mutually_exclusive_group(required=False)
+    check_group.add_argument('--check', action='store_true', dest='check',
+                             help='enforces the check that the token is currently in maintenance mode')
+    check_group.add_argument('--no-check', action='store_false', dest='check',
+                             help='skips checking maintenance mode; skipping the check is enabled by default')
     parser.add_argument('token')
     parser.set_defaults(sub_func=stop_maintenance)
     return stop_maintenance
