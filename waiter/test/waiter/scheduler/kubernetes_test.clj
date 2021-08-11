@@ -35,7 +35,8 @@
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
-  (:import (java.util.concurrent CountDownLatch)
+  (:import (clojure.lang ExceptionInfo)
+           (java.util.concurrent CountDownLatch)
            (waiter.scheduler Service ServiceInstance)
            (waiter.scheduler.kubernetes KubernetesScheduler)))
 
@@ -53,8 +54,9 @@
 
 (defn- make-dummy-scheduler
   ([service-ids] (make-dummy-scheduler service-ids {}))
-  ([service-ids {:keys [log-bucket-sync-secs log-bucket-url]
-                 :or {log-bucket-sync-secs 60
+  ([service-ids {:keys [default-namespace log-bucket-sync-secs log-bucket-url]
+                 :or {default-namespace dummy-scheduler-default-namespace
+                      log-bucket-sync-secs 60
                       log-bucket-url "http://waiter.example.com:8888/waiter-service-logs"}
                  :as args}]
    (->
@@ -82,7 +84,7 @@
       :replicaset-spec-builder-fn #(waiter.scheduler.kubernetes/default-replicaset-builder
                                      %1 %2 %3
                                      {:container-init-commands ["waiter-k8s-init"]
-                                      :default-namespace dummy-scheduler-default-namespace
+                                      :default-namespace default-namespace
                                       :default-container-image "twosigma/waiter-test-apps:latest"
                                       :log-bucket-sync-secs log-bucket-sync-secs
                                       :log-bucket-url log-bucket-url})
@@ -235,6 +237,20 @@
   (testing "no two adjacent service-id hashes map to the same port0"
     (let [ports (for [i (range 1000) j (range 100)] (get-port-range i j 0))]
       (is (every? (partial apply not=) (partition 2 1 ports))))))
+
+(deftest test-determine-namespace
+  (is (thrown-with-msg? ExceptionInfo #"Waiter configuration is missing a default namespace for Kubernetes pods"
+                        (determine-namespace nil nil {"run-as-user" "jill"})))
+  (is (thrown-with-msg? ExceptionInfo #"service namespace does not match scheduler namespace"
+                        (determine-namespace "john" "jack" {"namespace" "jane" "run-as-user" "jill"})))
+
+  (is (= "jane" (determine-namespace nil nil {"namespace" "jane" "run-as-user" "jill"})))
+  (is (= "jack" (determine-namespace nil "jack" {"run-as-user" "jill"})))
+  (is (= "jill" (determine-namespace nil "*" {"run-as-user" "jill"})))
+  (is (= "jill" (determine-namespace "john" "*" {"run-as-user" "jill"})))
+  (is (= "jane" (determine-namespace nil "*" {"namespace" "jane" "run-as-user" "jill"})))
+  (is (= "john" (determine-namespace "john" nil {"run-as-user" "jill"})))
+  (is (= "jack" (determine-namespace "john" "jack" {"run-as-user" "jill"}))))
 
 (deftest test-replicaset-spec-with-reverse-proxy
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
@@ -423,12 +439,22 @@
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [service-id "test-service-id"]
+      (testing "Star namespace"
+        (let [scheduler (make-dummy-scheduler [service-id]
+                                              {:default-namespace "*"
+                                               :service-id->service-description-fn (constantly dummy-service-description)})
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id dummy-service-description)
+              {:strs [run-as-user]} dummy-service-description]
+          (is (nil? (scheduler/validate-service scheduler service-id)))
+          (is (= run-as-user (get-in replicaset-spec [:metadata :namespace])))
+          (is (true? (get-in replicaset-spec [:spec :template :spec :automountServiceAccountToken])))))
       (testing "Default namespace"
         (let [scheduler (make-dummy-scheduler [service-id]
                                               {:service-id->service-description-fn (constantly dummy-service-description)})
               replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id dummy-service-description)]
           (is (nil? (scheduler/validate-service scheduler service-id)))
-          (is (= dummy-scheduler-default-namespace (get-in replicaset-spec [:metadata :namespace])))))
+          (is (= dummy-scheduler-default-namespace (get-in replicaset-spec [:metadata :namespace])))
+          (is (false? (get-in replicaset-spec [:spec :template :spec :automountServiceAccountToken])))))
       (testing "Valid custom namespace"
         (let [target-namespace "myself"
               service-description (assoc dummy-service-description "namespace" target-namespace)
@@ -436,14 +462,16 @@
                                               {:service-id->service-description-fn (constantly service-description)})
               replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description)]
           (is (nil? (scheduler/validate-service scheduler service-id)))
-          (is (= target-namespace (get-in replicaset-spec [:metadata :namespace])))))
+          (is (= target-namespace (get-in replicaset-spec [:metadata :namespace])))
+          (is (true? (get-in replicaset-spec [:spec :template :spec :automountServiceAccountToken])))))
       (testing "Custom namespace matches scheduler namespace"
         (let [target-namespace "myself"
               service-description (assoc dummy-service-description "namespace" target-namespace)
               scheduler (make-dummy-scheduler [service-id] {:namespace target-namespace})
               replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description)]
           (is (nil? (scheduler/validate-service scheduler service-id)))
-          (is (= target-namespace (get-in replicaset-spec [:metadata :namespace])))))
+          (is (= target-namespace (get-in replicaset-spec [:metadata :namespace])))
+          (is (true? (get-in replicaset-spec [:spec :template :spec :automountServiceAccountToken])))))
       (testing "Custom namespace does not match scheduler namespace"
         (let [target-namespace "myself"
               service-description (assoc dummy-service-description "namespace" target-namespace)
@@ -1609,6 +1637,16 @@
                            (assoc :namespace "y")
                            (assoc-in [:replicaset-spec-builder :default-namespace] "x"))]
               (is (thrown? Throwable (kubernetes-scheduler config)))))
+
+          (testing "star default-namespace"
+            (let [config (assoc-in base-config [:replicaset-spec-builder :default-namespace] "*")]
+              (is (instance? KubernetesScheduler (kubernetes-scheduler config))))
+
+            (testing "with bad (non-matching) scheduler namespace"
+              (let [config (-> base-config
+                             (assoc :namespace "y")
+                             (assoc-in [:replicaset-spec-builder :default-namespace] "*"))]
+                (is (thrown? Throwable (kubernetes-scheduler config))))))
 
           (testing "good (non-conflicting) scheduler namespace and default-namespace"
             (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :namespace "y"))))

@@ -1011,6 +1011,18 @@
   [service-id-hash range-index base-port]
   (-> service-id-hash (+ range-index) (mod 100) (* 10) (+ base-port)))
 
+(defn determine-namespace
+  "Determines the k8s namespace to use while creating k8s objects for the service."
+  [scheduler-namespace default-namespace {:strs [namespace run-as-user]}]
+  (when-not (or namespace default-namespace scheduler-namespace)
+    (throw (ex-info "Waiter configuration is missing a default namespace for Kubernetes pods" {})))
+  (when (and scheduler-namespace namespace (not= scheduler-namespace namespace))
+    (throw (ex-info "service namespace does not match scheduler namespace"
+                    {:scheduler-ns scheduler-namespace :service-ns namespace})))
+  (or namespace
+      (if (= "*" default-namespace) run-as-user default-namespace)
+      scheduler-namespace))
+
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
   [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
@@ -1019,18 +1031,14 @@
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
-           mem min-instances namespace ports run-as-user termination-grace-period-secs]
+           mem min-instances ports run-as-user termination-grace-period-secs]
     :as service-description}
    {:keys [container-init-commands default-container-image default-namespace log-bucket-url image-aliases]
     :as context}]
   (when-not (or image default-container-image)
     (throw (ex-info "Waiter configuration is missing a default image for Kubernetes pods" {})))
-  (when-not (or namespace default-namespace scheduler-namespace)
-    (throw (ex-info "Waiter configuration is missing a default namespace for Kubernetes pods" {})))
-  (when (and scheduler-namespace namespace (not= scheduler-namespace namespace))
-    (throw (ex-info "service namespace does not match scheduler namespace"
-                    {:scheduler-ns scheduler-namespace :service-ns namespace})))
-  (let [work-path (str "/home/" run-as-user)
+  (let [rs-namespace (determine-namespace scheduler-namespace default-namespace service-description)
+        work-path (str "/home/" run-as-user)
         home-path (str work-path "/latest")
         base-env (scheduler/environment service-id service-description
                                         service-id->password-fn home-path)
@@ -1093,7 +1101,7 @@
                            :waiter/service-hash service-hash
                            :waiter/user run-as-user}
                   :name k8s-name
-                  :namespace (or namespace default-namespace scheduler-namespace)}
+                  :namespace rs-namespace}
        :spec {:replicas min-instances
               :selector {:matchLabels {:app k8s-name
                                        :waiter/user run-as-user}}
@@ -1106,11 +1114,8 @@
                                              :waiter/service-hash service-hash
                                              :waiter/user run-as-user}}
                          :spec {;; Service account tokens allow easy access to the k8s api server,
-                                ;; but this is only enabled when the x-waiter-namespace is set explicitly
-                                ;; (i.e., don't give arbitrary users access to the default namespace's token).
-                                ;; Note that even if the run-as-user matches the default namespace,
-                                ;; the token is still not mounted unless the namespace was explicitly set.
-                                :automountServiceAccountToken (= namespace run-as-user)
+                                ;; but this is only enabled when the replicaset namespace matches the run-as-user.
+                                :automountServiceAccountToken (= rs-namespace run-as-user)
                                 ;; Note: waiter-app must always be the first container we register
                                 :containers [{:command (conj (vec container-init-commands) cmd)
                                               :env env
