@@ -26,6 +26,7 @@ import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
+import io.grpc.protobuf.services.ProtoReflectionService;
 import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
 
@@ -128,6 +129,7 @@ public class GrpcServer {
         server = ServerBuilder
             .forPort(port)
             .addService(new CourierImpl())
+            .addService(ProtoReflectionService.newInstance())
             .intercept(new GrpcServerInterceptor())
             .intercept(new CorrelationIdInterceptor())
             .build()

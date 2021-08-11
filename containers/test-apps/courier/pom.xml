@@ -6,7 +6,7 @@
 
     <groupId>twosigma</groupId>
     <artifactId>courier</artifactId>
-    <version>1.5.19</version>
+    <version>1.5.20</version>
 
     <name>courier</name>
     <url>https://github.com/twosigma/waiter/tree/master/test-apps/courier</url>
@@ -30,6 +30,11 @@
         <dependency>
             <groupId>io.grpc</groupId>
             <artifactId>grpc-protobuf</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-services</artifactId>
             <version>${grpc.version}</version>
         </dependency>
         <dependency>
