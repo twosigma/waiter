@@ -333,9 +333,9 @@
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (let [current-user (retrieve-username)]
-        (testing "No service account with default namespace"
+        (testing "Has service account with matching default namespace"
           (let [service-account (get-pod-service-account waiter-url nil)]
-            (is (str/blank? service-account))))
+            (is (= current-user service-account))))
         (testing "Has service account with custom namespace"
           (let [service-account (get-pod-service-account waiter-url current-user)]
             (is (= current-user service-account))))))))
