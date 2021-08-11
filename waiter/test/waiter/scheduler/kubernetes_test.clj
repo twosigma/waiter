@@ -1605,7 +1605,10 @@
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :response->deployment-error-msg-fn "string")))))
 
           (testing "bad (non-matching) scheduler namespace and default-namespace"
-            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :default-namespace "x" :namespace "y")))))
+            (let [config (-> base-config
+                           (assoc :namespace "y")
+                           (assoc-in [:replicaset-spec-builder :default-namespace] "x"))]
+              (is (thrown? Throwable (kubernetes-scheduler config)))))
 
           (testing "good (non-conflicting) scheduler namespace and default-namespace"
             (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :namespace "y"))))

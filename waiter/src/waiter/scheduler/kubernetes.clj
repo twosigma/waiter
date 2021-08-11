@@ -1454,12 +1454,13 @@
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
-  [{:keys [authenticate-health-checks? authentication authorizer cluster-name container-running-grace-secs custom-options default-namespace http-options leader?-fn log-bucket-sync-secs
+  [{:keys [authenticate-health-checks? authentication authorizer cluster-name container-running-grace-secs custom-options http-options leader?-fn log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length namespace pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
-           pod-suffix-length replicaset-api-version replicaset-spec-builder response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold
+           pod-suffix-length replicaset-api-version response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold
            reverse-proxy scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn start-scheduler-syncer-fn url watch-chan-throttle-interval-ms watch-connect-timeout-ms watch-init-timeout-ms watch-retries watch-socket-timeout-ms]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver
+    {:keys [default-namespace] :as replicaset-spec-builder} :replicaset-spec-builder
     {service-id->deployment-error-cache-threshold :threshold service-id->deployment-error-cache-ttl-sec :ttl} :service-id->deployment-error-cache
     :as context}]
   {:pre [(or (nil? authenticate-health-checks?) (boolean? authenticate-health-checks?))
