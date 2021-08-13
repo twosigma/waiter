@@ -125,21 +125,16 @@
        (is (= "OK" (-> status# .getCode str)) assertion-message#)
        (is (str/blank? (.getDescription status#)) assertion-message#))))
 
-(def envoy-error-messages
-  "Envoy's grpc error messages corresponding to Waiter's error messages."
-  {"Cancelled by server" ["HTTP/2 error code: CANCEL\nReceived Rst Stream"]})
-
 (defmacro assert-grpc-cancel-status
   "Asserts that the status represents a grpc OK status."
   [status message assertion-message]
   `(let [status# ~status
          msg# ~message
-         messages# (into #{msg#} (get envoy-error-messages msg#))
          assertion-message# ~assertion-message]
      (is status# assertion-message#)
      (when status#
        (is (= "CANCELLED" (-> status# .getCode str)) assertion-message#)
-       (is (contains? messages# (.getDescription status#)) assertion-message#))))
+       (is (= msg# (.getDescription status#)) assertion-message#))))
 
 (defmacro assert-grpc-deadline-exceeded-status
   "Asserts that the status represents a grpc OK status."
