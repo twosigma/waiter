@@ -75,7 +75,7 @@
 
 (defn classify-error
   "Classifies the error responses from the backend into the following vector:
-   - error cause (:client-eagerly-closed, :client-error, :instance-error or :generic-error),
+   - error cause (:client-eagerly-closed, :client-error, :instance-error, :generic-error, or :server-eagerly-closed),
    - associated error message,
    - the http status code, and
    - the canonical name of the exception that 'caused' the error."
@@ -106,7 +106,7 @@
                              ;; no_error is used to indicate that the stream is no longer needed
                              ;; HTTP2 spec: The associated condition is not a result of an error...indicate graceful shutdown of a connection.
                              (and (instance? IOException error) (= "no_error" error-message))
-                             [:generic-error "Server closed connection as stream no longer needed" http-400-bad-request error-class]
+                             [:server-eagerly-closed "Connection eagerly closed by server" http-400-bad-request error-class]
                              ;; connection has already been closed by the client
                              (and (instance? EofException error) (= "reset" error-message))
                              [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request error-class]
@@ -129,9 +129,15 @@
 (defn- determine-client-error
   "Classifies the error into one of :client-eagerly-closed or :client-error"
   [error]
-  (let [[error-cause _ _] (classify-error error)]
+  (let [[error-cause] (classify-error error)]
     (or (get #{:client-eagerly-closed :client-error} error-cause)
         :client-error)))
+
+(defn- eagerly-closed?
+  "True when error-cause is :client-eagerly-closed or :server-eagerly-closed."
+  [error-cause]
+  (or (= :client-eagerly-closed error-cause)
+      (= :server-eagerly-closed error-cause)))
 
 (defn confirm-live-connection-factory
   "Confirms that the connection to the client is live by checking the ctrl channel, else it throws an exception."
@@ -351,9 +357,9 @@
                                              ;; avoid decrementing the counter multiple times
                                              (counters/dec! request-body-streaming-counter)
                                              (report-request-size-metrics 0 true))
-                                           (let [[error-cause _ _] (when throwable
+                                           (let [[error-cause] (when throwable
                                                                      (classify-error throwable))]
-                                             (if (and throwable (not= :client-eagerly-closed error-cause))
+                                             (if (and throwable (not (eagerly-closed? error-cause)))
                                                (let [identifier-map {:identifier complete-trigger-id}
                                                      ;; the callback is necessary as there is a data race between aborting the
                                                      ;; request and closing of the body channel triggering a normal complete before
@@ -584,9 +590,9 @@
           (catch Exception e
             (log/info e "exception occurred while streaming response for" service-id)
             (meters/mark! stream-exception-meter)
-            (let [[error-cause _ _] (classify-error e)]
+            (let [[error-cause] (classify-error e)]
               (deliver reservation-status-promise error-cause)
-              (when-not (= :client-eagerly-closed error-cause)
+              (when-not (eagerly-closed? error-cause)
                 (log/info "sending poison pill to response channel")
                 (let [poison-pill-function (poison-pill-fn (cid/get-correlation-id))]
                   (when-not (au/timed-offer! resp-body poison-pill-function 5000)
