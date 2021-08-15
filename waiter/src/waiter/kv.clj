@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.kv
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
@@ -69,13 +70,23 @@
 
 (defrecord LocalKeyValueStore [store]
   KeyValueStore
-  (retrieve [_ key _] (let [value (@store key)]
-                        (log/debug (str "(local) FETCH " key " => " (hashcode value)))
-                        value))
-  (store [_ key value] (do (log/debug (str "(local) STORE " key " => " (hashcode value)))
-                           (swap! store assoc key value)))
-  (delete [_ key] (do (log/debug (str "(local) DELETE " key))
-                      (swap! store dissoc key)))
+  (retrieve [_ key _]
+    (let [{:keys [value]} (@store key)]
+      (log/debug (str "(local) FETCH " key " => " (hashcode value)))
+      value))
+  (store [_ key value]
+    (do
+      (log/debug (str "(local) STORE " key " => " (hashcode value)))
+      (swap! store update key
+             (fn [current-data]
+               (let [current-time (tc/to-long (t/now))]
+                 {:stats {:creation-time (get-in current-data [:stats :creation-time] current-time)
+                          :modified-time current-time}
+                  :value value})))))
+  (delete [_ key]
+    (do
+      (log/debug (str "(local) DELETE " key))
+      (swap! store dissoc key)))
   (state [_ include-flags]
     (let [store-data @store]
       {:store (cond-> {:count (count store-data)}
