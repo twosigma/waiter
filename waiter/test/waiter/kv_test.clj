@@ -37,6 +37,9 @@
     (with-redefs [t/now (constantly time-1)]
       (kv/store test-store :a bytes))
     (is (Arrays/equals bytes ^bytes (kv/fetch test-store :a)))
+    (is (= {:creation-time (tc/to-long time-1)
+            :modified-time (tc/to-long time-1)}
+           (kv/stats test-store :a)))
     (is (= {:store {:count 1
                     :data {:a {:stats {:creation-time (tc/to-long time-1)
                                        :modified-time (tc/to-long time-1)}
@@ -48,6 +51,9 @@
       (kv/store test-store :a 3))
     (is (= 3 (kv/fetch test-store :a)))
     (is (nil? (kv/fetch test-store :b)))
+    (is (= {:creation-time (tc/to-long time-1)
+            :modified-time (tc/to-long time-2)}
+           (kv/stats test-store :a)))
     (is (= {:store {:count 1
                     :data {:a {:stats {:creation-time (tc/to-long time-1)
                                        :modified-time (tc/to-long time-2)}
@@ -81,11 +87,17 @@
       (is (nil? (kv/fetch test-store :a)))
       (with-redefs [t/now (constantly time-1)]
         (kv/store test-store :a bytes))
+      (is (= {:creation-time (tc/to-long time-1)
+              :modified-time (tc/to-long time-1)}
+             (kv/stats test-store :a)))
       (is (Arrays/equals bytes ^bytes (kv/fetch test-store :a)))
       (with-redefs [t/now (constantly time-2)]
         (kv/store test-store :a 3))
       (is (= 3 (kv/fetch test-store :a)))
       (is (nil? (kv/fetch test-store :b)))
+      (is (= {:creation-time (tc/to-long time-1)
+              :modified-time (tc/to-long time-2)}
+             (kv/stats test-store :a)))
       (is (= {:store {:count 1
                       :data {:a {:stats {:creation-time (tc/to-long time-1)
                                          :modified-time (tc/to-long time-2)}
@@ -95,6 +107,9 @@
              (kv/state test-store include-flags))))
     ;; testing data was persisted in the file
     (let [test-store (kv/new-file-based-kv-store {:target-file target-file})]
+      (is (= {:creation-time (tc/to-long time-1)
+              :modified-time (tc/to-long time-2)}
+             (kv/stats test-store :a)))
       (is (= {:store {:count 1
                       :data {:a {:stats {:creation-time (tc/to-long time-1)
                                          :modified-time (tc/to-long time-2)}
@@ -164,6 +179,9 @@
     (is (nil? (kv/fetch cached-kv-store :a)))
     (with-redefs [t/now (constantly time-1)]
       (kv/store local-kv-store :a 1))
+    (is (= {:creation-time (tc/to-long time-1)
+            :modified-time (tc/to-long time-1)}
+           (kv/stats local-kv-store :a)))
     ; cache looks up underlying store during miss
     (is (kv/fetch local-kv-store :a))
     (is (= 1 (kv/fetch local-kv-store :a)))
@@ -171,6 +189,9 @@
     ; store to cache propagates to underlying store 
     (with-redefs [t/now (constantly time-2)]
       (kv/store cached-kv-store :b 2))
+    (is (= {:creation-time (tc/to-long time-2)
+            :modified-time (tc/to-long time-2)}
+           (kv/stats local-kv-store :b)))
     (is (true? (cu/cache-contains? cache :b)))
     (is (= 2 (kv/fetch cached-kv-store :b)))
     (is (= 2 (kv/fetch local-kv-store :b)))
@@ -185,6 +206,9 @@
     (is (= 13 (kv/fetch cached-kv-store :b)))
     (with-redefs [t/now (constantly time-5)]
       (kv/store local-kv-store :b 17))
+    (is (= {:creation-time (tc/to-long time-2)
+            :modified-time (tc/to-long time-5)}
+           (kv/stats local-kv-store :b)))
     (is (= 13 (kv/fetch cached-kv-store :b)))
     (is (= 17 (kv/fetch local-kv-store :b)))
     (is (= 17 (kv/fetch cached-kv-store :b :refresh true)))
@@ -237,14 +261,33 @@
                                               :base-path services-base-path
                                               :sync-timeout-ms 1})
               bytes (byte-array 10)
-              include-flags #{"data"}]
+              include-flags #{"data"}
+              creation-time-promise (promise)]
           (Arrays/fill bytes (byte 1))
           (is (nil? (kv/fetch test-store "a")))
           (is (nil? (get-value-from-curator "a")))
           (kv/store test-store "a" bytes)
+          (let [{:keys [stat]} (curator/read-path curator
+                                                  (kv/key->zk-path services-base-path "a")
+                                                  :nil-on-missing? true
+                                                  :serializer :nippy)
+                {:keys [ctime mtime]} stat]
+            (is (= {:creation-time ctime :modified-time mtime}
+                   (kv/stats test-store "a")))
+            (is (= ctime mtime))
+            (deliver creation-time-promise ctime))
           (is (Arrays/equals bytes ^bytes (kv/fetch test-store "a")))
           (is (not (nil? (get-value-from-curator "a"))))
           (kv/store test-store "a" 3)
+          (let [{:keys [stat]} (curator/read-path curator
+                                                  (kv/key->zk-path services-base-path "a")
+                                                  :nil-on-missing? true
+                                                  :serializer :nippy)
+                {:keys [ctime mtime]} stat]
+            (is (= {:creation-time ctime :modified-time mtime}
+                   (kv/stats test-store "a")))
+            (is (= @creation-time-promise ctime))
+            (is (< @creation-time-promise mtime)))
           (is (= 3 (kv/fetch test-store "a")))
           (is (not (nil? (get-value-from-curator "a"))))
           (is (nil? (kv/fetch test-store "b")))

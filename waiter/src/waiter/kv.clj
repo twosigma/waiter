@@ -40,10 +40,14 @@
     copy is returned. This parameter is meant to be used by implementations
     that cache key-value pairs and is there to work around the Clojure
     limitation of not supporting variable arguments in defprotocol.")
+  (stats [this key]
+    "Fetches the stats map from the key value store corresponding to the provided key.
+     If the key is missing, nil will be returned.
+     Else a map containing the keys [:creation-time, :modified-time] is returned.")
   (store [this key value]
     "Store a value in the key value store.  If a key is already present,
     update the key's value with the supplied value.  There are no
-    requirements or gaurantees as to the return value provided by this
+    requirements or guarantees as to the return value provided by this
     function.")
   (delete [this key]
     "Deletes a key-value from the key value store if the key exists.
@@ -74,6 +78,10 @@
     (let [{:keys [value]} (@store key)]
       (log/debug (str "(local) FETCH " key " => " (hashcode value)))
       value))
+  (stats [_ key]
+    (let [{:keys [stats]} (@store key)]
+      (log/debug (str "(local) STATS " key " => " stats))
+      stats))
   (store [_ key value]
     (do
       (log/debug (str "(local) STORE " key " => " (hashcode value)))
@@ -156,6 +164,19 @@
                                                 :serializer :nippy)]
           (log/debug "(zk) FETCH" path "=>" (hashcode data))
           data))))
+  (stats [_ key]
+    (validate-zk-key key)
+    (meters/mark! (metrics/waiter-meter "core" "kv-zk" "stats"))
+    (timers/start-stop-time!
+      (metrics/waiter-timer "core" "kv-zk" "stats")
+      (let [path (key->zk-path base-path key)
+            {:keys [stat]} (curator/read-path curator-client path
+                                              :nil-on-missing? true
+                                              :serializer :nippy)]
+        (when stat
+          (let [{:keys [ctime mtime]} stat]
+            {:creation-time ctime
+             :modified-time mtime})))))
   (store [_ key value]
     (validate-zk-key key)
     (meters/mark! (metrics/waiter-meter "core" "kv-zk" "store"))
@@ -193,6 +214,9 @@
   (retrieve [_ key _]
     (validate-zk-key (str key)) ;; to maintain same behavior as ZK kv-store
     (-> @store (get key) :value))
+  (stats [_ key]
+    (validate-zk-key (str key)) ;; to maintain same behavior as ZK kv-store
+    (-> @store (get key) :stats))
   (store [_ key value]
     (validate-zk-key (str key)) ;; to maintain same behavior as ZK kv-store
     (locking store
@@ -242,6 +266,8 @@
                    (log/warn "Failed to decrypt hash:" (Arrays/hashCode ^bytes encrypted-value) "for" key)
                    nil))
               passwords))))
+  (stats [_ key]
+    (stats inner-kv-store key))
   (store [_ key value]
     (let [password (first passwords)
           encrypted-value (timers/start-stop-time!
@@ -278,6 +304,12 @@
                             (counters/inc! (metrics/waiter-counter "core" "kv-cache" "retrieve" "miss"))
                             (meters/mark! (metrics/waiter-meter "core" "kv-cache" "retrieve" "miss-rate"))
                             (retrieve inner-kv-store key refresh))))
+  (stats [_ key]
+    (cu/cache-get-or-load cache (str key "#stats")
+                          (fn on-stats-cache-miss []
+                            (counters/inc! (metrics/waiter-counter "core" "kv-cache" "stats" "miss"))
+                            (meters/mark! (metrics/waiter-meter "core" "kv-cache" "stats" "miss-rate"))
+                            (stats inner-kv-store key))))
   (store [_ key value]
     (cu/cache-evict cache key)
     (let [result (store inner-kv-store key value)]
