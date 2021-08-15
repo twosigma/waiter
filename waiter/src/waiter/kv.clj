@@ -192,11 +192,16 @@
   KeyValueStore
   (retrieve [_ key _]
     (validate-zk-key (str key)) ;; to maintain same behavior as ZK kv-store
-    (@store key))
+    (-> @store (get key) :value))
   (store [_ key value]
     (validate-zk-key (str key)) ;; to maintain same behavior as ZK kv-store
     (locking store
-      (swap! store assoc key value)
+      (swap! store update key
+             (fn [current-data]
+               (let [current-time (tc/to-long (t/now))]
+                 {:stats {:creation-time (get-in current-data [:stats :creation-time] current-time)
+                          :modified-time current-time}
+                  :value value})))
       (log/info "writing latest data after store to" target-file)
       (nippy/freeze-to-file target-file @store)))
   (delete [_ key]

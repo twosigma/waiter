@@ -71,23 +71,34 @@
 
 (deftest test-file-based-kv-store
   (let [target-file (str (work-dir) "/foo.bin")
-        include-flags #{"data"}]
+        include-flags #{"data"}
+        time-0 (t/now)
+        time-1 (t/plus time-0 (t/seconds 1))
+        time-2 (t/plus time-0 (t/seconds 2))]
     (let [test-store (kv/new-file-based-kv-store {:target-file target-file})
           bytes (byte-array 10)]
       (Arrays/fill bytes (byte 1))
       (is (nil? (kv/fetch test-store :a)))
-      (kv/store test-store :a bytes)
+      (with-redefs [t/now (constantly time-1)]
+        (kv/store test-store :a bytes))
       (is (Arrays/equals bytes ^bytes (kv/fetch test-store :a)))
-      (kv/store test-store :a 3)
+      (with-redefs [t/now (constantly time-2)]
+        (kv/store test-store :a 3))
       (is (= 3 (kv/fetch test-store :a)))
       (is (nil? (kv/fetch test-store :b)))
-      (is (= {:store {:count 1, :data {:a 3}}
+      (is (= {:store {:count 1
+                      :data {:a {:stats {:creation-time (tc/to-long time-1)
+                                         :modified-time (tc/to-long time-2)}
+                                 :value 3}}}
               :supported-include-params ["data"]
               :variant "file-based"}
              (kv/state test-store include-flags))))
     ;; testing data was persisted in the file
     (let [test-store (kv/new-file-based-kv-store {:target-file target-file})]
-      (is (= {:store {:count 1, :data {:a 3}}
+      (is (= {:store {:count 1
+                      :data {:a {:stats {:creation-time (tc/to-long time-1)
+                                         :modified-time (tc/to-long time-2)}
+                                 :value 3}}}
               :supported-include-params ["data"]
               :variant "file-based"}
              (kv/state test-store include-flags)))
