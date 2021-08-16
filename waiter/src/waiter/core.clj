@@ -869,6 +869,7 @@
    :scheduler (pc/fnk [[:settings scheduler-config scheduler-syncer-interval-secs]
                        [:state custom-components leader?-fn scheduler-state-chan service-id-prefix]
                        scheduler-promise-chan
+                       service-id->creation-time*
                        service-id->password-fn*
                        service-id->service-description-fn*
                        start-scheduler-syncer-fn]
@@ -881,12 +882,19 @@
                                          :scheduler-state-chan scheduler-state-chan
                                          ;; TODO scheduler-syncer-interval-secs should be inside the scheduler's config
                                          :scheduler-syncer-interval-secs scheduler-syncer-interval-secs
+                                         :service-id->creation-time-fn service-id->creation-time*
                                          :service-id->password-fn service-id->password-fn*
                                          :service-id->service-description-fn service-id->service-description-fn*
                                          :start-scheduler-syncer-fn start-scheduler-syncer-fn}
                       scheduler (utils/create-component scheduler-config :context scheduler-context)]
                   (async/>!! scheduler-promise-chan scheduler)
                   scheduler))
+   ; This function is only included here for initializing the scheduler above.
+   ; Prefer accessing the non-starred version of this function through the routines map.
+   :service-id->creation-time* (pc/fnk [[:state kv-store]]
+                                 (fn service-id->creation-time
+                                   [service-id]
+                                   (sd/service-id->creation-time kv-store service-id)))
    ; This function is only included here for initializing the scheduler above.
    ; Prefer accessing the non-starred version of this function through the routines map.
    :service-id->password-fn* (pc/fnk [[:state passwords]]
