@@ -1686,12 +1686,12 @@
                                    (fn service-suspend-handler-fn [{:as request {:keys [service-id]} :route-params}]
                                      (handler/suspend-or-resume-service-handler
                                        kv-store allowed-to-manage-service?-fn make-inter-router-requests-sync-fn service-id :suspend request))))
-   :service-view-logs-handler-fn (pc/fnk [[:routines generate-log-url-fn]
+   :service-view-logs-handler-fn (pc/fnk [[:routines allowed-to-manage-service?-fn generate-log-url-fn]
                                           [:scheduler scheduler]
                                           wrap-secure-request-fn]
                                    (wrap-secure-request-fn
                                      (fn service-view-logs-handler-fn [{:as request {:keys [service-id]} :route-params}]
-                                       (handler/service-view-logs-handler scheduler service-id generate-log-url-fn request))))
+                                       (handler/service-view-logs-handler scheduler service-id allowed-to-manage-service?-fn generate-log-url-fn request))))
    :sim-request-handler (pc/fnk [] simulator/handle-sim-request)
    :state-all-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                   [:state router-id]

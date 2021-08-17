@@ -292,7 +292,14 @@
         (is (= http-405-method-not-allowed status))))))
 
 (deftest test-service-view-logs-handler
-  (let [scheduler (marathon/map->MarathonScheduler
+  (let [can-manage-service-atom ( atom true)
+        test-service-id "test-service-id"
+        test-user "test-user"
+        allowed-to-manage-service?-fn (fn [in-service-id in-user]
+                                        (is (= test-service-id in-service-id))
+                                        (is (= test-user in-user))
+                                        @can-manage-service-atom)
+        scheduler (marathon/map->MarathonScheduler
                     {:force-kill-after-ms 1000
                      :home-path-prefix "/home/path/"
                      :is-waiter-service?-fn (constantly true)
@@ -307,16 +314,28 @@
                      :service-id->password-fn #(str % ".password")
                      :service-id->service-description (constantly nil)
                      :sync-deployment-maintainer-atom (atom nil)})
-        configuration {:routines {:generate-log-url-fn (partial handler/generate-log-url identity)}
+        configuration {:routines {:allowed-to-manage-service?-fn allowed-to-manage-service?-fn
+                                  :generate-log-url-fn (partial handler/generate-log-url identity)}
                        :scheduler {:scheduler scheduler}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-view-logs-handler-fn ((:service-view-logs-handler-fn request-handlers) configuration)}
-        waiter-request?-fn (fn [_] true)
-        test-service-id "test-service-id"
-        user "test-user"]
+        waiter-request?-fn (fn [_] true)]
+
+    (testing "Unauthorized user"
+      (reset! can-manage-service-atom false)
+      (let [request {:authorization/user test-user
+                     :headers {"accept" "application/json"}
+                     :query-string ""
+                     :request-method :get
+                     :uri (str "/apps/" test-service-id "/logs")}
+            {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
+            json-body (json/read-str body)]
+        (is (= status http-401-unauthorized))
+        (is (= "Unauthorized" (get-in json-body ["waiter-error" "message"])))))
 
     (testing "Missing instance id"
-      (let [request {:authorization/user user
+      (reset! can-manage-service-atom true)
+      (let [request {:authorization/user test-user
                      :headers {"accept" "application/json"}
                      :query-string ""
                      :request-method :get
@@ -327,7 +346,8 @@
         (is (= "Missing instance-id parameter" (get-in json-body ["waiter-error" "message"])))))
 
     (testing "Missing host"
-      (let [request {:authorization/user user
+      (reset! can-manage-service-atom true)
+      (let [request {:authorization/user test-user
                      :headers {"accept" "application/json"}
                      :query-string "instance-id=instance-id-1"
                      :request-method :get
@@ -366,7 +386,8 @@
                                     }"]
                       (-> state-json-response-body json/read-str walk/keywordize-keys)))]
       (testing "Missing directory"
-        (let [request {:authorization/user user
+        (reset! can-manage-service-atom true)
+        (let [request {:authorization/user test-user
                        :headers {"accept" "application/json"}
                        :query-string "instance-id=service-id-1.instance-id-1&host=test.host.com"
                        :request-method :get
@@ -393,7 +414,8 @@
                  json-body))))
 
       (testing "Valid response"
-        (let [request {:authorization/user user
+        (reset! can-manage-service-atom true)
+        (let [request {:authorization/user test-user
                        :headers {"accept" "application/json"}
                        :query-string "instance-id=service-id-1.instance-id-2&host=test.host.com&directory=/path/to/instance2/directory/"
                        :request-method :get
