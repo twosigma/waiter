@@ -459,9 +459,15 @@
 
         (finally
           (doseq [token all-tokens]
-            (delete-token-and-assert waiter-url token))
+            (try
+              (delete-token-and-assert waiter-url token)
+              (catch Exception ex
+                (log/error ex (str "error in deleting token " token)))))
           (doseq [service-id @service-ids-atom]
-            (delete-service waiter-url service-id)))))))
+            (try
+              (delete-service waiter-url service-id)
+              (catch Exception ex
+                (log/error ex (str "error in deleting service " service-id))))))))))
 
 (defn- service-id->metadata-id [waiter-url service-id]
   (get-in (service-settings waiter-url service-id) [:service-description :metadata :id]))
