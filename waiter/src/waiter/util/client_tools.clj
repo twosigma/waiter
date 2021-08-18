@@ -849,10 +849,17 @@
    (let [test-prefix (System/getenv "WAITER_TEST_PREFIX")]
      (str/replace (str test-prefix (extract-acronym service-name) (System/nanoTime)) #"-" ""))))
 
+(def retrieve-cluster-name
+  (memoize
+    (fn [waiter-url]
+      (-> (waiter-settings waiter-url)
+        (get-in [:cluster-config :name])))))
+
 (defn create-token-name
   "Creates a random token name using the waiter url."
   ([waiter-url separator]
-   (let [prefix (str "test-" java-pid "-" (System/nanoTime))]
+   (let [cluster-name (retrieve-cluster-name waiter-url)
+         prefix (str "c" (System/nanoTime) "-w8r-" cluster-name)]
      (create-token-name waiter-url separator prefix)))
   ([waiter-url separator prefix]
    (str prefix "." (subs waiter-url 0 (str/index-of waiter-url separator)))))
