@@ -1095,7 +1095,12 @@
       (if (map? service-description)
         service-description
         (when-not nil-on-missing?
-          (throw (ex-info "No description found!" {:service-id service-id})))))))
+          (throw (ex-info "No description found!" {:service-id service-id}))))))
+
+  (defn fetch-stats
+    "Loads the stats for the specified service-id from the key-value store."
+    [kv-store ^String service-id]
+    (kv/stats kv-store (service-id->key service-id))))
 
 (defn refresh-service-descriptions
   "Refreshes missing service descriptions for the specified service ids.
@@ -1363,6 +1368,14 @@
     (if effective?
       (compute-effective service-description-builder service-id core-service-description)
       core-service-description)))
+
+(defn service-id->creation-time
+  "Loads the creation time, as a a DateTime instance, for the specified service-id.
+   Returns nil if no creation time is known for the service."
+  [kv-store service-id]
+  (let [{:keys [creation-time]} (fetch-stats kv-store service-id)]
+    (some-> creation-time
+      (tc/from-long))))
 
 (defn can-manage-service?
   "Returns whether the `username` is allowed to modify the specified service description."

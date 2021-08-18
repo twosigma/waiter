@@ -1911,29 +1911,36 @@
                                                    :service-description-defaults service-description-defaults}
                                           service-description-builder (create-default-service-description-builder context)]
                                       (service-id->service-description
-                                        service-description-builder kv-store service-id :effective? effective?)))]
+                                        service-description-builder kv-store service-id :effective? effective?)))
+        fetch-service-creation-time (fn [kv-store] (service-id->creation-time kv-store service-id))]
 
     (testing "no data available"
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))]
         (is (nil? (kv/fetch kv-store service-key)))
         (is (nil? (fetch-service-description kv-store)))
-        (is (nil? (kv/fetch kv-store service-key)))))
+        (is (nil? (kv/fetch kv-store service-key)))
+        (is (nil? (fetch-service-creation-time kv-store)))))
 
     (testing "data without refresh"
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))
-            service-description {"cmd" "tc" "cpus" 1 "mem" 200 "version" "a1b2c3"}]
+            service-description {"cmd" "tc" "cpus" 1 "mem" 200 "version" "a1b2c3"}
+            time-0 (t/now)]
         (is (nil? (kv/fetch kv-store service-key)))
-        (kv/store kv-store service-key service-description)
+        (with-redefs [t/now (constantly time-0)]
+          (kv/store kv-store service-key service-description))
         (is (= service-description (fetch-service-description kv-store)))
-        (is (= service-description (kv/fetch kv-store service-key)))))
+        (is (= service-description (kv/fetch kv-store service-key)))
+        (is (= time-0 (fetch-service-creation-time kv-store)))))
 
     (testing "data with profile"
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))
             service-description {"cmd" "tc" "cpus" 1 "mem" 200 "profile" "webapp" "version" "a1b2c3"}
             profile->defaults {"webapp" {"concurrency-level" 120}}
-            service-description-defaults {"metric-group" "webapp"}]
+            service-description-defaults {"metric-group" "webapp"}
+            time-0 (t/now)]
         (is (nil? (kv/fetch kv-store service-key)))
-        (kv/store kv-store service-key service-description)
+        (with-redefs [t/now (constantly time-0)]
+          (kv/store kv-store service-key service-description))
         (is (= service-description
                (fetch-service-description
                  kv-store
@@ -1947,22 +1954,28 @@
                  :effective? true
                  :profile->defaults profile->defaults
                  :service-description-defaults service-description-defaults)))
-        (is (= service-description (kv/fetch kv-store service-key)))))
+        (is (= service-description (kv/fetch kv-store service-key)))
+        (is (= time-0 (fetch-service-creation-time kv-store)))))
 
     (testing "cached empty data"
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))
             cache (cu/cache-factory {:threshold 10})
             cache-kv-store (kv/->CachedKeyValueStore kv-store cache)
             service-id "test-service-1"
-            service-description {"cmd" "tc" "cpus" 1 "mem" 200 "version" "a1b2c3"}]
+            service-description {"cmd" "tc" "cpus" 1 "mem" 200 "version" "a1b2c3"}
+            time-0 (t/now)
+            time-0-epoch (tc/to-long time-0)]
         (is (nil? (fetch-service-description cache-kv-store)))
-        (kv/store kv-store service-key service-description)
+        (with-redefs [t/now (constantly time-0)]
+          (kv/store kv-store service-key service-description))
         (is (nil? (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))
         (is (nil? (fetch-service-description cache-kv-store)))
         (is (nil? (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))
         (is (= service-description (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id) :refresh true)))
         (is (= service-description (fetch-service-description cache-kv-store)))
-        (is (= service-description (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))))))
+        (is (= service-description (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))
+        (is (= {:creation-time time-0-epoch :modified-time time-0-epoch} (kv/stats cache-kv-store (str "^SERVICE-ID#" service-id))))
+        (is (= time-0 (fetch-service-creation-time kv-store)))))))
 
 (deftest test-service-suspend-resume
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
