@@ -126,7 +126,10 @@
                           InputStreamReader.
                           cheshire/parsed-seq)
         token->index-atom (atom {})
-        query-state-fn (fn [] @token->index-atom)
+        initial-event-time-epoch-ms-atom (atom nil)
+        query-state-fn (fn []
+                         {:initial-event-time-epoch-ms @initial-event-time-epoch-ms-atom
+                          :token->index @token->index-atom})
         exit-fn (fn []
                   (async/close! body))
         go-chan
@@ -140,11 +143,13 @@
                       token->index @token->index-atom]
                   (case type
                     "INITIAL"
-                    (reduce
-                      (fn [token->index index]
-                        (assoc token->index (get index "token") index))
-                      {}
-                      object)
+                    (do
+                      (reset! initial-event-time-epoch-ms-atom (System/currentTimeMillis))
+                      (reduce
+                        (fn [token->index index]
+                          (assoc token->index (get index "token") index))
+                        {}
+                        object))
 
                     "EVENTS"
                     (reduce
@@ -191,7 +196,7 @@
          entry# ~entry
          router-url# (:router-url watch#)
          query-state-fn# (:query-state-fn watch#)
-         get-current-token-entry-fn# #(get (query-state-fn#) token#)]
+         get-current-token-entry-fn# #(get (:token->index (query-state-fn#)) token#)]
      (is (wait-for
            #(= (get-current-token-entry-fn#)
                entry#)
@@ -206,7 +211,7 @@
          entry# ~entry
          router-url# (:router-url watch#)
          query-state-fn# (:query-state-fn watch#)
-         get-current-token-entry-fn# #(get (query-state-fn#) token#)]
+         get-current-token-entry-fn# #(get (:token->index (query-state-fn#)) token#)]
      (is (not (wait-for
                 #(not= (get-current-token-entry-fn#)
                        entry#)
@@ -390,7 +395,6 @@
   (testing-using-waiter-url
     (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
           streaming-timeout-ms 5000
-          start-time-epoch-ms (System/currentTimeMillis)
           {:keys [exit-fn go-chan headers query-state-fn]}
           (start-watch waiter-url cookies :query-params {"include" ["metadata"]
                                                          "name" "test-token-watch-streaming-timeout"
@@ -398,9 +402,11 @@
                                                          "watch" "true"})
           _ (async/alts!! [go-chan (async/timeout (* 2 streaming-timeout-ms))] :priority true)
           end-time-epoch-ms (System/currentTimeMillis)
-          elapsed-time-ms (- end-time-epoch-ms start-time-epoch-ms)
+          {:keys [initial-event-time-epoch-ms token->index]} (query-state-fn)
           _ (exit-fn)
+          _ (is (some? initial-event-time-epoch-ms))
+          elapsed-time-ms (- end-time-epoch-ms initial-event-time-epoch-ms)
           assertion-message (str {:elapsed-time-ms elapsed-time-ms
                                   :headers headers})]
-      (is (empty? (query-state-fn)) assertion-message)
-      (is (<= streaming-timeout-ms elapsed-time-ms (+ streaming-timeout-ms 1000)) assertion-message))))
+      (is (empty? token->index) assertion-message)
+      (is (<= (- streaming-timeout-ms 1000) elapsed-time-ms (+ streaming-timeout-ms 1000)) assertion-message))))

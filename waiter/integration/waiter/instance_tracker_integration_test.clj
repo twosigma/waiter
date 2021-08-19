@@ -102,7 +102,10 @@
                           InputStreamReader.
                           cheshire/parsed-seq)
         id->healthy-instance-atom (atom {})
-        query-state-fn (fn [] @id->healthy-instance-atom)
+        initial-event-time-epoch-ms-atom (atom nil)
+        query-state-fn (fn []
+                         {:initial-event-time-epoch-ms @initial-event-time-epoch-ms-atom
+                          :id->healthy-instance @id->healthy-instance-atom})
         exit-fn (fn []
                   (async/close! body))
         go-chan
@@ -114,6 +117,8 @@
                 id->healthy-instance-atom
                 (let [{:strs [object type]} msg
                       id->healthy-instance @id->healthy-instance-atom]
+                  (when (= "initial" type)
+                    (reset! initial-event-time-epoch-ms-atom (System/currentTimeMillis)))
                   (if (contains? #{"initial" "events"} type)
                     (let [updated-healthy-instances (get-in object ["healthy-instances" "updated"])
                           removed-healthy-instances (get-in object ["healthy-instances" "removed"])
@@ -173,7 +178,7 @@
          instance-id# ~instance-id
          router-url# (:router-url watch#)
          query-state-fn# (:query-state-fn watch#)
-         get-current-instance-entry-fn# #(get (query-state-fn#) instance-id#)
+         get-current-instance-entry-fn# #(get (:id->healthy-instance (query-state-fn#)) instance-id#)
          validator-fn# ~validator-fn]
      (is (wait-for
            #(validator-fn# (get-current-instance-entry-fn#))
@@ -451,16 +456,17 @@
   (testing-using-waiter-url
     (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
           streaming-timeout-ms 5000
-          start-time-epoch-ms (System/currentTimeMillis)
           {:keys [exit-fn go-chan headers query-state-fn]}
           (start-watch waiter-url cookies :query-params {"service-id" "this-is-not-a-valid-service-id"
                                                          "streaming-timeout" (str streaming-timeout-ms)
                                                          "watch" "true"})
           _ (async/alts!! [go-chan (async/timeout (* 2 streaming-timeout-ms))] :priority true)
           end-time-epoch-ms (System/currentTimeMillis)
-          elapsed-time-ms (- end-time-epoch-ms start-time-epoch-ms)
+          {:keys [id->healthy-instance initial-event-time-epoch-ms]} (query-state-fn)
           _ (exit-fn)
+          _ (is (some? initial-event-time-epoch-ms))
+          elapsed-time-ms (- end-time-epoch-ms initial-event-time-epoch-ms)
           assertion-message (str {:elapsed-time-ms elapsed-time-ms
                                   :headers headers})]
-      (is (empty? (query-state-fn)) assertion-message)
-      (is (<= streaming-timeout-ms elapsed-time-ms (+ streaming-timeout-ms 1000)) assertion-message))))
+      (is (empty? id->healthy-instance) assertion-message)
+      (is (<= (- streaming-timeout-ms 1000) elapsed-time-ms (+ streaming-timeout-ms 1000)) assertion-message))))
