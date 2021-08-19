@@ -248,12 +248,16 @@
    An instance can be expired for the following reasons:
    - it has restarted too many times (reached the restart-expiry-threshold threshold)
    - the primary container (waiter-apps) has not transitioned to running state in container-running-grace-secs seconds
-   - the pod has the waiter/pod-expired=true annotation."
+   - the pod has the waiter/pod-expired=true annotation
+   - the replicaset for the pod has been updated by using a newer revision timestamp or the same timestamp with a newer revision version."
   [{:keys [container-running-grace-secs restart-expiry-threshold watch-state] :as scheduler}
-   service-id instance-id restart-count {:keys [waiter/pod-expired waiter/revision-timestamp]}
+   service-id instance-id restart-count {:keys [waiter/pod-expired waiter/revision-timestamp waiter/revision-version]}
    primary-container-status pod-started-at]
   (let [rs-revision-timestamp-path [:service-id->service service-id :k8s/replicaset-annotations :waiter/revision-timestamp]
-        rs-revision-timestamp (get-in @watch-state rs-revision-timestamp-path)]
+        watch-state-value @watch-state
+        rs-revision-timestamp (get-in watch-state-value rs-revision-timestamp-path)
+        rs-revision-version-path [:service-id->service service-id :k8s/replicaset-annotations :waiter/revision-version]
+        rs-revision-version (get-in watch-state-value rs-revision-version-path)]
     (cond
       (>= restart-count restart-expiry-threshold)
       (do
@@ -279,12 +283,24 @@
                    :waiter/pod-expired pod-expired})
         true)
 
-        (pos? (compare rs-revision-timestamp revision-timestamp))
-        (do
-          (log/info "instance expired based on pod and replicaset revision timestamps"
-                    {:instance-id instance-id
-                     :revision-timestamp {:pod revision-timestamp :rs rs-revision-timestamp}})
-          true))))
+      (let [revision-timestamp-comp (compare rs-revision-timestamp revision-timestamp)]
+        (or (pos? revision-timestamp-comp)
+            (and (zero? revision-timestamp-comp)
+                 (or (some? rs-revision-version) (some? revision-version))
+                 (try
+                   ;; for backward compatibility, default the missing revision version value to zero.
+                   (let [rs-revision-version-int (Integer/parseInt (or rs-revision-version "0"))
+                         pod-revision-version-int (Integer/parseInt (or revision-version "0"))]
+                     (> rs-revision-version-int pod-revision-version-int))
+                   (catch Exception ex
+                     (log/error ex "error in comparing revision versions" {:pod revision-version :rs rs-revision-version})
+                     false)))))
+      (do
+        (log/info "instance expired based on pod and replicaset revision timestamps"
+                  {:instance-id instance-id
+                   :revision-timestamp {:pod revision-timestamp :rs rs-revision-timestamp}
+                   :revision-version {:pod revision-version :rs rs-revision-version}})
+        true))))
 
 ;; forward declaration of the hard-delete-service-instance function to avoid reordering a bunch of related functions
 (declare hard-delete-service-instance)
@@ -334,7 +350,7 @@
           primary-container-status (first app-container-statuses)
           pod-annotations (get-in pod [:metadata :annotations])
           pod-started-at (-> pod (get-in [:status :startTime]) timestamp-str->datetime)
-          {:keys [waiter/revision-timestamp]} (get-in pod [:metadata :annotations])
+          {:keys [waiter/revision-timestamp waiter/revision-version]} (get-in pod [:metadata :annotations])
           pod-name (k8s-object->id pod)
           instance (scheduler/make-ServiceInstance
                      (cond-> {:extra-ports (->> pod-annotations :waiter/port-count Integer/parseInt range next (mapv #(+ port0 %)))
@@ -361,6 +377,7 @@
                        node-name (assoc :k8s/node-name node-name)
                        phase (assoc :k8s/pod-phase phase)
                        revision-timestamp (assoc :k8s/revision-timestamp revision-timestamp)
+                       revision-version (assoc :k8s/revision-version revision-version)
                        (seq container-statuses) (assoc :k8s/container-statuses
                                                        (map (fn [{:keys [state] :as status}]
                                                               (when (> (count state) 1)
@@ -1077,6 +1094,7 @@
                       {:name (str "PORT" i) :value (str (+ port0 i))})))
         k8s-name (service-id->k8s-app-name scheduler service-id)
         revision-timestamp (du/date-to-str (t/now)) ;; we use a monotonically increasing version string
+        revision-version "0"
         authenticate-health-check? (retrieve-use-authenticated-health-checks? scheduler service-id)
         health-check-scheme (-> (or health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
         health-check-url (sd/service-description->health-check-url service-description)
@@ -1088,6 +1106,7 @@
       {:kind "ReplicaSet"
        :apiVersion replicaset-api-version
        :metadata {:annotations {:waiter/revision-timestamp revision-timestamp
+                                :waiter/revision-version revision-version
                                 ;; Since there are length restrictions on Kubernetes label values,
                                 ;; we store just the 32-char hash portion of the service-id as a searchable label,
                                 ;; but store the full service-id as an annotation.
@@ -1107,6 +1126,7 @@
                                        :waiter/user run-as-user}}
               :template {:metadata {:annotations {:waiter/port-count (str ports)
                                                   :waiter/revision-timestamp revision-timestamp
+                                                  :waiter/revision-version revision-version
                                                   :waiter/service-id service-id
                                                   :waiter/service-port (str service-port)}
                                     :labels {:app k8s-name

@@ -159,6 +159,7 @@
                            :service-id->service-description-fn (constantly service-description)})
               replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler test-service-id service-description)]
           (is (= {:waiter/revision-timestamp (du/date-to-str current-time)
+                  :waiter/revision-version "0"
                   :waiter/service-id test-service-id}
                  (get-in replicaset-spec [:metadata :annotations])))
           (is (= {:app test-service-id
@@ -185,6 +186,7 @@
             replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description)]
         (is (= {:waiter/port-count "3"
                 :waiter/revision-timestamp (du/date-to-str current-time)
+                :waiter/revision-version "0"
                 :waiter/service-id "test-service-id"
                 :waiter/service-port "8330"}
                (get-in replicaset-spec [:spec :template :metadata :annotations])))))))
@@ -780,6 +782,36 @@
          {:api-server-response
           {:kind "ReplicaSetList"
            :apiVersion "apps/v1"
+           :items [{:metadata {:creationTimestamp "2020-01-02T03:04:05Z"
+                               :name "test-app-9999"
+                               :namespace "myself"
+                               :labels {:app "test-app-9999"
+                                        :waiter/cluster "waiter"
+                                        :waiter/service-hash "test-app-9999"}
+                               :annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"
+                                             :waiter/revision-version "3"
+                                             :waiter/service-id "test-app-9999"}
+                               :uid "test-app-9999-uid"}
+                    :spec {:replicas 0
+                           :selector {:matchLabels {:app "test-app-9999"
+                                                    :waiter/cluster "waiter"}}
+                           :template {:spec {:containers [{:name "waiter-app"}]}}}
+                    :status {:replicas 0
+                             :readyReplicas 0
+                             :availableReplicas 0}}]}
+          :expected-result
+          [(scheduler/make-Service {:id "test-app-9999"
+                                    :instances 0
+                                    :k8s/containers ["waiter-app"]
+                                    :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
+                                    :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"
+                                                                 :waiter/revision-version "3"}
+                                    :task-count 0
+                                    :task-stats {:running 0, :healthy 0, :unhealthy 0, :staged 0}})]}
+
+         {:api-server-response
+          {:kind "ReplicaSetList"
+           :apiVersion "apps/v1"
            :items []}
           :service-id->deployment-error {"test-app-1234" "K8s API Error: something failed"}
           :expected-result
@@ -863,6 +895,7 @@
                                       :waiter/user "myself"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/revision-timestamp "2020-09-22T20:11:11.000Z"
+                                           :waiter/revision-version "0"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:phase "Running"
@@ -880,6 +913,7 @@
                                       :waiter/service-hash "test-app-1234"}
                              :annotations {:waiter/port-count "1"
                                            :waiter/revision-timestamp "2020-09-22T20:22:22.000Z"
+                                           :waiter/revision-version "1"
                                            :waiter/service-id "test-app-1234"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]
                          :nodeName "node-2.k8s.com"}
@@ -995,6 +1029,7 @@
                         :k8s/container-statuses [{:name "waiter-app" :ready true :state :running}]
                         :k8s/pod-phase "Running"
                         :k8s/revision-timestamp "2020-09-22T20:11:11.000Z"
+                        :k8s/revision-version "0"
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
@@ -1007,6 +1042,7 @@
                         :k8s/container-statuses [{:name "waiter-app" :ready true}]
                         :k8s/node-name "node-2.k8s.com"
                         :k8s/revision-timestamp "2020-09-22T20:22:22.000Z"
+                        :k8s/revision-version "1"
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
@@ -2513,7 +2549,66 @@
           (let [watch-state (assoc-in @watch-state-atom rs-revision-timestamp-path revision-timestamp-2)
                 dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
                 instance (pod->ServiceInstance dummy-scheduler pod)]
-            (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))))))
+            (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))))
+
+    (testing "match timestamps with different revision version combinations"
+      (let [pod-revision-version-path [:metadata :annotations :waiter/revision-version]
+            rs-revision-version-path [:service-id->service service-id :k8s/replicaset-annotations :waiter/revision-version]
+            version-instance-map (fn [version] (assoc instance-map :k8s/revision-version version))
+            version-expired-instance-map (fn [version] (assoc expired-instance-map :k8s/revision-version version))]
+        (testing "missing in both replicaset and pod"
+          (let [watch-state @watch-state-atom
+                dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
+                instance (pod->ServiceInstance dummy-scheduler pod)]
+            (is (= (scheduler/make-ServiceInstance instance-map) instance))))
+
+        (testing "present in pod but missing in replicaset"
+          (let [watch-state @watch-state-atom
+                dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
+                pod (assoc-in pod pod-revision-version-path "0")
+                instance (pod->ServiceInstance dummy-scheduler pod)]
+            (is (= (scheduler/make-ServiceInstance (version-instance-map "0")) instance)))
+
+          (testing "with negative value in pod"
+            (let [watch-state @watch-state-atom
+                  dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
+                  pod (assoc-in pod pod-revision-version-path "-1")
+                  instance (pod->ServiceInstance dummy-scheduler pod)]
+              (is (= (scheduler/make-ServiceInstance (version-expired-instance-map "-1")) instance)))))
+
+        (testing "present in replicaset but missing in pod"
+          (let [watch-state (assoc-in @watch-state-atom rs-revision-version-path "0")
+                dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
+                instance (pod->ServiceInstance dummy-scheduler pod)]
+            (is (= (scheduler/make-ServiceInstance instance-map) instance)))
+
+          (testing "with positive value in replicaset"
+            (let [watch-state (assoc-in @watch-state-atom rs-revision-version-path "1")
+                  dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
+                  instance (pod->ServiceInstance dummy-scheduler pod)]
+              (is (= (scheduler/make-ServiceInstance expired-instance-map) instance)))))
+
+        (testing "present in both replicaset and pod"
+          (testing "with older value in replicaset"
+            (let [watch-state (assoc-in @watch-state-atom rs-revision-version-path "0")
+                  dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
+                  pod (assoc-in pod pod-revision-version-path "1")
+                  instance (pod->ServiceInstance dummy-scheduler pod)]
+              (is (= (scheduler/make-ServiceInstance (version-instance-map "1")) instance))))
+
+          (testing "with matching value in replicaset"
+            (let [watch-state (assoc-in @watch-state-atom rs-revision-version-path "1")
+                  dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
+                  pod (assoc-in pod pod-revision-version-path "1")
+                  instance (pod->ServiceInstance dummy-scheduler pod)]
+              (is (= (scheduler/make-ServiceInstance (version-instance-map "1")) instance))))
+
+          (testing "with expired value in pod"
+            (let [watch-state (assoc-in @watch-state-atom rs-revision-version-path "2")
+                  dummy-scheduler (assoc base-scheduler :watch-state (atom watch-state))
+                  pod (assoc-in pod pod-revision-version-path "1")
+                  instance (pod->ServiceInstance dummy-scheduler pod)]
+              (is (= (scheduler/make-ServiceInstance (version-expired-instance-map "1")) instance)))))))))
 
 (deftest test-service-id->state
   (let [service-id "service-id"
