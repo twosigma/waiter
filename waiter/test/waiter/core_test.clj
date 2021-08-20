@@ -292,9 +292,14 @@
         (is (= http-405-method-not-allowed status))))))
 
 (deftest test-service-view-logs-handler
-  (let [can-manage-service-atom ( atom true)
+  (let [is-admin-user-atom ( atom false)
+        can-manage-service-atom ( atom true)
         test-service-id "test-service-id"
         test-user "test-user"
+        admin-user "admin-user"
+        admin-user?-fn (fn [in-user]
+                         (is (= in-user admin-user))
+                         @is-admin-user-atom)
         allowed-to-manage-service?-fn (fn [in-service-id in-user]
                                         (is (= test-service-id in-service-id))
                                         (is (= test-user in-user))
@@ -314,7 +319,8 @@
                      :service-id->password-fn #(str % ".password")
                      :service-id->service-description (constantly nil)
                      :sync-deployment-maintainer-atom (atom nil)})
-        configuration {:routines {:allowed-to-manage-service?-fn allowed-to-manage-service?-fn
+        configuration {:routines {:admin-user?-fn admin-user?-fn
+                                  :allowed-to-manage-service?-fn allowed-to-manage-service?-fn
                                   :generate-log-url-fn (partial handler/generate-log-url identity)}
                        :scheduler {:scheduler scheduler}
                        :wrap-secure-request-fn utils/wrap-identity}
@@ -322,6 +328,7 @@
         waiter-request?-fn (fn [_] true)]
 
     (testing "Unauthorized user"
+      (reset! is-admin-user-atom false)
       (reset! can-manage-service-atom false)
       (let [request {:authorization/user test-user
                      :headers {"accept" "application/json"}
@@ -331,9 +338,24 @@
             {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
             json-body (json/read-str body)]
         (is (= status http-401-unauthorized))
-        (is (= "Unauthorized" (get-in json-body ["waiter-error" "message"])))))
+        (is (= "Unauthorized user test-user" (get-in json-body ["waiter-error" "message"])))))
+
+    (testing "non-admin user provided remote-user"
+      (reset! is-admin-user-atom false)
+      (reset! can-manage-service-atom false)
+      (let [request {:authorization/user admin-user
+                     :headers {"accept" "application/json"
+                               "x-view-as-user" test-user}
+                     :query-string ""
+                     :request-method :get
+                     :uri (str "/apps/" test-service-id "/logs")}
+            {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)
+            json-body (json/read-str body)]
+        (is (= status http-401-unauthorized))
+        (is (= "X-View-As-User request header unsupported for non-admin user" (get-in json-body ["waiter-error" "message"])))))
 
     (testing "Missing instance id"
+      (reset! is-admin-user-atom false)
       (reset! can-manage-service-atom true)
       (let [request {:authorization/user test-user
                      :headers {"accept" "application/json"}
@@ -346,6 +368,7 @@
         (is (= "Missing instance-id parameter" (get-in json-body ["waiter-error" "message"])))))
 
     (testing "Missing host"
+      (reset! is-admin-user-atom false)
       (reset! can-manage-service-atom true)
       (let [request {:authorization/user test-user
                      :headers {"accept" "application/json"}
@@ -386,6 +409,7 @@
                                     }"]
                       (-> state-json-response-body json/read-str walk/keywordize-keys)))]
       (testing "Missing directory"
+        (reset! is-admin-user-atom false)
         (reset! can-manage-service-atom true)
         (let [request {:authorization/user test-user
                        :headers {"accept" "application/json"}
@@ -413,10 +437,24 @@
                    "url" "/apps/test-service-id/logs?instance-id=service-id-1.instance-id-1&host=test.host.com&directory=/path/to/instance2/directory/dir4"}]
                  json-body))))
 
-      (testing "Valid response"
+      (testing "Valid response from auth-user"
+        (reset! is-admin-user-atom false)
         (reset! can-manage-service-atom true)
         (let [request {:authorization/user test-user
                        :headers {"accept" "application/json"}
+                       :query-string "instance-id=service-id-1.instance-id-2&host=test.host.com&directory=/path/to/instance2/directory/"
+                       :request-method :get
+                       :uri (str "/apps/" test-service-id "/logs")}
+              {:keys [status body]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+          (is (= http-200-ok status) body)
+          (is (every? #(str/includes? body %) ["test.host.com" "5051" "file" "directory" "name" "url" "download"]))))
+
+      (testing "Valid response from remote user"
+        (reset! is-admin-user-atom true)
+        (reset! can-manage-service-atom true)
+        (let [request {:authorization/user admin-user
+                       :headers {"accept" "application/json"
+                                 "x-view-as-user" test-user}
                        :query-string "instance-id=service-id-1.instance-id-2&host=test.host.com&directory=/path/to/instance2/directory/"
                        :request-method :get
                        :uri (str "/apps/" test-service-id "/logs")}
@@ -431,6 +469,7 @@
         waiter-request?-fn (fn [_] true)
         entitlement-manager (reify authz/EntitlementManager
                               (authorized? [_ subject _ {:keys [user]}] (= subject user)))
+        admin-user?-fn (constantly false)
         allowed-to-manage-service? (fn [service-id auth-user]
                                      (sd/can-manage-service? kv-store entitlement-manager service-id auth-user))
         scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
@@ -438,7 +477,8 @@
         make-inter-router-requests-async-fn-atom (atom nil)
         configuration {:daemons {:autoscaler {:query-state-fn (constantly {})}
                                  :router-state-maintainer {:maintainer {:query-state-fn (constantly {})}}}
-                       :routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
+                       :routines {:admin-user?-fn admin-user?-fn
+                                  :allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :generate-log-url-fn nil
                                   :make-inter-router-requests-async-fn (fn [& args]
                                                                         (let [target-fn @make-inter-router-requests-async-fn-atom]
@@ -601,7 +641,8 @@
         scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
         configuration {:daemons {:autoscaler {:query-state-fn (constantly {})}
                                  :router-state-maintainer {:maintainer {:query-state-fn (fn [] @router-state-atom)}}}
-                       :routines {:allowed-to-manage-service?-fn (constantly true)
+                       :routines {:admin-user?-fn (constantly false)
+                                  :allowed-to-manage-service?-fn (constantly true)
                                   :generate-log-url-fn (partial handler/generate-log-url #(str "http://www.example.com" %))
                                   :make-inter-router-requests-async-fn nil
                                   :retrieve-token-based-fallback-fn (constantly nil)

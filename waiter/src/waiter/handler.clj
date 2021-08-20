@@ -457,16 +457,26 @@
      :failed-instances (get service-id->failed-instances service-id)
      :killed-instances (get service-id->killed-instances service-id)}))
 
+(defn retrieve-view-user
+  "Retrieves the user to use for permission checks"
+  [admin-user?-fn {:keys [headers] :as request}]
+  (let [auth-user (get request :authorization/user)
+        {:strs [x-view-as-user]} headers]
+    (when (and x-view-as-user (not (admin-user?-fn auth-user)))
+      (throw (ex-info "X-View-As-User request header unsupported for non-admin user"
+                      {:auth-user auth-user :log-level :info :status http-401-unauthorized})))
+    (or x-view-as-user auth-user)))
+
 (defn- get-service-handler
   "Returns details about the service such as the service description, metrics, instances, etc."
-  [router-id service-id core-service-description kv-store allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-fn
+  [router-id service-id core-service-description kv-store admin-user?-fn allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-fn
    service-id->service-description-fn service-id->source-tokens-entries-fn service-id->references-fn
    query-state-fn query-autoscaler-state-fn service-id->metrics-fn token->token-hash retrieve-token-based-fallback-fn
    request]
   (let [global-state (query-state-fn)
         effective-service-description (service-id->service-description-fn service-id :effective? true)
-        auth-user (get request :authorization/user)
-        can-manage-service? (allowed-to-manage-service?-fn service-id auth-user)
+        view-user (retrieve-view-user admin-user?-fn request)
+        can-manage-service? (allowed-to-manage-service?-fn service-id view-user)
         service-instance-maps (try
                                 (let [process-instances-fn
                                       (fn process-instances-fn [instances instances-to-keep]
@@ -564,7 +574,7 @@
    It supports the following request methods:
      :delete deletes the service from the scheduler (after authorization checks).
      :get returns details about the service such as the service description, metrics, instances, etc."
-  [router-id service-id scheduler kv-store allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-fn
+  [router-id service-id scheduler kv-store admin-user?-fn allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-fn
    service-id->service-description-fn service-id->source-tokens-entries-fn service-id->references-fn query-state-fn
    query-autoscaler-state-fn service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash fallback-state-atom
    retrieve-token-based-fallback-fn request]
@@ -577,8 +587,8 @@
         (case (:request-method request)
           :delete (delete-service-handler router-id service-id core-service-description scheduler allowed-to-manage-service?-fn
                                           scheduler-interactions-thread-pool make-inter-router-requests-fn fallback-state-atom request)
-          :get (get-service-handler router-id service-id core-service-description kv-store allowed-to-manage-service?-fn generate-log-url-fn
-                                    make-inter-router-requests-fn service-id->service-description-fn
+          :get (get-service-handler router-id service-id core-service-description kv-store admin-user?-fn allowed-to-manage-service?-fn
+                                    generate-log-url-fn make-inter-router-requests-fn service-id->service-description-fn
                                     service-id->source-tokens-entries-fn service-id->references-fn
                                     query-state-fn query-autoscaler-state-fn service-id->metrics-fn token->token-hash
                                     retrieve-token-based-fallback-fn request))))
@@ -665,11 +675,12 @@
 
 (defn service-view-logs-handler
   "Redirects user to the log directory on the instance host."
-  [scheduler service-id allowed-to-manage-service?-fn generate-log-url-fn request]
+  [scheduler service-id admin-user?-fn allowed-to-manage-service?-fn generate-log-url-fn request]
   (try
-    (let [auth-user (get request :authorization/user)
-          _ (when-not (allowed-to-manage-service?-fn service-id auth-user)
-              (throw (ex-info "Unauthorized" {:log-level :info :status http-401-unauthorized})))
+    (let [view-user (retrieve-view-user admin-user?-fn request)
+          _ (when-not (allowed-to-manage-service?-fn service-id view-user)
+              (throw (ex-info (str "Unauthorized user " view-user)
+                              {:log-level :info :status http-401-unauthorized :user view-user})))
           {:strs [instance-id host directory]} (-> request ru/query-params-request :query-params)
           _ (when-not instance-id
               (throw (ex-info "Missing instance-id parameter" {:log-level :info :status http-400-bad-request})))

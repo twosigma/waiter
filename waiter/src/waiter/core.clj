@@ -928,7 +928,10 @@
                                       failed-check-threshold scheduler-name get-service->instances-fn scheduler-state-chan))))})
 
 (def routines
-  {:allowed-to-manage-service?-fn (pc/fnk [[:state entitlement-manager kv-store]]
+  {:admin-user?-fn (pc/fnk [[:state entitlement-manager]]
+                     (fn admin-user [auth-user]
+                       (authz/admin-user? entitlement-manager auth-user)))
+   :allowed-to-manage-service?-fn (pc/fnk [[:state entitlement-manager kv-store]]
                                     (fn allowed-to-manage-service? [service-id auth-user]
                                       ; Returns whether the authenticated user is allowed to manage the service.
                                       ; Either she can run as the waiter user or the run-as-user of the service description."
@@ -1611,7 +1614,7 @@
                                     (metrics-sync/incoming-router-metrics-handler
                                       router-metrics-agent metrics-sync-interval-ms bytes-encryptor bytes-decryptor request))))
    :service-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
-                                [:routines allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-async-fn
+                                [:routines admin-user?-fn allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-async-fn
                                  retrieve-token-based-fallback-fn router-metrics-helpers service-id->references-fn
                                  service-id->service-description-fn service-id->source-tokens-entries-fn token->token-hash]
                                 [:scheduler scheduler]
@@ -1622,7 +1625,7 @@
                                {:keys [service-id->metrics-fn]} router-metrics-helpers]
                            (wrap-secure-request-fn
                              (fn service-handler-fn [{:as request {:keys [service-id]} :route-params}]
-                               (handler/service-handler router-id service-id scheduler kv-store allowed-to-manage-service?-fn
+                               (handler/service-handler router-id service-id scheduler kv-store admin-user?-fn allowed-to-manage-service?-fn
                                                         generate-log-url-fn make-inter-router-requests-async-fn
                                                         service-id->service-description-fn service-id->source-tokens-entries-fn
                                                         service-id->references-fn query-state-fn query-autoscaler-state-fn
@@ -1686,12 +1689,13 @@
                                    (fn service-suspend-handler-fn [{:as request {:keys [service-id]} :route-params}]
                                      (handler/suspend-or-resume-service-handler
                                        kv-store allowed-to-manage-service?-fn make-inter-router-requests-sync-fn service-id :suspend request))))
-   :service-view-logs-handler-fn (pc/fnk [[:routines allowed-to-manage-service?-fn generate-log-url-fn]
+   :service-view-logs-handler-fn (pc/fnk [[:routines admin-user?-fn allowed-to-manage-service?-fn generate-log-url-fn]
                                           [:scheduler scheduler]
                                           wrap-secure-request-fn]
                                    (wrap-secure-request-fn
                                      (fn service-view-logs-handler-fn [{:as request {:keys [service-id]} :route-params}]
-                                       (handler/service-view-logs-handler scheduler service-id allowed-to-manage-service?-fn generate-log-url-fn request))))
+                                       (handler/service-view-logs-handler
+                                         scheduler service-id admin-user?-fn allowed-to-manage-service?-fn generate-log-url-fn request))))
    :sim-request-handler (pc/fnk [] simulator/handle-sim-request)
    :state-all-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                   [:state router-id]

@@ -67,6 +67,12 @@
   (and auth-user run-as-user
        (authorized? entitlement-manager auth-user :run-as {:resource-type :credential, :user run-as-user})))
 
+(defn admin-user?
+  "Helper function that checks the whether the auth-user has admin privileges."
+  [entitlement-manager auth-user]
+  (and auth-user
+       (authorized? entitlement-manager auth-user :admin nil)))
+
 (defprotocol Authorizer
   (check-user [this ^String user ^String service-id]
     "Checks if the user is set up correctly to successfully launch

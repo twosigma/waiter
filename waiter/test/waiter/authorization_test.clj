@@ -92,3 +92,14 @@
                                resource)))
         entitlement-manager (TestEntitlementManager. assertion-fn)]
     (is (authz/run-as? entitlement-manager test-user-1 test-user-2))))
+
+(deftest test-admin-user?
+  (let [test-user-1 "test-user-1"
+        test-user-2 "test-user-2"
+        assertion-fn (fn [[subject action resource]]
+                       (is (= :admin action))
+                       (is (nil? resource))
+                       (= test-user-1 subject))
+        entitlement-manager (TestEntitlementManager. assertion-fn)]
+    (is (authz/admin-user? entitlement-manager test-user-1))
+    (is (not (authz/admin-user? entitlement-manager test-user-2)))))
