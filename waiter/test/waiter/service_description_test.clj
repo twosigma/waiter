@@ -2617,19 +2617,22 @@
 (deftest test-retrieve-token-stale-info
   (with-redefs [token-data->token-hash #(str "v" (get % "last-update-time"))]
     (let [token->token-parameters {"t1" {"last-update-time" 90
-                                       "previous" {"last-update-time" 40
-                                                   "previous" {}}}
-                                 "t2" {"last-update-time" 80
-                                       "previous" {"last-update-time" 70
-                                                   "previous" {}}}
-                                 "t3" {"last-update-time" 60
-                                       "previous" {"last-update-time" 50
-                                                   "previous" {}}}}
-        token->token-hash #(str "v" (get-in token->token-parameters [% "last-update-time"]))
-        run-retrieve-token-stale-info (partial retrieve-token-stale-info token->token-hash token->token-parameters)]
+                                         "previous" {"last-update-time" 40
+                                                     "previous" {}}}
+                                   "t2" {"last-update-time" 80
+                                         "previous" {"last-update-time" 70
+                                                     "previous" {}}}
+                                   "t3" {"last-update-time" 60
+                                         "previous" {"last-update-time" 50
+                                                     "previous" {}}}
+                                   "^SERVICE-ID#s4" {"last-update-time" 120}}
+          token->token-hash #(str "v" (get-in token->token-parameters [% "last-update-time"]))
+          run-retrieve-token-stale-info (partial retrieve-token-stale-info token->token-hash token->token-parameters)]
 
       (testing "no source tokens"
-        (is (= {:stale? false} (run-retrieve-token-stale-info []))))
+        (is (= {:stale? false} (run-retrieve-token-stale-info [])))
+        (let [source-tokens [{:token "^SERVICE-ID#s4" :version "v100"}]]
+          (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens)))))
 
       (testing "source tokens active"
         (let [source-tokens [{:token "t1" :version "v90"}]]
@@ -2639,6 +2642,8 @@
         (let [source-tokens [{:token "t2" :version "v80"} {:token "t1" :version "v90"}]]
           (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens))))
         (let [source-tokens [{:token "t1" :version "v90"} {:token "t2" :version "v80"}]]
+          (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t1" :version "v90"} {:token "t2" :version "v80"} {:token "^SERVICE-ID#s4" :version "v100"}]]
           (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens))))
         (let [source-tokens [{:token "t3" :version "v60"} {:token "t2" :version "v80"} {:token "t1" :version "v90"}]]
           (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens)))))
@@ -2653,10 +2658,14 @@
         (let [source-tokens [{:token "t-unknown" :version "v40"} {:token "t3" :version "v56"} {:token "t2" :version "v80"}]]
           (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens))))
         (let [source-tokens [{:token "t3" :version "v60"} {:token "t2" :version "v80"} {:token "t1" :version "v40"}]]
+          (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t3" :version "v60"} {:token "t2" :version "v80"} {:token "^SERVICE-ID#s4" :version "v100"}]]
           (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens)))))
 
       (testing "all source tokens stale"
         (let [source-tokens [{:token "t1" :version "v40"}]]
+          (is (= {:stale? true :update-epoch-time 90} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t1" :version "v40"} {:token "^SERVICE-ID#s4" :version "v100"}]]
           (is (= {:stale? true :update-epoch-time 90} (run-retrieve-token-stale-info source-tokens))))
         (let [source-tokens [{:token "t2" :version "v70"}]]
           (is (= {:stale? true :update-epoch-time 80} (run-retrieve-token-stale-info source-tokens))))
@@ -2667,6 +2676,8 @@
         (let [source-tokens [{:token "t1" :version "v40"} {:token "t2" :version "v70"}]]
           (is (= {:stale? true :update-epoch-time 90} (run-retrieve-token-stale-info source-tokens))))
         (let [source-tokens [{:token "t3" :version "v50"} {:token "t2" :version "v70"}]]
+          (is (= {:stale? true :update-epoch-time 80} (run-retrieve-token-stale-info source-tokens))))
+        (let [source-tokens [{:token "t3" :version "v50"} {:token "t2" :version "v70"} {:token "^SERVICE-ID#s4" :version "v100"}]]
           (is (= {:stale? true :update-epoch-time 80} (run-retrieve-token-stale-info source-tokens))))
         (let [source-tokens [{:token "t-unknown" :version "v40"} {:token "t3" :version "v50"} {:token "t2" :version "v70"}]]
           (is (= {:stale? true :update-epoch-time 80} (run-retrieve-token-stale-info source-tokens))))
