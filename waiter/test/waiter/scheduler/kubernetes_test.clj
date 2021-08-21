@@ -93,6 +93,7 @@
       :response->deployment-error-msg-fn waiter.scheduler.kubernetes/default-k8s-message-transform
       :restart-expiry-threshold 100
       :restart-kill-threshold 200
+      :service-id->creation-time-fn (constantly (t/now))
       :service-id->deployment-error-cache (cu/cache-factory {:threshold 50 :ttl (-> 2 t/seconds t/in-millis)})
       :service-id->failed-instances-transient-store (atom {})
       :service-id->password-fn #(str "password-" %)
@@ -1572,6 +1573,7 @@
                  :scheduler-name "kubernetes"
                  :scheduler-state-chan (async/chan 4)
                  :scheduler-syncer-interval-secs 5
+                 :service-id->creation-time-fn (constantly (t/now))
                  :service-id->password-fn (constantly nil)
                  :service-id->service-description-fn (constantly nil)
                  :start-scheduler-syncer-fn (constantly nil)}

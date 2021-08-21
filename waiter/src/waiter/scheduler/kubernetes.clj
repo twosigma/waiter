@@ -761,6 +761,7 @@
                                 retrieve-auth-token-state-fn
                                 retrieve-syncer-state-fn
                                 reverse-proxy
+                                service-id->creation-time-fn
                                 service-id->deployment-error-cache
                                 service-id->failed-instances-transient-store
                                 service-id->password-fn
@@ -1482,8 +1483,8 @@
   [{:keys [authenticate-health-checks? authentication authorizer cluster-name container-running-grace-secs custom-options http-options leader?-fn log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length namespace pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
            pod-suffix-length replicaset-api-version response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold
-           reverse-proxy scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
-           service-id->password-fn start-scheduler-syncer-fn url watch-chan-throttle-interval-ms watch-connect-timeout-ms watch-init-timeout-ms watch-retries watch-socket-timeout-ms]
+           reverse-proxy scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->creation-time-fn service-id->password-fn
+           service-id->service-description-fn start-scheduler-syncer-fn url watch-chan-throttle-interval-ms watch-connect-timeout-ms watch-init-timeout-ms watch-retries watch-socket-timeout-ms]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver
     {:keys [default-namespace] :as replicaset-spec-builder} :replicaset-spec-builder
     {service-id->deployment-error-cache-threshold :threshold service-id->deployment-error-cache-ttl-sec :ttl} :service-id->deployment-error-cache
@@ -1528,6 +1529,7 @@
          (pos-int? scheduler-syncer-interval-secs)
          (pos-int? service-id->deployment-error-cache-threshold)
          (pos-int? service-id->deployment-error-cache-ttl-sec)
+         (fn? service-id->creation-time-fn)
          (fn? service-id->password-fn)
          (fn? service-id->service-description-fn)
          (fn? start-scheduler-syncer-fn)
@@ -1626,6 +1628,7 @@
                             :retrieve-syncer-state-fn retrieve-syncer-state-fn
                             :reverse-proxy reverse-proxy
                             :scheduler-name scheduler-name
+                            :service-id->creation-time-fn service-id->creation-time-fn
                             :service-id->deployment-error-cache service-id->deployment-error-cache
                             :service-id->failed-instances-transient-store service-id->failed-instances-transient-store
                             :service-id->password-fn service-id->password-fn
