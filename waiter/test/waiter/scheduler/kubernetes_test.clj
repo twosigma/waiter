@@ -65,6 +65,7 @@
       :authorizer {:kind :default
                    :default {:factory-fn 'waiter.authorization/noop-authorizer}}
       :daemon-state (atom nil)
+      :determine-replicaset-namespace-fn determine-replicaset-namespace
       :cluster-name "waiter"
       :container-running-grace-secs 120
       :fileserver {:port 9090
@@ -1696,6 +1697,11 @@
                                                                                                                  :ttl -1}))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :service-id->deployment-error-cache {:threshold -1
                                                                                                                  :ttl 1})))))
+
+          (testing "determine-replicaset-namespace-fn"
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :determine-replicaset-namespace-fn "determine-replicaset-namespace"))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :determine-replicaset-namespace-fn determine-replicaset-namespace))))
+            (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :determine-replicaset-namespace-fn 'waiter.scheduler.kubernetes/determine-replicaset-namespace)))))
 
           (testing "good restart-kill-threshold"
             (is (instance? KubernetesScheduler (kubernetes-scheduler (dissoc base-config :restart-kill-threshold))))

@@ -741,6 +741,7 @@
                                 container-running-grace-secs
                                 custom-options
                                 daemon-state
+                                determine-replicaset-namespace-fn
                                 fileserver
                                 http-client
                                 leader?-fn
@@ -1040,21 +1041,25 @@
       (if (= "*" default-namespace) run-as-user default-namespace)
       scheduler-namespace))
 
+(defn determine-replicaset-namespace
+  "Default implementation that determines the namespace to use for a replicaset"
+  [{scheduler-namespace :namespace} _ service-description {:keys [default-namespace]}]
+  (determine-namespace scheduler-namespace default-namespace service-description))
+
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
-  [{:keys [cluster-name fileserver pod-base-port pod-sigkill-delay-secs
-           replicaset-api-version reverse-proxy service-id->password-fn]
-    scheduler-namespace :namespace :as scheduler}
+  [{:keys [cluster-name determine-replicaset-namespace-fn fileserver pod-base-port pod-sigkill-delay-secs
+           replicaset-api-version reverse-proxy service-id->password-fn] :as scheduler}
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
            mem min-instances ports run-as-user termination-grace-period-secs]
     :as service-description}
-   {:keys [container-init-commands default-container-image default-namespace log-bucket-url image-aliases]
+   {:keys [container-init-commands default-container-image log-bucket-url image-aliases]
     :as context}]
   (when-not (or image default-container-image)
     (throw (ex-info "Waiter configuration is missing a default image for Kubernetes pods" {})))
-  (let [rs-namespace (determine-namespace scheduler-namespace default-namespace service-description)
+  (let [rs-namespace (determine-replicaset-namespace-fn scheduler service-id service-description context)
         work-path (str "/home/" run-as-user)
         home-path (str work-path "/latest")
         base-env (scheduler/environment service-id service-description
@@ -1479,7 +1484,8 @@
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
-  [{:keys [authenticate-health-checks? authentication authorizer cluster-name container-running-grace-secs custom-options http-options leader?-fn log-bucket-sync-secs
+  [{:keys [authenticate-health-checks? authentication authorizer cluster-name container-running-grace-secs custom-options http-options
+           determine-replicaset-namespace-fn leader?-fn log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length namespace pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
            pod-suffix-length replicaset-api-version response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold
            reverse-proxy scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
@@ -1492,6 +1498,7 @@
          (schema/contains-kind-sub-map? authorizer)
          (or (zero? container-running-grace-secs) (pos-int? container-running-grace-secs))
          (or (nil? custom-options) (map? custom-options))
+         (or (nil? determine-replicaset-namespace-fn) (symbol? determine-replicaset-namespace-fn))
          (or (nil? reverse-proxy) (nil? (s/check schema/valid-reverse-proxy-config reverse-proxy)))
          (or (nil? fileserver-port)
              (and (integer? fileserver-port)
@@ -1592,7 +1599,10 @@
                                                         fileserver-container-enabled?
                                                         (utils/resolve-symbol! predicate-fn))))
         reverse-proxy (when reverse-proxy
-                        (update reverse-proxy :predicate-fn utils/resolve-symbol!))]
+                        (update reverse-proxy :predicate-fn utils/resolve-symbol!))
+        determine-replicaset-namespace-fn (if determine-replicaset-namespace-fn
+                                            (utils/resolve-symbol! determine-replicaset-namespace-fn)
+                                            determine-replicaset-namespace)]
 
     (let [daemon-state (atom nil)
           auth-renewer (when authentication
@@ -1605,6 +1615,7 @@
                             :container-running-grace-secs container-running-grace-secs
                             :custom-options custom-options
                             :daemon-state daemon-state
+                            :determine-replicaset-namespace-fn determine-replicaset-namespace-fn
                             :fileserver fileserver
                             :http-client http-client
                             :leader?-fn leader?-fn
