@@ -803,6 +803,9 @@
         (-> update-time du/str-to-date tc/to-long))
       update-time)))
 
+;; forward declaration of the remove-service-entry-tokens function to avoid reordering a bunch of related functions
+(declare remove-service-entry-tokens)
+
 (defn retrieve-token-stale-info
   "The provided source-tokens are stale if every token used to access a service has been updated.
    The criteria of every token being updated is a conservative choice since we do not compute the merged
@@ -814,13 +817,14 @@
      source tokens with the specified version was edited."
   [token->token-hash token->token-parameters source-tokens]
   ;; safe assumption mark a service stale when every token used to access it is stale
-  (let [stale? (and (not (empty? source-tokens)) ;; ensures boolean value
+  (let [sanitized-tokens (remove-service-entry-tokens source-tokens)
+        stale? (and (not (empty? sanitized-tokens)) ;; ensures boolean value
                     (every? (fn [{:keys [token version]}]
                               (not= (token->token-hash token) version))
-                            source-tokens))]
+                            sanitized-tokens))]
     (cond-> {:stale? stale?}
       stale? (assoc :update-epoch-time
-                    (->> source-tokens
+                    (->> sanitized-tokens
                       (map (fn [{:keys [token version]}]
                              (retrieve-token-update-epoch-time token (token->token-parameters token) version)))
                       (reduce utils/nil-safe-max nil))))))
@@ -1075,7 +1079,8 @@
       :else
       (compute-service-description-template-from-tokens attach-service-defaults-fn attach-token-defaults-fn [] {}))))
 
-(let [service-id->key #(str "^SERVICE-ID#" %)]
+(let [service-entry-prefix "^SERVICE-ID#"
+      service-id->key #(str service-entry-prefix %)]
   (defn store-core
     "Store the service-id mapping of the service description in the key-value store.
      It also validates the service description before storing it."
@@ -1100,7 +1105,12 @@
   (defn fetch-stats
     "Loads the stats for the specified service-id from the key-value store."
     [kv-store ^String service-id]
-    (kv/stats kv-store (service-id->key service-id))))
+    (kv/stats kv-store (service-id->key service-id)))
+
+  (defn remove-service-entry-tokens
+    "Removes tokens that represent direct service ID entries."
+    [source-tokens]
+    (remove #(str/starts-with? (str (:token %)) service-entry-prefix) source-tokens)))
 
 (defn refresh-service-descriptions
   "Refreshes missing service descriptions for the specified service ids.
