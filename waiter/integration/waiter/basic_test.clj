@@ -374,7 +374,35 @@
           (doseq [file-link [stderr-file-link stdout-file-link]]
             (if (str/starts-with? (str file-link) "http")
               (assert-response-status (make-request-fn file-link) http-200-ok)
-              (log/warn "test-basic-logs did not verify file link:" stdout-file-link))))))))
+              (log/warn "test-basic-logs did not verify file link:" stdout-file-link))))
+
+        (testing "x-view-as-user access"
+          (testing "restricted"
+            (let [request-headers {"x-view-as-user" "does-not-exist"}
+                  service-info (service-settings waiter-url service-id :cookies cookies :headers request-headers)
+                  active-instances (get-in service-info [:instances :active-instances 0])
+                  {:keys [id host log-url]} (get-in service-info [:instances :active-instances 0])]
+              (is (pos? (count active-instances)))
+              (is (nil? log-url))
+              (let [response (make-request waiter-url (str "/apps/" service-id "/logs")
+                                           :headers request-headers
+                                           :query-params {"instance-id" id "host" host})]
+                (assert-response-status response http-401-unauthorized)
+                (assert-waiter-response response)
+                (is (str/includes? (str (:body response)) "Unauthorized user does-not-exist")))))
+
+          (testing "allowed"
+            (let [request-headers {"x-view-as-user" (retrieve-username)}
+                  service-info (service-settings waiter-url service-id :cookies cookies :headers request-headers)
+                  active-instances (get-in service-info [:instances :active-instances 0])
+                  {:keys [id host log-url]} (get-in service-info [:instances :active-instances 0])]
+              (is (pos? (count active-instances)))
+              (is (some? log-url))
+              (let [response (make-request waiter-url (str "/apps/" service-id "/logs")
+                                           :headers request-headers
+                                           :query-params {"instance-id" id "host" host})]
+                (assert-response-status response http-200-ok)
+                (assert-waiter-response response)))))))))
 
 (deftest ^:parallel ^:integration-fast test-basic-backoff-config
   (let [path "/req"]
