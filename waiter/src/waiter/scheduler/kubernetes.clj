@@ -129,6 +129,7 @@
         [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]] replicaset-json
        ;; for backward compatibility where the revision timestamp is missing we cannot use the destructuring above
        rs-annotations (get-in replicaset-json [:metadata :annotations] nil)
+       rs-pod-annotations (get-in replicaset-json [:spec :template :metadata :annotations] nil)
        rs-containers (vec (map :name (get-in replicaset-json [:spec :template :spec :containers])))
        rs-creation-timestamp (some-> replicaset-json (get-in [:metadata :creationTimestamp]) (timestamp-str->datetime) (du/date-to-str))
        requested (get spec :replicas 0)
@@ -141,6 +142,7 @@
          :k8s/namespace namespace
          :k8s/replicaset-annotations (dissoc rs-annotations :waiter/service-id)
          :k8s/replicaset-creation-timestamp rs-creation-timestamp
+         :k8s/replicaset-pod-annotations (dissoc rs-pod-annotations :waiter/service-id)
          :k8s/replicaset-uid uid
          :task-count replicas
          :task-stats {:healthy readyReplicas

@@ -642,7 +642,8 @@
                                :uid "test-app-1234-uid"}
                     :spec {:replicas 2
                            :selector {:matchLabels {:app "test-app-1234"
-                                                    :waiter/cluster "waiter"}}}
+                                                    :waiter/cluster "waiter"}}
+                           :template {:metadata {:annotations {:waiter/service-id "test-app-1234"}}}}
                     :status {:replicas 2
                              :readyReplicas 2
                              :availableReplicas 2}}
@@ -656,7 +657,8 @@
                                :uid "test-app-6789-uid"}
                     :spec {:replicas 3
                            :selector {:matchLabels {:app "test-app-6789"
-                                                    :waiter/cluster "waiter"}}}
+                                                    :waiter/cluster "waiter"}}
+                           :template {:metadata {:annotations {:waiter/service-id "test-app-6789"}}}}
                     :status {:replicas 3
                              :readyReplicas 1
                              :availableReplicas 2
@@ -667,6 +669,7 @@
                                     :k8s/containers []
                                     :k8s/replicaset-creation-timestamp "2019-08-01T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
+                                    :k8s/replicaset-pod-annotations {}
                                     :task-count 2
                                     :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
            (scheduler/make-Service {:id "test-app-6789"
@@ -674,6 +677,7 @@
                                     :k8s/containers []
                                     :k8s/replicaset-creation-timestamp "2019-08-05T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
+                                    :k8s/replicaset-pod-annotations {}
                                     :task-count 3
                                     :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})]}
          {:api-server-response
@@ -689,7 +693,8 @@
                                :uid "test-app-abcd-uid"}
                     :spec {:replicas 2
                            :selector {:matchLabels {:app "test-app-abcd"
-                                                    :waiter/cluster "waiter"}}}
+                                                    :waiter/cluster "waiter"}}
+                           :template {:metadata {:annotations {:waiter/service-id "test-app-abcd"}}}}
                     :status {:replicas 2
                              :readyReplicas 2
                              :availableReplicas 2}}
@@ -704,7 +709,8 @@
                                :uid "test-app-wxyz-uid"}
                     :spec {:replicas 3
                            :selector {:matchLabels {:app "test-app-wxyz"
-                                                    :waiter/cluster "waiter"}}}
+                                                    :waiter/cluster "waiter"}}
+                           :template {:metadata {:annotations {:waiter/service-id "test-app-wxyz"}}}}
                     :status {:replicas 3
                              :readyReplicas 1
                              :availableReplicas 2
@@ -715,6 +721,7 @@
                                     :k8s/containers []
                                     :k8s/replicaset-creation-timestamp "2019-09-07T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
+                                    :k8s/replicaset-pod-annotations {}
                                     :task-count 2
                                     :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
            (scheduler/make-Service {:id "test-app-wxyz"
@@ -722,6 +729,7 @@
                                     :k8s/containers []
                                     :k8s/replicaset-creation-timestamp "2019-10-15T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
+                                    :k8s/replicaset-pod-annotations {}
                                     :task-count 3
                                     :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})]}
 
@@ -738,7 +746,8 @@
                                :uid "test-app-4321-uid"}
                     :spec {:replicas 3
                            :selector {:matchLabels {:app "test-app-4321"
-                                                    :waiter/cluster "waiter"}}}
+                                                    :waiter/cluster "waiter"}}
+                           :template {:metadata {:annotations {:waiter/service-id "test-app-4321"}}}}
                     :status {:replicas 3
                              :readyReplicas 1
                              :availableReplicas 1
@@ -749,6 +758,7 @@
                                     :k8s/containers []
                                     :k8s/replicaset-creation-timestamp "2020-03-04T05:06:07.000Z"
                                     :k8s/replicaset-annotations {}
+                                    :k8s/replicaset-pod-annotations {}
                                     :task-count 3
                                     :task-stats {:running 2 :healthy 1 :unhealthy 1 :staged 1}})]}
 
@@ -767,7 +777,9 @@
                     :spec {:replicas 0
                            :selector {:matchLabels {:app "test-app-9999"
                                                     :waiter/cluster "waiter"}}
-                           :template {:spec {:containers [{:name "waiter-app"}]}}}
+                           :template {:metadata {:annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"
+                                                               :waiter/service-id "test-app-9999"}}
+                                      :spec {:containers [{:name "waiter-app"}]}}}
                     :status {:replicas 0
                              :readyReplicas 0
                              :availableReplicas 0}}]}
@@ -777,6 +789,7 @@
                                     :k8s/containers ["waiter-app"]
                                     :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                     :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"}
+                                    :k8s/replicaset-pod-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"}
                                     :task-count 0
                                     :task-stats {:running 0, :healthy 0, :unhealthy 0, :staged 0}})]}
 
@@ -796,7 +809,10 @@
                     :spec {:replicas 0
                            :selector {:matchLabels {:app "test-app-9999"
                                                     :waiter/cluster "waiter"}}
-                           :template {:spec {:containers [{:name "waiter-app"}]}}}
+                           :template {:metadata {:annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"
+                                                               :waiter/revision-version "3"
+                                                               :waiter/service-id "test-app-9999"}}
+                                      :spec {:containers [{:name "waiter-app"}]}}}
                     :status {:replicas 0
                              :readyReplicas 0
                              :availableReplicas 0}}]}
@@ -807,6 +823,8 @@
                                     :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                     :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"
                                                                  :waiter/revision-version "3"}
+                                    :k8s/replicaset-pod-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"
+                                                                     :waiter/revision-version "3"}
                                     :task-count 0
                                     :task-stats {:running 0, :healthy 0, :unhealthy 0, :staged 0}})]}
 
@@ -846,7 +864,9 @@
                                            :waiter/service-id "test-app-1234"}
                              :uid "test-app-1234-uid"}
                   :spec {:replicas 2
-                         :template {:spec {:containers [{:name "waiter-app"}
+                         :template {:metadata {:annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"
+                                                             :waiter/service-id "test-app-1234"}}
+                                    :spec {:containers [{:name "waiter-app"}
                                                         {:name "waiter-fileserver"}]}}}
                   :status {:replicas 2
                            :readyReplicas 2
@@ -860,7 +880,8 @@
                              :annotations {:waiter/service-id "test-app-6789"}
                              :uid "test-app-6789-uid"}
                   :spec {:replicas 3
-                         :template {:spec {:containers [{:name "waiter-app"}
+                         :template {:metadata {:annotations {:waiter/service-id "test-app-6789"}}
+                                    :spec {:containers [{:name "waiter-app"}
                                                         {:name "waiter-fileserver"}
                                                         {:name "waiter-envoy-sidecar"}]}}}
                   :status {:replicas 3
@@ -1006,6 +1027,7 @@
                                             :k8s/containers ["waiter-app" "waiter-fileserver"]
                                             :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                             :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"}
+                                            :k8s/replicaset-pod-annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"}
                                             :task-count 2
                                             :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
                    {:active-instances
@@ -1067,6 +1089,7 @@
                                             :k8s/containers ["waiter-app" "waiter-fileserver" "waiter-envoy-sidecar"]
                                             :k8s/replicaset-creation-timestamp "2020-09-08T07:06:05.000Z"
                                             :k8s/replicaset-annotations {}
+                                            :k8s/replicaset-pod-annotations {}
                                             :task-count 3
                                             :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})
                    {:active-instances
