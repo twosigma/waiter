@@ -658,7 +658,7 @@
                       {:cmd-type cmd-type
                        :service-description service-description
                        :service-id service-id}))))
-  (let [rs-spec (replicaset-spec-builder-fn scheduler service-id service-description)
+  (let [rs-spec (replicaset-spec-builder-fn scheduler service-id service-description {})
         request-namespace (k8s-object->namespace rs-spec)
         request-url (str api-server-url "/apis/" replicaset-api-version "/namespaces/" request-namespace "/replicasets")
         response-json
@@ -1570,8 +1570,9 @@
                                                utils/resolve-symbol
                                                deref)]
                                      (assert (fn? f) "ReplicaSet spec function must be a Clojure fn")
-                                     (fn [scheduler service-id service-description]
-                                       (f scheduler service-id service-description replicaset-spec-builder-ctx)))
+                                     (fn [scheduler service-id service-description in-context]
+                                       (let [context (merge replicaset-spec-builder-ctx in-context)]
+                                         (f scheduler service-id service-description context))))
         response->deployment-error-msg-fn (-> response->deployment-error-msg-fn utils/resolve-symbol!)
         restart-kill-threshold (or restart-kill-threshold (+ 2 restart-expiry-threshold))
         watch-trigger-chan (au/latest-chan)
