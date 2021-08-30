@@ -244,17 +244,23 @@
 
 (deftest test-determine-namespace
   (is (thrown-with-msg? ExceptionInfo #"Waiter configuration is missing a default namespace for Kubernetes pods"
-                        (determine-namespace nil nil {"run-as-user" "jill"})))
+                        (determine-namespace nil nil nil {"run-as-user" "jill"})))
   (is (thrown-with-msg? ExceptionInfo #"service namespace does not match scheduler namespace"
-                        (determine-namespace "john" "jack" {"namespace" "jane" "run-as-user" "jill"})))
+                        (determine-namespace "john" "jack" nil {"namespace" "jane" "run-as-user" "jill"})))
+  (is (thrown-with-msg? ExceptionInfo #"service namespace does not match scheduler namespace"
+                        (determine-namespace "john" "jack" "jeff" {"namespace" "jane" "run-as-user" "jill"})))
 
-  (is (= "jane" (determine-namespace nil nil {"namespace" "jane" "run-as-user" "jill"})))
-  (is (= "jack" (determine-namespace nil "jack" {"run-as-user" "jill"})))
-  (is (= "jill" (determine-namespace nil "*" {"run-as-user" "jill"})))
-  (is (= "jill" (determine-namespace "john" "*" {"run-as-user" "jill"})))
-  (is (= "jane" (determine-namespace nil "*" {"namespace" "jane" "run-as-user" "jill"})))
-  (is (= "john" (determine-namespace "john" nil {"run-as-user" "jill"})))
-  (is (= "jack" (determine-namespace "john" "jack" {"run-as-user" "jill"}))))
+  (is (= "jane" (determine-namespace nil nil nil {"namespace" "jane" "run-as-user" "jill"})))
+  (is (= "jeff" (determine-namespace nil nil "jeff" {"namespace" "jane" "run-as-user" "jill"})))
+  (is (= "jack" (determine-namespace nil "jack" nil {"run-as-user" "jill"})))
+  (is (= "jeff" (determine-namespace nil "jack" "jeff" {"run-as-user" "jill"})))
+  (is (= "jill" (determine-namespace nil "*" nil {"run-as-user" "jill"})))
+  (is (= "jill" (determine-namespace "john" "*" nil {"run-as-user" "jill"})))
+  (is (= "jane" (determine-namespace nil "*" nil {"namespace" "jane" "run-as-user" "jill"})))
+  (is (= "john" (determine-namespace "john" nil nil {"run-as-user" "jill"})))
+  (is (= "jeff" (determine-namespace "john" nil "jeff" {"run-as-user" "jill"})))
+  (is (= "jack" (determine-namespace "john" "jack" nil {"run-as-user" "jill"})))
+  (is (= "jeff" (determine-namespace "john" "jack" "jeff" {"run-as-user" "jill"}))))
 
 (deftest test-replicaset-spec-with-reverse-proxy
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
@@ -456,6 +462,13 @@
               replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id dummy-service-description {})]
           (is (nil? (scheduler/validate-service scheduler service-id)))
           (is (= dummy-scheduler-default-namespace (get-in replicaset-spec [:metadata :namespace])))
+          (is (false? (get-in replicaset-spec [:spec :template :spec :automountServiceAccountToken])))))
+      (testing "Override namespace"
+        (let [scheduler (make-dummy-scheduler [service-id]
+                                              {:service-id->service-description-fn (constantly dummy-service-description)})
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id dummy-service-description {:override-namespace "john"})]
+          (is (nil? (scheduler/validate-service scheduler service-id)))
+          (is (= "john" (get-in replicaset-spec [:metadata :namespace])))
           (is (false? (get-in replicaset-spec [:spec :template :spec :automountServiceAccountToken])))))
       (testing "Valid custom namespace"
         (let [target-namespace "myself"

@@ -1033,20 +1033,21 @@
 
 (defn determine-namespace
   "Determines the k8s namespace to use while creating k8s objects for the service."
-  [scheduler-namespace default-namespace {:strs [namespace run-as-user]}]
-  (when-not (or namespace default-namespace scheduler-namespace)
+  [scheduler-namespace default-namespace override-namespace {:strs [namespace run-as-user]}]
+  (when-not (or namespace default-namespace override-namespace scheduler-namespace)
     (throw (ex-info "Waiter configuration is missing a default namespace for Kubernetes pods" {})))
   (when (and scheduler-namespace namespace (not= scheduler-namespace namespace))
     (throw (ex-info "service namespace does not match scheduler namespace"
                     {:scheduler-ns scheduler-namespace :service-ns namespace})))
-  (or namespace
+  (or override-namespace
+      namespace
       (if (= "*" default-namespace) run-as-user default-namespace)
       scheduler-namespace))
 
 (defn determine-replicaset-namespace
   "Default implementation that determines the namespace to use for a replicaset"
-  [{scheduler-namespace :namespace} _ service-description {:keys [default-namespace]}]
-  (determine-namespace scheduler-namespace default-namespace service-description))
+  [{scheduler-namespace :namespace} _ service-description {:keys [default-namespace override-namespace]}]
+  (determine-namespace scheduler-namespace default-namespace override-namespace service-description))
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
