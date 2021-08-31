@@ -647,10 +647,15 @@
     (comment "Success! Even if the scale-down or force-kill operation failed,
               the pod will be force-killed after the grace period is up.")))
 
+(defn invoke-replicaset-spec-builder-fn
+  "Helper function to invoke replicaset-spec-builder-fn and ensure arity is maintained in invocation."
+  [{:keys [replicaset-spec-builder-fn] :as scheduler} service-id service-description context]
+  (replicaset-spec-builder-fn scheduler service-id service-description context))
+
 (defn create-service
   "Reify a Waiter Service as a Kubernetes ReplicaSet."
   [{:keys [service-description service-id]}
-   {:keys [api-server-url pdb-api-version pdb-spec-builder-fn replicaset-api-version replicaset-spec-builder-fn
+   {:keys [api-server-url pdb-api-version pdb-spec-builder-fn replicaset-api-version
            response->deployment-error-msg-fn service-id->deployment-error-cache] :as scheduler}]
   (let [{:strs [cmd-type]} service-description]
     (when (= "docker" cmd-type)
@@ -658,7 +663,7 @@
                       {:cmd-type cmd-type
                        :service-description service-description
                        :service-id service-id}))))
-  (let [rs-spec (replicaset-spec-builder-fn scheduler service-id service-description)
+  (let [rs-spec (invoke-replicaset-spec-builder-fn scheduler service-id service-description {})
         request-namespace (k8s-object->namespace rs-spec)
         request-url (str api-server-url "/apis/" replicaset-api-version "/namespaces/" request-namespace "/replicasets")
         response-json
@@ -1033,20 +1038,21 @@
 
 (defn determine-namespace
   "Determines the k8s namespace to use while creating k8s objects for the service."
-  [scheduler-namespace default-namespace {:strs [namespace run-as-user]}]
-  (when-not (or namespace default-namespace scheduler-namespace)
+  [scheduler-namespace default-namespace override-namespace {:strs [namespace run-as-user]}]
+  (when-not (or namespace default-namespace override-namespace scheduler-namespace)
     (throw (ex-info "Waiter configuration is missing a default namespace for Kubernetes pods" {})))
   (when (and scheduler-namespace namespace (not= scheduler-namespace namespace))
     (throw (ex-info "service namespace does not match scheduler namespace"
                     {:scheduler-ns scheduler-namespace :service-ns namespace})))
-  (or namespace
+  (or override-namespace
+      namespace
       (if (= "*" default-namespace) run-as-user default-namespace)
       scheduler-namespace))
 
 (defn determine-replicaset-namespace
   "Default implementation that determines the namespace to use for a replicaset"
-  [{scheduler-namespace :namespace} _ service-description {:keys [default-namespace]}]
-  (determine-namespace scheduler-namespace default-namespace service-description))
+  [{scheduler-namespace :namespace} _ service-description {:keys [default-namespace override-namespace]}]
+  (determine-namespace scheduler-namespace default-namespace override-namespace service-description))
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
@@ -1570,8 +1576,9 @@
                                                utils/resolve-symbol
                                                deref)]
                                      (assert (fn? f) "ReplicaSet spec function must be a Clojure fn")
-                                     (fn [scheduler service-id service-description]
-                                       (f scheduler service-id service-description replicaset-spec-builder-ctx)))
+                                     (fn [scheduler service-id service-description in-context]
+                                       (let [context (merge replicaset-spec-builder-ctx in-context)]
+                                         (f scheduler service-id service-description context))))
         response->deployment-error-msg-fn (-> response->deployment-error-msg-fn utils/resolve-symbol!)
         restart-kill-threshold (or restart-kill-threshold (+ 2 restart-expiry-threshold))
         watch-trigger-chan (au/latest-chan)
