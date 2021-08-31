@@ -647,10 +647,15 @@
     (comment "Success! Even if the scale-down or force-kill operation failed,
               the pod will be force-killed after the grace period is up.")))
 
+(defn invoke-replicaset-spec-builder-fn
+  "Helper function to invoke replicaset-spec-builder-fn and ensure arity is maintained in invocation."
+  [{:keys [replicaset-spec-builder-fn] :as scheduler} service-id service-description context]
+  (replicaset-spec-builder-fn scheduler service-id service-description context))
+
 (defn create-service
   "Reify a Waiter Service as a Kubernetes ReplicaSet."
   [{:keys [service-description service-id]}
-   {:keys [api-server-url pdb-api-version pdb-spec-builder-fn replicaset-api-version replicaset-spec-builder-fn
+   {:keys [api-server-url pdb-api-version pdb-spec-builder-fn replicaset-api-version
            response->deployment-error-msg-fn service-id->deployment-error-cache] :as scheduler}]
   (let [{:strs [cmd-type]} service-description]
     (when (= "docker" cmd-type)
@@ -658,7 +663,7 @@
                       {:cmd-type cmd-type
                        :service-description service-description
                        :service-id service-id}))))
-  (let [rs-spec (replicaset-spec-builder-fn scheduler service-id service-description {})
+  (let [rs-spec (invoke-replicaset-spec-builder-fn scheduler service-id service-description {})
         request-namespace (k8s-object->namespace rs-spec)
         request-url (str api-server-url "/apis/" replicaset-api-version "/namespaces/" request-namespace "/replicasets")
         response-json
