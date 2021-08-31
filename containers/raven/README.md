@@ -1,4 +1,6 @@
-# Waiter-Kubernetes Reverse-Proxy Sidecar Container
+# Waiter-Kubernetes Raven Reverse-Proxy Sidecar Container
+
+Waiter's default Envoy reverse-proxy sidecar offering is called Raven.
 
 The sidecar container starts an envoy reverse-proxy that
 is serving on `SERVICE_PORT` and forwards all traffic to `PORT0` on localhost.
@@ -16,7 +18,7 @@ and no additional health check port is proxied if absent.
 
 ## Building the Docker image
 
-    docker build -t twosigma/waiter-envoy .
+    docker build -t twosigma/waiter-raven .
 
 There is also a helper script included in `./bin`
 for building the image in both the host docker

@@ -458,9 +458,12 @@
           {:keys [service-id] :as response} (make-request-with-debug-info headers #(make-shell-request waiter-url %))]
       (with-service-cleanup
         service-id
-        (assert-response-status response http-502-bad-gateway)
-        (is (str/includes? (-> response :body str) "Request to service backend failed"))
-        (is (str/includes? (-> response :headers (get "server")) "waiter/"))
+        (if (utils/raven-proxy-response? response)
+          (assert-response-status response http-503-service-unavailable)
+          (do
+            (assert-response-status response http-502-bad-gateway)
+            (is (str/includes? (-> response :body str) "Request to service backend failed"))
+            (is (str/includes? (-> response :headers (get "server")) "waiter/"))))
         (let [{:keys [service-description]} (service-settings waiter-url service-id)
               {:keys [cmd health-check-port-index ports]} service-description]
           (is (= kitchen-command cmd))
@@ -1054,13 +1057,19 @@
               (str body-json))
           (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
                 _ (assert-service-on-all-routers waiter-url service-id cookies)
-                {:keys [extra-ports port] :as active-instance} (first (active-instances waiter-url service-id))]
+                {:keys [extra-ports port] :as active-instance} (first (active-instances waiter-url service-id))
+                env-port0 (-> body-json (get "PORT0") Integer/parseInt)
+                port-offset (- env-port0 port)
+                proxied? (utils/raven-proxy-response? response)
+                instance-info (str {:active-instance active-instance :body body-json})]
             (log/info service-id "active-instance:" active-instance)
             (is (seq active-instance) (str active-instance))
             (is (pos? port) (str active-instance))
-            (is (= (get body-json "PORT0") (str port)) (str {:active-instance active-instance :body body-json}))
+            (if proxied?
+              (is (pos? port-offset) instance-info)
+              (is (zero? port-offset) instance-info))
             (is (= (dec num-ports) (count extra-ports)) (str active-instance))
-            (is (every? pos? extra-ports) (str active-instance))
+            (is (every? pos? extra-ports) instance-info)
             (is (->> (map #(= (get body-json (str "PORT" %1)) (str %2))
                           (range 1 (-> extra-ports count inc))
                           extra-ports)

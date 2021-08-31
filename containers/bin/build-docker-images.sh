@@ -25,8 +25,6 @@ cd "$DIR"
 ./test-apps/bin/build-docker-image.sh
 ./custom-env/bin/build-docker-image.sh
 
-# the fileserver container is independent
+# the fileserver and raven containers have no dependencies on our other images or codebases
 ./fileserver/bin/build-docker-image.sh
-
-# the envoy reverse-proxy container is independent
-./reverse-proxy/bin/build-docker-image.sh
+./raven/bin/build-docker-image.sh

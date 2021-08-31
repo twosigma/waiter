@@ -3,5 +3,5 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && cd .. && pwd )"
 cd "$DIR"
 
-echo "Building docker image for envoy sidecar"
-docker build -t twosigma/waiter-envoy .
+echo "Building docker image for raven sidecar"
+docker build -t twosigma/waiter-raven .

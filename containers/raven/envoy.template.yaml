@@ -22,7 +22,7 @@ static_resources:
                   name: app-proxy
                   response_headers_to_add:
                     - header:
-                        key: x-envoy-response-flags
+                        key: x-raven-response-flags
                         value: "%RESPONSE_FLAGS%"
                   virtual_hosts:
                     - name: app-backend

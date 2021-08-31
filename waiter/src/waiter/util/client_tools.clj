@@ -43,8 +43,6 @@
 (def ^:const WAITER-PORT 9091)
 (def ^:const HTTP-SCHEME "http://")
 
-(def reverse-proxy-flag (or (System/getenv "WAITER_TEST_REVERSE_PROXY_FLAG") "REVERSE_PROXY"))
-
 (def use-spnego (-> (System/getenv "USE_SPNEGO") str Boolean/parseBoolean))
 
 (def ^:const ANSI-YELLOW "\033[1m\033[33m")
@@ -1107,6 +1105,21 @@
   "Returns true if Waiter is configured to use Shell Scheduler for scheduling"
   [waiter-url]
   (= "shell" (retrieve-default-scheduler-name waiter-url)))
+
+(defn using-raven?
+  "Returns true if Waiter is configured to use Kubernetes and the Raven sidecar proxy"
+  [waiter-url]
+  (and (using-k8s? waiter-url)
+       (contains? (get-kubernetes-scheduler-settings waiter-url) :raven-sidecar)))
+
+(defn get-raven-sidecar-flag
+  "Fetches (from the k8s scheduler config) the env var name for enabling the raven sidecar."
+  [waiter-url]
+  {:post [(not (str/blank? %))]}
+  (-> waiter-url
+      (get-kubernetes-scheduler-settings)
+      (get-in [:raven-sidecar :env-vars :flags])
+      (first)))
 
 (defn get-authenticator-kind
   "Get the authenticator that Waiter is configured to use"

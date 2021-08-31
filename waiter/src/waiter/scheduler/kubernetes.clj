@@ -66,7 +66,7 @@
 
 (def ^:const waiter-primary-container-name "waiter-app")
 (def ^:const waiter-fileserver-sidecar-name "waiter-fileserver")
-(def ^:const waiter-envoy-sidecar-name "waiter-envoy-sidecar")
+(def ^:const waiter-raven-sidecar-name "waiter-raven-sidecar")
 
 (defn timestamp-str->datetime
   "Parse a Kubernetes API timestamp string."
@@ -775,6 +775,7 @@
                                 pod-base-port
                                 pod-sigkill-delay-secs
                                 pod-suffix-length
+                                raven-sidecar
                                 replicaset-api-version
                                 replicaset-spec-builder-fn
                                 response->deployment-error-msg-fn
@@ -782,7 +783,6 @@
                                 restart-kill-threshold
                                 retrieve-auth-token-state-fn
                                 retrieve-syncer-state-fn
-                                reverse-proxy
                                 service-id->deployment-error-cache
                                 service-id->failed-instances-transient-store
                                 service-id->password-fn
@@ -1005,40 +1005,71 @@
    :periodSeconds health-check-interval-secs
    :timeoutSeconds 1})
 
-(defn envoy-sidecar-enabled?
-  "Returns true if the envoy sidecar is enabled, and false otherwise"
-  [_ _ {:strs [env]} _]
-  (let [reverse-proxy-flag "REVERSE_PROXY"]
-    (contains? env reverse-proxy-flag)))
+(def ^:const default-raven-env-flag "RAVEN_ENABLED")
 
-(defn attach-envoy-sidecar
-  "Attaches envoy sidecar to replicaset"
-  [replicaset reverse-proxy
-   {:strs [backend-proto health-check-port-index] :as service-description}
+(defn has-raven-config-in-env?
+  "Check if the env has any explicit raven sidecar config."
+  [env {:keys [env-vars]}]
+  (some #(contains? env %) (mapcat val env-vars)))
+
+(defn raven-env-config-helper
+  "Check environment flags to see if raven sidecar should be enabled.
+   Used to build other predicate functions by providing defaults.
+   Returns the first env var name and value matched
+   as {:name var-name :match match-fn-result},
+   or default-result if none of the configured env vars are found."
+  [env {{:keys [flags features]} :env-vars :as x} default-result]
+  (or (first (for [flag flags
+                   :let [flag-value (get env flag)]
+                   :when (some? flag-value)]
+               {:name flag :match (utils/match-yes-like flag-value)}))
+      (first (for [feature features
+                   :let [feature-value (get env feature)]
+                   :when (some? feature-value)]
+               {:name feature :match feature-value}))
+      default-result))
+
+(defn raven-sidecar-opt-in?
+  "Returns nil to disable the raven sidecar unless explicitly enabled."
+  [{raven-sidecar-config :raven-sidecar} _ {:strs [env]} _]
+  (when (:match (raven-env-config-helper env raven-sidecar-config nil))
+    :enabled))
+
+(defn raven-sidecar-opt-out?
+  "Returns :enabled to enable the raven sidecar unless explicitly disabled."
+  [{raven-sidecar-config :raven-sidecar} _ {:strs [env]} _]
+  (when (:match (raven-env-config-helper env raven-sidecar-config {:match :enabled}))
+    :enabled))
+
+(defn attach-raven-sidecar
+  "Attaches raven sidecar to replicaset"
+  [replicaset raven-sidecar
+   {:strs [backend-proto health-check-port-index health-check-proto] :as service-description}
    base-env service-port port0]
   (update-in replicaset
     [:spec :template :spec :containers]
     conj
-    (let [{:keys [cmd resources image]} reverse-proxy
+    (let [{:keys [cmd resources image]} raven-sidecar
           user-env (:env service-description)
           env-map (-> user-env
                       (merge base-env)
                       (assoc "HEALTH_CHECK_PORT_INDEX" (str health-check-port-index)
+                             "HEALTH_CHECK_PROTOCOL" health-check-proto
                              "PORT0" (str port0)
                              "SERVICE_PORT" (str service-port)
                              "SERVICE_PROTOCOL" backend-proto))
           env (into []
                     (concat (for [[k v] env-map]
                               {:name k :value v})))
-          envoy-container {:command cmd
+          raven-container {:command cmd
                            :env env
                            :image image
                            :imagePullPolicy "IfNotPresent"
-                           :name waiter-envoy-sidecar-name
+                           :name waiter-raven-sidecar-name
                            :ports [{:containerPort service-port}]
                            :resources {:limits {:memory (str (:mem resources) "Mi")}
                                        :requests {:cpu (str (:cpu resources)) :memory (str (:mem resources) "Mi")}}}]
-      envoy-container)))
+      raven-container)))
 
 (def ^:const service-ports-index 0)
 (def ^:const proxied-ports-index 1)
@@ -1071,7 +1102,7 @@
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
   [{:keys [cluster-name determine-replicaset-namespace-fn fileserver pod-base-port pod-sigkill-delay-secs
-           replicaset-api-version reverse-proxy service-id->password-fn] :as scheduler}
+           replicaset-api-version raven-sidecar service-id->password-fn] :as scheduler}
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
@@ -1092,16 +1123,22 @@
         log-bucket-sync-secs (if base-bucket-url (:log-bucket-sync-secs context) 0)
         configured-pod-sigkill-delay-secs (max termination-grace-period-secs pod-sigkill-delay-secs)
         total-sigkill-delay-secs (+ configured-pod-sigkill-delay-secs log-bucket-sync-secs)
-        envoy-sidecar-check-fn (:predicate-fn reverse-proxy)
-        has-reverse-proxy? (when reverse-proxy
-                             (envoy-sidecar-check-fn scheduler service-id service-description context))
         ;; Make $PORT0 value pseudo-random to ensure clients can't hardcode it.
         ;; Helps maintain compatibility with Marathon, where port assignment is dynamic.
         service-id-hash (hash service-id)
         service-port (get-port-range service-id-hash service-ports-index pod-base-port)
-        port0 (if has-reverse-proxy?
+        raven-mode (when-let [raven-sidecar-check-fn (:predicate-fn raven-sidecar)]
+                     (raven-sidecar-check-fn scheduler service-id service-description context))
+        has-raven? (boolean raven-mode)
+        proxy-label (cond
+                      (not has-raven?) "disabled"
+                      (keyword? raven-mode) (name raven-mode)
+                      :else "enabled")
+        port0 (if has-raven?
                 (get-port-range service-id-hash proxied-ports-index pod-base-port)
                 service-port)
+        health-check-port (when (pos? health-check-port-index)
+                            (+ service-port health-check-port-index))
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
                    {:name "MESOS_DIRECTORY" :value home-path}
@@ -1143,7 +1180,7 @@
                   :labels {:app k8s-name
                            :waiter/cluster cluster-name
                            :waiter/fileserver (if fileserver-enabled? "enabled" "disabled")
-                           :waiter/proxy-sidecar (if has-reverse-proxy? "enabled" "disabled")
+                           :waiter/raven (if has-raven? "enabled" "disabled")
                            :waiter/service-hash service-hash
                            :waiter/user run-as-user}
                   :name k8s-name
@@ -1230,9 +1267,9 @@
            :volumeMounts [{:mountPath "/srv/www"
                            :name "user-home"}]}))
 
-      ;; Optional envoy sidecar container
-      has-reverse-proxy?
-      (attach-envoy-sidecar reverse-proxy service-description base-env service-port port0))))
+      ;; Optional raven sidecar container
+      has-raven?
+      (attach-raven-sidecar raven-sidecar service-description base-env service-port port0))))
 
 (defn default-pdb-spec-builder
   "Factory function which creates a Kubernetes PodDisruptionBudget spec for the given ReplicaSet."
@@ -1510,7 +1547,7 @@
            determine-replicaset-namespace-fn leader?-fn log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length namespace pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
            pod-suffix-length replicaset-api-version response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold
-           reverse-proxy scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
+           raven-sidecar scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn start-scheduler-syncer-fn url watch-chan-throttle-interval-ms watch-connect-timeout-ms watch-init-timeout-ms watch-retries watch-socket-timeout-ms]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver
     {:keys [default-namespace] :as replicaset-spec-builder} :replicaset-spec-builder
@@ -1521,7 +1558,7 @@
          (or (zero? container-running-grace-secs) (pos-int? container-running-grace-secs))
          (or (nil? custom-options) (map? custom-options))
          (or (nil? determine-replicaset-namespace-fn) (symbol? determine-replicaset-namespace-fn))
-         (or (nil? reverse-proxy) (nil? (s/check schema/valid-reverse-proxy-config reverse-proxy)))
+         (or (nil? raven-sidecar) (nil? (s/check schema/valid-raven-sidecar-config raven-sidecar)))
          (or (nil? fileserver-port)
              (and (integer? fileserver-port)
                   (< 0 fileserver-port 65535)))
@@ -1621,8 +1658,10 @@
                                                       (if (nil? predicate-fn)
                                                         fileserver-container-enabled?
                                                         (utils/resolve-symbol! predicate-fn))))
-        reverse-proxy (when reverse-proxy
-                        (update reverse-proxy :predicate-fn utils/resolve-symbol!))
+        raven-sidecar (when raven-sidecar
+                        (cond-> (update raven-sidecar :predicate-fn utils/resolve-symbol!)
+                          (not (:env-vars raven-sidecar))
+                          (assoc :env-vars {:flags [default-raven-env-flag]})))
         determine-replicaset-namespace-fn (if determine-replicaset-namespace-fn
                                             (utils/resolve-symbol! determine-replicaset-namespace-fn)
                                             determine-replicaset-namespace)]
@@ -1651,6 +1690,7 @@
                             :pod-base-port pod-base-port
                             :pod-sigkill-delay-secs pod-sigkill-delay-secs
                             :pod-suffix-length pod-suffix-length
+                            :raven-sidecar raven-sidecar
                             :replicaset-api-version replicaset-api-version
                             :replicaset-spec-builder-fn replicaset-spec-builder-fn
                             :response->deployment-error-msg-fn response->deployment-error-msg-fn
@@ -1658,7 +1698,6 @@
                             :restart-kill-threshold restart-kill-threshold
                             :retrieve-auth-token-state-fn retrieve-auth-token-state-fn
                             :retrieve-syncer-state-fn retrieve-syncer-state-fn
-                            :reverse-proxy reverse-proxy
                             :scheduler-name scheduler-name
                             :service-id->deployment-error-cache service-id->deployment-error-cache
                             :service-id->failed-instances-transient-store service-id->failed-instances-transient-store
