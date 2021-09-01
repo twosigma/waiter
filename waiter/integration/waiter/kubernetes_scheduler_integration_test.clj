@@ -313,9 +313,9 @@
           (is (thrown? Exception #"Cannot use run-as-requester with a specific namespace"
                        (check-pod-namespace waiter-url (assoc star-user-header :x-waiter-namespace not-current-user) current-user))))))))
 
-(defn- get-pod-service-account
+(defn- get-pod-service-account-info
   [waiter-url namespace-arg]
-  (let [{:keys [body error service-id status]}
+  (let [{:keys [body cookies error service-id status] :as response}
         (make-request-with-debug-info
           (cond->
             {:x-waiter-name (rand-name)
@@ -324,24 +324,29 @@
             namespace-arg
             (assoc :x-waiter-namespace namespace-arg))
           #(make-kitchen-request waiter-url % :path "/environment"))]
-    (when-not (= http-200-ok status)
-      (throw (ex-info "Failed to create service"
-                      {:response-body body
-                       :response-status status}
-                      error)))
     (with-service-cleanup
       service-id
-      (-> body str try-parse-json (get "SERVICE_ACCOUNT")))))
+      (assert-response-status response http-200-ok)
+      (assert-service-on-all-routers waiter-url service-id cookies)
+      (let [instance (first (active-instances waiter-url service-id :cookies cookies))
+            instance-env (-> body str try-parse-json)]
+        {:pod-namespace (:k8s/namespace instance)
+         :service-account (get instance-env "SERVICE_ACCOUNT")}))))
 
 (deftest ^:parallel ^:integration-fast test-service-account-injection
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (let [current-user (retrieve-username)]
-        (testing "Has service account with matching default namespace"
-          (let [service-account (get-pod-service-account waiter-url nil)]
-            (is (= current-user service-account))))
+        (testing "No service account for default namespace, or matches user"
+          (let [{:keys [service-account pod-namespace]} (get-pod-service-account-info waiter-url nil)]
+            ;; matches run-as-user when default-namespace resolves to run-as-user
+            ;; blank when default-namespace resolves to some other user (don't leak credentials)
+            (if (= current-user pod-namespace)
+              (is (= current-user service-account))
+              (is (str/blank? service-account)))))
         (testing "Has service account with custom namespace"
-          (let [service-account (get-pod-service-account waiter-url current-user)]
+          (let [{:keys [service-account pod-namespace]} (get-pod-service-account-info waiter-url current-user)]
+            (is (= current-user pod-namespace))
             (is (= current-user service-account))))))))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-kubernetes-pod-expiry-failing-instance
