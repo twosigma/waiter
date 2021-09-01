@@ -64,6 +64,10 @@
   "Kubernetes reports dates in ISO8061 format, sans the milliseconds component."
   (DateTimeFormat/forPattern "yyyy-MM-dd'T'HH:mm:ss'Z'"))
 
+(def ^:const waiter-primary-container-name "waiter-app")
+(def ^:const waiter-fileserver-sidecar-name "waiter-fileserver")
+(def ^:const waiter-envoy-sidecar-name "waiter-envoy-sidecar")
+
 (defn timestamp-str->datetime
   "Parse a Kubernetes API timestamp string."
   [k8s-timestamp-str]
@@ -213,6 +217,13 @@
   (and (contains? #{137 143} exitCode)
        (= "Error" reason)))
 
+(defn retrieve-container-status
+  "Retrieves the status of the specific container in the pod."
+  [pod container-name]
+  (->> (get-in pod [:status :containerStatuses])
+    (filter #(= container-name (:name %)))
+    (first)))
+
 (defn- track-failed-instances!
   "Update this KubernetesScheduler's service-id->failed-instances-transient-store
    when a new pod failure is listed in the given pod's lastState container status.
@@ -220,7 +231,7 @@
    by passing the pod's restartCount value to the pod->instance-id function."
   [{:keys [service-id] :as live-instance} {:keys [service-id->failed-instances-transient-store] :as scheduler} pod]
   (try
-    (let [primary-container-status (get-in pod [:status :containerStatuses 0])]
+    (let [primary-container-status (retrieve-container-status pod waiter-primary-container-name)]
       (when-let [newest-failure (get-in primary-container-status [:lastState :terminated])]
         (when-let [restart-count (:restartCount primary-container-status)]
           (let [failure-flags (if (= "OOMKilled" (:reason newest-failure)) #{:memory-limit-exceeded} #{})
@@ -326,7 +337,8 @@
   [{:keys [api-server-url leader?-fn restart-kill-threshold] :as scheduler} pod]
   (try
     (let [;; waiter-app is the first container we register
-          primary-container-restart-count (or (get-in pod [:status :containerStatuses 0 :restartCount]) 0)
+          primary-container-status (retrieve-container-status pod waiter-primary-container-name)
+          primary-container-restart-count (or (get primary-container-status :restartCount) 0)
           exceeded-restart-kill-threshold? (>= primary-container-restart-count restart-kill-threshold)
           service-id (k8s-object->service-id pod)
           instance-id (pod->instance-id pod primary-container-restart-count)
@@ -349,7 +361,6 @@
           pod-restart-count (if (seq unready-init-containers-statuses)
                               (reduce max (map :restartCount unready-init-containers-statuses))
                               primary-container-restart-count)
-          primary-container-status (first app-container-statuses)
           pod-annotations (get-in pod [:metadata :annotations])
           pod-started-at (-> pod (get-in [:status :startTime]) timestamp-str->datetime)
           {:keys [waiter/revision-timestamp waiter/revision-version]} (get-in pod [:metadata :annotations])
@@ -407,7 +418,10 @@
    Assumes that the pod is configured to run with the fileserver container and that the container is at index 1."
   [pod]
   (and (some? pod)
-       (nil? (get-in pod [:status :containerStatuses 1 :state :terminated]))))
+       (-> pod
+         (retrieve-container-status waiter-fileserver-sidecar-name)
+         (get-in [:state :terminated])
+         (nil?))))
 
 (defn streaming-api-request
   "Make a long-lived HTTP request to the Kubernetes API server using the configured authentication.
@@ -1020,7 +1034,7 @@
                            :env env
                            :image image
                            :imagePullPolicy "IfNotPresent"
-                           :name "waiter-envoy-sidecar"
+                           :name waiter-envoy-sidecar-name
                            :ports [{:containerPort service-port}]
                            :resources {:limits {:memory (str (:mem resources) "Mi")}
                                        :requests {:cpu (str (:cpu resources)) :memory (str (:mem resources) "Mi")}}}]
@@ -1154,7 +1168,7 @@
                                               :env env
                                               :image (compute-image image default-container-image image-aliases)
                                               :imagePullPolicy "IfNotPresent"
-                                              :name "waiter-app"
+                                              :name waiter-primary-container-name
                                               :ports [{:containerPort port0}]
                                               :readinessProbe (-> (prepare-health-check-probe
                                                                     service-id->password-fn service-id
@@ -1209,7 +1223,7 @@
                             :value (str base-bucket-url "/" run-as-user "/" service-id)}])))
            :image image
            :imagePullPolicy "IfNotPresent"
-           :name "waiter-fileserver"
+           :name waiter-fileserver-sidecar-name
            :ports [{:containerPort port}]
            :resources {:limits {:memory memory}
                        :requests {:cpu cpu :memory memory}}

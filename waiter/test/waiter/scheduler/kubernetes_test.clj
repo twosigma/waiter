@@ -171,7 +171,7 @@
                   :waiter/service-hash test-service-id
                   :waiter/user run-as-user}
                  (get-in replicaset-spec [:metadata :labels])))
-          (let [fileserver-containers (filter #(= "waiter-fileserver" (:name %))
+          (let [fileserver-containers (filter #(= waiter-fileserver-sidecar-name (:name %))
                                               (get-in replicaset-spec [:spec :template :spec :containers]))]
             (if fileserver-enabled
               (is (= 1 (count fileserver-containers)))
@@ -277,7 +277,7 @@
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description {})
           app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
           sidecar-container (some
-                              #(if (= "waiter-envoy-sidecar" (:name %)) %)
+                              #(if (= waiter-envoy-sidecar-name (:name %)) %)
                               (get-in replicaset-spec [:spec :template :spec :containers]))
           sidecar-env (into {} (mapv (juxt :name :value) (:env sidecar-container)))]
 
@@ -329,7 +329,7 @@
           (is (= "256Mi" memory-limit))))
 
       (testing "reverse-proxy pod container name is correct"
-        (is (= "waiter-envoy-sidecar" (:name sidecar-container))))
+        (is (= waiter-envoy-sidecar-name (:name sidecar-container))))
 
       (testing "reverse-proxy pod container image is correct"
         (is (= "twosigma/waiter-envoy" (:image sidecar-container)))))))
@@ -352,7 +352,7 @@
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description {})
           app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
           sidecar-container (some
-                              #(if (= "waiter-envoy-sidecar" (:name %)) %)
+                              #(if (= waiter-envoy-sidecar-name (:name %)) %)
                               (get-in replicaset-spec [:spec :template :spec :containers]))
           sidecar-env (into {} (mapv (juxt :name :value) (:env sidecar-container)))]
 
@@ -411,7 +411,7 @@
           (is (= "256Mi" memory-limit))))
 
       (testing "reverse-proxy pod container name is correct"
-        (is (= "waiter-envoy-sidecar" (:name sidecar-container))))
+        (is (= waiter-envoy-sidecar-name (:name sidecar-container))))
 
       (testing "reverse-proxy pod container image is correct"
         (is (= "twosigma/waiter-envoy" (:image sidecar-container)))))))
@@ -791,14 +791,14 @@
                                                     :waiter/cluster "waiter"}}
                            :template {:metadata {:annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"
                                                                :waiter/service-id "test-app-9999"}}
-                                      :spec {:containers [{:name "waiter-app"}]}}}
+                                      :spec {:containers [{:name waiter-primary-container-name}]}}}
                     :status {:replicas 0
                              :readyReplicas 0
                              :availableReplicas 0}}]}
           :expected-result
           [(scheduler/make-Service {:id "test-app-9999"
                                     :instances 0
-                                    :k8s/containers ["waiter-app"]
+                                    :k8s/containers [waiter-primary-container-name]
                                     :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                     :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"}
                                     :k8s/replicaset-pod-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"}
@@ -824,14 +824,14 @@
                            :template {:metadata {:annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"
                                                                :waiter/revision-version "3"
                                                                :waiter/service-id "test-app-9999"}}
-                                      :spec {:containers [{:name "waiter-app"}]}}}
+                                      :spec {:containers [{:name waiter-primary-container-name}]}}}
                     :status {:replicas 0
                              :readyReplicas 0
                              :availableReplicas 0}}]}
           :expected-result
           [(scheduler/make-Service {:id "test-app-9999"
                                     :instances 0
-                                    :k8s/containers ["waiter-app"]
+                                    :k8s/containers [waiter-primary-container-name]
                                     :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                     :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"
                                                                  :waiter/revision-version "3"}
@@ -878,8 +878,8 @@
                   :spec {:replicas 2
                          :template {:metadata {:annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"
                                                              :waiter/service-id "test-app-1234"}}
-                                    :spec {:containers [{:name "waiter-app"}
-                                                        {:name "waiter-fileserver"}]}}}
+                                    :spec {:containers [{:name waiter-primary-container-name}
+                                                        {:name waiter-fileserver-sidecar-name}]}}}
                   :status {:replicas 2
                            :readyReplicas 2
                            :availableReplicas 2}}
@@ -893,9 +893,9 @@
                              :uid "test-app-6789-uid"}
                   :spec {:replicas 3
                          :template {:metadata {:annotations {:waiter/service-id "test-app-6789"}}
-                                    :spec {:containers [{:name "waiter-app"}
-                                                        {:name "waiter-fileserver"}
-                                                        {:name "waiter-envoy-sidecar"}]}}}
+                                    :spec {:containers [{:name waiter-primary-container-name}
+                                                        {:name waiter-fileserver-sidecar-name}
+                                                        {:name waiter-envoy-sidecar-name}]}}}
                   :status {:replicas 3
                            :readyReplicas 1
                            :availableReplicas 2
@@ -917,7 +917,7 @@
                          :nodeName "node-0.k8s.com"}
                   :status {:phase "Pending"
                            :startTime "2014-09-13T00:24:46Z"
-                           :containerStatuses [{:name "waiter-app"
+                           :containerStatuses [{:name waiter-primary-container-name
                                                 :ready false
                                                 :restartCount 0
                                                 :state {:waiting {:reason "ContainerCreating"}}}]}}
@@ -935,7 +935,7 @@
                   :status {:phase "Running"
                            :podIP "10.141.141.11"
                            :startTime "2014-09-13T00:24:46Z"
-                           :containerStatuses [{:name "waiter-app"
+                           :containerStatuses [{:name waiter-primary-container-name
                                                 :ready true
                                                 :restartCount 0
                                                 :state {:running {}}}]}}
@@ -953,7 +953,7 @@
                          :nodeName "node-2.k8s.com"}
                   :status {:podIP "10.141.141.12"
                            :startTime "2014-09-13T00:24:47Z"
-                           :containerStatuses [{:name "waiter-app"
+                           :containerStatuses [{:name waiter-primary-container-name
                                                 :ready true
                                                 :restartCount 0}]}}
                  {:metadata {:name "test-app-1234-abcd3"
@@ -969,7 +969,7 @@
                   :status {:phase "Failed"
                            :podIP "10.141.141.13"
                            :startTime "2014-09-13T00:24:13Z"
-                           :containerStatuses [{:name "waiter-app"
+                           :containerStatuses [{:name waiter-primary-container-name
                                                 :ready true
                                                 :restartCount 0
                                                 :state {:running {}}}]}}
@@ -984,7 +984,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.13"
                            :startTime "2014-09-13T00:24:35Z"
-                           :containerStatuses [{:name "waiter-app"
+                           :containerStatuses [{:name waiter-primary-container-name
                                                 :ready true
                                                 :restartCount 0}]}}
                  {:metadata {:name "test-app-6789-abcd2"
@@ -998,7 +998,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.14"
                            :startTime "2014-09-13T00:24:37Z"
-                           :containerStatuses [{:name "waiter-app"
+                           :containerStatuses [{:name waiter-primary-container-name
                                                 :lastState {:terminated {:exitCode 255
                                                                          :reason "Error"
                                                                          :startedAt "2014-09-13T00:24:36Z"}}
@@ -1014,7 +1014,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.15"
                            :startTime "2014-09-13T00:24:38Z"
-                           :containerStatuses [{:name "waiter-app"
+                           :containerStatuses [{:name waiter-primary-container-name
                                                 :restartCount 0}]}}
                  {:metadata {:name "test-app-6789-abcd4"
                              :namespace "myself"
@@ -1027,7 +1027,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.16"
                            :startTime "2014-09-13T00:24:48Z"
-                           :containerStatuses [{:name "waiter-app"
+                           :containerStatuses [{:name waiter-primary-container-name
                                                 :restartCount 0}]
                            :initContainerStatuses [{:name "waiter-setup"
                                                     :ready false
@@ -1036,7 +1036,7 @@
         expected (hash-map
                    (scheduler/make-Service {:id "test-app-1234"
                                             :instances 2
-                                            :k8s/containers ["waiter-app" "waiter-fileserver"]
+                                            :k8s/containers [waiter-primary-container-name waiter-fileserver-sidecar-name]
                                             :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                             :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"}
                                             :k8s/replicaset-pod-annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"}
@@ -1048,7 +1048,7 @@
                         :healthy? false
                         :host "0.0.0.0"
                         :id "test-app-1234.test-app-1234-abcd0-0"
-                        :k8s/container-statuses [{:name "waiter-app" :ready false :reason "ContainerCreating":state :waiting}]
+                        :k8s/container-statuses [{:name waiter-primary-container-name :ready false :reason "ContainerCreating":state :waiting}]
                         :k8s/node-name "node-0.k8s.com"
                         :k8s/pod-phase "Pending"
                         :k8s/revision-timestamp "2020-09-22T20:00:00.000Z"
@@ -1061,7 +1061,7 @@
                         :healthy? true
                         :host "10.141.141.11"
                         :id "test-app-1234.test-app-1234-abcd1-0"
-                        :k8s/container-statuses [{:name "waiter-app" :ready true :state :running}]
+                        :k8s/container-statuses [{:name waiter-primary-container-name :ready true :state :running}]
                         :k8s/pod-phase "Running"
                         :k8s/revision-timestamp "2020-09-22T20:11:11.000Z"
                         :k8s/revision-version "0"
@@ -1074,7 +1074,7 @@
                         :healthy? true
                         :host "10.141.141.12"
                         :id "test-app-1234.test-app-1234-abcd2-0"
-                        :k8s/container-statuses [{:name "waiter-app" :ready true}]
+                        :k8s/container-statuses [{:name waiter-primary-container-name :ready true}]
                         :k8s/node-name "node-2.k8s.com"
                         :k8s/revision-timestamp "2020-09-22T20:22:22.000Z"
                         :k8s/revision-version "1"
@@ -1088,7 +1088,7 @@
                         :healthy? false
                         :host "10.141.141.13"
                         :id "test-app-1234.test-app-1234-abcd3-0"
-                        :k8s/container-statuses [{:name "waiter-app" :ready true :state :running}]
+                        :k8s/container-statuses [{:name waiter-primary-container-name :ready true :state :running}]
                         :k8s/pod-phase "Failed"
                         :k8s/revision-timestamp "2020-09-22T20:11:11.000Z"
                         :log-directory "/home/myself/r0"
@@ -1098,7 +1098,7 @@
 
                    (scheduler/make-Service {:id "test-app-6789"
                                             :instances 3
-                                            :k8s/containers ["waiter-app" "waiter-fileserver" "waiter-envoy-sidecar"]
+                                            :k8s/containers [waiter-primary-container-name waiter-fileserver-sidecar-name waiter-envoy-sidecar-name]
                                             :k8s/replicaset-creation-timestamp "2020-09-08T07:06:05.000Z"
                                             :k8s/replicaset-annotations {}
                                             :k8s/replicaset-pod-annotations {}
@@ -1109,7 +1109,7 @@
                        {:healthy? true
                         :host "10.141.141.13"
                         :id "test-app-6789.test-app-6789-abcd1-0"
-                        :k8s/container-statuses [{:name "waiter-app" :ready true}]
+                        :k8s/container-statuses [{:name waiter-primary-container-name :ready true}]
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-6789"
@@ -1118,7 +1118,7 @@
                        {:healthy? false
                         :host "10.141.141.14"
                         :id "test-app-6789.test-app-6789-abcd2-1"
-                        :k8s/container-statuses [{:name "waiter-app"}]
+                        :k8s/container-statuses [{:name waiter-primary-container-name}]
                         :log-directory "/home/myself/r1"
                         :port 8080
                         :service-id "test-app-6789"
@@ -1127,7 +1127,7 @@
                        {:healthy? false
                         :host "10.141.141.15"
                         :id "test-app-6789.test-app-6789-abcd3-0"
-                        :k8s/container-statuses [{:name "waiter-app"}]
+                        :k8s/container-statuses [{:name waiter-primary-container-name}]
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-6789"
@@ -1137,7 +1137,7 @@
                         :healthy? false
                         :host "10.141.141.16"
                         :id "test-app-6789.test-app-6789-abcd4-0"
-                        :k8s/container-statuses [{:name "waiter-app"}
+                        :k8s/container-statuses [{:name waiter-primary-container-name}
                                                  {:name "waiter-setup" :ready false}]
                         :log-directory "/home/myself/r0"
                         :port 8080
@@ -1149,7 +1149,7 @@
                         :healthy? false
                         :host "10.141.141.14"
                         :id "test-app-6789.test-app-6789-abcd2-0"
-                        :k8s/container-statuses [{:name "waiter-app"}]
+                        :k8s/container-statuses [{:name waiter-primary-container-name}]
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-6789"
@@ -1876,7 +1876,7 @@
                          :nodeName "node-1.k8s.com"}
                   :status {:podIP "10.141.141.11"
                            :startTime "2014-09-13T00:24:46Z"
-                           :containerStatuses [{:name "waiter-app"
+                           :containerStatuses [{:name waiter-primary-container-name
                                                 :ready true
                                                 :restartCount 0}]}}
                  {:metadata {:name "test-app-1234-abcd2"
@@ -1890,7 +1890,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.12"
                            :startTime "2014-09-13T00:24:47Z"
-                           :containerStatuses [{:name "waiter-app"
+                           :containerStatuses [{:name waiter-primary-container-name
                                                 :restartCount 0}]}}]}
 
         pods-watch-updates
@@ -1907,7 +1907,7 @@
                    :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                    :status {:podIP "10.141.141.12"
                             :startTime "2014-09-13T00:24:47Z"
-                            :containerStatuses [{:name "waiter-app"
+                            :containerStatuses [{:name waiter-primary-container-name
                                                  :ready true
                                                  :restartCount 0}]}}}
          {:type "ADDED"
@@ -1923,7 +1923,7 @@
                    :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                    :status {:podIP "10.141.141.13"
                             :startTime "2014-09-13T00:24:48Z"
-                            :containerStatuses [{:name "waiter-app"
+                            :containerStatuses [{:name waiter-primary-container-name
                                                  :restartCount 0}]}}}
          {:type "DELETED"
           :object {:metadata {:name "test-app-1234-abcd1"
@@ -2129,7 +2129,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.11"
                            :startTime "2014-09-13T00:24:46Z"
-                           :containerStatuses [{:name "waiter-app"
+                           :containerStatuses [{:name waiter-primary-container-name
                                                 :ready true
                                                 :restartCount 0}]}}
                  {:metadata {:name "test-app-1234-abcd2"
@@ -2143,7 +2143,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.12"
                            :startTime "2014-09-13T00:24:47Z"
-                           :containerStatuses [{:name "waiter-app"
+                           :containerStatuses [{:name waiter-primary-container-name
                                                 :restartCount 0}]}}]}
 
         pods-response'
@@ -2161,7 +2161,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.11"
                            :startTime "2014-09-13T00:24:46Z"
-                           :containerStatuses [{:name "waiter-app"
+                           :containerStatuses [{:name waiter-primary-container-name
                                                 :ready true
                                                 :restartCount 0}]}}
                  {:metadata {:name "test-app-1234-abcd2"
@@ -2175,7 +2175,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.12"
                            :startTime "2014-09-13T00:24:47Z"
-                           :containerStatuses [{:name "waiter-app"
+                           :containerStatuses [{:name waiter-primary-container-name
                                                 :ready true
                                                 :restartCount 0}]}}
                  {:metadata {:name "test-app-1234-abcd3"
@@ -2190,7 +2190,7 @@
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                   :status {:podIP "10.141.141.13"
                            :startTime "2014-09-13T00:24:48Z"
-                           :containerStatuses [{:name "waiter-app"
+                           :containerStatuses [{:name waiter-primary-container-name
                                                 :restartCount 0}]}}]}
 
         pods-watch-updates
@@ -2206,7 +2206,7 @@
                    :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                    :status {:podIP "10.141.141.12"
                             :startTime "2014-09-13T00:24:47Z"
-                            :containerStatuses [{:name "waiter-app"
+                            :containerStatuses [{:name waiter-primary-container-name
                                                  :ready true
                                                  :restartCount 0}]}}}
          {:type "ADDED"
@@ -2221,7 +2221,7 @@
                    :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
                    :status {:podIP "10.141.141.13"
                             :startTime "2014-09-13T00:24:48Z"
-                            :containerStatuses [{:name "waiter-app"
+                            :containerStatuses [{:name waiter-primary-container-name
                                                  :restartCount 0}]}}}
          {:type "DELETED"
           :object {:metadata {:name "test-app-1234-abcd1"
@@ -2456,7 +2456,7 @@
              :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
              :status {:podIP "10.141.141.11"
                       :startTime pod-start-time-k8s-str
-                      :containerStatuses [{:name service-id
+                      :containerStatuses [{:name waiter-primary-container-name
                                            :ready true
                                            :restartCount 9}]}}
         instance-map {:exit-code nil
@@ -2473,7 +2473,7 @@
                       :started-at (timestamp-str->datetime pod-start-time-k8s-str)
                       :k8s/api-server-url api-server-url
                       :k8s/app-name service-id
-                      :k8s/container-statuses [{:name service-id :ready true}]
+                      :k8s/container-statuses [{:name waiter-primary-container-name :ready true}]
                       :k8s/namespace "myself"
                       :k8s/pod-name "test-app-1234-abcd1"
                       :k8s/revision-timestamp revision-timestamp-1
