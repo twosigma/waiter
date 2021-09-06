@@ -32,7 +32,8 @@
                         :environment "env"
                         :cluster "cluster"
                         :server "server"
-                        :publish-interval-ms 0}
+                        :publish-interval-ms 0
+                        :refresh-interval-ms 0}
                        (apply hash-map opts)))
   (statsd/await-agents))
 
@@ -64,6 +65,34 @@
       (teardown-setup)
       (is (thrown? UnsupportedOperationException (statsd/setup {})))
       (teardown))))
+
+(deftest test-refresh-host-ip
+  (let [host-name "statsd.test.com"]
+    (doseq [{:keys [expected-value initial-value resolve-result test-name]}
+            [{:expected-value "127.0.0.1"
+              :initial-value "127.0.0.1"
+              :resolve-result nil
+              :test-name "Host IP unchanged when IP not resolved"}
+             {:expected-value "127.0.0.1"
+              :initial-value "127.0.0.1"
+              :resolve-result (Exception. "Throw from test")
+              :test-name "Host IP unchanged when IP resolution throws error"}
+             {:expected-value "127.0.0.2"
+              :initial-value "127.0.0.1"
+              :resolve-result "127.0.0.2"
+              :test-name "Host IP updates when IP resolution is successful"}]]
+      (testing test-name
+        (with-redefs [statsd/resolve-ip (fn [in-host-name]
+                                          (is (= host-name in-host-name))
+                                          initial-value)]
+          (let [init-result (statsd/refresh-host-ip host-name)]
+            (is (= {:host initial-value} init-result))))
+        (with-redefs [statsd/resolve-ip (fn [in-host-name]
+                                          (is (= host-name in-host-name))
+                                          (cond-> resolve-result
+                                            (instance? Exception resolve-result) (throw)))]
+          (let [actual-result (statsd/refresh-host-ip host-name)]
+            (is (= {:host expected-value} actual-result))))))))
 
 (deftest test-start-scheduler-metrics-publisher
   (testing "Scheduler metrics publishing loop"
