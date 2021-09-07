@@ -31,6 +31,11 @@
   [s]
   (str/replace s #"[^a-zA-Z\d\-_]" "_"))
 
+(defn resolve-ip
+  "Determines the IP address of a host, given the host's name."
+  [host-address]
+  (InetAddress/getByName host-address))
+
 (let [config (atom nil)
       socket-agent (agent nil)
       environment (atom nil)
@@ -43,9 +48,21 @@
     "Initializes the Statsd socket agent and the config map"
     [host port & opts]
     (send socket-agent #(or % (DatagramSocket.)))
-    (swap! config #(or % (merge {:host (InetAddress/getByName host)
+    (swap! config #(or % (merge {:host (resolve-ip host)
                                  :port (if (integer? port) port (Integer/parseInt port))}
                                 (apply hash-map opts)))))
+
+  (defn refresh-host-ip
+    "Attempts to refresh the host IP in the config atom.
+     Fails silently, with a warning log, if there is an error resolving the IP.
+     Returns the value of the config atom at the end of the operation."
+    [host]
+    (try
+      (when-let [host-ip (resolve-ip host)]
+        (swap! config assoc :host host-ip))
+      (catch Throwable e
+        (log/warn e "Error resolving IP for host" host)))
+    @config)
 
   (defn send-packet
     "Sends a single UDP packet with the payload returned by
@@ -156,6 +173,7 @@
             config-cluster (:cluster config-map)
             config-server (:server config-map)
             config-publish-interval-ms (:publish-interval-ms config-map)
+            config-refresh-interval-ms (get config-map :refresh-interval-ms 600000)
             config-histogram-max-size (:histogram-max-size config-map)]
         (when (not-every? nil? [@config @socket-agent @environment @cluster])
           (throw (UnsupportedOperationException. "Statsd has already been setup")))
@@ -169,7 +187,10 @@
             (reset! histogram-max-size config-histogram-max-size))
           (when (pos? config-publish-interval-ms)
             (du/start-timer-task (t/millis config-publish-interval-ms) trigger-publish
-                                 :delay-ms config-publish-interval-ms)))))
+                                 :delay-ms config-publish-interval-ms))
+          (when (pos? config-refresh-interval-ms)
+            (du/start-timer-task (t/millis config-refresh-interval-ms) #(refresh-host-ip host)
+                                 :delay-ms config-refresh-interval-ms)))))
 
     (defn add-value
       "Given the current map of [metric-group metric metric-type] -> value(s), adds the value to the map
