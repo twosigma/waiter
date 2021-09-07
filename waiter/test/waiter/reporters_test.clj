@@ -114,7 +114,8 @@ services.service-id.counters.fee.fie
                      (getFailures [_] 0)
                      (isConnected [_] true)
                      (send [_ name value timestamp] (swap! actual-values assoc name value "timestamp" timestamp)))
-          codahale-reporter (make-graphite-reporter 0 #".*" "prefix" graphite)]
+          retrieve-graphite-instance (constantly graphite)
+          codahale-reporter (make-graphite-reporter 0 #".*" "prefix" retrieve-graphite-instance)]
       (is (satisfies? CodahaleReporter codahale-reporter))
       (with-redefs [t/now (constantly time)]
         (report codahale-reporter))
@@ -164,7 +165,8 @@ services.service-id.counters.fee.fie
                      (getFailures [_] 0)
                      (isConnected [_] true)
                      (send [_ name value timestamp] (swap! actual-values assoc name value "timestamp" timestamp)))
-          codahale-reporter (make-graphite-reporter 0 #"^.*fee.*" "prefix" graphite)]
+          retrieve-graphite-instance (constantly graphite)
+          codahale-reporter (make-graphite-reporter 0 #"^.*fee.*" "prefix" retrieve-graphite-instance)]
       (is (satisfies? CodahaleReporter codahale-reporter))
       (with-redefs [t/now (constantly time)]
         (report codahale-reporter))
@@ -191,7 +193,8 @@ services.service-id.counters.fee.fie
                      (getFailures [_] 0)
                      (isConnected [_] true)
                      (send [_ _ _ _] (throw (ex-info "test" {}))))
-          codahale-reporter (make-graphite-reporter 0 #".*" "prefix" graphite)]
+          retrieve-graphite-instance (constantly graphite)
+          codahale-reporter (make-graphite-reporter 0 #".*" "prefix" retrieve-graphite-instance)]
       (is (satisfies? CodahaleReporter codahale-reporter))
       (with-redefs [t/now (constantly time)]
         (is (thrown-with-msg? ExceptionInfo #"^test$"
