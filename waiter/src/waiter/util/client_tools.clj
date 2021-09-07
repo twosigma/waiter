@@ -1240,6 +1240,16 @@
        (is (wait-for #(seq (active-instances router-url# service-id# :cookies cookies#))
                      :interval 1 :timeout 30)))))
 
+(defmacro assert-service-healthy-on-all-routers
+  [waiter-url service-id cookies]
+  `(let [service-id# ~service-id
+         cookies# ~cookies]
+     (doseq [[_# router-url#] (routers ~waiter-url)]
+       (is (wait-for #(let [instances# (active-instances router-url# service-id# :cookies cookies#)]
+                        (log/info "instances:" instances#)
+                        (and (seq instances#) (some :healthy? instances#)))
+                     :interval 1 :timeout 30)))))
+
 (defmacro assert-service-unhealthy-on-all-routers
   [waiter-url service-id cookies]
   `(let [service-id# ~service-id

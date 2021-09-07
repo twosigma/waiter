@@ -627,11 +627,12 @@
 (deftest ^:parallel ^:integration-fast test-list-apps
   (let [current-user (retrieve-username)]
     (testing-using-waiter-url
-      (let [{:keys [cookies service-id]} (make-request-with-debug-info
-                                           {:x-waiter-name (rand-name)}
-                                           #(make-kitchen-request waiter-url %))]
+      (let [{:keys [cookies service-id] :as response}
+            (make-request-with-debug-info {:x-waiter-name (rand-name)} #(make-kitchen-request waiter-url %))]
         (with-service-cleanup
           service-id
+          (assert-response-status response http-200-ok)
+          (assert-backend-response response)
           (assert-service-on-all-routers waiter-url service-id cookies)
           ;; wait for scaling state to become available on the service endpoint
           (doseq [[_ router-url] (routers waiter-url)]
@@ -648,11 +649,13 @@
               (is (get service "scaling-state") (str service))
               (is (pos? (get-in service ["service-description" "cpus"])) service)))
 
+          (assert-service-healthy-on-all-routers waiter-url service-id cookies)
+
           (testing "with include healthy-instances parameter"
             (let [service (service waiter-url service-id {"include" "healthy-instances"})
                   healthy-instances (get-in service ["instances" "healthy-instances"])]
               (is service)
-              (is (contains? #{"Running" "Starting"} (get service "status")))
+              (is (contains? #{"Running"} (get service "status")))
               (is (seq healthy-instances) (str service))
               (doseq [instance healthy-instances]
                 (is (every? #(contains? instance %) ["host" "id" "port" "started-at"])
@@ -668,7 +671,7 @@
             (let [run-as-user-param (->> current-user reverse (drop 2) (cons "*") reverse (str/join ""))
                   service (service waiter-url service-id {"run-as-user" run-as-user-param})] ;; see my app as myself
               (is service)
-              (is (contains? #{"Running" "Starting"} (get service "status")))
+              (is (contains? #{"Running"} (get service "status")))
               (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
               (is (get-in service ["request-metrics" "outstanding"]) (str service))
               (is (get-in service ["request-metrics" "total"]) (str service))
@@ -679,7 +682,7 @@
           (testing "waiter user disabled" ;; see my app as myself
             (let [service (service waiter-url service-id {"force" "false"})]
               (is service)
-              (is (contains? #{"Running" "Starting"} (get service "status")))
+              (is (contains? #{"Running"} (get service "status")))
               (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
               (is (get-in service ["request-metrics" "outstanding"]) (str service))
               (is (get-in service ["request-metrics" "total"]) (str service))
@@ -690,7 +693,7 @@
           (testing "waiter user disabled and same user" ;; see my app as myself
             (let [service (service waiter-url service-id {"force" "false", "run-as-user" current-user})]
               (is service)
-              (is (contains? #{"Running" "Starting"} (get service "status")))
+              (is (contains? #{"Running"} (get service "status")))
               (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
               (is (get-in service ["request-metrics" "outstanding"]) (str service))
               (is (get-in service ["request-metrics" "total"]) (str service))
@@ -716,12 +719,14 @@
               (is (= (disj sd/service-parameter-keys "image" "namespace" "profile" "scheduler")
                      (set (keys (get service "effective-parameters")))))))))
 
-      (let [{:keys [cookies service-id]} (make-request-with-debug-info
-                                           {:x-waiter-name (rand-name)
-                                            :x-waiter-run-as-user current-user}
-                                           #(make-kitchen-request waiter-url %))]
+      (let [request-headers {:x-waiter-name (rand-name)
+                             :x-waiter-run-as-user current-user}
+            {:keys [cookies service-id] :as response}
+            (make-request-with-debug-info request-headers #(make-kitchen-request waiter-url %))]
         (with-service-cleanup
           service-id
+          (assert-response-status response http-200-ok)
+          (assert-backend-response response)
           (assert-service-on-all-routers waiter-url service-id cookies)
           ;; wait for scaling state to become available on the service endpoint
           (doseq [[_ router-url] (routers waiter-url)]
