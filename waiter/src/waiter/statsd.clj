@@ -59,6 +59,7 @@
     [host]
     (try
       (when-let [host-ip (resolve-ip host)]
+        (log/info host "resolved to IP" host-ip)
         (swap! config assoc :host host-ip))
       (catch Throwable e
         (log/warn e "Error resolving IP for host" host)))
@@ -186,9 +187,11 @@
           (when config-histogram-max-size
             (reset! histogram-max-size config-histogram-max-size))
           (when (pos? config-publish-interval-ms)
+            (log/info "publishing statsd metrics every" config-publish-interval-ms "ms")
             (du/start-timer-task (t/millis config-publish-interval-ms) trigger-publish
                                  :delay-ms config-publish-interval-ms))
           (when (pos? config-refresh-interval-ms)
+            (log/info "refreshing statsd host ip every" config-refresh-interval-ms "ms")
             (du/start-timer-task (t/millis config-refresh-interval-ms) #(refresh-host-ip host)
                                  :delay-ms config-refresh-interval-ms)))))
 
