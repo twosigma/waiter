@@ -326,6 +326,24 @@
   (merge existing-headers
          (retrieve-auth-headers service-id->password-fn service-id)))
 
+(defn classify-response-errors
+  "Return a corresponding error flag for this request, or nil if there was no error."
+  [{:keys [error] :as response}]
+  (cond
+    (some? error)
+    (cond
+      (instance? ConnectException error) :connect-exception
+      (instance? EOFException error) :hangup-exception
+      (instance? SocketTimeoutException error) :timeout-exception
+      (instance? TimeoutException error) :timeout-exception)
+    (utils/raven-proxy-response? response)
+    (when-let [raven-error (utils/raven-response-flags response)]
+      (cond
+        (= raven-error utils/envoy-upstream-connection-failure) :connect-exception
+        (= raven-error utils/envoy-upstream-connection-termination) :hangup-exception
+        (= raven-error utils/envoy-stream-idle-timeout) :timeout-exception
+        (= raven-error utils/envoy-upstream-request-timeout) :timeout-exception))))
+
 (defn available?
   "Async go block which returns the status code and success of a health check.
    Returns {:healthy? false} if such a connection cannot be established."
@@ -359,11 +377,7 @@
                 ([response]
                  (let [{:keys [error status] :as response} response
                        response-time-ns (System/nanoTime)
-                       error-flag (cond
-                                    (instance? ConnectException error) :connect-exception
-                                    (instance? EOFException error) :hangup-exception
-                                    (instance? SocketTimeoutException error) :timeout-exception
-                                    (instance? TimeoutException error) :timeout-exception)]
+                       error-flag (classify-response-errors response)]
                    (log-health-check-issues service-instance instance-health-check-url response)
                    (let [proto-version (hu/backend-protocol->http-version protocol)
                          proto-scheme (hu/backend-proto->scheme protocol)

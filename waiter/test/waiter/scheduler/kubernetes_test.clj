@@ -167,7 +167,7 @@
           (is (= {:app test-service-id
                   :waiter/cluster dummy-scheduler-default-namespace
                   :waiter/fileserver (if fileserver-enabled "enabled" "disabled")
-                  :waiter/proxy-sidecar "disabled"
+                  :waiter/raven "disabled"
                   :waiter/service-hash test-service-id
                   :waiter/user run-as-user}
                  (get-in replicaset-spec [:metadata :labels])))
@@ -262,24 +262,34 @@
   (is (= "jack" (determine-namespace "john" "jack" nil {"run-as-user" "jill"})))
   (is (= "jeff" (determine-namespace "john" "jack" "jeff" {"run-as-user" "jill"}))))
 
-(deftest test-replicaset-spec-with-reverse-proxy
+(defn- get-container-env-map
+  "Get an var->value map from a container's environment."
+  [{:keys [env]}]
+  (->> env (mapv (juxt :name :value)) (into {})))
+
+(deftest test-replicaset-spec-with-raven
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [service-id "proxy-test-service-id"
-          scheduler (make-dummy-scheduler [service-id] {:reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
-                                                                               :image "twosigma/waiter-envoy"
-                                                                               :predicate-fn envoy-sidecar-enabled?
-                                                                               :resources {:cpu 0.1 :mem 256}
-                                                                               :scheme "http"}})
-          service-description (assoc dummy-service-description "env" {ct/reverse-proxy-flag "yes"
+          custom-raven-flag "MY_RAVEN_FLAG"
+          scheduler (make-dummy-scheduler [service-id] {:raven-sidecar {:cmd ["/opt/waiter/raven/bin/raven-start"]
+                                                                        :env-vars {:flags [custom-raven-flag]}
+                                                                        :image "twosigma/waiter-raven"
+                                                                        :predicate-fn raven-sidecar-opt-in?
+                                                                        :resources {:cpu 0.1 :mem 256}}})
+          service-description (assoc dummy-service-description "env" {custom-raven-flag "true"
                                                                       "PORT0" "to-be-overwritten"
                                                                       "SERVICE_PORT" "to-be-overwritten"})
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description {})
           app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
+          app-env (get-container-env-map app-container)
           sidecar-container (some
-                              #(if (= waiter-envoy-sidecar-name (:name %)) %)
+                              #(if (= waiter-raven-sidecar-name (:name %)) %)
                               (get-in replicaset-spec [:spec :template :spec :containers]))
-          sidecar-env (into {} (mapv (juxt :name :value) (:env sidecar-container)))]
+          sidecar-env (get-container-env-map sidecar-container)]
+
+      (testing "raven opt-in flag recognized in service env"
+        (is (has-raven-config-in-env? app-env (:raven-sidecar scheduler))))
 
       (testing "replicaset has waiter/service-port annotation"
         (is (contains? (get-in replicaset-spec [:spec :template :metadata :annotations]) :waiter/service-port)))
@@ -295,8 +305,8 @@
                             (= "to-be-overwritten" (:value %)))
                       (:env sidecar-container))))
 
-      (testing "proxy-sidecar label is set"
-          (is (= "enabled" (get-in replicaset-spec [:metadata :labels :waiter/proxy-sidecar]))))
+      (testing "waiter/raven label is set"
+          (is (= "enabled" (get-in replicaset-spec [:metadata :labels :waiter/raven]))))
 
       (testing "service-proto, service-port and waiter port0 values and env variables are correct"
         (let [{:keys [pod-base-port]} scheduler
@@ -318,46 +328,52 @@
           (is (= port-count (-> (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/port-count])
                                 (Integer/parseInt))))))
 
-      (testing "resource requests for reverse-proxy are correct"
+      (testing "resource requests for raven container are correct"
         (let [cpu (get-in sidecar-container [:resources :requests :cpu])
               memory (get-in sidecar-container [:resources :requests :memory])]
           (is (= "0.1" cpu))
           (is (= "256Mi" memory))))
 
-      (testing "resource limits for reverse-proxy are correct"
+      (testing "resource limits for raven are correct"
         (let [memory-limit (get-in sidecar-container [:resources :limits :memory])]
           (is (= "256Mi" memory-limit))))
 
-      (testing "reverse-proxy pod container name is correct"
-        (is (= waiter-envoy-sidecar-name (:name sidecar-container))))
+      (testing "raven pod container name is correct"
+        (is (= waiter-raven-sidecar-name (:name sidecar-container))))
 
-      (testing "reverse-proxy pod container image is correct"
-        (is (= "twosigma/waiter-envoy" (:image sidecar-container)))))))
+      (testing "raven pod container image is correct"
+        (is (= "twosigma/waiter-raven" (:image sidecar-container)))))))
 
-(deftest test-replicaset-spec-with-reverse-proxy-health-check
+(deftest test-replicaset-spec-with-raven-health-check
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [service-id "proxy-health-test-service-id"
-          scheduler (make-dummy-scheduler [service-id] {:reverse-proxy {:cmd ["/opt/waiter/envoy/bin/envoy-start"]
-                                                                               :image "twosigma/waiter-envoy"
-                                                                               :predicate-fn envoy-sidecar-enabled?
-                                                                               :resources {:cpu 0.1 :mem 256}
-                                                                               :scheme "http"}})
+          scheduler (make-dummy-scheduler [service-id] {:raven-sidecar {:cmd ["/opt/waiter/raven/bin/raven-start"]
+                                                                        :env-vars {:flags [default-raven-env-flag]}
+                                                                        :image "twosigma/waiter-raven"
+                                                                        :predicate-fn raven-sidecar-opt-out?
+                                                                        :resources {:cpu 0.1 :mem 256}}})
           service-description (assoc dummy-service-description
-                                     "env" {ct/reverse-proxy-flag "yes"
-                                            "PORT0" "to-be-overwritten"
+                                     "env" {"PORT0" "to-be-overwritten"
                                             "SERVICE_PORT" "to-be-overwritten"}
                                      "health-check-port-index" 5
                                      "ports" 9)
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description {})
           app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
+          app-env (get-container-env-map app-container)
           sidecar-container (some
-                              #(if (= waiter-envoy-sidecar-name (:name %)) %)
+                              #(if (= waiter-raven-sidecar-name (:name %)) %)
                               (get-in replicaset-spec [:spec :template :spec :containers]))
-          sidecar-env (into {} (mapv (juxt :name :value) (:env sidecar-container)))]
+          sidecar-env (get-container-env-map sidecar-container)]
 
-      (testing "replicaset has waiter/proxy-sidecar=enabled label"
-        (is (= "enabled" (get-in replicaset-spec [:metadata :labels :waiter/proxy-sidecar]))))
+      (testing "raven-sidecar config has default opt-in env flag"
+        (is (= [default-raven-env-flag] (get-in scheduler [:raven-sidecar :env-vars :flags]))))
+
+      (testing "raven opt-out worked w/o flag recognized in service env"
+        (is (not (has-raven-config-in-env? app-env (:raven-sidecar scheduler)))))
+
+      (testing "replicaset has waiter/raven=enabled label"
+        (is (= "enabled" (get-in replicaset-spec [:metadata :labels :waiter/raven]))))
 
       (testing "replicaset has waiter/service-port annotation"
         (is (contains? (get-in replicaset-spec [:spec :template :metadata :annotations]) :waiter/service-port)))
@@ -400,21 +416,21 @@
           (is (= port-count (-> (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/port-count])
                                 (Integer/parseInt))))))
 
-      (testing "resource requests for reverse-proxy are correct"
+      (testing "resource requests for raven are correct"
         (let [cpu (get-in sidecar-container [:resources :requests :cpu])
               memory (get-in sidecar-container [:resources :requests :memory])]
           (is (= "0.1" cpu))
           (is (= "256Mi" memory))))
 
-      (testing "resource limits for reverse-proxy are correct"
+      (testing "resource limits for raven are correct"
         (let [memory-limit (get-in sidecar-container [:resources :limits :memory])]
           (is (= "256Mi" memory-limit))))
 
-      (testing "reverse-proxy pod container name is correct"
-        (is (= waiter-envoy-sidecar-name (:name sidecar-container))))
+      (testing "raven pod container name is correct"
+        (is (= waiter-raven-sidecar-name (:name sidecar-container))))
 
-      (testing "reverse-proxy pod container image is correct"
-        (is (= "twosigma/waiter-envoy" (:image sidecar-container)))))))
+      (testing "raven pod container image is correct"
+        (is (= "twosigma/waiter-raven" (:image sidecar-container)))))))
 
 (deftest test-replicaset-spec-liveness-and-readiness
   (let [basic-probe {:failureThreshold 1
@@ -895,7 +911,7 @@
                          :template {:metadata {:annotations {:waiter/service-id "test-app-6789"}}
                                     :spec {:containers [{:name waiter-primary-container-name}
                                                         {:name waiter-fileserver-sidecar-name}
-                                                        {:name waiter-envoy-sidecar-name}]}}}
+                                                        {:name waiter-raven-sidecar-name}]}}}
                   :status {:replicas 3
                            :readyReplicas 1
                            :availableReplicas 2
@@ -1098,7 +1114,7 @@
 
                    (scheduler/make-Service {:id "test-app-6789"
                                             :instances 3
-                                            :k8s/containers [waiter-primary-container-name waiter-fileserver-sidecar-name waiter-envoy-sidecar-name]
+                                            :k8s/containers [waiter-primary-container-name waiter-fileserver-sidecar-name waiter-raven-sidecar-name]
                                             :k8s/replicaset-creation-timestamp "2020-09-08T07:06:05.000Z"
                                             :k8s/replicaset-annotations {}
                                             :k8s/replicaset-pod-annotations {}

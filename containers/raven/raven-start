@@ -41,14 +41,14 @@ is_tls() {
 if [ "${SERVICE_PORT}" ]; then
   log "SERVICE_PORT=${SERVICE_PORT}"
 else
-  die 'SERVICE_PORT is not set. Exiting envoy-start'
+  die 'SERVICE_PORT is not set. Exiting raven-start'
 fi
 
 # check if PORT0 is present
 if [ "${PORT0}" ]; then
   log "PORT0=${PORT0}"
 else
-  die 'PORT0 is not set. Exiting envoy-start'
+  die 'PORT0 is not set. Exiting raven-start'
 fi
 
 CONFIG_YAML=/etc/envoy/envoy.yaml
