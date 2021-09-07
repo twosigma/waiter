@@ -98,6 +98,7 @@
                (s/required-key :pickled?) s/Bool
                (s/required-key :prefix) s/Str
                (s/required-key :port) schema/positive-int
+               (s/optional-key :refresh-interval-ms) schema/non-negative-int
                s/Any s/Any}
               (merge {:pickled? true} config)))
 
@@ -137,20 +138,34 @@
             (log/warn "Could not close GraphiteSender:" (.getMessage e))))
         (throw e)))))
 
+(defn refresh-graphite-instance
+  "Refreshes the Graphite instance inside the atom to pick up any updates to the host IP address."
+  [graphite-atom host port pickled?]
+  (let [socket-address (InetSocketAddress. ^String host ^int port)
+        ^GraphiteSender graphite (if pickled?
+                                   (PickledGraphite. socket-address)
+                                   (Graphite. socket-address))]
+    (log/info "graphite reporter address is" socket-address)
+    (reset! graphite-atom graphite)))
+
 (defn make-graphite-reporter
-  "Creates a GraphiteReporter for metrics"
-  ([period-ms filter-regex prefix host port pickled?]
-   (let [addr (InetSocketAddress. ^String host ^int port)
-         ^GraphiteSender graphite (if pickled?
-                                    (PickledGraphite. addr)
-                                    (Graphite. addr))]
-     (make-graphite-reporter period-ms filter-regex prefix graphite)))
-  ([period-ms filter-regex prefix ^GraphiteSender graphite]
+  "Creates a GraphiteReporter for metrics.
+   When refresh-interval-ms is positive the graphite server host is refreshed periodically to pick up any IP address changes."
+  ([period-ms filter-regex prefix host port pickled? refresh-interval-ms]
+   (let [graphite-atom (atom nil)
+         retrieve-graphite-instance (fn retrieve-graphite-instance [] (deref graphite-atom))]
+     (refresh-graphite-instance graphite-atom host port pickled?)
+     (when (pos? refresh-interval-ms)
+       (log/info "refreshing graphite host ip every" refresh-interval-ms "ms")
+       (du/start-timer-task (t/millis refresh-interval-ms) #(refresh-graphite-instance graphite-atom host port pickled?)
+                            :delay-ms refresh-interval-ms))
+     (make-graphite-reporter period-ms filter-regex prefix retrieve-graphite-instance)))
+  ([period-ms filter-regex prefix retrieve-graphite-instance]
    (let [state-atom (atom {:run-state :created})
          update-state (fn [event last-report-successful?]
                         (swap! state-atom assoc
                                event (t/now)
-                               :failed-writes-to-server (.getFailures graphite)
+                               :failed-writes-to-server (.getFailures (retrieve-graphite-instance))
                                :last-report-successful last-report-successful?))
          try-operation (fn [operation f failure-event]
                          (try (f)
@@ -160,15 +175,15 @@
                                 (throw e))))
          graphite-wrapper (reify GraphiteSender
                             (connect [_]
-                              (try-operation "connect" #(.connect graphite) :last-connect-failed-time))
+                              (try-operation "connect" #(.connect (retrieve-graphite-instance)) :last-connect-failed-time))
                             (send [_ name value timestamp]
-                              (try-operation "send" #(.send graphite name value timestamp) :last-send-failed-time))
+                              (try-operation "send" #(.send (retrieve-graphite-instance) name value timestamp) :last-send-failed-time))
                             (flush [_]
-                              (try-operation "flush" #(.flush graphite) :last-flush-failed-time)
+                              (try-operation "flush" #(.flush (retrieve-graphite-instance)) :last-flush-failed-time)
                               (update-state :last-reporting-time true))
-                            (isConnected [_] (.isConnected graphite))
-                            (getFailures [_] (.getFailures graphite))
-                            (close [_] (.close graphite)))
+                            (isConnected [_] (.isConnected (retrieve-graphite-instance)))
+                            (getFailures [_] (.getFailures (retrieve-graphite-instance)))
+                            (close [_] (.close (retrieve-graphite-instance))))
          filter (filter-regex->metric-filter filter-regex)
          period-ms-period (t/millis period-ms)]
      (reify CodahaleReporter
@@ -185,7 +200,8 @@
 (defn graphite-reporter
   "Creates and starts a GraphiteReporter for metrics"
   [config]
-  (let [{:keys [filter-regex host period-ms pickled? port prefix]} (validate-graphite-reporter-config config)
-        codahale-reporter (make-graphite-reporter period-ms filter-regex prefix host port pickled?)]
+  (let [valid-config (validate-graphite-reporter-config config)
+        {:keys [filter-regex host period-ms pickled? port prefix refresh-interval-ms] :or {refresh-interval-ms 600000}} valid-config
+        codahale-reporter (make-graphite-reporter period-ms filter-regex prefix host port pickled? refresh-interval-ms)]
     (start codahale-reporter)
     codahale-reporter))
