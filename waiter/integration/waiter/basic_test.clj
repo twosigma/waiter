@@ -1078,12 +1078,11 @@
 
 (deftest ^:parallel ^:integration-fast test-identical-version
   (testing-using-waiter-url
-    (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")]
-      (is (= 1 (->> (routers waiter-url)
-                    vals
-                    (map #(:git-version (waiter-settings % :cookies cookies)))
-                    set
-                    count))))))
+    (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
+          router->git-version (pc/map-from-keys
+                                (fn [router-url] (:git-version (waiter-settings router-url :cookies cookies)))
+                                (vals (routers waiter-url)))]
+      (is (-> router->git-version (vals) (set) (count) (= 1)) (str router->git-version)))))
 
 (deftest ^:parallel ^:integration-fast test-cors-request-allowed
   (testing-using-waiter-url
