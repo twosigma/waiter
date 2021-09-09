@@ -332,6 +332,13 @@
             (log/error ex "error in deleting frequently restarting pod" pod-name))))
       kill-restart-threshold-exceeded-pod-thread-pool)))
 
+(defn port->key
+  "Convert port numbers to keywords for use as keys in JSON-friendly maps."
+  [port-number]
+  ;; Clojure keywords should start with a non-numeric value
+  ;; see https://clojure.org/reference/reader#_literals
+  (keyword (str "p" port-number)))
+
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
   [{:keys [api-server-url leader?-fn restart-kill-threshold] :as scheduler} pod]
@@ -347,7 +354,7 @@
           pod-annotations (get-in pod [:metadata :annotations])
           port0 (or (some-> pod-annotations :waiter/service-port (Integer/parseInt))
                     (get-in pod [:spec :containers 0 :ports 0 :containerPort]))
-          port->protocol (some-> pod-annotations :waiter/port-onto-protocol utils/try-parse-json)
+          port->protocol (some-> pod-annotations :waiter/port-onto-protocol (utils/try-parse-json keyword))
           raven-mode (get pod-labels :waiter/raven "disabled")
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
@@ -861,7 +868,13 @@
 
   (request-protocol [_ {:keys [k8s/port->protocol port] :as instance} port-index service-description]
     (if port->protocol
-      (get port->protocol (str (+ port port-index)))
+      (let [result-proto (get port->protocol (port->key (+ port port-index)))]
+        (when-not result-proto
+          (log/error "protocol not found for instance"
+                     {:instance instance
+                      :port-index port-index
+                      :service-description service-description}))
+        result-proto)
       (scheduler/retrieve-protocol port-index service-description)))
 
   (use-authenticated-health-checks? [this service-id]
@@ -1185,9 +1198,12 @@
                                     actual-backend-proto
                                     (cond-> (or health-check-proto backend-proto)
                                       raven-force-downstream-tls? proto->tls-proto))
-        port->protocol (cond-> {service-port actual-backend-proto}
+        ;; NOTE: the work-stealing handler passes instance objects around as JSON,
+        ;; and since the deserializer there assumes that all map keys are keywords,
+        ;; these port->protocol map keys must also be keywords.
+        port->protocol (cond-> {(port->key service-port) actual-backend-proto}
                          health-check-port
-                         (assoc health-check-port actual-health-check-proto))
+                         (assoc (port->key health-check-port) actual-health-check-proto))
         env (into [;; We set these two "MESOS_*" variables to improve interoperability.
                    ;; New clients should prefer using WAITER_SANDBOX.
                    {:name "MESOS_DIRECTORY" :value home-path}
