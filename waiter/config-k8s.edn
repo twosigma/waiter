@@ -62,9 +62,12 @@
                                  :restart-kill-threshold 8
                                  :raven-sidecar {:cmd ["/opt/waiter/raven/bin/raven-start"]
                                                  :image "twosigma/waiter-raven"
-                                                 ;; defaulting to Raven opt-in
-                                                 ;; for opt-out, use waiter.scheduler.kubernetes/raven-sidecar-opt-out?
-                                                 :predicate-fn waiter.scheduler.kubernetes/raven-sidecar-opt-in?
+                                                 :env-vars {:flags ["RAVEN_ENABLED"]
+                                                            :tls-flags ["RAVEN_FORCE_INGRESS_TLS"]}
+                                                 ;; default to Raven with strict tls (always on) in raven downstream
+                                                 ;; for opt-out (no strict tls), use waiter.scheduler.kubernetes/raven-sidecar-opt-out?
+                                                 ;; for opt-in, use waiter.scheduler.kubernetes/raven-sidecar-opt-out?
+                                                 :predicate-fn waiter.scheduler.kubernetes/raven-sidecar-strict-tls-opt-out?
                                                  :resources {:cpu 0.1 :mem 256}}
                                  :url "http://localhost:8001"}}
 

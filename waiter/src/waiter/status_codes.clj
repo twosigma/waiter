@@ -81,3 +81,11 @@
 (def ^:const grpc-14-unavailable 14)
 (def ^:const grpc-15-data-loss 15)
 (def ^:const grpc-16-unauthenticated 16)
+
+;; Envoy "%RESPONSE_FLAGS%" values returned by Raven for error diagnostics
+;; https://www.envoyproxy.io/docs/envoy/latest/configuration/observability/access_log/usage#config-access-log-format-response-flags
+(def ^:const envoy-empty-response-flags "-")
+(def ^:const envoy-stream-idle-timeout "SI")
+(def ^:const envoy-upstream-connection-failure "UF")
+(def ^:const envoy-upstream-connection-termination "UC")
+(def ^:const envoy-upstream-request-timeout "UT")
