@@ -188,7 +188,7 @@
                                             {:service-id->service-description-fn (constantly service-description)})
             replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description {})]
         (is (= {:waiter/port-count "3"
-                :waiter/port-onto-protocol "{\"8330\":\"http\",\"8332\":\"http\"}"
+                :waiter/port-onto-protocol "{\"p8330\":\"http\",\"p8332\":\"http\"}"
                 :waiter/revision-timestamp (du/date-to-str current-time)
                 :waiter/revision-version "0"
                 :waiter/service-id "test-service-id"
@@ -2517,6 +2517,7 @@
                                  :waiter/cluster "waiter"
                                  :waiter/service-hash service-id}
                         :annotations {:waiter/port-count "1"
+                                      :waiter/port-onto-protocol (utils/clj->json {:p1234 "http"})
                                       :waiter/revision-timestamp revision-timestamp-1
                                       :waiter/service-id service-id}}
              :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -2542,7 +2543,7 @@
                       :k8s/container-statuses [{:name waiter-primary-container-name :ready true}]
                       :k8s/namespace "myself"
                       :k8s/pod-name "test-app-1234-abcd1"
-                      :k8s/port->protocol nil
+                      :k8s/port->protocol {:p1234 "http"}
                       :k8s/raven "disabled"
                       :k8s/revision-timestamp revision-timestamp-1
                       :k8s/restart-count 9
