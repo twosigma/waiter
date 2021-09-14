@@ -675,8 +675,9 @@
                            :log-level :warn})))))
 
     ; Validate the cmd-type field
-    (let [cmd-type (service-description-to-use "cmd-type")]
-      (when (and (not (str/blank? cmd-type)) (not ((:valid-cmd-types args-map) cmd-type)))
+    (let [cmd-type (service-description-to-use "cmd-type")
+          {:keys [valid-cmd-types]} args-map]
+      (when (and (not (str/blank? cmd-type)) (not (contains? valid-cmd-types cmd-type)))
         (sling/throw+ {:type :service-description-error
                        :friendly-error-message (str "Command type " cmd-type " is not supported")
                        :status http-400-bad-request
@@ -870,7 +871,7 @@
     {})
 
   (validate [_ service-description args-map]
-    (->> (merge-with set/union args-map {:valid-cmd-types #{"docker" "shell"}})
+    (->> (update args-map :valid-cmd-types set/union #{"docker" "shell"})
          (validate-schema service-description max-constraints-schema profile->defaults))))
 
 (defn extract-max-constraints

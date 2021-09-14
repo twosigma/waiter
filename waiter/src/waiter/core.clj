@@ -721,29 +721,31 @@
                       _ (password-store/check-empty-passwords passwords)
                       processed-passwords (mapv #(vector :cached %) passwords)]
                   processed-passwords))
-   :profile->defaults (pc/fnk [[:settings profile-config service-description-constraints]]
-                        (pc/for-map [[profile {:keys [defaults]}] profile-config]
-                          (name profile)
-                          (let [max-constraints-schema (sd/extract-max-constraints-schema service-description-constraints)
-                                initial-profile->defaults {}]
-                            ;; validate the profile's entries
-                            (when-let [unsupported-keys (-> defaults
-                                                          keys
-                                                          set
-                                                          (set/difference sd/token-user-editable-keys)
-                                                          seq)]
-                              (throw (ex-info "Profile has unsupported entries in defaults"
-                                              {:name profile
-                                               :profile-defaults defaults
-                                               :unsupported-keys unsupported-keys})))
-                            ;; validate the profile's service parameters
-                            (sd/validate-schema defaults max-constraints-schema initial-profile->defaults
-                                                {:allow-missing-required-fields? true})
-                            ;; validate the profile's token parameters
-                            (sd/validate-user-metadata-schema
-                              (select-keys defaults sd/user-metadata-keys)
-                              (select-keys defaults sd/service-parameter-keys))
-                            defaults)))
+   ; This function is only included here for initializing the service-description-builder below.
+   ; Prefer accessing the non-starred version: profile->defaults.
+   :profile->defaults* (pc/fnk [[:settings profile-config]]
+                         (pc/for-map [[profile {:keys [defaults]}] profile-config]
+                           (name profile)
+                           defaults))
+   :profile->defaults (pc/fnk [profile->defaults* service-description-builder]
+                        (doseq [[profile defaults] (seq profile->defaults*)]
+                          ;; validate the profile's entries
+                          (when-let [unsupported-keys (-> defaults
+                                                        keys
+                                                        set
+                                                        (set/difference sd/token-user-editable-keys)
+                                                        seq)]
+                            (throw (ex-info "Profile has unsupported entries in defaults"
+                                            {:name profile
+                                             :profile-defaults defaults
+                                             :unsupported-keys unsupported-keys})))
+                          ;; validate the profile's service parameters using the service-description-builder
+                          (sd/validate service-description-builder defaults {:allow-missing-required-fields? true})
+                          ;; validate the profile's token parameters
+                          (sd/validate-user-metadata-schema
+                            (select-keys defaults sd/user-metadata-keys)
+                            (select-keys defaults sd/service-parameter-keys)))
+                        profile->defaults*)
    :query-service-maintainer-chan (pc/fnk [] (au/latest-chan)) ; TODO move to service-chan-maintainer
    :router-metrics-agent (pc/fnk [router-id] (metrics-sync/new-router-metrics-agent router-id {}))
    :router-id (pc/fnk [[:settings router-id-prefix]]
@@ -762,7 +764,7 @@
    :service-description-builder (pc/fnk [[:curator synchronize-fn]
                                          [:settings metric-group-mappings service-description-builder-config
                                           service-description-constraints service-description-defaults]
-                                         custom-components kv-store kv-store-factory leader?-fn profile->defaults]
+                                         custom-components kv-store kv-store-factory leader?-fn profile->defaults*]
                                   (when-let [unknown-keys (-> service-description-constraints
                                                             keys
                                                             set
@@ -777,7 +779,7 @@
                                                  :kv-store-factory kv-store-factory
                                                  :leader?-fn leader?-fn
                                                  :metric-group-mappings metric-group-mappings
-                                                 :profile->defaults profile->defaults
+                                                 :profile->defaults profile->defaults*
                                                  :service-description-defaults service-description-defaults
                                                  :synchronize-fn synchronize-fn}]
                                     (utils/create-component service-description-builder-config :context context)))
