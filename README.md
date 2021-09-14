@@ -36,6 +36,7 @@ The quickest way to get Mesos, Marathon, and Waiter running locally is with [doc
 
 Waiter can also be run without Mesos and Marathon, using the "shell scheduler". Note that this scheduler should only be used for testing purposes, not in production.
 
+1. Ensure `setsid` is installed on your system and on your path
 1. Clone down this repo
 1. `cd waiter`
 1. Run `bin/run-using-shell-scheduler.sh` to start Waiter
