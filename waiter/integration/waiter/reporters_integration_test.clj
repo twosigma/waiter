@@ -30,8 +30,10 @@
   [router-url cookies]
   (let [state (get-graphite-reporter-state router-url cookies)
         {:strs [last-connect-failed-time last-flush-failed-time last-reporting-time last-send-failed-time]} state
-        last-event-time (reduce utils/nil-safe-max [last-connect-failed-time last-flush-failed-time last-reporting-time last-send-failed-time])]
-    (some-> last-event-time du/str-to-date .getMillis)))
+        last-event-time (->> [last-connect-failed-time last-flush-failed-time last-reporting-time last-send-failed-time]
+                             (map #(some-> % du/str-to-date .getMillis))
+                             (reduce utils/nil-safe-max))]
+    last-event-time))
 
 (defn- wait-for-period
   [period-ms fun]
