@@ -17,7 +17,8 @@
   (:require [clojure.test :refer :all]
             [schema.core :as s]
             [waiter.settings :refer :all]
-            [waiter.util.utils :as utils]))
+            [waiter.util.utils :as utils]
+            [waiter.util.date-utils :as du]))
 
 (deftest test-load-missing-edn-file
   (let [exit-called-atom (atom false)]
@@ -44,7 +45,9 @@
                                  :bar2 2
                                  :bar3 [3]
                                  :bar4 {:key 4}
-                                 :common "from-bar"}})]
+                                 :common "from-bar"
+                                 :start-time (du/str-to-date "2021-09-15T01:02:03.456Z")
+                                 :start-time-nil nil}})]
     (doseq [{:keys [name input expected]} test-cases]
       (testing (str "Test " name)
         (is (= expected (load-settings-file input)))))))

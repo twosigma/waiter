@@ -21,6 +21,7 @@
             [clojure.walk :as walk]
             [schema.core :as s]
             [waiter.schema :as schema]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils]))
 
 (def settings-schema
@@ -229,11 +230,12 @@
     (if (.exists config-file)
       (do
         (log/info "reading settings from file:" config-file-path)
-        (let [edn-readers {:readers {'config/regex (fn [expr] (re-pattern expr))
+        (let [edn-readers {:readers {'config/date #(du/str-to-date-safe %)
                                      'config/env #(env % config-file-path)
                                      'config/env-default (fn [[var-name default]]
                                                            (or (System/getenv var-name) default))
-                                     'config/env-int #(Integer/parseInt (env % config-file-path))}}
+                                     'config/env-int #(Integer/parseInt (env % config-file-path))
+                                     'config/regex (fn [expr] (re-pattern expr))}}
               settings (edn/read-string edn-readers (slurp config-file-path))]
           (log/info "configured settings:\n" (with-out-str (clojure.pprint/pprint settings)))
           settings))
