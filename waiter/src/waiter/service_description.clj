@@ -819,10 +819,11 @@
   [token->token-hash token->token-parameters source-tokens]
   ;; safe assumption mark a service stale when every token used to access it is stale
   (let [sanitized-tokens (remove-service-entry-tokens source-tokens)
-        stale? (and (not (empty? sanitized-tokens)) ;; ensures boolean value
-                    (every? (fn [{:keys [token version]}]
-                              (not= (token->token-hash token) version))
-                            sanitized-tokens))]
+        stale? (and (not (empty? source-tokens)) ;; ensures boolean value
+                    (or (empty? sanitized-tokens)
+                        (every? (fn [{:keys [token version]}]
+                                  (not= (token->token-hash token) version))
+                                sanitized-tokens)))]
     (cond-> {:stale? stale?}
       stale? (assoc :update-epoch-time
                     (->> sanitized-tokens

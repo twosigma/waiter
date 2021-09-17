@@ -2629,10 +2629,10 @@
           token->token-hash #(str "v" (get-in token->token-parameters [% "last-update-time"]))
           run-retrieve-token-stale-info (partial retrieve-token-stale-info token->token-hash token->token-parameters)]
 
-      (testing "no source tokens"
+      (testing "direct service-id access token"
         (is (= {:stale? false} (run-retrieve-token-stale-info [])))
         (let [source-tokens [{:token "^SERVICE-ID#s4" :version "v100"}]]
-          (is (= {:stale? false} (run-retrieve-token-stale-info source-tokens)))))
+          (is (= {:stale? true :update-epoch-time nil} (run-retrieve-token-stale-info source-tokens)))))
 
       (testing "source tokens active"
         (let [source-tokens [{:token "t1" :version "v90"}]]
