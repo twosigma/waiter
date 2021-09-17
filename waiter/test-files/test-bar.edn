@@ -17,4 +17,6 @@
  :bar2 2
  :bar3 [3]
  :bar4 {:key 4}
- :common "from-bar"}
+ :common "from-bar"
+ :start-time #config/date "2021-09-15T01:02:03.456Z"
+ :start-time-nil #config/date nil}
