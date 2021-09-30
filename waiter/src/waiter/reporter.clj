@@ -168,16 +168,23 @@
                                :failed-writes-to-server (.getFailures (retrieve-graphite-instance))
                                :last-report-successful last-report-successful?))
          try-operation (fn [operation f failure-event]
-                         (try (f)
-                              (catch Exception e
-                                (log/warn "GraphiteSender failed to" operation "with error:" (.getMessage e))
-                                (update-state failure-event false)
-                                (throw e))))
+                         (try
+                           (f)
+                           (catch Exception e
+                             (log/warn "GraphiteSender failed to" operation "with error:" (.getMessage e))
+                             (update-state failure-event false)
+                             (throw e))))
          graphite-wrapper (reify GraphiteSender
                             (connect [_]
                               (try-operation "connect" #(.connect (retrieve-graphite-instance)) :last-connect-failed-time))
                             (send [_ name value timestamp]
-                              (try-operation "send" #(.send (retrieve-graphite-instance) name value timestamp) :last-send-failed-time))
+                              (try-operation "send"
+                                             #(do
+                                                (when (or (nil? name) (nil? value) (nil? timestamp))
+                                                  (log/warn "sending metric with nil content"
+                                                            {:name name :timestamp timestamp :value value}))
+                                                (.send (retrieve-graphite-instance) name value timestamp))
+                                             :last-send-failed-time))
                             (flush [_]
                               (try-operation "flush" #(.flush (retrieve-graphite-instance)) :last-flush-failed-time)
                               (update-state :last-reporting-time true))
