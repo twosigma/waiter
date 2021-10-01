@@ -290,7 +290,8 @@
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (let [current-user (retrieve-username)
-            default-namespace (-> waiter-url get-kubernetes-scheduler-settings :replicaset-spec-builder :default-namespace)
+            configured-namespace (-> waiter-url get-kubernetes-scheduler-settings :replicaset-spec-builder :default-namespace)
+            default-namespace (if (= "*" configured-namespace) current-user configured-namespace)
             star-user-header {:x-waiter-run-as-user "*"}
             current-user-header {:x-waiter-run-as-user current-user}
             not-current-user "not-current-user"]
