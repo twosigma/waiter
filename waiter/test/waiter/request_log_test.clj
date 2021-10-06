@@ -76,7 +76,8 @@
                             "content-type" "application/xml"
                             "grpc-status" "13"
                             "location" "/foo/bar"
-                            "server" "foo-bar"}
+                            "server" "foo-bar"
+                            "x-raven-response-flags" "-"}
                   :instance {:host "instance-host"
                              :id "instance-id"
                              :k8s/node-name "test-node-name"
@@ -111,6 +112,7 @@
             :oidc-mode "oidc-mode"
             :oidc-redirect-uri "oidc-redirect-uri"
             :principal "principal@DOMAIN.COM"
+            :raven-response-flags "-"
             :request-type "test-request"
             :response-content-length "40"
             :response-content-type "application/xml"
