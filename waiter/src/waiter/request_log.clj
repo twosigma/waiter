@@ -62,7 +62,7 @@
                   ;; allow non-proxy requests to provide tokens for use in the request log
                   (:waiter/token response))
         {:strs [image metric-group profile run-as-user version]} service-description
-        {:strs [content-length content-type grpc-status location server]} headers
+        {:strs [content-length content-type grpc-status location server x-raven-response-flags]} headers
         {:keys [k8s/node-name k8s/pod-name]} instance]
     (cond-> {}
       status (assoc :status status)
@@ -98,6 +98,7 @@
       location (assoc :response-location location)
       token (assoc :token token)
       (some? waiter-api-call?) (assoc :waiter-api waiter-api-call?)
+      x-raven-response-flags (assoc :raven-response-flags x-raven-response-flags)
       error-class (assoc :waiter-error-class error-class))))
 
 (defn log-request!
