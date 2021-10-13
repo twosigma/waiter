@@ -530,8 +530,8 @@
                    :operation-result "token-created"})]
             (-> (utils/clj->json-response
                   {:message (str "Successfully " creation-mode token)
-                   :service-description new-service-parameter-template
-                   :operation-result operation-result}
+                   :operation-result operation-result
+                   :service-description new-service-parameter-template}
                   :headers {"etag" (token-description->token-hash
                                      {:service-parameter-template new-service-parameter-template
                                       :token-metadata new-token-metadata})})

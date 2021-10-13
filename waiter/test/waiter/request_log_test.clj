@@ -77,8 +77,7 @@
                             "grpc-status" "13"
                             "location" "/foo/bar"
                             "server" "foo-bar"
-                            "x-raven-response-flags" "-"
-                            }
+                            "x-raven-response-flags" "-"}
                   :instance {:host "instance-host"
                              :id "instance-id"
                              :k8s/node-name "test-node-name"
