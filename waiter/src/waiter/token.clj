@@ -534,6 +534,8 @@
                   :headers {"etag" (token-description->token-hash
                                      {:service-parameter-template new-service-parameter-template
                                       :token-metadata new-token-metadata})
+
+                            ; add the result to header for differentiating between create and update operations in structured logs
                             "operation-result" operation-result})
               (assoc :waiter/token token))))))))
 
