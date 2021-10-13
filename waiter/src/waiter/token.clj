@@ -521,13 +521,17 @@
                                  :method :post
                                  :body (utils/clj->json {:token token, :owner owner}))
           (send-internal-index-event tokens-update-chan token)
-          (let [creation-mode (if (and (seq existing-token-metadata)
-                                       (not (get existing-token-metadata "deleted")))
-                                "updated "
-                                "created ")]
+          (let [{:keys [creation-mode operation-result]}
+                (if (and (seq existing-token-metadata)
+                         (not (get existing-token-metadata "deleted")))
+                  {:creation-mode "updated "
+                   :operation-result "token-updated"}
+                  {:creation-mode "created "
+                   :operation-result "token-created"})]
             (-> (utils/clj->json-response
                   {:message (str "Successfully " creation-mode token)
-                   :service-description new-service-parameter-template}
+                   :service-description new-service-parameter-template
+                   :operation-result operation-result}
                   :headers {"etag" (token-description->token-hash
                                      {:service-parameter-template new-service-parameter-template
                                       :token-metadata new-token-metadata})})

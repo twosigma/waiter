@@ -77,7 +77,8 @@
                             "grpc-status" "13"
                             "location" "/foo/bar"
                             "server" "foo-bar"
-                            "x-raven-response-flags" "-"}
+                            "x-raven-response-flags" "-"
+                            }
                   :instance {:host "instance-host"
                              :id "instance-id"
                              :k8s/node-name "test-node-name"
@@ -85,6 +86,7 @@
                              :port 123}
                   :instance-proto "instance-proto"
                   :latest-service-id "latest-service-id"
+                  :operation-result "token-created"
                   :protocol "HTTP/2.0"
                   :request-type "test-request"
                   :status http-200-ok
@@ -111,6 +113,7 @@
             :oidc-identifier "oidc-identifier"
             :oidc-mode "oidc-mode"
             :oidc-redirect-uri "oidc-redirect-uri"
+            :operation-result "token-created"
             :principal "principal@DOMAIN.COM"
             :raven-response-flags "-"
             :request-type "test-request"
