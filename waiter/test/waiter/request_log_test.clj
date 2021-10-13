@@ -76,6 +76,7 @@
                             "content-type" "application/xml"
                             "grpc-status" "13"
                             "location" "/foo/bar"
+                            "operation-result" "token-created"
                             "server" "foo-bar"
                             "x-raven-response-flags" "-"}
                   :instance {:host "instance-host"
@@ -85,7 +86,6 @@
                              :port 123}
                   :instance-proto "instance-proto"
                   :latest-service-id "latest-service-id"
-                  :operation-result "token-created"
                   :protocol "HTTP/2.0"
                   :request-type "test-request"
                   :status http-200-ok
