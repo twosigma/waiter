@@ -57,7 +57,6 @@
            get-instance-latency-ns handle-request-latency-ns headers instance instance-proto latest-service-id
            protocol request-type status waiter-api-call? waiter/oidc-identifier waiter/oidc-mode waiter/oidc-redirect-uri]
     :as response}]
-  (println response)
   (let [{:keys [service-id service-description source-tokens]} descriptor
         token (or (some->> source-tokens (map #(get % "token")) seq (str/join ","))
                   ;; allow non-proxy requests to provide tokens for use in the request log
