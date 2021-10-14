@@ -62,7 +62,7 @@
                   ;; allow non-proxy requests to provide tokens for use in the request log
                   (:waiter/token response))
         {:strs [image metric-group profile run-as-user version]} service-description
-        {:strs [content-length content-type grpc-status location operation-result server x-raven-response-flags]} headers
+        {:strs [content-length content-type grpc-status location server x-raven-response-flags x-waiter-operation-result]} headers
         {:keys [k8s/node-name k8s/pod-name]} instance]
     (cond-> {}
       status (assoc :status status)
@@ -87,7 +87,7 @@
       oidc-identifier (assoc :oidc-identifier oidc-identifier)
       oidc-mode (assoc :oidc-mode oidc-mode)
       oidc-redirect-uri (assoc :oidc-redirect-uri oidc-redirect-uri)
-      operation-result (assoc :operation-result operation-result)
+      x-waiter-operation-result (assoc :operation-result x-waiter-operation-result)
       node-name (assoc :k8s-node-name node-name)
       pod-name (assoc :k8s-pod-name pod-name)
       principal (assoc :principal principal)

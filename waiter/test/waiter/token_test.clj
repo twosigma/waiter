@@ -291,6 +291,7 @@
               (is (str/includes? body "\"hard-delete\":true"))
               (is (str/includes? body "\"success\":true"))
               (is (get headers "etag"))
+              (is (= (get headers "x-waiter-operation-result") "token-deleted"))
               (is (nil? (kv/fetch kv-store token)) "Entry not deleted from kv-store!"))
             (finally
               (kv/delete kv-store token)))))
@@ -362,6 +363,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (= (get headers "etag") (sd/token-data->token-hash (kv/fetch kv-store token))))
+          (is (= (get headers "x-waiter-operation-result") "token-created"))
           (is (str/includes? body (str "Successfully created " token)))
           (is (= (select-keys service-description-1 sd/token-data-keys)
                  (sd/token->service-parameter-template kv-store token)))
@@ -401,7 +403,7 @@
 
       (testing "post:new-service-description-different-owner"
         (let [token (str token "-tu")
-              {:keys [body status]}
+              {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames (public-entitlement-manager) make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
@@ -410,6 +412,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully created " token)))
+          (is (= (get headers "x-waiter-operation-result") "token-created"))
           (is (= (select-keys service-description-1 sd/token-data-keys)
                  (sd/token->service-parameter-template kv-store token)))
           (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
@@ -456,7 +459,7 @@
 
       (testing "post:update-service-description:with-changes"
         (let [existing-service-description (kv/fetch kv-store token :refresh true)
-              {:keys [body status]}
+              {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
@@ -465,6 +468,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully updated " token)))
+          (is (= (get headers "x-waiter-operation-result") "token-updated"))
           (is (= (select-keys service-description-2 sd/token-data-keys)
                  (sd/token->service-parameter-template kv-store token)))
           (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
@@ -484,7 +488,7 @@
                                              (dissoc "token")
                                              (assoc "owner" auth-user)))
               existing-service-parameter-template (kv/fetch kv-store token :refresh true)
-              {:keys [body status]}
+              {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
@@ -493,6 +497,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body (str "No changes detected for " token)))
+          (is (= (get headers "x-waiter-operation-result") "token-no-op"))
           (is (= (-> existing-service-parameter-template
                      (dissoc "owner")
                      (select-keys sd/token-data-keys))
@@ -510,7 +515,7 @@
                                              (assoc "owner" (str auth-user "-a"))
                                              (dissoc "token")))
               existing-service-parameter-template (kv/fetch kv-store token :refresh true)
-              {:keys [body status]}
+              {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames (public-entitlement-manager) make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
@@ -519,6 +524,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully updated " token)))
+          (is (= (get headers "x-waiter-operation-result") "token-updated"))
           (is (= (-> (dissoc existing-service-parameter-template "owner")
                      (select-keys sd/token-data-keys))
                  (sd/token->service-parameter-template kv-store token)))
@@ -536,7 +542,7 @@
 
       (testing "post:update-service-description-change-owner"
         (let [existing-service-description (kv/fetch kv-store token :refresh true)
-              {:keys [body status]}
+              {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames (public-entitlement-manager) make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
@@ -545,6 +551,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully updated " token)))
+          (is (= (get headers "x-waiter-operation-result") "token-updated"))
           (is (= (select-keys service-description-2 sd/token-data-keys)
                  (sd/token->service-parameter-template kv-store token)))
           (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
@@ -571,6 +578,7 @@
           (is (= http-200-ok status))
           (is (= "application/json" (get headers "content-type")))
           (is (str/includes? body (str "No changes detected for " token)))
+          (is (= (get headers "x-waiter-operation-result") "token-no-op"))
           (is (= (select-keys service-description-2 sd/token-data-keys)
                  (sd/token->service-parameter-template kv-store token)))
           (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
@@ -662,7 +670,7 @@
               kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
                                     {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1" :token token})
-              {:keys [body status]}
+              {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
@@ -671,6 +679,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully created " token)))
+          (is (= (get headers "x-waiter-operation-result") "token-created"))
           (is (= (-> service-description
                      (dissoc "token")
                      (assoc "cluster" (str token-root "-cluster")
@@ -685,7 +694,7 @@
               kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
                                     {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*" :token token})
-              {:keys [body status]}
+              {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
@@ -694,6 +703,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully created " token)))
+          (is (= (get headers "x-waiter-operation-result") "token-created"))
           (is (= (-> service-description
                      (dissoc "token")
                      (assoc "cluster" (str token-root "-cluster")
@@ -709,7 +719,7 @@
               service-description (walk/stringify-keys
                                     {:allowed-params ["VAR_1" "VAR_2" "VAR_3"]
                                      :cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*" :token token})
-              {:keys [body status]}
+              {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
@@ -718,6 +728,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully created " token)))
+          (is (= (get headers "x-waiter-operation-result") "token-created"))
           (is (= (-> service-description (dissoc "token") sd/transform-allowed-params-token-entry)
                  (-> body json/read-str (get "service-description") sd/transform-allowed-params-token-entry)))
           (is (= (-> service-description
@@ -745,6 +756,7 @@
           (is (= http-200-ok status))
           (is (= (get headers "etag") (sd/token-data->token-hash (kv/fetch kv-store token))))
           (is (str/includes? body (str "Successfully created " token)))
+          (is (= (get headers "x-waiter-operation-result") "token-created"))
           (is (= (select-keys service-description-1 sd/token-data-keys)
                  (sd/token->service-parameter-template kv-store token)))
           (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
@@ -766,7 +778,7 @@
                                    :fallback-period-secs 120
                                    :token token})]
         (testing "post:new-user-metadata:fallback-period-secs"
-          (let [{:keys [body status]}
+          (let [{:keys [body headers status]}
                 (run-handle-token-request
                   kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                   {:authorization/user auth-user
@@ -775,6 +787,7 @@
                    :request-method :post})]
             (is (= http-200-ok status))
             (is (str/includes? body (str "Successfully created " token)))
+            (is (= (get headers "x-waiter-operation-result") "token-created"))
             (is (= (-> service-description (select-keys sd/service-parameter-keys) sd/transform-allowed-params-token-entry)
                    (-> body json/read-str (get "service-description") sd/transform-allowed-params-token-entry)))
             (is (= (-> service-description
@@ -818,7 +831,7 @@
               service-description-2 (-> service-description-1
                                         (assoc "fallback-period-secs" 120)
                                         (dissoc "last-update-time" "owner"))
-              {:keys [body status]}
+              {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
@@ -827,6 +840,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully updated " token)))
+          (is (= (get headers "x-waiter-operation-result") "token-updated"))
           (is (= (-> service-description-2 (select-keys sd/service-parameter-keys) sd/transform-allowed-params-token-entry)
                  (-> body json/read-str (get "service-description") sd/transform-allowed-params-token-entry)))
           (is (= (-> service-description-2
@@ -850,7 +864,7 @@
                                        :token token})
               _ (kv/store kv-store token service-description-1)
               service-description-2 (dissoc service-description-1 "last-update-time" "owner")
-              {:keys [body status]}
+              {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
@@ -859,6 +873,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body (str "No changes detected for " token)))
+          (is (= (get headers "x-waiter-operation-result") "token-no-op"))
           (is (= (-> service-description-2 (select-keys sd/service-parameter-keys) sd/transform-allowed-params-token-entry)
                  (-> body json/read-str (get "service-description") sd/transform-allowed-params-token-entry)))
           (is (= service-description-1 (kv/fetch kv-store token)))))
@@ -870,7 +885,7 @@
                                      :permitted-user "tu2" :token token})
               existing-service-description (assoc service-description "cpus" 2 "owner" "tu1" "run-as-user" "tu0")
               _ (kv/store kv-store token existing-service-description)
-              {:keys [body status]}
+              {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
@@ -879,6 +894,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body "Successfully updated test-token"))
+          (is (= (get headers "x-waiter-operation-result") "token-updated"))
           (is (= (-> service-description
                      (dissoc "token")
                      (assoc "cluster" (str token-root "-cluster")
@@ -896,7 +912,7 @@
                                      :permitted-user "tu2" :token token})
               existing-service-description (assoc service-description "cpus" 100 "owner" "tu1" "root" "foo")
               _ (kv/store kv-store token existing-service-description)
-              {:keys [body status]}
+              {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
@@ -905,6 +921,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body "Successfully updated test-token"))
+          (is (= (get headers "x-waiter-operation-result") "token-updated"))
           (is (= (-> service-description
                      (dissoc "token")
                      (assoc "cluster" (str token-root "-cluster")
@@ -925,7 +942,7 @@
               service-description (walk/stringify-keys
                                     {:cmd "tc1" :cpus 1 :mem 200 :permitted-user "user1" :run-as-user "user1" :version "a1b2c3"
                                      :owner "user2" :root "foo-bar" :token token})
-              {:keys [body status]}
+              {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user test-user
@@ -935,6 +952,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body "Successfully created test-token"))
+          (is (= (get headers "x-waiter-operation-result") "token-created"))
           (is (= (-> service-description
                      (dissoc "token")
                      (assoc "cluster" (str token-root "-cluster")
@@ -954,7 +972,7 @@
               service-description (walk/stringify-keys
                                     {:cmd "tc1" :cpus 1 :mem 200 :permitted-user "user1" :run-as-user "user1" :version "a1b2c3"
                                      :owner "user2" :token token})
-              {:keys [body status]}
+              {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user test-user
@@ -964,6 +982,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body "Successfully created test-token"))
+          (is (= (get headers "x-waiter-operation-result") "token-created"))
           (is (= (-> service-description
                      (dissoc "token")
                      (assoc "cluster" (str token-root "-cluster")
@@ -984,7 +1003,7 @@
             (let [iteration (inc n)
                   existing-service-description (kv/fetch kv-store token)
                   new-service-description (assoc service-description "cpus" iteration)
-                  {:keys [body status]}
+                  {:keys [body headers status]}
                   (run-handle-token-request
                     kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                     {:authorization/user test-user
@@ -993,6 +1012,7 @@
                      :request-method :post})]
               (is (= http-200-ok status))
               (is (str/includes? body "Successfully updated test-token"))
+              (is (= (get headers "x-waiter-operation-result") "token-updated"))
               (is (= (-> service-description
                          (dissoc "token")
                          (assoc "cluster" (str token-root "-cluster")
@@ -1021,7 +1041,7 @@
               service-description (walk/stringify-keys
                                     {:cmd "tc1" :cpus 1 :mem 200 :permitted-user "user1" :run-as-user test-user
                                      :owner test-user :root "foo-bar" :token token})
-              {:keys [body status]}
+              {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user test-user
@@ -1031,6 +1051,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body "Successfully created test-token"))
+          (is (= (get headers "x-waiter-operation-result") "token-created"))
           (is (= (-> service-description
                      (dissoc "token")
                      (assoc "cluster" (str token-root "-cluster")
@@ -1074,7 +1095,7 @@
                 (let [test-token (str "token-" (utils/unique-identifier))
                       service-description (assoc base-service-description
                                             "last-update-time" 123456 "token" test-token)
-                      {:keys [body status]}
+                      {:keys [body headers status]}
                       (run-handle-token-request
                         kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                         {:authorization/user test-user
@@ -1084,6 +1105,7 @@
                          :request-method :post})]
                   (is (= http-200-ok status))
                   (is (str/includes? body "Successfully created token"))
+                  (is (= (get headers "x-waiter-operation-result") "token-created"))
                   (is (= (-> service-description
                            (dissoc "token")
                            (assoc "cluster" (str token-root "-cluster")
@@ -1098,7 +1120,7 @@
                       current-time (t/now)
                       service-description (assoc base-service-description
                                             "last-update-time" (du/date-to-str current-time) "token" test-token)
-                      {:keys [body status]}
+                      {:keys [body headers status]}
                       (run-handle-token-request
                         kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                         {:authorization/user test-user
@@ -1108,6 +1130,7 @@
                          :request-method :post})]
                   (is (= http-200-ok status))
                   (is (str/includes? body "Successfully created token"))
+                  (is (= (get headers "x-waiter-operation-result") "token-created"))
                   (is (= (-> service-description
                            (dissoc "token")
                            (assoc "cluster" (str token-root "-cluster")
@@ -1145,6 +1168,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (= (get headers "etag") (sd/token-data->token-hash (kv/fetch kv-store test-token))))
+          (is (= (get headers "x-waiter-operation-result") "token-created"))
           (is (str/includes? body (str "Successfully created " test-token)))
           (is (= (select-keys service-description-1 sd/token-data-keys)
                  (sd/token->service-parameter-template kv-store test-token)))
@@ -1163,7 +1187,7 @@
         (let [token (str token "-cors-rules")
               cors-rules [{"origin-regex" "test\\.com"
                            "methods" ["GET" "POST"]}]
-              {:keys [body status]}
+              {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames (public-entitlement-manager) make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user auth-user
@@ -1172,6 +1196,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully created " token)))
+          (is (= (get headers "x-waiter-operation-result") "token-created"))
           (is (= (select-keys service-description-1 sd/token-data-keys)
                  (sd/token->service-parameter-template kv-store token)))
           (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
@@ -1199,7 +1224,7 @@
               new-service-description (walk/stringify-keys
                                         {:cmd "cmd2" :mem 200 :permitted-user "tp2" :run-as-user "to1A" :version "v2"
                                          :editor "te1" :owner "to1" :token token})
-              {:keys [body status]}
+              {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
                 {:authorization/user "te1"
@@ -1208,6 +1233,7 @@
                  :request-method :post})]
           (is (= http-200-ok status))
           (is (str/includes? body (str "Successfully updated " token)))
+          (is (= (get headers "x-waiter-operation-result") "token-updated"))
           (is (= (select-keys new-service-description sd/service-parameter-keys)
                  (sd/token->service-parameter-template kv-store token)))
           (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]

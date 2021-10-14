@@ -76,9 +76,9 @@
                             "content-type" "application/xml"
                             "grpc-status" "13"
                             "location" "/foo/bar"
-                            "operation-result" "token-created"
                             "server" "foo-bar"
-                            "x-raven-response-flags" "-"}
+                            "x-raven-response-flags" "-"
+                            "x-waiter-operation-result" "token-created"}
                   :instance {:host "instance-host"
                              :id "instance-id"
                              :k8s/node-name "test-node-name"
