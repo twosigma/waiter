@@ -883,10 +883,11 @@
   (log/info "deleting token" token {:hard-delete hard-delete})
   (let [request-headers (cond->> headers
                                  (and hard-delete (nil? headers)) (attach-token-etag waiter-url token))
-        {response-headers :headers :as response} (make-request waiter-url "/token"
-                               :headers (assoc request-headers "host" token)
-                               :method :delete
-                               :query-params (if hard-delete {"hard-delete" true} {}))]
+        {response-headers :headers :as response}
+        (make-request waiter-url "/token"
+                      :headers (assoc request-headers "host" token)
+                      :method :delete
+                      :query-params (if hard-delete {"hard-delete" true} {}))]
     (assert-response-status response response-status)
     ; the x-waiter-operation-result header should be set if delete was successful
     (when (= response-status http-200-ok)

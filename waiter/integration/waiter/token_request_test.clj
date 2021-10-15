@@ -161,7 +161,7 @@
               {:keys [body headers] :as response} (post-token waiter-url {:fallback-period-secs 60 :token token})]
           (assert-response-status response http-200-ok)
           (is (str/includes? (str body) (str "Successfully created " token)) (str body))
-          (is (= (.valAt headers "x-waiter-operation-result") "token-created"))
+          (is (= (get headers "x-waiter-operation-result") "token-created"))
           (let [{:keys [body] :as response}  (get-token waiter-url token :cookies cookies :query-params {"token" token})]
             (assert-response-status response http-200-ok)
             (is (= {"fallback-period-secs" 60 "owner" (retrieve-username)} (json/read-str body)) (str body)))
@@ -171,7 +171,7 @@
               {:keys [body headers] :as response} (post-token waiter-url {:https-redirect true :token token})]
           (assert-response-status response http-200-ok)
           (is (str/includes? (str body) (str "Successfully created " token)) (str body))
-          (is (= (.valAt headers "x-waiter-operation-result") "token-created"))
+          (is (= (get headers "x-waiter-operation-result") "token-created"))
           (let [{:keys [body] :as response}  (get-token waiter-url token :cookies cookies :query-params {"token" token})]
             (assert-response-status response http-200-ok)
             (is (= {"https-redirect" true "owner" (retrieve-username)} (json/read-str body)) (str body)))
@@ -184,7 +184,7 @@
                                                :token token})]
           (assert-response-status response http-200-ok)
           (is (str/includes? body (str "Successfully created " token)))
-          (is (= (.valAt headers "x-waiter-operation-result") "token-created"))))
+          (is (= (get headers "x-waiter-operation-result") "token-created"))))
 
       (testing "update without etags"
         (doseq [token tokens-to-create]
@@ -193,7 +193,7 @@
                                                  :token token})]
             (assert-response-status response http-200-ok)
             (is (str/includes? (:body response) (str "Successfully updated " token)))
-            (is (= (.valAt headers "x-waiter-operation-result") "token-updated")))))
+            (is (= (get headers "x-waiter-operation-result") "token-updated")))))
 
       (testing "update with etags"
         (doseq [token tokens-to-create]
@@ -207,7 +207,7 @@
                 {:keys [headers] :as response} (post-token waiter-url token-description :headers {"if-match" (get headers "etag")})]
             (assert-response-status response http-200-ok)
             (is (str/includes? (:body response) (str "Successfully updated " token)))
-            (is (= (.valAt headers "x-waiter-operation-result") "token-updated")))))
+            (is (= (get headers "x-waiter-operation-result") "token-updated")))))
 
       (testing "update without changes"
         (doseq [token tokens-to-create]
@@ -221,7 +221,7 @@
                 {:keys [headers] :as response} (post-token waiter-url token-description :headers {"if-match" current-etag})]
             (assert-response-status response http-200-ok)
             (is (str/includes? (:body response) (str "No changes detected for " token)))
-            (is (= (.valAt headers "x-waiter-operation-result") "token-no-op"))
+            (is (= (get headers "x-waiter-operation-result") "token-no-op"))
             (is (= current-etag (get-in response [:headers "etag"]))))))
 
       (testing "token retrieval - presence of etag header"
