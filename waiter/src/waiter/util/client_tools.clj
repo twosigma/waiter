@@ -881,13 +881,17 @@
   "Deletes and token and asserts that the delete was successful."
   [waiter-url token & {:keys [hard-delete headers response-status] :or {hard-delete true response-status http-200-ok}}]
   (log/info "deleting token" token {:hard-delete hard-delete})
-  (let [headers (cond->> headers
-                  (and hard-delete (nil? headers)) (attach-token-etag waiter-url token))
-        response (make-request waiter-url "/token"
-                               :headers (assoc headers "host" token)
-                               :method :delete
-                               :query-params (if hard-delete {"hard-delete" true} {}))]
-    (assert-response-status response response-status)))
+  (let [request-headers (cond->> headers
+                                 (and hard-delete (nil? headers)) (attach-token-etag waiter-url token))
+        {response-headers :headers :as response}
+        (make-request waiter-url "/token"
+                      :headers (assoc request-headers "host" token)
+                      :method :delete
+                      :query-params (if hard-delete {"hard-delete" true} {}))]
+    (assert-response-status response response-status)
+    ; the x-waiter-operation-result header should be set if delete was successful
+    (when (= response-status http-200-ok)
+      (is (= (get response-headers "x-waiter-operation-result") "token-deleted")))))
 
 (defn wait-for
   "Invoke predicate every interval (default 10) seconds until it returns true,

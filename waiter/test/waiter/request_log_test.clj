@@ -77,7 +77,8 @@
                             "grpc-status" "13"
                             "location" "/foo/bar"
                             "server" "foo-bar"
-                            "x-raven-response-flags" "-"}
+                            "x-raven-response-flags" "-"
+                            "x-waiter-operation-result" "token-created"}
                   :instance {:host "instance-host"
                              :id "instance-id"
                              :k8s/node-name "test-node-name"
@@ -111,6 +112,7 @@
             :oidc-identifier "oidc-identifier"
             :oidc-mode "oidc-mode"
             :oidc-redirect-uri "oidc-redirect-uri"
+            :operation-result "token-created"
             :principal "principal@DOMAIN.COM"
             :raven-response-flags "-"
             :request-type "test-request"

@@ -381,7 +381,9 @@
                                    :method :post)
             (send-internal-index-event tokens-update-chan token)
             (-> {:delete token, :hard-delete hard-delete, :success true}
-              (utils/clj->json-response :headers {"etag" version-hash})
+              (utils/clj->json-response :headers {"etag" version-hash
+                                                  ; provide a "token-deleted" result header to be used by structured logging
+                                                  "x-waiter-operation-result" "token-deleted"})
               (assoc :waiter/token token)))
           (throw (ex-info (str "Token " token " does not exist")
                           {:status http-404-not-found :token token :log-level :warn}))))
@@ -500,7 +502,9 @@
         (-> (utils/clj->json-response
               {:message (str "No changes detected for " token)
                :service-description (:service-parameter-template existing-token-description)}
-              :headers {"etag" (token-description->token-hash existing-token-description)})
+              :headers {"etag" (token-description->token-hash existing-token-description)
+                        ; provide a "no-op" or no operation result header to be used by structured logging
+                        "x-waiter-operation-result" "token-no-op"})
           (assoc :waiter/token token))
         (let [token-limit (if admin-mode?
                             (do
@@ -521,16 +525,19 @@
                                  :method :post
                                  :body (utils/clj->json {:token token, :owner owner}))
           (send-internal-index-event tokens-update-chan token)
-          (let [creation-mode (if (and (seq existing-token-metadata)
-                                       (not (get existing-token-metadata "deleted")))
-                                "updated "
-                                "created ")]
+          (let [creation-mode
+                (if (and (seq existing-token-metadata)
+                         (not (get existing-token-metadata "deleted")))
+                  "updated"
+                  "created")]
             (-> (utils/clj->json-response
-                  {:message (str "Successfully " creation-mode token)
+                  {:message (str "Successfully " creation-mode " " token)
                    :service-description new-service-parameter-template}
                   :headers {"etag" (token-description->token-hash
                                      {:service-parameter-template new-service-parameter-template
-                                      :token-metadata new-token-metadata})})
+                                      :token-metadata new-token-metadata})
+                            ; add the result to header for differentiating between create and update operations in structured logs
+                            "x-waiter-operation-result" (str "token-" creation-mode)})
               (assoc :waiter/token token))))))))
 
 (defn handle-token-request
