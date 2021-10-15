@@ -2470,11 +2470,11 @@
       {"cluster" "c2" "deleted" true "last-update-time" (- last-update-time-seed 3000) "owner" "owner2"})
     (store-service-description-for-token
       synchronize-fn kv-store history-length limit-per-owner "token5"
-      {"cpus" 4 "env" {"V1" "e1"} "mem" 2048 "metadata" {"f1" "m1"} "run-as-user" "*"}
+      {"cpus" 4 "env" {"V1" "e1"} "mem" 2048 "metadata" {"f1" "m1"} "permitted-user" "*" "run-as-user" "*"}
       {"cluster" "c1" "last-update-time" (- last-update-time-seed 3000) "owner" "owner3"})
     (store-service-description-for-token
       synchronize-fn kv-store history-length limit-per-owner "token6"
-      {"cpus" 4 "idle-timeout-mins" 0 "mem" 2048 "run-as-user" "*"}
+      {"cpus" 4 "idle-timeout-mins" 0 "mem" 2048 "permitted-user" "u1" "run-as-user" "*"}
       {"cluster" "c1" "last-update-time" (- last-update-time-seed 3000) "owner" "owner3"})
     (store-service-description-for-token
       synchronize-fn kv-store history-length limit-per-owner "token7"
@@ -2804,6 +2804,42 @@
       (is (= http-200-ok status))
       (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
                {"maintenance" false "owner" "owner3" "token" "token6"}}
+             (set (json/read-str body))))
+      (is (nil? (async/poll! token-watch-channels-update-chan))))
+    (let [request {:request-method :get :query-string "permitted-user=*&owner=owner3"}
+          {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
+      (is (= http-200-ok status))
+      (is (= #{{"maintenance" false "owner" "owner3" "token" "token5"}}
+             (set (json/read-str body))))
+      (is (nil? (async/poll! token-watch-channels-update-chan))))
+    (let [request {:request-method :get :query-string "permitted-user=u1&owner=owner3"}
+          {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
+      (is (= http-200-ok status))
+      (is (= #{{"maintenance" false "owner" "owner3" "token" "token6"}}
+             (set (json/read-str body))))
+      (is (nil? (async/poll! token-watch-channels-update-chan))))
+    (let [request {:request-method :get :query-string "permitted-user=&owner=owner3"}
+          {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
+      (is (= http-200-ok status))
+      (is (= #{{"maintenance" false "owner" "owner3" "token" "token7"}
+               {"maintenance" false "owner" "owner3" "token" "token8"}
+               {"maintenance" true "owner" "owner3" "token" "token9"}}
+             (set (json/read-str body))))
+      (is (nil? (async/poll! token-watch-channels-update-chan))))
+    (let [request {:request-method :get :query-string "permitted-user=*&permitted-user=u1&owner=owner3"}
+          {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
+      (is (= http-200-ok status))
+      (is (= #{{"maintenance" false "owner" "owner3" "token" "token5"}
+               {"maintenance" false "owner" "owner3" "token" "token6"}}
+             (set (json/read-str body))))
+      (is (nil? (async/poll! token-watch-channels-update-chan))))
+    (let [request {:request-method :get :query-string "permitted-user=&permitted-user=*&owner=owner3"}
+          {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
+      (is (= http-200-ok status))
+      (is (= #{{"maintenance" false "owner" "owner3" "token" "token5"}
+               {"maintenance" false "owner" "owner3" "token" "token7"}
+               {"maintenance" false "owner" "owner3" "token" "token8"}
+               {"maintenance" true "owner" "owner3" "token" "token9"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "idle-timeout-mins=0&include=deleted"}

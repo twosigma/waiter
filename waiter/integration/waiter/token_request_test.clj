@@ -2129,3 +2129,97 @@
                         (is false (str "Unexpected service " service-id " was started!")))))
                   (finally
                     (delete-token-and-assert waiter-url token)))))))))))
+
+(deftest ^:parallel ^:integration-fast test-token-list-filtering
+  (testing-using-waiter-url
+    (let [retrieve-tokens (fn [query-params]
+                            (let [tokens-response (make-request waiter-url "/tokens" :query-params query-params)]
+                              (assert-response-status tokens-response http-200-ok)
+                              (->> tokens-response
+                                :body
+                                (try-parse-json)
+                                (walk/keywordize-keys)
+                                (map :token)
+                                (set))))
+          token-1 (rand-name)
+          description-1 {:env {"FLAG" "true"} :load-balancing "oldest" :metadata {"flag" "false"} :name "test-token-1" :permitted-user "*" :token token-1}
+          token-2 (rand-name)
+          description-2 {:env {"FLAG" "false"} :load-balancing "youngest" :metadata {"flag" "true"} :name "test-token-2" :token token-2}]
+      (testing "invalid authentication and health-check-authentication"
+        (try
+          (let [response-1 (post-token waiter-url description-1)]
+            (assert-response-status response-1 http-200-ok))
+          (try
+            (let [response-2 (post-token waiter-url description-2)]
+              (assert-response-status response-2 http-200-ok))
+
+            (testing "tokens show up without filtering"
+              (let [token-set (retrieve-tokens {})]
+                (is (contains? token-set token-1) (str token-set))
+                (is (contains? token-set token-2) (str token-set))))
+
+            (testing "cluster filtering"
+              (let [cluster-name (retrieve-token-cluster waiter-url)
+                    token-set (retrieve-tokens {"cluster" cluster-name})]
+                (is (contains? token-set token-1) (str token-set))
+                (is (contains? token-set token-2) (str token-set)))
+              (let [token-set (retrieve-tokens {"cluster" "k-means"})]
+                (is (not (contains? token-set token-1)) (str token-set))
+                (is (not (contains? token-set token-2)) (str token-set))))
+
+            (testing "metadata filtering"
+              (let [token-set (retrieve-tokens {"last-update-user" (retrieve-username)})]
+                (is (contains? token-set token-1) (str token-set))
+                (is (contains? token-set token-2) (str token-set)))
+              (let [token-set (retrieve-tokens {"last-update-user" "john.doe"})]
+                (is (not (contains? token-set token-1)) (str token-set))
+                (is (not (contains? token-set token-2)) (str token-set))))
+
+            (testing "field filtering"
+              (let [token-set (retrieve-tokens {"load-balancing" "oldest"})]
+                (is (contains? token-set token-1) (str token-set))
+                (is (not (contains? token-set token-2)) (str token-set)))
+              (let [token-set (retrieve-tokens {"load-balancing" "youngest"})]
+                (is (not (contains? token-set token-1)) (str token-set))
+                (is (contains? token-set token-2) (str token-set)))
+              (let [token-set (retrieve-tokens {"load-balancing" ["oldest" "youngest"]})]
+                (is (contains? token-set token-1) (str token-set))
+                (is (contains? token-set token-2) (str token-set))))
+
+            (testing "nested field filtering"
+              (let [token-set (retrieve-tokens {"env.FLAG" "true"})]
+                (is (contains? token-set token-1) (str token-set))
+                (is (not (contains? token-set token-2)) (str token-set)))
+              (let [token-set (retrieve-tokens {"env.FLAG" "false"})]
+                (is (not (contains? token-set token-1)) (str token-set))
+                (is (contains? token-set token-2) (str token-set)))
+              (let [token-set (retrieve-tokens {"env.FLAG" ["false" "true"]})]
+                (is (contains? token-set token-1) (str token-set))
+                (is (contains? token-set token-2) (str token-set))))
+
+            (testing "name filtering"
+              (let [token-set (retrieve-tokens {"name" "test-token-1"})]
+                (is (contains? token-set token-1) (str token-set))
+                (is (not (contains? token-set token-2)) (str token-set)))
+              (let [token-set (retrieve-tokens {"name" "test-token-2"})]
+                (is (not (contains? token-set token-1)) (str token-set))
+                (is (contains? token-set token-2) (str token-set)))
+              (let [token-set (retrieve-tokens {"name" "test-token"})]
+                (is (not (contains? token-set token-1)) (str token-set))
+                (is (not (contains? token-set token-2)) (str token-set))))
+
+            (testing "permitted-user filtering"
+              (let [token-set (retrieve-tokens {"permitted-user" "*"})]
+                (is (contains? token-set token-1) (str token-set))
+                (is (not (contains? token-set token-2)) (str token-set)))
+              (let [token-set (retrieve-tokens {"permitted-user" ""})]
+                (is (not (contains? token-set token-1)) (str token-set))
+                (is (contains? token-set token-2) (str token-set)))
+              (let [token-set (retrieve-tokens {"permitted-user" ["" "*"]})]
+                (is (contains? token-set token-1) (str token-set))
+                (is (contains? token-set token-2) (str token-set))))
+
+            (finally
+              (delete-token-and-assert waiter-url token-2)))
+          (finally
+            (delete-token-and-assert waiter-url token-1)))))))

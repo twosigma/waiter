@@ -661,18 +661,8 @@
                           (string? owner-param) #{owner-param}
                           (coll? owner-param) (set owner-param)
                           :else (list-token-owners kv-store))
-                 filterable-parameter? (disj sd/token-data-keys "owner" "maintenance")
-                 parameter-filter-predicates (for [[parameter-name raw-param] request-params
-                                                   :let [param-name-components (str/split parameter-name #"\.")
-                                                         param-name-head (first param-name-components)]
-                                                   :when (filterable-parameter? param-name-head)]
-                                               (let [search-parameter-values (cond
-                                                                               (string? raw-param) #{raw-param}
-                                                                               :else (set raw-param))]
-                                                 (fn [token-parameters]
-                                                   (and (contains? token-parameters param-name-head)
-                                                        (contains? search-parameter-values
-                                                                   (str (get-in token-parameters param-name-components)))))))
+                 service-description-filter-predicate (-> (dissoc request-params "deleted" "maintenance" "owner" "previous")
+                                                        (sd/query-params->service-description-filter-predicate sd/token-data-keys false))
                  index-filter-fn
                  (every-pred
                    (fn list-tokens-delete-predicate [entry]
@@ -688,7 +678,7 @@
                                               kv-store token
                                               :error-on-missing false
                                               :include-deleted include-deleted)]
-                       (and (every? #(% token-parameters) parameter-filter-predicates)
+                       (and (service-description-filter-predicate token-parameters)
                             (or (nil? include-run-as-requester)
                                 (= include-run-as-requester (sd/run-as-requester? token-parameters)))
                             (or (nil? include-requires-parameters)

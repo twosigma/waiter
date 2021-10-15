@@ -319,12 +319,12 @@
                                           (or (seq run-as-user)
                                               (authz/manage-service? entitlement-manager auth-user service-id service-description))
                                           (or (str/blank? token)
-                                              (let [filter-fn (utils/str->filter-fn token)]
+                                              (let [filter-fn (utils/str->filter-fn token true)]
                                                 (->> source-tokens
                                                   (map #(get % "token"))
                                                   (some filter-fn))))
                                           (or (str/blank? token-version)
-                                              (let [filter-fn (utils/str->filter-fn token-version)]
+                                              (let [filter-fn (utils/str->filter-fn token-version true)]
                                                 (->> source-tokens
                                                   (map #(get % "version"))
                                                   (some filter-fn)))))))
