@@ -891,7 +891,7 @@
     (assert-response-status response response-status)
     ; the x-waiter-operation-result header should be set if delete was successful
     (when (= response-status http-200-ok)
-      (is (= (.valAt response-headers "x-waiter-operation-result") "token-deleted")))))
+      (is (= (get response-headers "x-waiter-operation-result") "token-deleted")))))
 
 (defn wait-for
   "Invoke predicate every interval (default 10) seconds until it returns true,
