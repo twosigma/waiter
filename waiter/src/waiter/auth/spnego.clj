@@ -177,12 +177,10 @@
                     (let [auth-params-map (auth/build-auth-params-map :spnego principal)
                           response (auth/handle-request-auth request-handler request auth-params-map password nil true)]
                       (log/debug "added cookies to response")
-                      (if token
-                        (if (map? response)
-                          (rr/header response "www-authenticate" token)
-                          (let [actual-response (async/<! response)]
-                            (rr/header actual-response "www-authenticate" token)))
-                        response))
+                      (let [actual-response (if (map? response) response (async/<! response))]
+                        (if token
+                          (rr/header actual-response "www-authenticate" token)
+                          actual-response)))
                     (response-http-401-unauthorized-negotiate request))
                   (catch Throwable th
                     (log/error th "error while processing response")
