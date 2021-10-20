@@ -1657,7 +1657,7 @@ class WaiterCliTest(util.WaiterTest):
                 util.delete_token(self.waiter_url, token_name)
         else:
             self.assertEqual(1, cp.returncode, cp.stderr)
-            self.assertIn('Cannot run as user.', cli.decode(cp.stderr))
+            self.assertIn('Cannot run as user: FAKE_USERNAME', cli.decode(cp.stderr))
 
     def test_create_token_admin_mode(self):
         self.__test_create_update_token_admin_mode('create', self.token_name(), True)
