@@ -308,6 +308,25 @@
             (is (every? (fn [token-entry] (contains? token-entry "etag")) tokens))
             (is (some (fn [token-entry] (= token (get token-entry "token"))) tokens)))))
 
+      (testing "updating soft deleted tokens without admin mode should require service parameter validation"
+        (doseq [token tokens-to-create]
+          (let [token-desciption-without-params {:cpus "cpus is supposed to be a number"
+                                                 :deleted true
+                                                 :token token}
+                {:keys [body] :as response} (post-token waiter-url token-desciption-without-params)]
+            (assert-response-status response http-400-bad-request)
+            (is (str/includes? (str body) "cpus must be a positive number") (str {:body body :token token})))))
+
+      (testing "updating soft deleted tokens in admin mode should not require service parameter validation"
+        (doseq [token tokens-to-create]
+          (let [token-desciption-without-params {:cpus "cpus is supposed to be a number"
+                                                 :deleted true
+                                                 :token token}
+                {:keys [body] :as response} (post-token waiter-url token-desciption-without-params
+                                                           :query-params {"update-mode" "admin"})]
+            (assert-response-status response http-200-ok)
+            (is (str/includes? (str body) "Successfully created ") (str {:body body :token token})))))
+
       (log/info "hard-deleting the tokens")
       (doseq [token tokens-to-create]
         (delete-token-and-assert waiter-url token)
