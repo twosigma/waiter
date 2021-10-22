@@ -27,7 +27,7 @@
                        validate-service-description-fn version-hash waiter-hostnames]}]
     (let [{:strs [authentication interstitial-secs permitted-user run-as-user]} new-service-parameter-template
           admin-mode? (= "admin" update-mode)
-          deleted? (get new-token-data "deleted")]
+          deleted? (true? (get new-token-data "deleted"))]
       (when (str/blank? token)
         (throw (ex-info "Must provide the token" {:status http-400-bad-request :log-level :warn})))
       (when (some #(= token %) waiter-hostnames)
