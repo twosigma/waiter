@@ -36,7 +36,7 @@
         (throw (ex-info (str "No parameters provided for " token) {:status http-400-bad-request :log-level :warn})))
       (sd/validate-token token)
 
-      ; skip user provided service description validation if the update mode is admin and the token is deleted
+      ; skip user provided service description validation if the update mode is admin and the resulting token will be soft-deleted
       (when (not (and admin-mode? deleted?))
         (validate-service-description-fn new-service-parameter-template)
         (sd/validate-user-metadata-schema new-user-metadata new-service-parameter-template))
