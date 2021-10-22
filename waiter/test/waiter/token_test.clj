@@ -1348,7 +1348,7 @@
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= http-403-forbidden status))
-          (is (str/includes? body "Cannot run as user"))))
+          (is (str/includes? body "Cannot run as user: tu0"))))
 
       (testing "post:new-service-description:edit-unauthorized-owner"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -1364,7 +1364,7 @@
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= http-403-forbidden status))
-          (is (str/includes? body "Cannot update token"))))
+          (is (str/includes? body "Cannot update token (owner=tu0) as user: tu1"))))
 
       (testing "post:new-service-description:create-unauthorized-owner"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -1379,7 +1379,7 @@
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= http-403-forbidden status))
-          (is (str/includes? body "Cannot create token as user"))))
+          (is (str/includes? body "Cannot create token as provided owner"))))
 
       (testing "post:new-service-description:token-sync:invalid-admin-mode"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -2049,7 +2049,7 @@
                  :headers {}
                  :request-method :post})]
           (is (= http-403-forbidden status))
-          (is (str/includes? body "Cannot run as user"))))
+          (is (str/includes? body "Cannot run as user: to2A"))))
 
       (testing "post:edit-service-description:editor-privileges:failure"
         (let [token (str token "-editor-test-edit-fail")
@@ -2059,7 +2059,7 @@
                                       (and (or (= :manage verb) (= :run-as verb))
                                            (or (str/includes? subject user) (str/includes? user subject)))))
               cur-service-description (walk/stringify-keys
-                                        {:cmd "cmd1" :mem 100 :permitted-user "tp1" :run-as-user "to2A" :version "v1"
+                                        {:cmd "cmd1" :mem 100 :permitted-user "tp1" :run-as-user "to1" :version "v1"
                                          :editor "te1" :owner "to1" :token token})
               _ (kv/store kv-store token cur-service-description)
               new-service-description (walk/stringify-keys (assoc cur-service-description :cmd "cmd2"))
@@ -2071,7 +2071,7 @@
                  :headers {}
                  :request-method :post})]
           (is (= http-403-forbidden status))
-          (is (str/includes? body "Cannot run as user"))))
+          (is (str/includes? body "Cannot run as user: to1"))))
 
       (testing "post:edit-service-description:editor-privileges:edit-restricted-field-owner"
         (let [token (str token "-editor-test")

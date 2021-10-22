@@ -106,7 +106,7 @@
           ;; only check run-as-user rules when not running as editor, editor cannot change run-as-user from previous check
           (when (and (not editing?) run-as-user (not= "*" run-as-user))
             (when-not (authz/run-as? entitlement-manager authenticated-user run-as-user)
-              (throw (ex-info "Cannot run as user"
+              (throw (ex-info (str "Cannot run as user: " run-as-user)
                               {:authenticated-user authenticated-user
                                :run-as-user run-as-user
                                :status http-403-forbidden
@@ -114,7 +114,7 @@
           (if creating-token?
             ;; new token creation
             (when-not (authz/run-as? entitlement-manager authenticated-user owner)
-              (throw (ex-info "Cannot create token as user"
+              (throw (ex-info (str "Cannot create token as provided owner: " owner)
                               {:authenticated-user authenticated-user
                                :owner owner
                                :status http-403-forbidden
@@ -122,7 +122,10 @@
             ;; editing token
             (let [delegated-user (or (when editing? existing-owner) authenticated-user)]
               (when-not (authz/manage-token? entitlement-manager delegated-user token existing-token-metadata)
-                (throw (ex-info "Cannot update token"
+                (throw (ex-info (str "Cannot update token ("
+                                     (when existing-editor
+                                       (str "editor=" existing-editor ", "))
+                                     "owner=" existing-owner ") as user: " delegated-user)
                                 {:authenticated-user authenticated-user
                                  :existing-owner existing-owner
                                  :new-user owner
@@ -137,7 +140,7 @@
                                :token-metadata new-token-metadata
                                :log-level :warn})))))
 
-        (throw (ex-info "Invalid update-mode"
+        (throw (ex-info (str "Invalid update-mode: " update-mode)
                         {:mode update-mode
                          :status http-400-bad-request
                          :log-level :warn})))
