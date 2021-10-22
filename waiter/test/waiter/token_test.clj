@@ -1156,7 +1156,8 @@
                   (is (str/includes? body "Invalid date format for last-update-time string"))
                   (is (nil? (kv/fetch kv-store test-token)))))
 
-              (testing "creating a soft deleted token skips service description validation"
+              (testing "post:create-soft-deleted-token:skips-validation"
+                ; creating a soft deleted token as an admin will skip service description validation
                 (let [test-token (str "token-" (utils/unique-identifier))
                       service-description (assoc base-service-description
                                             "deleted" true
@@ -1182,7 +1183,8 @@
                                     "root" "foo-bar"))
                          (kv/fetch kv-store test-token)))))
 
-              (testing "updating a token to be soft deleted skips service description validation"
+              (testing "post:update-soft-deleted-token:skips-validation"
+                ; updating an existing token as an admin will skip service description validation
                 (let [test-token (str "token-" (utils/unique-identifier))
                       service-description (assoc base-service-description
                                             "last-update-time" 123456
