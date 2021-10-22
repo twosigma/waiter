@@ -1154,7 +1154,65 @@
                          :request-method :post})]
                   (is (= http-400-bad-request status))
                   (is (str/includes? body "Invalid date format for last-update-time string"))
-                  (is (nil? (kv/fetch kv-store test-token)))))))))
+                  (is (nil? (kv/fetch kv-store test-token)))))
+
+              (testing "creating a soft deleted token skips service description validation"
+                (let [test-token (str "token-" (utils/unique-identifier))
+                      service-description (assoc base-service-description
+                                            "deleted" true
+                                            "last-update-time" 123456
+                                            "token" test-token)
+                      {:keys [body headers status]}
+                      (run-handle-token-request
+                        kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
+                        {:authorization/user test-user
+                         :body (StringBufferInputStream. (str (utils/clj->json service-description)))
+                         :headers {"x-waiter-token" token}
+                         :query-params {"update-mode" "admin"}
+                         :request-method :post})]
+                  (is (= http-200-ok status))
+                  (is (str/includes? body "Successfully created token"))
+                  (is (= (get headers "x-waiter-operation-result") "token-created"))
+                  (is (= (-> service-description
+                             (dissoc "token")
+                             (assoc "cluster" (str token-root "-cluster")
+                                    "last-update-time" 123456
+                                    "last-update-user" test-user
+                                    "owner" test-user
+                                    "root" "foo-bar"))
+                         (kv/fetch kv-store test-token)))))
+
+              (testing "updating a token to be soft deleted skips service description validation"
+                (let [test-token (str "token-" (utils/unique-identifier))
+                      service-description (assoc base-service-description
+                                            "last-update-time" 123456
+                                            "token" test-token)
+                      _ (kv/store kv-store test-token service-description)
+                      token-hash (sd/token-data->token-hash service-description)
+                      service-description-invalid-cpus (assoc service-description
+                                                         "cpus" "should not be a string value")
+                      {:keys [body headers status]}
+                      (run-handle-token-request
+                        kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
+                        {:authorization/user test-user
+                         :body (StringBufferInputStream. (str (utils/clj->json service-description-invalid-cpus)))
+                         :headers {"if-match" token-hash
+                                   "x-waiter-token" test-token}
+                         :query-params {"update-mode" "admin"}
+                         :request-method :post})]
+                  (is (= http-200-ok status))
+                  (is (str/includes? body "Successfully updated token") body)
+                  (is (= (get headers "x-waiter-operation-result") "token-updated"))
+                  (is (= (-> service-description
+                             (dissoc "token")
+                             (assoc "cluster" (str token-root "-cluster")
+                                    "cpus" "should not be a string value"
+                                    "last-update-time" 123456
+                                    "last-update-user" test-user
+                                    "owner" test-user
+                                    "previous" service-description
+                                    "root" "foo-bar"))
+                         (kv/fetch kv-store test-token)))))))))
 
       (testing "post:new-service-description:token-query-param"
         (let [test-token (str "token-" (rand-int 10000))
