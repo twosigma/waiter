@@ -1318,3 +1318,10 @@
          (map? jwt-config)
          (-> jwt-config :oidc-authorize-uri str/blank? not)
          (-> jwt-config :oidc-token-uri str/blank? not))))
+
+(defn exclusive-mode?
+  "Get the authenticator that Waiter is configured to use"
+  [waiter-url]
+  (-> (waiter-settings waiter-url)
+    (get-in [:token-config :token-defaults :service-mapping])
+    (= "exclusive")))
