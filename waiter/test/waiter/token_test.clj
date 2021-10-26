@@ -2254,7 +2254,7 @@
             (is (kv/fetch kv-store token))))
         (dotimes [n (min 2 limit-per-owner)]
           (let [token (str token-prefix "-" n)]
-            (delete-service-description-for-token
+            (delete-token-description
               clock synchronize-fn kv-store history-length token test-user test-user)
             (is (get (kv/fetch kv-store token) "deleted"))))
         (let [token (str token-prefix "-" limit-per-owner)]
@@ -2262,7 +2262,7 @@
             synchronize-fn kv-store history-length limit-per-owner token service-description token-metadata)
           (is (kv/fetch kv-store token)))))))
 
-(deftest test-delete-service-description-for-token
+(deftest test-delete-token-description
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         token "test-token"
         owner "test-user"
@@ -2276,7 +2276,7 @@
     (testing "valid soft delete"
       (kv/store kv-store token token-description)
       (is (= token-description (kv/fetch kv-store token)))
-      (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user)
+      (delete-token-description clock synchronize-fn kv-store history-length token owner auth-user)
       (is (= (assoc token-description
                "deleted" true
                "last-update-time" current-time
@@ -2294,7 +2294,7 @@
       (kv/store kv-store token token-description)
       (is (= token-description (kv/fetch kv-store token)))
       (let [token-hash (sd/token-data->token-hash token-description)]
-        (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
+        (delete-token-description clock synchronize-fn kv-store history-length token owner auth-user
                                               :version-hash token-hash))
       (is (= (assoc token-description
                "deleted" true
@@ -2314,14 +2314,14 @@
       (is (= token-description (kv/fetch kv-store token)))
       (is (thrown-with-msg?
             ExceptionInfo #"Cannot modify stale token"
-            (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
+            (delete-token-description clock synchronize-fn kv-store history-length token owner auth-user
                                                   :version-hash (- current-time 5000))))
       (is (= token-description (kv/fetch kv-store token))))
 
     (testing "valid hard delete"
       (kv/store kv-store token token-description)
       (is (= token-description (kv/fetch kv-store token)))
-      (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
+      (delete-token-description clock synchronize-fn kv-store history-length token owner auth-user
                                             :hard-delete true)
       (is (nil? (kv/fetch kv-store token)))
       (is (nil? (-> (list-index-entries-for-owner kv-store owner)
@@ -2331,7 +2331,7 @@
       (kv/store kv-store token token-description)
       (is (= token-description (kv/fetch kv-store token)))
       (let [token-hash (sd/token-data->token-hash token-description)]
-        (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
+        (delete-token-description clock synchronize-fn kv-store history-length token owner auth-user
                                               :hard-delete true :version-hash token-hash))
       (is (nil? (kv/fetch kv-store token)))
       (is (nil? (-> (list-index-entries-for-owner kv-store owner)
@@ -2342,7 +2342,7 @@
       (is (= token-description (kv/fetch kv-store token)))
       (is (thrown-with-msg?
             ExceptionInfo #"Cannot modify stale token"
-            (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
+            (delete-token-description clock synchronize-fn kv-store history-length token owner auth-user
                                                   :hard-delete true :version-hash (- current-time 5000))))
       (is (= token-description (kv/fetch kv-store token))))))
 
@@ -2360,7 +2360,7 @@
     (is (= {token {:deleted false :etag (sd/token-data->token-hash token-data) :last-update-time nil :maintenance false}}
            (list-index-entries-for-owner kv-store owner-1)))
 
-    (delete-service-description-for-token
+    (delete-token-description
       clock synchronize-fn kv-store history-length token owner-1 owner-1)
 
     (let [deleted-token-data (assoc token-data
@@ -2414,7 +2414,7 @@
                     (assoc token-data-3 "previous"))
                (kv/fetch kv-store token)))
 
-        (delete-service-description-for-token
+        (delete-token-description
           clock synchronize-fn kv-store history-length token "test-user-3" "test-auth-3")
 
         (is (= (assoc token-data-3

@@ -222,7 +222,7 @@
                    (get-latest-state query-chan))))))
 
       (testing "watch-channels get UPDATE event for soft deleted tokens"
-        (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
+        (delete-token-description clock synchronize-fn kv-store history-length "token1"
                                               (get token1-index :owner) auth-user)
         (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1")
                                                   :last-update-time (clock-millis)
@@ -236,7 +236,7 @@
                  (get-latest-state query-chan)))))
 
       (testing "watch-channels get DELETE event for hard deleted tokens"
-        (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
+        (delete-token-description clock synchronize-fn kv-store history-length "token1"
                                               (get token1-index :owner) auth-user :hard-delete true)
         (send-internal-index-event tokens-update-chan "token1")
         (assert-channels-next-event watch-chans
@@ -347,7 +347,7 @@
           (assert-channels-next-event watch-chans (make-aggregate-index-events (make-index-event :UPDATE token-cur-index)))))
 
       (testing "refresh-timeout should update current-state and watchers if token is soft deleted"
-        (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
+        (delete-token-description clock synchronize-fn kv-store history-length "token1"
                                               (get token1-index :owner) auth-user)
         (trigger-token-watch-refresh watch-refresh-timer-chan)
         (let [token-cur-index (assoc token1-index :etag (get-token-hash kv-store "token1")
@@ -361,7 +361,7 @@
           (assert-channels-next-event watch-chans (make-aggregate-index-events (make-index-event :UPDATE token-cur-index)))))
 
       (testing "refresh-timeout should update current-state and watchers if token is hard deleted"
-        (delete-service-description-for-token clock synchronize-fn kv-store history-length "token1"
+        (delete-token-description clock synchronize-fn kv-store history-length "token1"
                                               (get token1-index :owner) auth-user :hard-delete true)
         (trigger-token-watch-refresh watch-refresh-timer-chan)
         (is (= {:last-update-time (clock)

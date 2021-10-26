@@ -155,14 +155,14 @@
                                                     (assoc index token))))))
           (log/info "stored service description template for" token)))))
 
-  (defn delete-service-description-for-token
+  (defn delete-token-description
     "Delete a token from the KV"
     [clock synchronize-fn kv-store history-length token owner authenticated-user &
      {:keys [hard-delete version-hash] :or {hard-delete false}}]
     (synchronize-fn
       token-lock
-      (fn inner-delete-service-description-for-token []
-        (log/info "attempting to delete service description for token:" token "hard-delete:" hard-delete)
+      (fn inner-delete-token-description []
+        (log/info "attempting to delete token:" token "hard-delete:" hard-delete)
         (let [existing-token-data (kv/fetch kv-store token)
               existing-token-description (sd/token-data->token-description existing-token-data)]
           ; Validate the token modification for concurrency races
@@ -372,7 +372,7 @@
                                  :status http-403-forbidden
                                  :user authenticated-user
                                  :log-level :warn}))))
-            (delete-service-description-for-token
+            (delete-token-description
               clock synchronize-fn kv-store history-length token token-owner authenticated-user
               :hard-delete hard-delete :version-hash version-hash)
             ; notify peers of token delete and ask them to refresh their caches
@@ -380,6 +380,7 @@
                                    :body (utils/clj->json {:owner token-owner, :token token})
                                    :method :post)
             (send-internal-index-event tokens-update-chan token)
+            (log/info "token delete successful" {:token token})
             (-> {:delete token, :hard-delete hard-delete, :success true}
               (utils/clj->json-response :headers {"etag" version-hash
                                                   ; provide a "token-deleted" result header to be used by structured logging
