@@ -31,12 +31,15 @@ import json
 import logging
 import os
 import random
+import shutil
 import socket
 import socketserver
 import ssl
 import string
 import struct
+import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -1062,6 +1065,7 @@ def main():
     parser.add_argument('--log-output', metavar='LOG_OUTPUT', choices=['stdout', 'stderr', 'file'], default='stdout', help='Log output destination')
     parser.add_argument('-p', '--port', metavar='PORT_NUMBER', type=int, default=8080, help='Server port number')
     parser.add_argument('--ssl', action='store_true', help='Enable HTTPS (TLS) mode')
+    parser.add_argument('--ssl-self-signed', action='store_true', help='Enable HTTPS (TLS) mode with an auto-generated self-signed certificate')
     parser.add_argument('--start-up-sleep-ms', metavar='MILLIS', type=int, default=0, help='Delay before starting server')
     parser.add_argument('--ws-max-binary-message-size', metavar='BYTES', type=int, default=max_ws_response_size,
             help='Maximum binary message response size (in bytes) allowed by the WebSocket server')
@@ -1090,15 +1094,43 @@ def main():
         kitchen_logger.info('Health check authentication enabled')
         _authenticated_health_checks = True
 
-    if args.ssl:
+    if args.ssl_self_signed:
+        protocol = 'HTTPS'
+        if not shutil.which('openssl'):
+            error_msg = ('Cannot auto-generate self-signed certificate. '
+                         'Must set CERT_PATH environment variable for HTTPS mode. '
+                         'KEY_PATH and KEY_PASSWORD are optional.')
+            kitchen_logger.error(error_msg)
+            sys.exit(error_msg)
+        else:
+            cert_fd, cert_path = tempfile.mkstemp(prefix='kitchen', suffix='.crt')
+            os.close(cert_fd)
+            key_fd, key_path = tempfile.mkstemp(prefix='kitchen', suffix='.key')
+            os.close(key_fd)
+            key_password = None
+            kitchen_logger.info('Creating TLS certificate at `%s`, and key at `%s`', cert_path, key_path)
+            try:
+                cert_cmd = ('openssl req -x509 -nodes -days 30 -newkey rsa:2048 '
+                            '-keyout {} -out {} -subj "/CN=$(hostname -f)"'
+                            .format(key_path, cert_path))
+                subprocess.run(cert_cmd, shell=True)
+            except CalledProcessError:
+                error_msg = 'Failed to auto-generate self-signed certificate'
+                kitchen_logger.exception(error_msg)
+                os.exit(error_msg)
+    elif args.ssl:
+        protocol = 'HTTPS'
         cert_path = os.environ.get('CERT_PATH')
         key_path = os.environ.get('KEY_PATH')
         key_password = os.environ.get('KEY_PASSWORD')
         if not cert_path:
-            error_msg = 'Must set CERT_PATH environment variable for HTTPS mode. ' \
-                        'KEY_PATH and KEY_PASSWORD are optional.'
+            error_msg = ('Must set CERT_PATH environment variable for HTTPS mode, '
+                         'or use the --ssl-self-signed option to auto-generate a certificate. '
+                         'When CERT_PATH is provided, KEY_PATH and KEY_PASSWORD are optional.')
             kitchen_logger.error(error_msg)
             sys.exit(error_msg)
+    else:
+        protocol = 'HTTP'
 
     if args.start_up_sleep_ms > 0:
         kitchen_logger.info('Sleeping for {}ms...'.format(args.start_up_sleep_ms))
@@ -1112,7 +1144,7 @@ def main():
     try:
         kitchen = MultiThreadedServer((args.hostname, args.port), Kitchen)
 
-        if args.ssl:
+        if protocol == 'HTTPS':
             try:
                 ssl_protocol = ssl.PROTOCOL_TLS_SERVER  # added in python3.6
             except AttributeError:
@@ -1120,9 +1152,6 @@ def main():
             ssl_context = ssl.SSLContext(ssl_protocol)
             ssl_context.load_cert_chain(cert_path, key_path, key_password)
             kitchen.socket = ssl_context.wrap_socket(kitchen.socket, server_side=True)
-            protocol = 'HTTPS'
-        else:
-            protocol = 'HTTP'
 
         kitchen_logger.info('Starting {} server on {}:{}...'.format(protocol, args.hostname or '*', args.port))
         kitchen.serve_forever()
@@ -1132,6 +1161,10 @@ def main():
             kitchen.server_close()
 
     finally:
+        if args.ssl_self_signed:
+            kitchen_logger.info('Cleaning up auto-generated certificates...')
+            os.unlink(cert_path)
+            os.unlink(key_path)
         kitchen_logger.info('Server is exiting.')
 
 
