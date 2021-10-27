@@ -40,6 +40,7 @@
   (:import (java.io EOFException)
            (java.net ConnectException SocketTimeoutException)
            (java.util.concurrent TimeoutException)
+           (javax.net.ssl SSLException)
            (org.eclipse.jetty.client HttpClient)
            (org.joda.time DateTime)))
 
@@ -51,7 +52,6 @@
   "The maximum number of kill instances tracked per service."
   ;; track more killed instances than failed instances
   (+ max-failed-instances-to-keep 2))
-
 
 (defmacro log
   "Log Scheduler-specific messages."
@@ -335,14 +335,19 @@
       (instance? ConnectException error) :connect-exception
       (instance? EOFException error) :hangup-exception
       (instance? SocketTimeoutException error) :timeout-exception
+      (instance? SSLException error) :ssl-exception
       (instance? TimeoutException error) :timeout-exception)
     (utils/raven-proxy-response? response)
-    (when-let [raven-error (utils/raven-response-flags response)]
-      (cond
-        (= raven-error envoy-upstream-connection-failure) :connect-exception
-        (= raven-error envoy-upstream-connection-termination) :hangup-exception
-        (= raven-error envoy-stream-idle-timeout) :timeout-exception
-        (= raven-error envoy-upstream-request-timeout) :timeout-exception))))
+    (when-let [raven-error-flags (utils/raven-response-flags response)]
+      (let [raven-error-details (utils/raven-status-details response)
+            connection-error? (= raven-error-flags envoy-upstream-connection-failure)
+            ssl-exception? (and connection-error? (some-> raven-error-details (str/includes? "TLS_error")))]
+        (cond
+          ssl-exception? :ssl-exception
+          connection-error? :connect-exception
+          (= raven-error-flags envoy-upstream-connection-termination) :hangup-exception
+          (= raven-error-flags envoy-stream-idle-timeout) :timeout-exception
+          (= raven-error-flags envoy-upstream-request-timeout) :timeout-exception)))))
 
 (defn available?
   "Async go block which returns the status code and success of a health check.
@@ -598,7 +603,7 @@
     (if-not service
       service->service-instances'
       (let [service-description (some-> service :id service-id->service-description-fn)
-            connection-errors #{:connect-exception :hangup-exception :timeout-exception}
+            connection-errors #{:connect-exception :hangup-exception :timeout-exception :ssl-exception}
             update-unhealthy-instance (fn [instance status error]
                                         (-> instance
                                             (assoc :healthy? false
@@ -606,7 +611,14 @@
                                             (update :flags
                                                     (fn [flags]
                                                       (cond-> flags
+                                                        (= error :hangup-exception)
+                                                        (conj :hangup-exception)
+
+                                                        (= error :ssl-exception)
+                                                        (conj :ssl-exception)
+
                                                         (and (not= error :unknown-authority)
+                                                             (not= error :ssl-exception)
                                                              (not= error :connect-exception))
                                                         (conj :has-connected)
 

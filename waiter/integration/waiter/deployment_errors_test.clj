@@ -95,9 +95,40 @@
                    :x-waiter-queue-timeout 600000}
           {:keys [cookies service-id] :as response}
           (make-request-with-debug-info headers #(make-shell-request waiter-url % :method :post :path "/waiter-ping"))]
-      (do ;with-service-cleanup
+      (with-service-cleanup
         service-id
         (assert-deployment-error response :cannot-connect)))))
+
+(deftest ^:parallel ^:integration-slow test-tls-error
+  (testing-using-waiter-url
+    (let [headers {:x-waiter-name (rand-name)
+                   ; wrong backend-proto
+                   :x-waiter-backend-proto "https"
+                   :x-waiter-grace-period-secs 15
+                   :x-waiter-health-check-interval-secs 5
+                   :x-waiter-health-check-max-consecutive-failures 1
+                   :x-waiter-queue-timeout 600000}
+          {:keys [cookies service-id] :as response}
+          (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :method :post :path "/waiter-ping"))]
+      (with-service-cleanup
+        service-id
+        (assert-deployment-error response :tls-error)))))
+
+(deftest ^:parallel ^:integration-slow test-bad-socket
+  (testing-using-waiter-url
+    (let [headers {:x-waiter-name (rand-name)
+                   ; wrong backend-proto
+                   :x-waiter-backend-proto "http"
+                   :x-waiter-cmd (kitchen-cmd "--port $PORT0 --ssl-self-signed")
+                   :x-waiter-grace-period-secs 15
+                   :x-waiter-health-check-interval-secs 5
+                   :x-waiter-health-check-max-consecutive-failures 1
+                   :x-waiter-queue-timeout 600000}
+          {:keys [cookies service-id] :as response}
+          (make-request-with-debug-info headers #(make-kitchen-request waiter-url % :method :post :path "/waiter-ping"))]
+      (with-service-cleanup
+        service-id
+        (assert-deployment-error response :bad-socket)))))
 
 (deftest ^:parallel ^:integration-slow test-health-check-timed-out
   (testing-using-waiter-url
