@@ -333,6 +333,7 @@
                :relative-path "tokens"}
    :messages {:backend-request-failed "Request to service backend failed"
               :backend-request-timed-out "Request to service backend timed out"
+              :bad-socket "Backend is closing socket without responding (ensure backend-proto is correctly configured)"
               :bad-startup-command "Invalid startup command"
               :cannot-connect "Unable to connect to run health checks"
               :cannot-identify-service "Unable to identify service using waiter headers/token"
@@ -346,7 +347,8 @@
               :service-state-failing "Failing"
               :service-state-inactive "Inactive"
               :service-state-running "Running"
-              :service-state-starting "Starting"}
+              :service-state-starting "Starting"
+              :tls-error "Unable to complete TLS handshake with backend (ensure backend-proto is correctly configured)"}
    :metric-group-mappings []
    :metrics-config {:inter-router-metrics-idle-timeout-ms 2000
                     :metrics-gc-interval-ms 60000

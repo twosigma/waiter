@@ -24,6 +24,9 @@ static_resources:
                     - header:
                         key: x-raven-response-flags
                         value: "%RESPONSE_FLAGS%"
+                    - header:
+                        key: x-raven-status-code-details
+                        value: "%RESPONSE_CODE_DETAILS%"
                   virtual_hosts:
                     - name: app-backend
                       domains:

@@ -490,8 +490,11 @@
           deployment-error (cond
                              (and has-failed-instances? all-instances-exited-similarly?) :bad-startup-command
                              (and has-failed-instances? (all-instances-flagged-with? :memory-limit-exceeded)) :not-enough-memory
+                             (and has-failed-instances? (all-instances-flagged-with? :ssl-exception)) :tls-error
                              (and has-failed-instances? (no-instances-flagged-with? :has-connected)) :cannot-connect
-                             (and has-failed-instances? (no-instances-flagged-with? :has-responded)) :health-check-timed-out
+                             (and has-failed-instances? (no-instances-flagged-with? :has-responded)) (if (all-instances-flagged-with? :hangup-exception)
+                                                                                                       :bad-socket
+                                                                                                       :health-check-timed-out)
                              (and has-failed-instances? (all-instances-flagged-with? :never-passed-health-checks)) :invalid-health-check-response
                              (and has-unhealthy-instances? (= first-unhealthy-status http-401-unauthorized)) :health-check-requires-authentication)]
       (when deployment-error

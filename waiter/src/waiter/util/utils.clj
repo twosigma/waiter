@@ -892,6 +892,14 @@
     (when (not= result envoy-empty-response-flags)
       result)))
 
+(defn raven-status-details
+  "Returns the response status details from a backend sidecar proxy,
+   and nil when no flags were set or no backend proxy is present.
+   See the Envoy Proxy documentation for details on the response flags format:
+   https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_conn_man/response_code_details"
+  [response]
+  (get-in response [:headers "x-raven-status-code-details"]))
+
 (defn raven-proxy-response?
   "Returns true if the response is from a backend sidecar proxy."
   [response]
