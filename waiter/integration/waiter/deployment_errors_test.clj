@@ -104,7 +104,7 @@
     (let [headers {:x-waiter-name (rand-name)
                    ; wrong backend-proto
                    :x-waiter-backend-proto "https"
-                   :x-waiter-grace-period-secs 15
+                   :x-waiter-grace-period-secs 45
                    :x-waiter-health-check-interval-secs 5
                    :x-waiter-health-check-max-consecutive-failures 1
                    :x-waiter-queue-timeout 600000}
@@ -120,7 +120,7 @@
                    ; wrong backend-proto
                    :x-waiter-backend-proto "http"
                    :x-waiter-cmd (kitchen-cmd "--port $PORT0 --ssl-self-signed")
-                   :x-waiter-grace-period-secs 15
+                   :x-waiter-grace-period-secs 45
                    :x-waiter-health-check-interval-secs 5
                    :x-waiter-health-check-max-consecutive-failures 1
                    :x-waiter-queue-timeout 600000}
