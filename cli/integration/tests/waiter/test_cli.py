@@ -582,7 +582,27 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn(service_id, cli.stdout(cp))
             self.assertIn('Successfully killed', cli.stdout(cp))
             self.assertIn('timeout=30000', cli.stderr(cp))
+            self.assertNotIn('Pinging service', cli.stdout(cp))
+            self.assertNotIn('Pinging token', cli.stdout(cp))
             util.wait_until_no_services_for_token(self.waiter_url, token_name)
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+
+    def test_kill_token_and_then_ping(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            service_id = util.ping_token(self.waiter_url, token_name)
+            self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.kill(self.waiter_url, token_name, flags="-v", kill_flags="--ping")
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Killing service', cli.stdout(cp))
+            self.assertIn(service_id, cli.stdout(cp))
+            self.assertIn('Successfully killed', cli.stdout(cp))
+            self.assertIn('timeout=30000', cli.stderr(cp))
+            self.assertIn('Pinging token', cli.stdout(cp))
+            self.assertIn('Ping successful', cli.stdout(cp))
+            self.assertEqual(1, len(util.wait_until_services_for_token(self.waiter_url, token_name, 1)))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
@@ -593,6 +613,8 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.kill(self.waiter_url, token_name)
             self.assertEqual(1, cp.returncode, cp.stderr)
             self.assertIn('There are no services using token', cli.stdout(cp))
+            self.assertNotIn('Pinging service', cli.stdout(cp))
+            self.assertNotIn('Pinging token', cli.stdout(cp))
         finally:
             util.delete_token(self.waiter_url, token_name)
 
@@ -608,6 +630,8 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn('Killing service', cli.stdout(cp))
             self.assertIn(service_id, cli.stdout(cp))
             self.assertIn('Successfully killed', cli.stdout(cp))
+            self.assertNotIn('Pinging service', cli.stdout(cp))
+            self.assertNotIn('Pinging token', cli.stdout(cp))
             self.assertIn(f'timeout={timeout * 1000}', cli.stderr(cp))
             util.wait_until_no_services_for_token(self.waiter_url, token_name)
         finally:
@@ -628,6 +652,8 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(2, cli.stdout(cp).count('Successfully killed'))
             self.assertIn(service_id_1, cli.stdout(cp))
             self.assertIn(service_id_2, cli.stdout(cp))
+            self.assertNotIn('Pinging service', cli.stdout(cp))
+            self.assertNotIn('Pinging token', cli.stdout(cp))
             util.wait_until_no_services_for_token(self.waiter_url, token_name)
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
@@ -651,6 +677,8 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIn(service_id_1, stdout)
             self.assertIn(service_id_2, stdout)
             self.assertLess(stdout.index(service_id_2), stdout.index(service_id_1))
+            self.assertNotIn('Pinging service', stdout)
+            self.assertNotIn('Pinging token', cli.stdout(cp))
             util.wait_until_routers_recognize_service_killed(self.waiter_url, service_id_1)
             util.wait_until_routers_recognize_service_killed(self.waiter_url, service_id_2)
 
@@ -946,6 +974,8 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.kill(self.waiter_url, service_id, kill_flags='--service-id')
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('Killing service', cli.stdout(cp))
+            self.assertNotIn('Pinging service', cli.stdout(cp))
+            self.assertNotIn('Pinging token', cli.stdout(cp))
             util.wait_until_no_services_for_token(self.waiter_url, token_name)
         finally:
             util.delete_token(self.waiter_url, token_name)
@@ -954,6 +984,8 @@ class WaiterCliTest(util.WaiterTest):
         cp = cli.kill(self.waiter_url, uuid.uuid4(), kill_flags='--service-id')
         self.assertEqual(1, cp.returncode, cp.stderr)
         self.assertIn('No matching data found', cli.stdout(cp))
+        self.assertNotIn('Pinging service', cli.stdout(cp))
+        self.assertNotIn('Pinging token', cli.stdout(cp))
 
     def test_kill_inactive_service_id(self):
         token_name = self.token_name()
@@ -965,6 +997,8 @@ class WaiterCliTest(util.WaiterTest):
             cp = cli.kill(self.waiter_url, service_id, kill_flags='--service-id')
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('cannot be killed because it is already Inactive', cli.stdout(cp))
+            self.assertNotIn('Pinging service', cli.stdout(cp))
+            self.assertNotIn('Pinging token', cli.stdout(cp))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
