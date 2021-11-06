@@ -139,8 +139,9 @@
                       {:code :success/token-match})]
                 ;; log full token descriptions when there was a syncing error detected
                 (when (str/starts-with? (name code) "error")
-                  (log/error "error sync result token descriptions: " {:current-token-description description
-                                                                       :latest-token-description latest-token-description}))
+                  (log/error "error when syncing token descriptions: " {:code code
+                                                                        :current-token-description description
+                                                                        :latest-token-description latest-token-description}))
                 result)
               (catch Exception ex
                 (log/error ex "unable to sync token on" cluster-url)
