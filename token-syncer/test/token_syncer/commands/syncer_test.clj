@@ -166,7 +166,11 @@
                                      (str/includes? cluster-url "cluster-1")
                                      (is (= (str test-token-etag ".1") token-etag))
                                      (str/includes? cluster-url "cluster-2")
-                                     (is (= (str test-token-etag ".2") token-etag)))
+                                     (is (= (str test-token-etag ".2") token-etag))
+                                     (str/includes? cluster-url "cluster-3")
+                                     (is (= (str test-token-etag ".3") token-etag))
+                                     (str/includes? cluster-url "cluster-4")
+                                     (is (= (str test-token-etag ".4") token-etag)))
 
                                    (if (str/includes? cluster-url "error")
                                      (throw (Exception. "Error in storing token thrown from test"))
@@ -247,30 +251,75 @@
                                                :latest token-description}}}
                (sync-token-on-clusters waiter-api cluster-urls test-token token-description opt-out-metadata-name cluster-url->token-data)))))
 
-    (testing "sync cluster similar parameters and owner but different root"
-      (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com" "www.cluster-3.com"]
+    (testing "sync cluster same user provided token fields (include 'deleted'), different system metadata, and different root or different owner"
+      (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com" "www.cluster-3.com" "www.cluster-4.com"]
             test-token "test-token-1"
-            token-description {"cpus" 1
-                               "last-update-user" "john.doe"
-                               "mem" 1024
-                               "name" "test-name"
-                               "owner" "test-user-1"}
-            token-description-1 (assoc token-description "root" "cluster-1")
-            token-description-2 (assoc token-description "root" "cluster-2")
-            token-description-3 (assoc token-description "last-update-user" "jane.doe" "root" "cluster-3")
+            token-description-1 {"cluster" "c1"
+                                 "cpus" 1
+                                 "deleted" false
+                                 "last-update-time" "1"
+                                 "last-update-user" "john.doe"
+                                 "mem" 1024
+                                 "name" "test-name"
+                                 "owner" "test-user-1"
+                                 "root" "cluster-1"}
+            token-description-different-metadata (assoc token-description-1 "cluster" "c.diff"
+                                                                            "last-update-time" "2"
+                                                                            "previous" {"cpus" 1})
+            token-description-2-different-root (assoc token-description-different-metadata "root" "cluster-2")
+            token-description-3-different-owner (assoc token-description-different-metadata "last-update-user" "jane.doe")
+            token-description-4-different-root-and-owner (assoc token-description-different-metadata "last-update-user" "jane.doe"
+                                                                                                     "root" "cluster-4")
             cluster-url->token-data {"www.cluster-1.com" {:description token-description-1
                                                           :token-etag (str test-token-etag ".1")
                                                           :status 200}
-                                     "www.cluster-2.com" {:description token-description-2
+                                     "www.cluster-2.com" {:description token-description-2-different-root
                                                           :token-etag (str test-token-etag ".2")
                                                           :status 200}
-                                     "www.cluster-3.com" {:description token-description-3
+                                     "www.cluster-3.com" {:description token-description-3-different-owner
                                                           :token-etag (str test-token-etag ".3")
+                                                          :status 200}
+                                     "www.cluster-4.com" {:description token-description-4-different-root-and-owner
+                                                          :token-etag (str test-token-etag ".4")
                                                           :status 200}}]
+        ;; we expect all of these to successfully sync because the user provided token fields + 'deleted' are the same
+        ;; this happens even when the editing users are different and when the clusters that handled the edits are different
         (is (= {"www.cluster-1.com" {:code :success/token-match}
-                "www.cluster-2.com" {:code :success/skip-token-sync}
-                "www.cluster-3.com" {:code :error/token-sync
-                                     :details {:message "token contents match, but were edited by different users"}}}
+                "www.cluster-2.com" {:code :success/sync-update
+                                     :details {:etag (str test-token-etag ".2.new")
+                                               :status 200}}
+                "www.cluster-3.com" {:code :success/sync-update
+                                     :details {:etag (str test-token-etag ".3.new")
+                                               :status 200}}
+                "www.cluster-4.com" {:code :success/sync-update
+                                     :details {:etag (str test-token-etag ".4.new")
+                                               :status 200}}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 opt-out-metadata-name cluster-url->token-data)))))
+
+    (testing "sync cluster same user provided token fields (except for 'deleted'), and different root and owner"
+      (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description-1 {"cpus" 1
+                                 "deleted" false
+                                 "last-update-user" "john.doe"
+                                 "mem" 1024
+                                 "name" "test-name"
+                                 "owner" "test-user-1"
+                                 "root" "cluster-1"}
+            token-description-2-different-root-and-owner (assoc token-description-1 "deleted" true
+                                                                                    "last-update-user" "jane.doe"
+                                                                                    "root" "cluster-4")
+            cluster-url->token-data {"www.cluster-1.com" {:description token-description-1
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description token-description-2-different-root-and-owner
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        ;; we expect this to fail as it is ambiguous if the 'deleted' field is truly deleted or edited
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :error/root-mismatch
+                                     :details {:cluster token-description-2-different-root-and-owner
+                                               :latest token-description-1}}}
                (sync-token-on-clusters waiter-api cluster-urls test-token token-description-1 opt-out-metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster same owner; soft-deleted on one; and different last-update-user and root"

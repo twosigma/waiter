@@ -78,75 +78,70 @@
   [{:keys [store-token]} cluster-urls token latest-token-description opt-out-metadata-name cluster-url->token-data]
   (pc/map-from-keys
     (fn [cluster-url]
-      (let [ignored-root-mismatch-equality-comparison-keys ["cluster" "last-update-time" "last-update-user" "previous" "root"]
-            system-metadata-keys (conj ignored-root-mismatch-equality-comparison-keys "deleted")
+      (let [
+            ;; don't include "deleted" system metadata key, this must be considered for determining root-mismatch
+            ignored-root-mismatch-equality-comparison-keys ["cluster" "last-update-time" "last-update-user" "previous" "root"]
             cluster-result
             (try
               (let [{:keys [description error status] :as token-data} (get cluster-url->token-data cluster-url)
                     {latest-root "root" latest-update-user "last-update-user"} latest-token-description
-                    {cluster-root "root" cluster-update-user "last-update-user"} description]
-                (cond
-                  error
-                  {:code :error/token-read
-                   :details {:message (.getMessage error)}}
+                    {cluster-root "root" cluster-update-user "last-update-user"} description
+                    {:keys [code] :as result}
+                    (cond
+                      error
+                      {:code :error/token-read
+                       :details {:message (.getMessage error)}}
 
-                  (nil? status)
-                  {:code :error/token-read
-                   :details {:message "status missing from response"}}
+                      (nil? status)
+                      {:code :error/token-read
+                       :details {:message "status missing from response"}}
 
-                  (nil? latest-root)
-                  {:code :error/token-read
-                   :details {:message "token root missing from latest token description"}}
+                      (nil? latest-root)
+                      {:code :error/token-read
+                       :details {:message "token root missing from latest token description"}}
 
-                  (and latest-root
-                       (= latest-token-description description))
-                  {:code :success/token-match}
+                      (and latest-root
+                           (= latest-token-description description))
+                      {:code :success/token-match}
 
-                  ;; deleted on both clusters, irrespective of remaining values
-                  (and (get latest-token-description "deleted")
-                       (get description "deleted"))
-                  {:code :error/tokens-deleted
-                   :details {:message "soft-deleted tokens should have already been hard-deleted"}}
+                      ;; deleted on both clusters, irrespective of remaining values
+                      (and (get latest-token-description "deleted")
+                           (get description "deleted"))
+                      {:code :error/tokens-deleted
+                       :details {:message "soft-deleted tokens should have already been hard-deleted"}}
 
-                  (and (some? opt-out-metadata-name)
-                       ;; opt-out of syncing if any of the descriptions signal opt-out intent
-                       (or (= "true" (get-in latest-token-description ["metadata" opt-out-metadata-name]))
-                           (= "true" (get-in description ["metadata" opt-out-metadata-name]))))
-                  {:code :success/skip-opt-out}
+                      (and (some? opt-out-metadata-name)
+                           ;; opt-out of syncing if any of the descriptions signal opt-out intent
+                           (or (= "true" (get-in latest-token-description ["metadata" opt-out-metadata-name]))
+                               (= "true" (get-in description ["metadata" opt-out-metadata-name]))))
+                      {:code :success/skip-opt-out}
 
-                  ;; active token, content the same irrespective of system metadata keys but roots different
-                  (and (seq description)
-                       (not= latest-root cluster-root)
-                       (not (get latest-token-description "deleted"))
-                       (not (get description "deleted"))
-                       (= (apply dissoc latest-token-description system-metadata-keys)
-                          (apply dissoc description system-metadata-keys)))
-                  (if (= latest-update-user cluster-update-user)
-                    {:code :success/skip-token-sync}
-                    {:code :error/token-sync
-                     :details {:message "token contents match, but were edited by different users"}})
+                      ;; token user-specified content (including "deleted") is different, and the last update user or root is different
+                      (and (seq description)
+                           (not= latest-root cluster-root)
+                           (not= latest-update-user cluster-update-user)
+                           (not= (apply dissoc description ignored-root-mismatch-equality-comparison-keys)
+                                 (apply dissoc latest-token-description ignored-root-mismatch-equality-comparison-keys)))
+                      {:code :error/root-mismatch
+                       :details {:cluster description
+                                 :latest latest-token-description}}
 
-                  ;; token user-specified content, last update user, and root different
-                  (and (seq description)
-                       (not= latest-root cluster-root)
-                       (not= latest-update-user cluster-update-user)
-                       (not= (apply dissoc description ignored-root-mismatch-equality-comparison-keys)
-                             (apply dissoc latest-token-description ignored-root-mismatch-equality-comparison-keys)))
-                  {:code :error/root-mismatch
-                   :details {:cluster description
-                             :latest latest-token-description}}
+                      (not= latest-token-description description)
+                      (let [token-etag (:token-etag token-data)
+                            {:keys [headers status] :as response} (store-token cluster-url token token-etag latest-token-description)]
+                        {:code (if (get latest-token-description "deleted")
+                                 (if (utils/successful? response) :success/soft-delete :error/soft-delete)
+                                 (if (utils/successful? response) :success/sync-update :error/sync-update))
+                         :details (cond-> {:status status}
+                                    (utils/successful? response) (assoc :etag (get headers "etag")))})
 
-                  (not= latest-token-description description)
-                  (let [token-etag (:token-etag token-data)
-                        {:keys [headers status] :as response} (store-token cluster-url token token-etag latest-token-description)]
-                    {:code (if (get latest-token-description "deleted")
-                             (if (utils/successful? response) :success/soft-delete :error/soft-delete)
-                             (if (utils/successful? response) :success/sync-update :error/sync-update))
-                     :details (cond-> {:status status}
-                                      (utils/successful? response) (assoc :etag (get headers "etag")))})
-
-                  :else
-                  {:code :success/token-match}))
+                      :else
+                      {:code :success/token-match})]
+                ;; log full token descriptions when there was a syncing error detected
+                (when (str/starts-with? (name code) "error")
+                  (log/error "error sync result token descriptions: " {:current-token-description description
+                                                                       :latest-token-description latest-token-description}))
+                result)
               (catch Exception ex
                 (log/error ex "unable to sync token on" cluster-url)
                 {:code :error/token-sync
