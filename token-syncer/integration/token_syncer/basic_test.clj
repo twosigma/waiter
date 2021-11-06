@@ -1086,8 +1086,9 @@
                                                      "last-update-user" "foo-user"}
                                          "root" (first waiter-urls))
                     sync-result (pc/map-from-keys
-                                  (constantly {:code :error/token-sync
-                                               :details {:message "token contents match, but were edited by different users"}})
+                                  (constantly {:code :success/sync-update
+                                               :details {:etag token-etag
+                                                         :status 200}})
                                   (rest waiter-urls))
                     expected-result {:details {token-name {:latest {:cluster-url (first waiter-urls)
                                                                     :description latest-description
@@ -1102,24 +1103,14 @@
                                                         :selected {:count 1 :value #{token-name}}
                                                         :total {:count 1 :value #{token-name}}}}}]
                 (is (= expected-result actual-result))
-                (doall
-                  (map-indexed
-                    (fn [index waiter-url]
-                      (let [token-etag (token->etag waiter-api waiter-url token-name)]
-                        (is (= {:description (assoc basic-description
-                                               "cluster" (waiter-url->cluster waiter-url)
-                                               "last-update-time" (- last-update-time-ms index)
-                                               "last-update-user" (str "auth-user-" index)
-                                               "owner" "test-user"
-                                               "previous" {"last-update-time" (- current-time-ms 30000)
-                                                           "last-update-user" "foo-user"}
-                                               "root" waiter-url)
-                                :headers {"content-type" "application/json"
-                                          "etag" token-etag}
-                                :status 200
-                                :token-etag token-etag}
-                               (load-token waiter-url token-name)))))
-                    waiter-urls))))))
+                (for [waiter-url waiter-urls]
+                  (let [token-etag (token->etag waiter-api waiter-url token-name)]
+                    (is (= {:description latest-description
+                            :headers {"content-type" "application/json"
+                                      "etag" token-etag}
+                            :status 200
+                            :token-etag token-etag}
+                           (load-token waiter-url token-name)))))))))
         (finally
           (cleanup-token waiter-api waiter-urls token-name))))))
 
@@ -1164,7 +1155,9 @@
                                                      "last-update-user" "foo-user"}
                                          "root" (first waiter-urls))
                     sync-result (pc/map-from-keys
-                                  (constantly {:code :success/skip-token-sync})
+                                  (constantly {:code :success/sync-update
+                                               :details {:etag token-etag
+                                                         :status 200}})
                                   (rest waiter-urls))
                     expected-result {:details {token-name {:latest {:cluster-url (first waiter-urls)
                                                                     :description latest-description
@@ -1179,24 +1172,14 @@
                                                         :selected {:count 1 :value #{token-name}}
                                                         :total {:count 1 :value #{token-name}}}}}]
                 (is (= expected-result actual-result))
-                (doall
-                  (map-indexed
-                    (fn [index waiter-url]
-                      (let [token-etag (token->etag waiter-api waiter-url token-name)]
-                        (is (= {:description (assoc basic-description
-                                               "cluster" (waiter-url->cluster waiter-url)
-                                               "last-update-time" (- last-update-time-ms index)
-                                               "last-update-user" "auth-user"
-                                               "owner" "test-user"
-                                               "previous" {"last-update-time" (- current-time-ms 30000)
-                                                           "last-update-user" "foo-user"}
-                                               "root" waiter-url)
-                                :headers {"content-type" "application/json"
-                                          "etag" token-etag}
-                                :status 200
-                                :token-etag token-etag}
-                               (load-token waiter-url token-name)))))
-                    waiter-urls))))))
+                (for [waiter-url waiter-urls]
+                  (let [token-etag (token->etag waiter-api waiter-url token-name)]
+                    (is (= {:description latest-description
+                            :headers {"content-type" "application/json"
+                                      "etag" token-etag}
+                            :status 200
+                            :token-etag token-etag}
+                           (load-token waiter-url token-name)))))))))
         (finally
           (cleanup-token waiter-api waiter-urls token-name))))))
 
