@@ -1097,10 +1097,10 @@
                                      :summary {:sync {:failed #{token-name}
                                                       :unmodified #{}
                                                       :updated #{}}
-                                               :tokens {:pending {:count 1 :value #{token-name}}
+                                               :tokens {:pending {:count 0 :value #{}}
                                                         :previously-synced {:count 0 :value #{}}
                                                         :processed {:count 1 :value #{token-name}}
-                                                        :selected {:count 1 :value #{token-name}}
+                                                        :selected {:count 0 :value #{}}
                                                         :total {:count 1 :value #{token-name}}}}}]
                 (is (= expected-result actual-result))
                 (for [waiter-url waiter-urls]
@@ -1166,10 +1166,10 @@
                                      :summary {:sync {:failed #{}
                                                       :unmodified #{}
                                                       :updated #{token-name}}
-                                               :tokens {:pending {:count 1 :value #{token-name}}
+                                               :tokens {:pending {:count 0 :value #{}}
                                                         :previously-synced {:count 0 :value #{}}
                                                         :processed {:count 1 :value #{token-name}}
-                                                        :selected {:count 1 :value #{token-name}}
+                                                        :selected {:count 0 :value #{}}
                                                         :total {:count 1 :value #{token-name}}}}}]
                 (is (= expected-result actual-result))
                 (for [waiter-url waiter-urls]
