@@ -99,7 +99,9 @@
         service-id
         (assert-deployment-error response :cannot-connect)))))
 
-(deftest ^:parallel ^:integration-slow test-tls-error
+;; Marked explicit because it's flaky in non-test environments.
+;; Grace period and other params may need to be adjusted to fix.
+(deftest ^:parallel ^:integration-slow ^:explicit test-tls-error
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    ; wrong backend-proto
@@ -114,7 +116,9 @@
         service-id
         (assert-deployment-error response :tls-error)))))
 
-(deftest ^:parallel ^:integration-slow test-bad-socket
+;; Marked explicit because it's flaky in non-test environments.
+;; Grace period and other params may need to be adjusted to fix.
+(deftest ^:parallel ^:integration-slow ^:explicit test-bad-socket
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    ; wrong backend-proto
