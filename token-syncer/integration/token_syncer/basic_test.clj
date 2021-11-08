@@ -1096,7 +1096,7 @@
                                                            :sync-result sync-result}}
                                      :summary {:sync {:failed #{token-name}
                                                       :unmodified #{}
-                                                      :updated #{}}
+                                                      :updated #{token-name}}
                                                :tokens {:pending {:count 1 :value #{token-name}}
                                                         :previously-synced {:count 0 :value #{}}
                                                         :processed {:count 1 :value #{token-name}}
