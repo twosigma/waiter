@@ -1094,7 +1094,7 @@
                                                                     :description latest-description
                                                                     :token-etag token-etag}
                                                            :sync-result sync-result}}
-                                     :summary {:sync {:failed #{token-name}
+                                     :summary {:sync {:failed #{}
                                                       :unmodified #{}
                                                       :updated #{token-name}}
                                                :tokens {:pending {:count 1 :value #{token-name}}
