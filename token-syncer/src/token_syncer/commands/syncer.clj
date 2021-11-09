@@ -78,8 +78,7 @@
   [{:keys [store-token]} cluster-urls token latest-token-description opt-out-metadata-name cluster-url->token-data]
   (pc/map-from-keys
     (fn [cluster-url]
-      (let [
-            ;; don't include "deleted" system metadata key, this must be considered for determining root-mismatch
+      (let [;; don't include "deleted" system metadata key, this must be considered for determining root-mismatch
             ignored-root-mismatch-equality-comparison-keys ["cluster" "last-update-time" "last-update-user" "previous" "root"]
             cluster-result
             (try
