@@ -126,13 +126,22 @@
                                  :latest latest-token-description}}
 
                       (not= latest-token-description description)
-                      (let [token-etag (:token-etag token-data)
-                            {:keys [headers status] :as response} (store-token cluster-url token token-etag latest-token-description)]
-                        {:code (if (get latest-token-description "deleted")
-                                 (if (utils/successful? response) :success/soft-delete :error/soft-delete)
-                                 (if (utils/successful? response) :success/sync-update :error/sync-update))
-                         :details (cond-> {:status status}
-                                    (utils/successful? response) (assoc :etag (get headers "etag")))})
+                      (do
+                        ;; log case where there is a root mismatch or editor mismatch but the user editable fields are the same
+                        (when (and (or (not= latest-root cluster-root)
+                                       (not= latest-update-user cluster-update-user))
+                                   (= (apply dissoc latest-token-description ignored-root-mismatch-equality-comparison-keys)
+                                      (apply dissoc description ignored-root-mismatch-equality-comparison-keys)))
+                          (log/info "syncing token with mismatched editor or root" {:current-token-description description
+                                                                                    :latest-token-description latest-token-description}))
+                        ;; attempt to update the current token with the latest-token-description
+                        (let [token-etag (:token-etag token-data)
+                              {:keys [headers status] :as response} (store-token cluster-url token token-etag latest-token-description)]
+                          {:code (if (get latest-token-description "deleted")
+                                   (if (utils/successful? response) :success/soft-delete :error/soft-delete)
+                                   (if (utils/successful? response) :success/sync-update :error/sync-update))
+                           :details (cond-> {:status status}
+                                      (utils/successful? response) (assoc :etag (get headers "etag")))}))
 
                       :else
                       {:code :success/token-match})]
