@@ -989,7 +989,7 @@
 (defn acknowledge-consent-handler
   "Processes the acknowledgment to launch a service as the auth-user.
    It triggers storing of the x-waiter-consent cookie on the client."
-  [token->service-description-template token->token-metadata service-description->service-id
+  [token->service-description-template token->token-metadata request->consent-service-id
    consent-cookie-value add-encoded-cookie consent-expiry-days {:keys [request-method] :as request}]
   (try
     (when-not (= :post request-method)
@@ -1019,9 +1019,7 @@
           (throw (ex-info "Unable to load description for token" {:log-level :info :status http-400-bad-request :token token})))
         (when (= "service" mode)
           (let [auth-user (:authorization/user request)
-                computed-service-id (-> service-description-template
-                                        (sd/assoc-run-as-requester-fields auth-user)
-                                        service-description->service-id)]
+                computed-service-id (request->consent-service-id request)]
             (when-not (= service-id computed-service-id)
               (log/error "computed" computed-service-id ", but user[" auth-user "] provided" service-id "for" token)
               (throw (ex-info "Invalid service-id for specified token" (assoc params :log-level :info :status http-400-bad-request))))))
@@ -1050,7 +1048,7 @@
 (defn request-consent-handler
   "Displays the consent form and requests approval from user. The content is rendered from consent.html.
    Approval form is submitted using AJAX and the user is then redirected to the target url that triggered a redirect to this form."
-  [token->service-description-template service-description->service-id consent-expiry-days
+  [token->service-description-template request->consent-service-id consent-expiry-days
    {:keys [headers query-string request-method request-time route-params] :as request}]
   (try
     (when-not (= :get request-method)
@@ -1062,9 +1060,7 @@
       (when-not (seq service-description-template)
         (throw (ex-info "Unable to load description for token" {:log-level :info :status http-404-not-found :token token})))
       (let [auth-user (:authorization/user request)
-            service-id (-> service-description-template
-                           (sd/assoc-run-as-requester-fields auth-user)
-                           service-description->service-id)
+            service-id (request->consent-service-id request)
             query-string' (str (when-not (str/blank? query-string) query-string)
                                (when (some-> interstitial-secs pos?)
                                  ;; add the bypass query param only if interstitial is enabled

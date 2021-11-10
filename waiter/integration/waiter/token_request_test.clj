@@ -1279,140 +1279,142 @@
 
 (deftest ^:parallel ^:integration-fast test-auto-run-as-requester-support
   (testing-using-waiter-url
-    (let [service-name (rand-name)
-          token (create-token-name waiter-url ".")
-          service-description (-> (kitchen-request-headers :prefix "")
-                                  (assoc :name service-name :permitted-user "*")
-                                  (dissoc :run-as-user))
-          waiter-port (.getPort (URL. (str "http://" waiter-url)))
-          waiter-port (if (neg? waiter-port) 80 waiter-port)
-          host-header (str token ":" waiter-port)
-          has-x-waiter-consent? (partial some #(= (:name %) "x-waiter-consent"))
-          token-root (retrieve-token-root waiter-url)
-          token-cluster (retrieve-token-cluster waiter-url)]
-      (try
-        (testing "token creation"
-          (let [token-description (assoc service-description :token token)
-                response (post-token waiter-url token-description)]
-            (assert-response-status response http-200-ok)))
+    (doseq [service-mapping ["exclusive" "legacy"]]
+      (testing (str "service-mapping " service-mapping)
+        (let [service-name (rand-name)
+              token (create-token-name waiter-url ".")
+              service-description (-> (kitchen-request-headers :prefix "")
+                                    (assoc :name service-name :permitted-user "*" :service-mapping service-mapping)
+                                    (dissoc :run-as-user))
+              waiter-port (.getPort (URL. (str "http://" waiter-url)))
+              waiter-port (if (neg? waiter-port) 80 waiter-port)
+              host-header (str token ":" waiter-port)
+              has-x-waiter-consent? (partial some #(= (:name %) "x-waiter-consent"))
+              token-root (retrieve-token-root waiter-url)
+              token-cluster (retrieve-token-cluster waiter-url)]
+          (try
+            (testing "token creation"
+              (let [token-description (assoc service-description :token token)
+                    response (post-token waiter-url token-description)]
+                (assert-response-status response http-200-ok)))
 
-        (testing "token retrieval"
-          (let [token-response (get-token waiter-url token)
-                response-body (-> token-response (:body) (json/read-str) (pc/keywordize-map))]
-            (is (nil? (get response-body :run-as-user)))
-            (is (contains? response-body :last-update-time))
-            (is (= (assoc service-description
-                     :cluster token-cluster
-                     :last-update-user (retrieve-username)
-                     :owner (retrieve-username)
-                     :previous {}
-                     :root token-root)
-                   (dissoc response-body :last-update-time)))))
+            (testing "token retrieval"
+              (let [token-response (get-token waiter-url token)
+                    response-body (-> token-response (:body) (json/read-str) (pc/keywordize-map))]
+                (is (nil? (get response-body :run-as-user)))
+                (is (contains? response-body :last-update-time))
+                (is (= (assoc service-description
+                         :cluster token-cluster
+                         :last-update-user (retrieve-username)
+                         :owner (retrieve-username)
+                         :previous {}
+                         :root token-root)
+                       (dissoc response-body :last-update-time)))))
 
-        (testing "expecting redirect"
-          (let [{:keys [headers] :as response} (make-request waiter-url "/hello-world" :headers {"host" host-header})]
-            (is (= (str "/waiter-consent/hello-world")
-                   (get headers "location")))
-            (assert-response-status response http-303-see-other)))
+            (testing "expecting redirect"
+              (let [{:keys [headers] :as response} (make-request waiter-url "/hello-world" :headers {"host" host-header})]
+                (is (= (str "/waiter-consent/hello-world")
+                       (get headers "location")))
+                (assert-response-status response http-303-see-other)))
 
-        (testing "waiter-consent"
-          (let [consent-path (str "/waiter-consent/hello-world")
-                {:keys [body] :as response} (make-request waiter-url consent-path :headers {"host" host-header})
-                service-id (when-let [service-id-index (str/index-of body "name=\"service-id\"")]
-                             (when-let [value-index (str/index-of body "value=\"" service-id-index)]
-                               (when-let [end-index (str/index-of body "\"" (+ value-index 7))]
-                                 (subs body (+ value-index 7) end-index))))]
-            (is service-id)
-            (assert-response-status response http-200-ok)
+            (testing "waiter-consent"
+              (let [consent-path (str "/waiter-consent/hello-world")
+                    {:keys [body] :as response} (make-request waiter-url consent-path :headers {"host" host-header})
+                    service-id (when-let [service-id-index (str/index-of body "name=\"service-id\"")]
+                                 (when-let [value-index (str/index-of body "value=\"" service-id-index)]
+                                   (when-let [end-index (str/index-of body "\"" (+ value-index 7))]
+                                     (subs body (+ value-index 7) end-index))))]
+                (is service-id)
+                (assert-response-status response http-200-ok)
 
-            (let [cookies-atom (atom nil)]
-              (testing "approval of specific service"
-                (let [{:keys [body cookies] :as response}
-                      (make-request waiter-url "/waiter-consent"
-                                    :headers {"host" host-header
-                                              "referer" (str "http://" host-header)
-                                              "origin" (str "http://" host-header)
-                                              "x-requested-with" "XMLHttpRequest"}
-                                    :method :post
-                                    :multipart {"mode" "service"
-                                                "service-id" service-id})]
-                  (reset! cookies-atom cookies)
-                  (is (= "Added cookie x-waiter-consent" body))
-                  ; x-waiter-consent should be emitted Waiter
-                  (is (has-x-waiter-consent? cookies))
-                  (assert-response-status response http-200-ok)))
+                (let [cookies-atom (atom nil)]
+                  (testing "approval of specific service"
+                    (let [{:keys [body cookies] :as response}
+                          (make-request waiter-url "/waiter-consent"
+                                        :headers {"host" host-header
+                                                  "referer" (str "http://" host-header)
+                                                  "origin" (str "http://" host-header)
+                                                  "x-requested-with" "XMLHttpRequest"}
+                                        :method :post
+                                        :multipart {"mode" "service"
+                                                    "service-id" service-id})]
+                      (reset! cookies-atom cookies)
+                      (is (= "Added cookie x-waiter-consent" body))
+                      ; x-waiter-consent should be emitted Waiter
+                      (is (has-x-waiter-consent? cookies))
+                      (assert-response-status response http-200-ok)))
 
-              (testing "auto run-as-user population on expected service-id"
-                (let [service-id-atom (atom nil)]
-                  (try
-                    (let [expected-service-id service-id
-                          {:keys [body cookies service-id] :as response}
-                          (make-request-with-debug-info
-                            {"host" host-header}
-                            #(make-request waiter-url "/hello-world" :cookies @cookies-atom :headers %1))
-                          {:keys [service-description]} (service-settings waiter-url service-id)
-                          {:keys [run-as-user permitted-user]} service-description]
-                      (reset! service-id-atom service-id)
-                      (is (= "Hello World" body))
-                      ; x-waiter-consent should not be re-emitted Waiter
-                      (is (not (has-x-waiter-consent? cookies)))
-                      (is (= expected-service-id service-id))
-                      (is (not (str/blank? permitted-user)))
-                      (is (= run-as-user permitted-user))
-                      (assert-response-status response http-200-ok))
-                    (finally
-                      (when @service-id-atom
-                        (delete-service waiter-url @service-id-atom))))))
+                  (testing "auto run-as-user population on expected service-id"
+                    (let [service-id-atom (atom nil)]
+                      (try
+                        (let [expected-service-id service-id
+                              {:keys [body cookies service-id] :as response}
+                              (make-request-with-debug-info
+                                {"host" host-header}
+                                #(make-request waiter-url "/hello-world" :cookies @cookies-atom :headers %1))
+                              {:keys [service-description]} (service-settings waiter-url service-id)
+                              {:keys [run-as-user permitted-user]} service-description]
+                          (reset! service-id-atom service-id)
+                          (is (= "Hello World" body))
+                          ; x-waiter-consent should not be re-emitted Waiter
+                          (is (not (has-x-waiter-consent? cookies)))
+                          (is (= expected-service-id service-id))
+                          (is (not (str/blank? permitted-user)))
+                          (is (= run-as-user permitted-user))
+                          (assert-response-status response http-200-ok))
+                        (finally
+                          (when @service-id-atom
+                            (delete-service waiter-url @service-id-atom))))))
 
-              (testing "token update"
-                (let [updated-service-name (rand-name)
-                      token-description (assoc service-description :name updated-service-name :token token)
-                      response (post-token waiter-url token-description)]
-                  (assert-response-status response http-200-ok)))
+                  (testing "token update"
+                    (let [updated-service-name (rand-name)
+                          token-description (assoc service-description :name updated-service-name :token token)
+                          response (post-token waiter-url token-description)]
+                      (assert-response-status response http-200-ok)))
 
-              (testing "expecting redirect after token update"
-                (let [{:keys [headers] :as response}
-                      (make-request waiter-url "/hello-world" :cookies @cookies-atom :headers {"host" host-header})]
-                  (is (= (str "/waiter-consent/hello-world")
-                         (get headers "location")))
-                  (assert-response-status response http-303-see-other)))
+                  (testing "expecting redirect after token update"
+                    (let [{:keys [headers] :as response}
+                          (make-request waiter-url "/hello-world" :cookies @cookies-atom :headers {"host" host-header})]
+                      (is (= (str "/waiter-consent/hello-world")
+                             (get headers "location")))
+                      (assert-response-status response http-303-see-other)))
 
-              (testing "approval of token"
-                (let [{:keys [body cookies] :as response}
-                      (make-request waiter-url "/waiter-consent"
-                                    :cookies @cookies-atom
-                                    :headers {"host" host-header
-                                              "referer" (str "http://" host-header)
-                                              "origin" (str "http://" host-header)
-                                              "x-requested-with" "XMLHttpRequest"}
-                                    :method :post
-                                    :multipart {"mode" "token"})]
-                  (reset! cookies-atom cookies)
-                  (is (= "Added cookie x-waiter-consent" body))
-                  ; x-waiter-consent should be emitted Waiter
-                  (is (has-x-waiter-consent? cookies))
-                  (assert-response-status response http-200-ok)))
+                  (testing "approval of token"
+                    (let [{:keys [body cookies] :as response}
+                          (make-request waiter-url "/waiter-consent"
+                                        :cookies @cookies-atom
+                                        :headers {"host" host-header
+                                                  "referer" (str "http://" host-header)
+                                                  "origin" (str "http://" host-header)
+                                                  "x-requested-with" "XMLHttpRequest"}
+                                        :method :post
+                                        :multipart {"mode" "token"})]
+                      (reset! cookies-atom cookies)
+                      (is (= "Added cookie x-waiter-consent" body))
+                      ; x-waiter-consent should be emitted Waiter
+                      (is (has-x-waiter-consent? cookies))
+                      (assert-response-status response http-200-ok)))
 
-              (testing "auto run-as-user population on approved token"
-                (let [service-id-atom (atom nil)]
-                  (try
-                    (let [previous-service-id service-id
-                          {:keys [body cookies service-id] :as response}
-                          (make-request-with-debug-info
-                            {"host" host-header "x-waiter-fallback-period-secs" 0}
-                            #(make-request waiter-url "/hello-world" :cookies @cookies-atom :headers %1))]
-                      (reset! service-id-atom service-id)
-                      (is (= "Hello World" body))
-                      ; x-waiter-consent should not be re-emitted Waiter
-                      (is (not (has-x-waiter-consent? cookies)))
-                      (is (not= previous-service-id service-id))
-                      (assert-response-status response http-200-ok))
-                    (finally
-                      (when @service-id-atom
-                        (delete-service waiter-url @service-id-atom)))))))))
+                  (testing "auto run-as-user population on approved token"
+                    (let [service-id-atom (atom nil)]
+                      (try
+                        (let [previous-service-id service-id
+                              {:keys [body cookies service-id] :as response}
+                              (make-request-with-debug-info
+                                {"host" host-header "x-waiter-fallback-period-secs" 0}
+                                #(make-request waiter-url "/hello-world" :cookies @cookies-atom :headers %1))]
+                          (reset! service-id-atom service-id)
+                          (is (= "Hello World" body))
+                          ; x-waiter-consent should not be re-emitted Waiter
+                          (is (not (has-x-waiter-consent? cookies)))
+                          (is (not= previous-service-id service-id))
+                          (assert-response-status response http-200-ok))
+                        (finally
+                          (when @service-id-atom
+                            (delete-service waiter-url @service-id-atom)))))))))
 
-        (finally
-          (delete-token-and-assert waiter-url token))))))
+            (finally
+              (delete-token-and-assert waiter-url token))))))))
 
 (deftest ^:parallel ^:integration-fast test-authentication-disabled-support
   (testing-using-waiter-url

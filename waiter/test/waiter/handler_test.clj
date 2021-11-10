@@ -1545,6 +1545,10 @@
                                    "run-as-user" test-user
                                    "source-tokens" [(sd/source-tokens-entry test-token test-service-description)])
                             service-description->service-id)
+        request->consent-service-id (fn [request]
+                                      (if (some-> request (utils/request->host) (utils/authority->host) (= test-token))
+                                        test-service-id
+                                        "service-123.123456789"))
         add-encoded-cookie (fn [response cookie-name cookie-value consent-expiry-days]
                              (assoc-in response [:cookie cookie-name] {:value cookie-value :age consent-expiry-days}))
         consent-expiry-days 1
@@ -1563,7 +1567,7 @@
                                                             (update :scheme #(or %1 :http)))]
                                            (acknowledge-consent-handler
                                              token->service-description-template token->token-metadata
-                                             service-description->service-id consent-cookie-value add-encoded-cookie
+                                             request->consent-service-id consent-cookie-value add-encoded-cookie
                                              consent-expiry-days request')))]
     (testing "unsupported request method"
       (let [request {:request-method :get}
@@ -1678,7 +1682,7 @@
         (is (= http-200-ok status))
         (is (= {"x-waiter-consent" {:value ["service" current-time-ms test-service-id], :age consent-expiry-days}} cookie))
         (is (= {} headers))
-        (is (str/includes? body "Added cookie x-waiter-consent"))))
+        (is (str/includes? body "Added cookie x-waiter-consent") (str body))))
 
     (testing "valid service mode request with missing origin"
       (let [request {:authorization/user test-user
@@ -1690,7 +1694,7 @@
         (is (= http-200-ok status))
         (is (= {"x-waiter-consent" {:value ["service" current-time-ms test-service-id], :age consent-expiry-days}} cookie))
         (is (= {} headers))
-        (is (str/includes? body "Added cookie x-waiter-consent"))))
+        (is (str/includes? body "Added cookie x-waiter-consent") (str body))))
 
     (testing "valid token mode request"
       (let [request {:authorization/user test-user
@@ -1748,12 +1752,20 @@
                                           (str "service-" (count service-description) "." (count (str service-description))))
         consent-expiry-days 1
         test-user "test-user"
+        request->consent-service-id (fn [request]
+                                      (or (some-> request
+                                            (utils/request->host)
+                                            (utils/authority->host)
+                                            (token->service-description-template)
+                                            (assoc "permitted-user" test-user "run-as-user" test-user)
+                                            (service-description->service-id))
+                                          "service-123.123456789"))
         request-consent-handler-fn (fn [request]
                                      (let [request' (-> request
                                                         (update :authorization/user #(or %1 test-user))
                                                         (update :request-method #(or %1 :get)))]
                                        (request-consent-handler
-                                         token->service-description-template service-description->service-id
+                                         token->service-description-template request->consent-service-id
                                          consent-expiry-days request')))
         io-resource-fn (fn [file-path]
                          (is (= "web/consent.html" file-path))

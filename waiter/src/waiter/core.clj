@@ -1067,6 +1067,14 @@
    :refresh-service-descriptions-fn (pc/fnk [[:state kv-store]]
                                       (fn refresh-service-descriptions-fn [service-ids]
                                         (sd/refresh-service-descriptions kv-store service-ids)))
+   :request->consent-service-id (pc/fnk [[:state kv-store service-description-builder service-id-prefix waiter-hostnames]
+                                         attach-service-defaults-fn attach-token-defaults-fn]
+                                  (fn request->consent-service-id [request]
+                                    (let [assoc-run-as-user-approved? (constantly true)]
+                                      (-> (descriptor/compute-descriptor
+                                            attach-service-defaults-fn attach-token-defaults-fn service-id-prefix kv-store waiter-hostnames request
+                                            service-description-builder assoc-run-as-user-approved?)
+                                        :service-id))))
    :request->descriptor-fn (pc/fnk [[:settings [:token-config history-length]]
                                     [:state fallback-state-atom kv-store service-description-builder
                                      service-id-prefix waiter-hostnames]
@@ -1100,9 +1108,6 @@
                                 :service-id->metrics-fn (fn service-id->metrics [] (metrics-sync/agent->service-id->metrics router-metrics-agent))
                                 :service-id->router-id->metrics (fn service-id->router-id->metrics [service-id]
                                                                   (metrics-sync/agent->service-id->router-id->metrics router-metrics-agent service-id))}))
-   :service-description->service-id (pc/fnk [[:state service-id-prefix]]
-                                      (fn service-description->service-id [service-description]
-                                        (sd/service-description->service-id service-id-prefix service-description)))
    :service->gc-time-fn (pc/fnk [[:state service-description-builder]
                                  attach-token-defaults-fn service-id->service-description-fn service-id->references-fn
                                  token->token-hash token->token-parameters]
@@ -1914,7 +1919,7 @@
                                  (fn token-handler-fn [request]
                                    (token/handle-reindex-tokens-request synchronize-fn make-inter-router-requests-sync-fn
                                                                         kv-store list-tokens-fn request))))
-   :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template
+   :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines request->consent-service-id token->service-description-template
                                                     token->token-metadata]
                                                    [:settings consent-expiry-days]
                                                    [:state clock passwords]
@@ -1929,7 +1934,7 @@
                                                   (fn inner-waiter-acknowledge-consent-handler-fn [request]
                                                     (handler/acknowledge-consent-handler
                                                       token->service-description-template token->token-metadata
-                                                      service-description->service-id consent-cookie-value add-encoded-cookie
+                                                      request->consent-service-id consent-cookie-value add-encoded-cookie
                                                       consent-expiry-days request))))))
    :waiter-auth-handler-fn (pc/fnk [wrap-secure-request-fn]
                              (wrap-secure-request-fn
@@ -1941,13 +1946,13 @@
                                               "x-waiter-auth-principal" (str principal)
                                               "x-waiter-auth-user" (str user)}
                                     :status http-200-ok}))))
-   :waiter-request-consent-handler-fn (pc/fnk [[:routines service-description->service-id token->service-description-template]
+   :waiter-request-consent-handler-fn (pc/fnk [[:routines request->consent-service-id token->service-description-template]
                                                [:settings consent-expiry-days]
                                                wrap-secure-request-fn]
                                         (wrap-secure-request-fn
                                           (fn waiter-request-consent-handler-fn [request]
                                             (handler/request-consent-handler
-                                              token->service-description-template service-description->service-id
+                                              token->service-description-template request->consent-service-id
                                               consent-expiry-days request))))
    :waiter-request-interstitial-handler-fn (pc/fnk [wrap-secure-request-fn]
                                              (wrap-secure-request-fn
