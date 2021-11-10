@@ -1128,7 +1128,7 @@
         service-id
         (let [{:keys [env] :as service-description} (response->service-description waiter-url response)
               expected-env (cond-> {:BINARY binary}
-                             (exclusive-mode? waiter-url) (assoc :WAITER_CONFIG_TOKEN token))]
+                             (exclusive-mode-by-default? waiter-url) (assoc :WAITER_CONFIG_TOKEN token))]
           (is (= expected-env env) (str service-description))
           (delete-token-and-assert waiter-url token))))))
 
@@ -1227,7 +1227,7 @@
                 {:keys [body] :as response} (make-request-with-debug-info request-headers kitchen-request)]
             (assert-response-status response http-400-bad-request)
             (is (str/includes? body "Some params cannot be configured"))))
-        (let [extra-env (when (exclusive-mode? waiter-url) {:WAITER_CONFIG_TOKEN token})
+        (let [extra-env (when (exclusive-mode-by-default? waiter-url) {:WAITER_CONFIG_TOKEN token})
               service-ids (set [(run-token-param-support
                                   waiter-url kitchen-request
                                   {:x-waiter-token token}
@@ -1901,7 +1901,7 @@
                             :permitted-user "*"
                             :run-as-user (retrieve-username)
                             :version "1"}
-          exclusive? (exclusive-mode? waiter-url)]
+          exclusive? (exclusive-mode-by-default? waiter-url)]
       (doseq [[profile {:keys [defaults]}] (seq profile-config)]
         (let [token (rand-name)
               token-description (-> (utils/remove-keys base-description (keys defaults))
