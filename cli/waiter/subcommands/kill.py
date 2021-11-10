@@ -36,7 +36,7 @@ def register(add_parser):
     ping_group.add_argument('--no-ping', action='store_false', dest='ping_token',
                             help='skips pinging the token/service; pinging the token is disabled by default')
     ping_group.add_argument('--ping', action='store_true', dest='ping_token',
-                            help='pings the token after stopping maintenance.')
+                            help='pings the token/service after killing service(s).')
     parser.set_defaults(ping_token=False)
     parser.add_argument('--ping-timeout', default=300, dest='ping_timeout',
                         help='read timeout (in seconds) for ping request (default=300)', type=check_positive)
