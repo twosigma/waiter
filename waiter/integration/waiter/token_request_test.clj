@@ -1126,8 +1126,10 @@
       (assert-response-status response http-200-ok)
       (with-service-cleanup
         service-id
-        (let [{:keys [env] :as service-description} (response->service-description waiter-url response)]
-          (is (= {:BINARY binary} env) (str service-description))
+        (let [{:keys [env] :as service-description} (response->service-description waiter-url response)
+              expected-env (cond-> {:BINARY binary}
+                             (exclusive-mode-by-default? waiter-url) (assoc :WAITER_CONFIG_TOKEN token))]
+          (is (= expected-env env) (str service-description))
           (delete-token-and-assert waiter-url token))))))
 
 (deftest ^:parallel ^:integration-fast test-token-https-redirects
@@ -1225,26 +1227,27 @@
                 {:keys [body] :as response} (make-request-with-debug-info request-headers kitchen-request)]
             (assert-response-status response http-400-bad-request)
             (is (str/includes? body "Some params cannot be configured"))))
-        (let [service-ids (set [(run-token-param-support
+        (let [extra-env (when (exclusive-mode-by-default? waiter-url) {:WAITER_CONFIG_TOKEN token})
+              service-ids (set [(run-token-param-support
                                   waiter-url kitchen-request
                                   {:x-waiter-token token}
-                                  {:BINARY binary :FEE "FIE" :FOO "BAR"})
+                                  (merge extra-env {:BINARY binary :FEE "FIE" :FOO "BAR"}))
                                 (run-token-param-support
                                   waiter-url kitchen-request
                                   {:x-waiter-param-fee "value-1p" :x-waiter-token token}
-                                  {:BINARY binary :FEE "value-1p" :FOO "BAR"})
+                                  (merge extra-env {:BINARY binary :FEE "value-1p" :FOO "BAR"}))
                                 (run-token-param-support
                                   waiter-url kitchen-request
                                   {:x-waiter-allowed-params ["FEE" "FII" "FOO"] :x-waiter-param-fee "value-1p" :x-waiter-token token}
-                                  {:BINARY binary :FEE "value-1p" :FOO "BAR"})
+                                  (merge extra-env {:BINARY binary :FEE "value-1p" :FOO "BAR"}))
                                 (run-token-param-support
                                   waiter-url kitchen-request
                                   {:x-waiter-allowed-params "FEE,FOO" :x-waiter-param-fee "value-1p" :x-waiter-token token}
-                                  {:BINARY binary :FEE "value-1p" :FOO "BAR"})
+                                  (merge extra-env {:BINARY binary :FEE "value-1p" :FOO "BAR"}))
                                 (run-token-param-support
                                   waiter-url kitchen-request
                                   {:x-waiter-param-fee "value-1p" :x-waiter-param-foo "value-2p" :x-waiter-token token}
-                                  {:BINARY binary :FEE "value-1p" :FOO "value-2p"})])]
+                                  (merge extra-env {:BINARY binary :FEE "value-1p" :FOO "value-2p"}))])]
           (is (= 5 (count service-ids)) "Unique service-ids were not created!"))
         (finally
           (delete-token-and-assert waiter-url token)
@@ -1897,11 +1900,13 @@
                             :name "test-profile-inside-token"
                             :permitted-user "*"
                             :run-as-user (retrieve-username)
-                            :version "1"}]
+                            :version "1"}
+          exclusive? (exclusive-mode-by-default? waiter-url)]
       (doseq [[profile {:keys [defaults]}] (seq profile-config)]
         (let [token (rand-name)
               token-description (-> (utils/remove-keys base-description (keys defaults))
-                                  (assoc :profile (name profile) :token token))]
+                                  (assoc :profile (name profile) :token token))
+              extra-env (when exclusive? {:WAITER_CONFIG_TOKEN token})]
           (try
             (testing (str "token creation with profile " profile)
               (let [register-response (post-token waiter-url token-description)]
@@ -1911,7 +1916,9 @@
                   (let [service-id (retrieve-service-id waiter-url {"x-waiter-token" token})
                         _ (is service-id "No service created by using token!")
                         service-description (service-id->service-description waiter-url service-id)]
-                    (is (= service-description (dissoc token-description :token)))))))
+                    (is (= service-description
+                           (cond-> (dissoc token-description :token)
+                             extra-env (update :env merge extra-env))))))))
 
             (testing (str "token creation with interstitial and profile " profile)
               (let [token-description (assoc token-description :interstitial-secs 10)
@@ -1922,7 +1929,9 @@
                   (let [service-id (retrieve-service-id waiter-url {"x-waiter-token" token})
                         _ (is service-id "No service created by using token!")
                         service-description (service-id->service-description waiter-url service-id)]
-                    (is (= service-description (dissoc token-description :token)))))))
+                    (is (= service-description
+                           (cond-> (dissoc token-description :token)
+                             extra-env (update :env merge extra-env))))))))
 
             (finally
               (delete-token-and-assert waiter-url token))))))))

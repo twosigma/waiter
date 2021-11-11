@@ -818,7 +818,7 @@
      source tokens with the specified version was edited."
   [token->token-hash token->token-parameters source-tokens]
   ;; safe assumption mark a service stale when every token used to access it is stale
-  (let [sanitized-tokens (remove-service-entry-tokens source-tokens)
+  (let [sanitized-tokens (remove-service-entry-tokens source-tokens #(-> % (:token) (str)))
         stale? (and (not (empty? source-tokens)) ;; ensures boolean value
                     (or (empty? sanitized-tokens)
                         (every? (fn [{:keys [token version]}]
@@ -1037,7 +1037,8 @@
   [attach-service-defaults-fn attach-token-defaults-fn token-sequence token->token-data]
   (let [merged-token-data (attach-token-defaults-fn
                             (token-sequence->merged-data token->token-data token-sequence))
-        exclusive-mode? (= "exclusive" (get merged-token-data "service-mapping"))
+        exclusive-mode? (and (-> token-sequence (remove-service-entry-tokens identity) (seq))
+                             (= "exclusive" (get merged-token-data "service-mapping")))
         service-description-template (cond-> (select-keys merged-token-data service-parameter-keys)
                                        ;; each unique token permutation will create a unique service
                                        ;; leverage WAITER_CONFIG_ prefixed environment variables being allowed
@@ -1111,8 +1112,8 @@
 
   (defn remove-service-entry-tokens
     "Removes tokens that represent direct service ID entries."
-    [source-tokens]
-    (remove #(str/starts-with? (str (:token %)) service-entry-prefix) source-tokens)))
+    [entry-seq entry->token]
+    (remove #(str/starts-with? (entry->token %) service-entry-prefix) entry-seq)))
 
 (defn refresh-service-descriptions
   "Refreshes missing service descriptions for the specified service ids.
