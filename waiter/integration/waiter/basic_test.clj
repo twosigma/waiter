@@ -228,7 +228,7 @@
               (is (str/includes? (str (get headers "server")) "Python"))))))
 
       (testing "content headers"
-        (let [request-length 100000
+        (let [request-length 120000
               long-request (apply str (repeat request-length "a"))]
 
           (testing "unchunked request"
@@ -247,7 +247,7 @@
                                  waiter-url
                                  request-headers
                                  :path "/request-info"
-                                 :body (make-chunked-body long-request 4096 20))
+                                 :body (make-chunked-body long-request 16384 200))
                   chunked-body-str (str (:body chunked-resp))
                   chunked-body-json (try-parse-json chunked-body-str)]
               (is (= request-length (get-in chunked-body-json ["request-length"])) chunked-body-str)
