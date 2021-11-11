@@ -132,7 +132,7 @@
    (preserved in the state) before the auth flow was triggered.
    Unsuccessful authentication returns either a 400 Bad request, the downstream auth server
    response, or a 401 unauthorized with appropriate details."
-  [{:keys [jwt-auth-server jwt-validator oidc-same-site-attribute password] :as oidc-authenticator} request]
+  [{:keys [jwt-auth-server jwt-validator oidc-same-site-attribute oidc-strict-mode-cookie-age-offset-secs password] :as oidc-authenticator} request]
   (if (nil? oidc-authenticator)
     (utils/exception->response
       (throw (ex-info "OIDC authentication disabled" {:status http-501-not-implemented}))
@@ -154,8 +154,12 @@
                     {:keys [claims expiry-time subject]} result-map-or-throwable
                     _ (log/info "authenticated subject is" subject "and oidc mode is" oidc-mode)
                     ;; use token expiry time only in strict mode, else allow default value for cookie age to be chosen
+                    ;; adjust the expiry time down by oidc-strict-mode-cookie-age-offset-secs seconds to ensure cookie does not outlive JWT
+                    ;; this means the cookie age can be negative, i.e. it expires immediately.
                     auth-cookie-age-in-seconds (when (= :strict oidc-mode)
-                                                 (- expiry-time (jwt/current-time-secs)))
+                                                 (-> expiry-time
+                                                   (-  (jwt/current-time-secs))
+                                                   (- oidc-strict-mode-cookie-age-offset-secs)))
                     auth-metadata {:jwt-access-token access-token
                                    :jwt-payload (utils/clj->json claims)}
                     auth-params-map (auth/build-auth-params-map :oidc subject auth-metadata)]
@@ -341,20 +345,22 @@
 
 (defrecord OidcAuthenticator [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri oidc-default-mode
                               jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request
-                              oidc-redirect-user-agent-products oidc-same-site-attribute password])
+                              oidc-redirect-user-agent-products oidc-same-site-attribute oidc-strict-mode-cookie-age-offset-secs
+                              password])
 
 (defn create-oidc-authenticator
   "Factory function for creating OIDC authenticator middleware"
   [jwt-auth-server jwt-validator
    {:keys [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri oidc-default-mode
            oidc-num-challenge-cookies-allowed-in-request oidc-redirect-user-agent-products
-           oidc-same-site-attribute password]
+           oidc-same-site-attribute oidc-strict-mode-cookie-age-offset-secs password]
     :or {allow-oidc-auth-api? false
          allow-oidc-auth-services? false
          oidc-default-mode :relaxed
          oidc-num-challenge-cookies-allowed-in-request 20
          oidc-redirect-user-agent-products #{"chrome" "mozilla"}
-         oidc-same-site-attribute "None"}}]
+         oidc-same-site-attribute "None"
+         oidc-strict-mode-cookie-age-offset-secs 15}}]
   {:pre [(satisfies? jwt/AuthServer jwt-auth-server)
          (some? jwt-validator)
          (boolean? allow-oidc-auth-api?)
@@ -363,9 +369,11 @@
          (pos-int? oidc-num-challenge-cookies-allowed-in-request)
          (set? oidc-redirect-user-agent-products)
          (contains? #{"Lax" "None" "Strict" nil} oidc-same-site-attribute)
+         (nat-int? oidc-strict-mode-cookie-age-offset-secs)
          (not (str/blank? oidc-authorize-uri))
          (contains? #{:relaxed :strict} oidc-default-mode)
          (not-empty password)]}
   (->OidcAuthenticator allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri oidc-default-mode
                        jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request
-                       oidc-redirect-user-agent-products oidc-same-site-attribute password))
+                       oidc-redirect-user-agent-products oidc-same-site-attribute
+                       oidc-strict-mode-cookie-age-offset-secs password))

@@ -142,7 +142,8 @@
 
 (deftest test-oidc-callback-request-handler
   (doseq [oidc-mode [:relaxed :strict]
-          same-site ["Lax" "None" "Strict"]]
+          same-site ["Lax" "None" "Strict"]
+          oidc-strict-mode-cookie-age-offset-secs [0 500 5000]]
     (let [password [:cached "password"]
           identifier (utils/unique-identifier)
           redirect-uri "https://www.test.com/redirect-uri"
@@ -191,11 +192,14 @@
                        :query-string (str "code=" access-code "&state=" state-code)
                        :scheme :https}
               oidc-authenticator {:oidc-same-site-attribute same-site
+                                  :oidc-strict-mode-cookie-age-offset-secs oidc-strict-mode-cookie-age-offset-secs
                                   :password password
                                   :subject-key subject-key}
               response-chan (oidc-callback-request-handler oidc-authenticator request)
               response (async/<!! response-chan)
-              expected-age (if (= :strict oidc-mode) 1000 (-> 1 t/days t/in-seconds))
+              expected-age (if (= :strict oidc-mode)
+                             (- 1000 oidc-strict-mode-cookie-age-offset-secs)
+                             (-> 1 t/days t/in-seconds))
               expected-expires-at (+ current-time-secs expected-age)]
           (is (= {:cookies {"x-auth-expires-at" {:age expected-age :value (str expected-expires-at)}
                             "x-waiter-auth" {:age expected-age
@@ -234,7 +238,8 @@
                                  "cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
                        :query-string (str "code=" access-code "&state=" state-code)
                        :scheme :https}
-              oidc-authenticator {:password password
+              oidc-authenticator {:oidc-strict-mode-cookie-age-offset-secs 0
+                                  :password password
                                   :subject-key subject-key}
               response-chan (oidc-callback-request-handler oidc-authenticator request)
               response (async/<!! response-chan)]
@@ -260,7 +265,8 @@
                                  "cookie" (str oidc-challenge-cookie-prefix identifier "=" challenge-cookie)}
                        :query-string (str "code=" access-code "&state=" state-code)
                        :scheme :https}
-              oidc-authenticator {:password password
+              oidc-authenticator {:oidc-strict-mode-cookie-age-offset-secs 0
+                                  :password password
                                   :subject-key subject-key}
               response-chan (oidc-callback-request-handler oidc-authenticator request)
               response (async/<!! response-chan)]
