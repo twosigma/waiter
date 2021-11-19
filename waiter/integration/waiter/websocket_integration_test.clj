@@ -120,7 +120,7 @@
                              (deliver response-promise :done)
                              (async/close! out)))
                          {:middleware (fn [_ ^UpgradeRequest request]
-                                        (websocket/add-headers-to-upgrade-request! request (conj waiter-headers additional-headers))
+                                        (websocket/add-headers-to-upgrade-request! request (merge waiter-headers additional-headers))
                                         (add-auth-cookie request auth-cookie-value))})
             [close-code error] (connection->ctrl-data connection)]
         (is (= :qbits.jet.websocket/close close-code))
