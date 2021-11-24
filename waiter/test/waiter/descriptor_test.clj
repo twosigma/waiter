@@ -517,7 +517,8 @@
                                     "fallback-period-secs" 90
                                     "permitted-user" "*"}}
       service-description-defaults {}
-      token-defaults {"fallback-period-secs" 300}
+      token-defaults {"fallback-period-secs" 300
+                      "service-mapping" "legacy"}
       metric-group-mappings []
       attach-service-defaults-fn #(sd/merge-defaults % service-description-defaults profile->defaults metric-group-mappings)
       attach-token-defaults-fn #(sd/attach-token-defaults % token-defaults profile->defaults)
@@ -749,7 +750,8 @@
                          :fallback-period-secs 300
                          :service-description-template service-description-1
                          :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
-                         :token->token-data {test-token token-data-1})
+                         :token->token-data {test-token token-data-1}
+                         :token-service-mapping "legacy")
               :waiter-headers waiter-headers}
              previous-descriptor))
       (is (nil? (descriptor->previous-descriptor kv-store builder previous-descriptor)))))
@@ -791,18 +793,19 @@
                          :fallback-period-secs 100
                          :service-description-template service-description-1
                          :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
-                         :token->token-data {test-token token-data-1})
+                         :token->token-data {test-token token-data-1}
+                         :token-service-mapping "legacy")
               :waiter-headers waiter-headers}
              previous-descriptor))
       (is (nil? (descriptor->previous-descriptor kv-store builder previous-descriptor)))))
 
   (deftest test-descriptor->previous-descriptor-token-with-invalid-intervening-previous
     (let [test-token "test-token"
-          token-data-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo1"}
-          service-description-1 token-data-1
+          token-data-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "service-mapping" "exclusive" "version" "foo1"}
+          service-description-1 (select-keys token-data-1 sd/service-parameter-keys)
           token-data-2 {"cmd" 1234 "cpus" 2 "mem" 64 "previous" token-data-1 "run-as-user" 9876 "version" "foo2"}
           token-data-3 {"cmd" "ls" "cpus" 2 "mem" 64 "previous" token-data-2 "run-as-user" "ru" "version" "foo2"}
-          service-description-3 token-data-3
+          service-description-3 (select-keys token-data-3 sd/service-parameter-keys)
           sources {:headers {}
                    :service-description-template service-description-3
                    :token->token-data {test-token token-data-3}
@@ -817,39 +820,44 @@
                                   :waiter-headers waiter-headers}
                                (attach-token-fallback-source
                                  attach-service-defaults-fn attach-token-defaults-fn build-service-description-and-id-helper))
-          previous-descriptor (descriptor->previous-descriptor kv-store builder current-descriptor)]
+          previous-descriptor (descriptor->previous-descriptor kv-store builder current-descriptor)
+          expected-core-description (assoc-in service-description-1 ["env" "WAITER_CONFIG_TOKEN"] test-token)]
       (is (= {:component->previous-descriptor-fns (:component->previous-descriptor-fns current-descriptor)
-              :core-service-description service-description-1
+              :core-service-description expected-core-description
               :on-the-fly? nil
               :passthrough-headers passthrough-headers
               :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
               :service-authentication-disabled false
-              :service-description (merge service-description-defaults service-description-1)
-              :service-id (sd/service-description->service-id service-id-prefix service-description-1)
+              :service-description (-> service-description-defaults
+                                     (merge service-description-1)
+                                     (assoc-in ["env" "WAITER_CONFIG_TOKEN"] test-token))
+              :service-id (sd/service-description->service-id service-id-prefix expected-core-description)
               :service-preauthorized false
               :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
               :sources (assoc sources
                          :fallback-period-secs 300
                          :service-description-template service-description-1
                          :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
-                         :token->token-data {test-token token-data-1})
+                         :token->token-data {test-token token-data-1}
+                         :token-service-mapping "exclusive")
               :waiter-headers waiter-headers}
              previous-descriptor))
       (is (nil? (descriptor->previous-descriptor kv-store builder previous-descriptor)))))
 
   (deftest test-descriptor->previous-descriptor-token-with-exception-on-intervening-previous
     (let [test-token "test-token"
-          token-data-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "foo1"}
-          service-description-1 token-data-1
+          token-data-1 {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "service-mapping" "exclusive" "version" "foo1"}
+          service-description-1 (select-keys token-data-1 sd/service-parameter-keys)
           token-data-2 {"cmd" 1234 "cpus" 2 "mem" 64 "previous" token-data-1 "run-as-user" 9876 "version" "foo2"}
-          token-data-3 {"cmd" "ls" "cpus" 2 "mem" 64 "previous" token-data-2 "run-as-user" "ru" "version" "foo2"}
-          service-description-3 token-data-3
+          token-data-3 {"cmd" "ls" "cpus" 2 "mem" 64 "previous" token-data-2 "run-as-user" "ru" "service-mapping" "legacy" "version" "foo2"}
+          service-description-3 (select-keys token-data-3 sd/service-parameter-keys)
           sources {:headers {}
                    :service-description-template service-description-3
                    :token->token-data {test-token token-data-3}
                    :token-authentication-disabled false
                    :token-preauthorized false
-                   :token-sequence [test-token]}
+                   :token-sequence [test-token]
+                   :token-service-mapping "legacy"}
           passthrough-headers {}
           waiter-headers {}
           current-descriptor (-> {:passthrough-headers passthrough-headers
@@ -867,23 +875,27 @@
                                                   (deliver exception-thrown-promise true)
                                                   (throw (ex-info "Invalid command" service-description)))
                                                 (current-service-description->service-id service-prefix service-description)))]
-                                (descriptor->previous-descriptor kv-store builder current-descriptor))]
+                                (descriptor->previous-descriptor kv-store builder current-descriptor))
+          expected-core-description (assoc-in service-description-1 ["env" "WAITER_CONFIG_TOKEN"] test-token)]
       (is (realized? exception-thrown-promise))
       (is (= {:component->previous-descriptor-fns (:component->previous-descriptor-fns current-descriptor)
-              :core-service-description service-description-1
+              :core-service-description expected-core-description
               :on-the-fly? nil
               :passthrough-headers passthrough-headers
               :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
               :service-authentication-disabled false
-              :service-description (merge service-description-defaults service-description-1)
-              :service-id (sd/service-description->service-id service-id-prefix service-description-1)
+              :service-description (-> service-description-defaults
+                                     (merge service-description-1)
+                                     (assoc-in ["env" "WAITER_CONFIG_TOKEN"] test-token))
+              :service-id (sd/service-description->service-id service-id-prefix expected-core-description)
               :service-preauthorized false
               :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
               :sources (assoc sources
                          :fallback-period-secs 300
                          :service-description-template service-description-1
                          :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
-                         :token->token-data {test-token token-data-1})
+                         :token->token-data {test-token token-data-1}
+                         :token-service-mapping "exclusive")
               :waiter-headers waiter-headers}
              previous-descriptor))
       (is (nil? (descriptor->previous-descriptor kv-store builder previous-descriptor)))))
@@ -924,7 +936,8 @@
                          :fallback-period-secs 300
                          :service-description-template service-description-1
                          :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
-                         :token->token-data {test-token token-data-1})
+                         :token->token-data {test-token token-data-1}
+                         :token-service-mapping "legacy")
               :waiter-headers waiter-headers}
              previous-descriptor))
       (is (nil? (descriptor->previous-descriptor kv-store builder previous-descriptor)))))
@@ -966,7 +979,8 @@
                            :fallback-period-secs 300
                            :service-description-template service-description-1
                            :source-tokens [(sd/source-tokens-entry test-token token-data-1)]
-                           :token->token-data {test-token token-data-1})
+                           :token->token-data {test-token token-data-1}
+                           :token-service-mapping "legacy")
                 :waiter-headers waiter-headers}
                previous-descriptor)))))
 
@@ -1038,7 +1052,8 @@
                                   :source-tokens [(sd/source-tokens-entry test-token-1 token-data-1)
                                                   (sd/source-tokens-entry test-token-2 token-data-2p)]
                                   :token->token-data {test-token-1 token-data-1
-                                                      test-token-2 token-data-2p}))
+                                                      test-token-2 token-data-2p}
+                                  :token-service-mapping "legacy"))
                 :waiter-headers waiter-headers}
                previous-descriptor)))
       (let [prev-descriptor-2 (descriptor->previous-descriptor
@@ -1064,7 +1079,8 @@
                              :source-tokens [(sd/source-tokens-entry test-token-1 token-data-1p)
                                              (sd/source-tokens-entry test-token-2 token-data-2p)]
                              :token->token-data {test-token-1 token-data-1p
-                                                 test-token-2 token-data-2p})
+                                                 test-token-2 token-data-2p}
+                             :token-service-mapping "legacy")
                   :waiter-headers waiter-headers}
                  (dissoc prev-descriptor-2 :retrieve-fallback-service-description))))
         (is (nil? (descriptor->previous-descriptor

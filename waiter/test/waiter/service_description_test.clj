@@ -319,7 +319,8 @@
                                 (str/includes? token "proser") (assoc "profile" "service")
                                 (str/includes? token "proweb") (assoc "profile" "webapp")
                                 (str/includes? token "run") (assoc "run-as-user" "ruser")
-                                (str/includes? token "shrexc") (assoc "service-mapping" "exclusive"))
+                                (str/includes? token "shrexc") (assoc "service-mapping" "exclusive")
+                                (str/includes? token "shrleg") (assoc "service-mapping" "legacy"))
                               {}))
         build-source-tokens (fn [& tokens]
                               (mapv (fn [token] (source-tokens-entry token (create-token-data token))) tokens))]
@@ -332,7 +333,8 @@
                                           "fallback-period-secs" 90
                                           "permitted-user" "*"}}
             service-description-defaults {}
-            token-defaults {"fallback-period-secs" 300}
+            token-defaults {"fallback-period-secs" 300
+                            "service-mapping" "legacy"}
             metric-group-mappings []
             attach-service-defaults-fn #(merge-defaults % service-description-defaults profile->defaults metric-group-mappings)
             attach-token-defaults-fn #(attach-token-defaults % token-defaults profile->defaults)
@@ -360,7 +362,8 @@
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
-                                     :token-sequence ["test-host"]}}
+                                     :token-sequence ["test-host"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:WITH Waiter Hostname"
                           :waiter-headers {"x-waiter-cmd" "test-cmd"
                                            "x-waiter-cpus" 1
@@ -382,7 +385,8 @@
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
-                                     :token-sequence []}}
+                                     :token-sequence []
+                                     :token-service-mapping nil}}
                          {:name "prepare-service-description-sources:WITH Service Desc specific Waiter Headers"
                           :waiter-headers {"x-waiter-cmd" "test-cmd"
                                            "x-waiter-cpus" 1
@@ -406,7 +410,8 @@
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
-                                     :token-sequence ["test-host"]}}
+                                     :token-sequence ["test-host"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:WITH Service Desc specific Waiter Headers"
                           :waiter-headers {"x-waiter-cmd" "test-cmd"
                                            "x-waiter-cpus" 1
@@ -427,7 +432,8 @@
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
-                                     :token-sequence []}}
+                                     :token-sequence []
+                                     :token-service-mapping nil}}
                          {:name "prepare-service-description-sources:WITHOUT Service Desc specific Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar"
                                            "x-waiter-source" "serv-desc"}
@@ -442,7 +448,8 @@
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
-                                     :token-sequence ["test-host"]}}
+                                     :token-sequence ["test-host"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Token in Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar"
                                            "x-waiter-source" "serv-desc"
@@ -457,7 +464,8 @@
                                      :token->token-data {"test-token" (create-token-data "test-token")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
-                                     :token-sequence ["test-token"]}}
+                                     :token-sequence ["test-token"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Two tokens in Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar"
                                            "x-waiter-source" "serv-desc"
@@ -474,7 +482,8 @@
                                                          "test-token2" (create-token-data "test-token2")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
-                                     :token-sequence ["test-token" "test-token2"]}}
+                                     :token-sequence ["test-token" "test-token2"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Multiple tokens in Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar"
                                            "x-waiter-source" "serv-desc"
@@ -494,7 +503,8 @@
                                                          "test-token2" (create-token-data "test-token2")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
-                                     :token-sequence ["test-token" "test-token2" "test-cpus-token" "test-mem-token"]}}
+                                     :token-sequence ["test-token" "test-token2" "test-cpus-token" "test-mem-token"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Using Host with missing values"
                           :waiter-headers {}
                           :passthrough-headers {"host" "test-host"
@@ -508,7 +518,8 @@
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
-                                     :token-sequence ["test-host"]}}
+                                     :token-sequence ["test-host"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Using Host without port with missing values"
                           :waiter-headers {}
                           :passthrough-headers {"host" "test-host:1234"
@@ -522,7 +533,8 @@
                                      :token->token-data {"test-host" (create-token-data "test-host")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
-                                     :token-sequence ["test-host"]}}
+                                     :token-sequence ["test-host"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Using Token with run-as-user"
                           :waiter-headers {"x-waiter-token" "test-token-run"}
                           :passthrough-headers {"host" "test-host:1234"
@@ -537,7 +549,8 @@
                                      :token->token-data {"test-token-run" (create-token-data "test-token-run")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
-                                     :token-sequence ["test-token-run"]}}
+                                     :token-sequence ["test-token-run"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Using Token with permitted-user"
                           :waiter-headers {"x-waiter-token" "test-token-per-fall"}
                           :passthrough-headers {"host" "test-host:1234"
@@ -551,7 +564,8 @@
                                      :token->token-data {"test-token-per-fall" (create-token-data "test-token-per-fall")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
-                                     :token-sequence ["test-token-per-fall"]}}
+                                     :token-sequence ["test-token-per-fall"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Using Token with run-as-user and permitted-user and another token"
                           :waiter-headers {"x-waiter-token" "test-token-per-run"}
                           :passthrough-headers {"host" "test-host:1234"
@@ -567,7 +581,8 @@
                                      :token->token-data {"test-token-per-run" (create-token-data "test-token-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
-                                     :token-sequence ["test-token-per-run"]}}
+                                     :token-sequence ["test-token-per-run"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Using Token with run-as-user and permitted-user"
                           :waiter-headers {"x-waiter-token" "test-token-per-run,test-cpus-token"}
                           :passthrough-headers {"host" "test-host:1234"
@@ -585,7 +600,8 @@
                                                          "test-token-per-run" (create-token-data "test-token-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
-                                     :token-sequence ["test-token-per-run" "test-cpus-token"]}}
+                                     :token-sequence ["test-token-per-run" "test-cpus-token"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Parse metadata headers"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-metadata-baz" "quux"
@@ -600,7 +616,8 @@
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
-                                     :token-sequence []}}
+                                     :token-sequence []
+                                     :token-service-mapping nil}}
                          {:name "prepare-service-description-sources:Parse environment headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-baz" "quux"
@@ -615,7 +632,8 @@
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
-                                     :token-sequence []}}
+                                     :token-sequence []
+                                     :token-service-mapping nil}}
                          {:name "prepare-service-description-sources:Parse param headers:valid keys:host-token"
                           :waiter-headers {"x-waiter-param-bar" "bar-value"
                                            "x-waiter-param-foo" "foo-value"}
@@ -635,7 +653,8 @@
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
-                                     :token-sequence ["test-host-allowed-cpus-mem-per-run"]}}
+                                     :token-sequence ["test-host-allowed-cpus-mem-per-run"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Parse param headers:valid keys:host-token:on-the-fly"
                           :waiter-headers {"x-waiter-cpus" "20"
                                            "x-waiter-param-bar" "bar-value"
@@ -657,7 +676,8 @@
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
-                                     :token-sequence ["test-host-allowed-cpus-mem-per-run"]}}
+                                     :token-sequence ["test-host-allowed-cpus-mem-per-run"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Parse param headers:valid keys:token-header"
                           :waiter-headers {"x-waiter-param-bar" "bar-value"
                                            "x-waiter-param-foo" "foo-value"
@@ -678,7 +698,8 @@
                                      :token->token-data {"test-host-allowed-cpus-mem-per-run" (create-token-data "test-host-allowed-cpus-mem-per-run")}
                                      :token-authentication-disabled false
                                      :token-preauthorized true
-                                     :token-sequence ["test-host-allowed-cpus-mem-per-run"]}}
+                                     :token-sequence ["test-host-allowed-cpus-mem-per-run"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Parse param headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-param-baz" "quux"
@@ -693,7 +714,8 @@
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
-                                     :token-sequence []}}
+                                     :token-sequence []
+                                     :token-service-mapping nil}}
                          {:name "prepare-service-description-sources:Parse distinct e and param headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-baz" "quux"
@@ -712,7 +734,8 @@
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
-                                     :token-sequence []}}
+                                     :token-sequence []
+                                     :token-service-mapping nil}}
                          {:name "prepare-service-description-sources:Parse overlap env and param headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-baz" "quux"
@@ -731,7 +754,8 @@
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
-                                     :token-sequence []}}
+                                     :token-sequence []
+                                     :token-service-mapping nil}}
                          {:name "prepare-service-description-sources:Parse environment headers:invalid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-1" "quux"
@@ -746,7 +770,8 @@
                                      :token->token-data {},
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
-                                     :token-sequence []}}
+                                     :token-sequence []
+                                     :token-service-mapping nil}}
                          {:name "prepare-service-description-sources:profile:not-preauthorized-missing-permitted-user"
                           :waiter-headers {"x-waiter-token" "test-token-run-proweb"}
                           :passthrough-headers {}
@@ -761,7 +786,8 @@
                                      :token->token-data {"test-token-run-proweb" (create-token-data "test-token-run-proweb")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
-                                     :token-sequence ["test-token-run-proweb"]}}
+                                     :token-sequence ["test-token-run-proweb"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:profile:not-preauthorized-missing-run-as-user"
                           :waiter-headers {"x-waiter-token" "test-token-proser"}
                           :passthrough-headers {}
@@ -775,7 +801,8 @@
                                      :token->token-data {"test-token-proser" (create-token-data "test-token-proser")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
-                                     :token-sequence ["test-token-proser"]}}
+                                     :token-sequence ["test-token-proser"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:profile:preauthorized-missing-run-as-user"
                           :waiter-headers {"x-waiter-token" "test-token-run-proser"}
                           :passthrough-headers {}
@@ -790,22 +817,36 @@
                                      :token->token-data {"test-token-run-proser" (create-token-data "test-token-run-proser")}
                                      :token-authentication-disabled false,
                                      :token-preauthorized true,
-                                     :token-sequence ["test-token-run-proser"]}}
+                                     :token-sequence ["test-token-run-proser"]
+                                     :token-service-mapping "legacy"}}
+                         {:name "prepare-service-description-sources:service-mapping:legacy"
+                          :waiter-headers {"x-waiter-token" "test-token-shrleg"}
+                          :passthrough-headers {}
+                          :expected {:fallback-period-secs 300
+                                     :headers {}
+                                     :service-description-template {"cmd" "token-user"
+                                                                    "name" "test-token-shrleg"
+                                                                    "version" "token"}
+                                     :source-tokens (build-source-tokens "test-token-shrleg")
+                                     :token->token-data {"test-token-shrleg" (create-token-data "test-token-shrleg")}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false
+                                     :token-sequence ["test-token-shrleg"]
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:service-mapping:exclusive"
                           :waiter-headers {"x-waiter-token" "test-token-shrexc"}
                           :passthrough-headers {}
                           :expected {:fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"cmd" "token-user"
-                                                                    "env" {"WAITER_CONFIG_TOKEN" "test-token-shrexc"}
                                                                     "name" "test-token-shrexc"
                                                                     "version" "token"}
                                      :source-tokens (build-source-tokens "test-token-shrexc")
                                      :token->token-data {"test-token-shrexc" (create-token-data "test-token-shrexc")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
-                                     :token-sequence ["test-token-shrexc"]}}
-                         )]
+                                     :token-sequence ["test-token-shrexc"]
+                                     :token-service-mapping "exclusive"}})]
         (doseq [{:keys [expected name passthrough-headers waiter-headers]} test-cases]
           (testing (str "Test " name)
             (let [actual (prepare-service-description-sources
@@ -856,7 +897,8 @@
                           :token->token-data {test-token token-data}
                           :token-authentication-disabled true
                           :token-preauthorized true
-                          :token-sequence [test-token]}]
+                          :token-sequence [test-token]
+                          :token-service-mapping nil}]
             (is (= expected actual))))))
 
     (testing "limited-access token"
@@ -887,7 +929,8 @@
                           :token->token-data {test-token token-data}
                           :token-authentication-disabled false
                           :token-preauthorized true
-                          :token-sequence [test-token]}]
+                          :token-sequence [test-token]
+                          :token-service-mapping nil}]
             (is (= expected actual))))))))
 
 (defn- compute-service-description-helper
