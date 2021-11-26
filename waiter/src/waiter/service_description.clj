@@ -856,7 +856,7 @@
                   service-id-prefix source-tokens token-sequence token-service-mapping username]}]
     (let [core-service-description
           (cond-> user-service-description
-            ;; each unique token permutation will create a unique service
+            ;; include token name in the service description to enforce unique token->service mappings
             ;; leverage WAITER_CONFIG_ prefixed environment variables being allowed
             (= "exclusive" token-service-mapping)
             (assoc-token-in-env token-sequence)
