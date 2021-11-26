@@ -741,6 +741,7 @@
               :on-the-fly? nil
               :passthrough-headers passthrough-headers
               :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
+              :run-as-user-source "unknown"
               :service-authentication-disabled false
               :service-description (merge service-description-defaults service-description-1)
               :service-id (sd/service-description->service-id service-id-prefix service-description-1)
@@ -782,6 +783,7 @@
               :on-the-fly? nil
               :passthrough-headers passthrough-headers
               :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
+              :run-as-user-source "unknown"
               :service-authentication-disabled false
               :service-description (merge (sd/compute-service-defaults
                                             service-description-defaults profile->defaults "webapp")
@@ -827,6 +829,7 @@
               :on-the-fly? nil
               :passthrough-headers passthrough-headers
               :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
+              :run-as-user-source "token"
               :service-authentication-disabled false
               :service-description (-> service-description-defaults
                                      (merge service-description-1)
@@ -883,6 +886,7 @@
               :on-the-fly? nil
               :passthrough-headers passthrough-headers
               :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
+              :run-as-user-source "token"
               :service-authentication-disabled false
               :service-description (-> service-description-defaults
                                      (merge service-description-1)
@@ -927,6 +931,7 @@
               :on-the-fly? nil
               :passthrough-headers passthrough-headers
               :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
+              :run-as-user-source "unknown"
               :service-authentication-disabled false
               :service-description (merge service-description-defaults service-description-1)
               :service-id (sd/service-description->service-id service-id-prefix service-description-1)
@@ -970,6 +975,7 @@
                 :on-the-fly? true
                 :passthrough-headers passthrough-headers
                 :reference-type->entry {:token {:sources [(reference-tokens-entry test-token token-data-1)]}}
+                :run-as-user-source "unknown"
                 :service-authentication-disabled false
                 :service-description (merge service-description-defaults expected-core-service-description)
                 :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)
@@ -1040,6 +1046,7 @@
                 :passthrough-headers passthrough-headers
                 :reference-type->entry {:token {:sources [(reference-tokens-entry test-token-1 token-data-1)
                                                           (reference-tokens-entry test-token-2 token-data-2p)]}}
+                :run-as-user-source "unknown"
                 :service-authentication-disabled false
                 :service-description (merge service-description-defaults expected-core-service-description)
                 :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)
@@ -1067,6 +1074,7 @@
                   :passthrough-headers passthrough-headers
                   :reference-type->entry {:token {:sources [(reference-tokens-entry test-token-1 token-data-1p)
                                                             (reference-tokens-entry test-token-2 token-data-2p)]}}
+                  :run-as-user-source "unknown"
                   :service-authentication-disabled false
                   :service-description (merge service-description-defaults expected-core-service-description)
                   :service-id (sd/service-description->service-id service-id-prefix expected-core-service-description)
