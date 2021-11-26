@@ -831,23 +831,37 @@
                              (retrieve-token-update-epoch-time token (token->token-parameters token) version)))
                       (reduce utils/nil-safe-max nil))))))
 
+(defn- assoc-token-in-env
+  "Attaches the token sequence as an environment variable in the service description."
+  [service-description token-sequence]
+  (assoc-in service-description ["env" "WAITER_CONFIG_TOKEN"] (str/join "," token-sequence)))
+
+(defn- assoc-approved-run-as-requester-parameters
+  "Attaches run-as-requester parameters if the services has been approved."
+  [service-description assoc-run-as-user-approved? service-id-prefix username]
+  (let [candidate-service-description (assoc-run-as-requester-fields service-description username)
+        candidate-service-id (service-description->service-id service-id-prefix candidate-service-description)]
+    (if (assoc-run-as-user-approved? candidate-service-id)
+      (do
+        (log/debug "appending run-as-user into pre-approved service" candidate-service-id)
+        candidate-service-description)
+      service-description)))
+
 (defrecord DefaultServiceDescriptionBuilder [kv-store max-constraints-schema metric-group-mappings profile->defaults
                                              service-description-defaults]
   ServiceDescriptionBuilder
 
   (build [this user-service-description
           {:keys [assoc-run-as-user-approved? component->previous-descriptor-fns reference-type->entry
-                  service-id-prefix source-tokens username]}]
+                  service-id-prefix source-tokens token-sequence token-service-mapping username]}]
     (let [core-service-description
-          (if (get user-service-description "run-as-user")
-            user-service-description
-            (let [candidate-service-description (assoc-run-as-requester-fields user-service-description username)
-                  candidate-service-id (service-description->service-id service-id-prefix candidate-service-description)]
-              (if (assoc-run-as-user-approved? candidate-service-id)
-                (do
-                  (log/debug "appending run-as-user into pre-approved service" candidate-service-id)
-                  candidate-service-description)
-                user-service-description)))
+          (cond-> user-service-description
+            ;; include token name in the service description to enforce unique token->service mappings
+            ;; leverage WAITER_CONFIG_ prefixed environment variables being allowed
+            (= "exclusive" token-service-mapping)
+            (assoc-token-in-env token-sequence)
+            (not (contains? user-service-description "run-as-user"))
+            (assoc-approved-run-as-requester-parameters assoc-run-as-user-approved? service-id-prefix username))
           service-id (service-description->service-id service-id-prefix core-service-description)
           service-description (compute-effective this service-id core-service-description)
           reference-type->entry (cond-> (or reference-type->entry {})
@@ -1037,12 +1051,9 @@
   [attach-service-defaults-fn attach-token-defaults-fn token-sequence token->token-data]
   (let [merged-token-data (attach-token-defaults-fn
                             (token-sequence->merged-data token->token-data token-sequence))
-        exclusive-mode? (and (-> token-sequence (remove-service-entry-tokens identity) (seq))
-                             (= "exclusive" (get merged-token-data "service-mapping")))
-        service-description-template (cond-> (select-keys merged-token-data service-parameter-keys)
-                                       ;; each unique token permutation will create a unique service
-                                       ;; leverage WAITER_CONFIG_ prefixed environment variables being allowed
-                                       exclusive-mode? (assoc-in ["env" "WAITER_CONFIG_TOKEN"] (str/join "," token-sequence)))
+        token-service-mapping (when (-> token-sequence (remove-service-entry-tokens identity) (seq))
+                                (get merged-token-data "service-mapping"))
+        service-description-template (select-keys merged-token-data service-parameter-keys)
         source-tokens (mapv #(source-tokens-entry % (token->token-data %)) token-sequence)]
     {:fallback-period-secs (get merged-token-data "fallback-period-secs")
      :service-description-template service-description-template
@@ -1054,7 +1065,8 @@
                                (-> service-description-template
                                  (attach-service-defaults-fn)
                                  (token-preauthorized?)))
-     :token-sequence token-sequence}))
+     :token-sequence token-sequence
+     :token-service-mapping token-service-mapping}))
 
 (defn- prepare-service-description-template-from-tokens
   "Prepares the service description using the token(s)."
@@ -1227,7 +1239,7 @@
      If a non-param on-the-fly header is provided, the username is included as the run-as-user in on-the-fly headers.
      If after the merge a run-as-user is not available, then `username` becomes the run-as-user.
      If after the merge a permitted-user is not available, then `username` becomes the permitted-user."
-    [{:keys [headers service-description-template source-tokens token-authentication-disabled token-preauthorized]}
+    [{:keys [headers service-description-template source-tokens token-authentication-disabled token-preauthorized token-sequence token-service-mapping]}
      waiter-headers passthrough-headers component->previous-descriptor-fns service-id-prefix username
      assoc-run-as-user-approved? service-description-builder]
     (let [headers-without-params (dissoc headers "param")
@@ -1289,6 +1301,8 @@
                                 :reference-type->entry {}
                                 :service-id-prefix service-id-prefix
                                 :source-tokens source-tokens
+                                :token-sequence token-sequence
+                                :token-service-mapping token-service-mapping
                                 :username username})
               service-preauthorized (and token-preauthorized (empty? service-description-based-on-headers))
               service-authentication-disabled (and token-authentication-disabled (empty? service-description-based-on-headers))]
