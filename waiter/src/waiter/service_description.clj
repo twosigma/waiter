@@ -1223,6 +1223,14 @@
       (assoc service-description "metadata" sanitized-metadata))
     service-description))
 
+(defn retrieve-most-recent-last-update-time
+  "Computes the most recent last-update-time from the token->token-data map."
+  [token->token-data]
+  (->> token->token-data
+    (pc/map-vals (fn [{:strs [last-update-time]}] (or last-update-time 0)))
+    (vals)
+    (reduce max 0)))
+
 (let [error-message-map-fn (fn [passthrough-headers waiter-headers]
                              {:status http-400-bad-request
                               :non-waiter-headers (dissoc passthrough-headers "authorization")
@@ -1239,7 +1247,7 @@
      If a non-param on-the-fly header is provided, the username is included as the run-as-user in on-the-fly headers.
      If after the merge a run-as-user is not available, then `username` becomes the run-as-user.
      If after the merge a permitted-user is not available, then `username` becomes the permitted-user."
-    [{:keys [headers service-description-template source-tokens token-authentication-disabled token-preauthorized token-sequence token-service-mapping]}
+    [{:keys [headers service-description-template source-tokens token->token-data token-authentication-disabled token-preauthorized token-sequence token-service-mapping]}
      waiter-headers passthrough-headers component->previous-descriptor-fns service-id-prefix username
      assoc-run-as-user-approved? service-description-builder]
     (let [headers-without-params (dissoc headers "param")
@@ -1295,8 +1303,12 @@
           (throw (ex-info "idle-timeout-mins on-the-fly header configured to a value of zero is not supported"
                           {:log-level :info :status http-400-bad-request :waiter-headers waiter-headers}))))
       (sling/try+
-        (let [build-map (build service-description-builder user-service-description
+        (let [component->last-update-epoch-time (cond-> {}
+                                                  (seq token->token-data)
+                                                  (assoc :token (retrieve-most-recent-last-update-time token->token-data)))
+              build-map (build service-description-builder user-service-description
                                {:assoc-run-as-user-approved? assoc-run-as-user-approved?
+                                :component->last-update-epoch-time component->last-update-epoch-time
                                 :component->previous-descriptor-fns component->previous-descriptor-fns
                                 :reference-type->entry {}
                                 :service-id-prefix service-id-prefix
@@ -1383,9 +1395,7 @@
     (some->> descriptor
       :sources
       :token->token-data
-      (pc/map-vals (fn [{:strs [last-update-time]}] (or last-update-time 0)))
-      vals
-      (reduce max))
+      (retrieve-most-recent-last-update-time))
     0))
 
 (defn service-id->service-description
