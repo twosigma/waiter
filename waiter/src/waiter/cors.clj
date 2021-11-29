@@ -87,6 +87,19 @@
                  :status http-200-ok})))))
       (handler request))))
 
+(defn bless-cors-response
+  "Blesses a response with CORS access-control-* headers."
+  [response request waiter-request? exposed-headers-str]
+  (let [{:keys [headers]} request
+        {:strs [origin]} headers]
+    (cond-> (update-in response [:headers] assoc
+                                "access-control-allow-credentials" "true"
+                                "access-control-allow-origin" origin)
+      (and exposed-headers-str ;; exposed headers are configured
+           (not (utils/same-origin request)) ;; CORS request
+           (waiter-request? request)) ;; request made to a waiter router
+      (update :headers assoc "access-control-expose-headers" exposed-headers-str))))
+
 (defn wrap-cors-request
   "Middleware that handles CORS request authorization.
    This middleware needs to come after any authentication middleware as the CORS
@@ -99,15 +112,7 @@
             {:strs [origin]} headers
             {:keys [allowed? summary]} (if origin
                                          (request-check cors-validator request)
-                                         {:allowed? false :summary {:wrap-cors-request [:origin-absent]}})
-            bless (fn [response]
-                    (cond-> (update-in response [:headers] assoc
-                                       "access-control-allow-origin" origin
-                                       "access-control-allow-credentials" "true")
-                      (and exposed-headers-str ;; exposed headers are configured
-                           (not (utils/same-origin request)) ;; CORS request
-                           (waiter-request? request)) ;; request made to a waiter router
-                      (update :headers assoc "access-control-expose-headers" exposed-headers-str)))]
+                                         {:allowed? false :summary {:wrap-cors-request [:origin-absent]}})]
         (if (not origin)
           (handler request)
           (do
@@ -121,7 +126,7 @@
                                :log-level :warn})))
             (log/info "cors request allowed" summary)
             (-> (handler request)
-              (ru/update-response bless))))))))
+              (ru/update-response #(bless-cors-response % request waiter-request? exposed-headers-str)))))))))
 
 (defrecord PatternBasedCorsValidator [pattern-check]
   CorsValidator

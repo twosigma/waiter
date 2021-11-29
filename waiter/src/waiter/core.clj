@@ -1467,10 +1467,17 @@
    :async-status-v2-handler-fn (pc/fnk [async-status-handler-fn]
                                  (fn async-status-v2-handler-fn [request]
                                    (async-req/delegate-async-v2-request request async-status-handler-fn)))
-   :auth-expires-at-handler-fn (pc/fnk [[:state passwords]]
-                                 (let [password (first passwords)]
+   :auth-expires-at-handler-fn (pc/fnk [[:routines waiter-request?-fn]
+                                        [:settings cors-config]
+                                        [:state passwords]]
+                                 (let [password (first passwords)
+                                       {:keys [exposed-headers]} cors-config
+                                       exposed-headers-str (when (seq exposed-headers)
+                                                             (str/join ", " exposed-headers))]
                                    (fn auth-expires-at-handler-fn [request]
-                                     (auth/process-auth-expires-at-request password request))))
+                                     (cond-> (auth/process-auth-expires-at-request password request)
+                                       (not (utils/same-origin request)) ;; CORS request
+                                       (ru/update-response #(cors/bless-cors-response % request waiter-request?-fn exposed-headers-str))))))
    :auth-keep-alive-handler-fn (pc/fnk [[:routines token->token-parameters wrap-service-discovery-fn]
                                         [:state passwords waiter-hostnames]
                                         wrap-secure-request-fn]

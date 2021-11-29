@@ -870,7 +870,9 @@
     (log/info "Basic waiter-auth test")
     (let [{:keys [body cookies headers] :as response} (make-request waiter-url "/waiter-auth")
           set-cookie (get headers "set-cookie")
-          current-user (retrieve-username)]
+          current-user (retrieve-username)
+          {{:keys [exposed-headers max-age]} :cors-config} (waiter-settings waiter-url)
+          exposed-headers-str (str/join ", " (or exposed-headers []))]
       (assert-response-status response http-200-ok)
       (is (contains? headers "x-waiter-auth-method") (str headers))
       (is (not= "cookie" (get headers "x-waiter-auth-method")) (str headers))
@@ -908,8 +910,7 @@
                       "principal" x-waiter-auth-principal}
                      (some-> response :body try-parse-json))
                   (str response)))
-            (let [{{:keys [max-age]} :cors-config} (waiter-settings waiter-url)
-                  access-control-request-headers "content-type, cookie"
+            (let [access-control-request-headers "content-type, cookie"
                   origin "https://foo.bar.com"
                   {:keys [headers] :as response}
                   (make-request waiter-url "/.well-known/auth/expires-at"
@@ -926,6 +927,35 @@
                       "access-control-allow-origin" origin
                       "access-control-max-age" (str max-age)}
                      (utils/filterm #(str/starts-with? (str (key %)) "access-control-") headers))))
+            (testing "non-cors request to expires-at endpoint"
+              (let [host "fee.fie.com"
+                    origin "https://fee.fie.com"
+                    response (make-request waiter-url "/.well-known/auth/expires-at"
+                                           :cookies request-cookies
+                                           :headers {"host" host "origin" origin}
+                                           :method :get)]
+                (assert-response-status response http-200-ok)
+                (assert-waiter-response response)
+                (is (= {"expires-at" (-> auth-expires-at-cookie :value utils/parse-int)
+                        "principal" x-waiter-auth-principal}
+                       (some-> response :body try-parse-json))
+                    (str response))
+                (is (empty? (utils/filterm #(str/starts-with? (str (key %)) "access-control-") headers)) (str response))))
+            (testing "cors request to expires-at endpoint"
+              (let [host "fee.fie.com"
+                    origin "https://foo.bar.com"
+                    {:keys [headers] :as response}
+                    (make-request waiter-url "/.well-known/auth/expires-at"
+                                  :cookies request-cookies
+                                  :headers {"host" host "origin" origin}
+                                  :method :get)]
+                (assert-response-status response http-200-ok)
+                (assert-waiter-response response)
+                (is (= {"access-control-allow-credentials" "true"
+                        "access-control-allow-origin" origin
+                        "access-control-expose-headers" exposed-headers-str}
+                       (utils/filterm #(str/starts-with? (str (key %)) "access-control-") headers))
+                    (str response))))
             (let [{:keys [cookies] :as response}
                   (make-request waiter-url "/.well-known/auth/keep-alive"
                                 :cookies request-cookies

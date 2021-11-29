@@ -251,8 +251,10 @@
               (cond-> {:cookie-valid? cookie-valid? :expires-at expires-at}
                 cookie-valid?
                 (assoc :auth-principal auth-principal)))
-    (utils/attach-waiter-source (utils/clj->json-response {:expires-at sanitized-expires-at
-                                                           :principal auth-principal}))))
+    (-> {:expires-at sanitized-expires-at
+         :principal auth-principal}
+      (utils/clj->json-response)
+      (utils/attach-waiter-source))))
 
 (defn attach-authorization-headers
   "Attaches authentication description headers into the response."
