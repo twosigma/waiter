@@ -1149,7 +1149,8 @@
                             (update :headers headers/truncate-header-values))
                   (seq trailers)
                   (assoc :trailers (headers/truncate-header-values trailers)))))
-            include-server-info (assoc :server-info {:jetty-version Jetty/VERSION}))
+            include-server-info (assoc :server-info {:java-version (System/getProperty "java.version")
+                                                     :jetty-version Jetty/VERSION}))
           utils/clj->json-response))
     (catch Throwable th
       (utils/exception->response th request))))
