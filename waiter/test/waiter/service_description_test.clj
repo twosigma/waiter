@@ -28,7 +28,9 @@
             [waiter.service-description :refer :all]
             [waiter.status-codes :refer :all]
             [waiter.util.cache-utils :as cu]
-            [waiter.util.date-utils :as du])
+            [waiter.util.date-utils :as du]
+            [waiter.util.utils :as utils]
+            [waiter.service-description :as sd])
   (:import (clojure.lang ExceptionInfo)
            (org.joda.time DateTime)))
 
@@ -194,7 +196,7 @@
     (testing "testing invalid service-mapping"
       (run-validate-user-metadata-schema-test
         (assoc basic-parameters "service-mapping" "on") {}
-        "service-mapping must be one of legacy or exclusive")
+        "service-mapping must be one of default, exclusive or legacy")
       (run-validate-user-metadata-schema-test
         (assoc basic-parameters "service-mapping" "exclusive") {"env" {"WAITER_CONFIG_TOKEN" "foo"}}
         "Service environment cannot contain WAITER_CONFIG_TOKEN when service-mapping is exclusive."))))
@@ -321,6 +323,7 @@
                                 (str/includes? token "proser") (assoc "profile" "service")
                                 (str/includes? token "proweb") (assoc "profile" "webapp")
                                 (str/includes? token "run") (assoc "run-as-user" "ruser")
+                                (str/includes? token "shrdef") (assoc "service-mapping" "default")
                                 (str/includes? token "shrexc") (assoc "service-mapping" "exclusive")
                                 (str/includes? token "shrleg") (assoc "service-mapping" "legacy"))
                               {}))
@@ -388,7 +391,7 @@
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
                                      :token-sequence []
-                                     :token-service-mapping nil}}
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:WITH Service Desc specific Waiter Headers"
                           :waiter-headers {"x-waiter-cmd" "test-cmd"
                                            "x-waiter-cpus" 1
@@ -435,7 +438,7 @@
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
                                      :token-sequence []
-                                     :token-service-mapping nil}}
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:WITHOUT Service Desc specific Waiter Headers"
                           :waiter-headers {"x-waiter-foo" "bar"
                                            "x-waiter-source" "serv-desc"}
@@ -619,7 +622,7 @@
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
                                      :token-sequence []
-                                     :token-service-mapping nil}}
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Parse environment headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-baz" "quux"
@@ -635,7 +638,7 @@
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
                                      :token-sequence []
-                                     :token-service-mapping nil}}
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Parse param headers:valid keys:host-token"
                           :waiter-headers {"x-waiter-param-bar" "bar-value"
                                            "x-waiter-param-foo" "foo-value"}
@@ -717,7 +720,7 @@
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
                                      :token-sequence []
-                                     :token-service-mapping nil}}
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Parse distinct e and param headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-baz" "quux"
@@ -737,7 +740,7 @@
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
                                      :token-sequence []
-                                     :token-service-mapping nil}}
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Parse overlap env and param headers:valid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-baz" "quux"
@@ -757,7 +760,7 @@
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
                                      :token-sequence []
-                                     :token-service-mapping nil}}
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:Parse environment headers:invalid keys"
                           :waiter-headers {"x-waiter-cpus" "1"
                                            "x-waiter-env-1" "quux"
@@ -773,7 +776,7 @@
                                      :token-authentication-disabled false,
                                      :token-preauthorized false,
                                      :token-sequence []
-                                     :token-service-mapping nil}}
+                                     :token-service-mapping "legacy"}}
                          {:name "prepare-service-description-sources:profile:not-preauthorized-missing-permitted-user"
                           :waiter-headers {"x-waiter-token" "test-token-run-proweb"}
                           :passthrough-headers {}
@@ -821,20 +824,20 @@
                                      :token-preauthorized true,
                                      :token-sequence ["test-token-run-proser"]
                                      :token-service-mapping "legacy"}}
-                         {:name "prepare-service-description-sources:service-mapping:legacy"
-                          :waiter-headers {"x-waiter-token" "test-token-shrleg"}
+                         {:name "prepare-service-description-sources:service-mapping:default"
+                          :waiter-headers {"x-waiter-token" "test-token-shrdef"}
                           :passthrough-headers {}
                           :expected {:fallback-period-secs 300
                                      :headers {}
                                      :service-description-template {"cmd" "token-user"
-                                                                    "name" "test-token-shrleg"
+                                                                    "name" "test-token-shrdef"
                                                                     "version" "token"}
-                                     :source-tokens (build-source-tokens "test-token-shrleg")
-                                     :token->token-data {"test-token-shrleg" (create-token-data "test-token-shrleg")}
+                                     :source-tokens (build-source-tokens "test-token-shrdef")
+                                     :token->token-data {"test-token-shrdef" (create-token-data "test-token-shrdef")}
                                      :token-authentication-disabled false
                                      :token-preauthorized false
-                                     :token-sequence ["test-token-shrleg"]
-                                     :token-service-mapping "legacy"}}
+                                     :token-sequence ["test-token-shrdef"]
+                                     :token-service-mapping "default"}}
                          {:name "prepare-service-description-sources:service-mapping:exclusive"
                           :waiter-headers {"x-waiter-token" "test-token-shrexc"}
                           :passthrough-headers {}
@@ -848,7 +851,21 @@
                                      :token-authentication-disabled false
                                      :token-preauthorized false
                                      :token-sequence ["test-token-shrexc"]
-                                     :token-service-mapping "exclusive"}})]
+                                     :token-service-mapping "exclusive"}}
+                         {:name "prepare-service-description-sources:service-mapping:legacy"
+                          :waiter-headers {"x-waiter-token" "test-token-shrleg"}
+                          :passthrough-headers {}
+                          :expected {:fallback-period-secs 300
+                                     :headers {}
+                                     :service-description-template {"cmd" "token-user"
+                                                                    "name" "test-token-shrleg"
+                                                                    "version" "token"}
+                                     :source-tokens (build-source-tokens "test-token-shrleg")
+                                     :token->token-data {"test-token-shrleg" (create-token-data "test-token-shrleg")}
+                                     :token-authentication-disabled false
+                                     :token-preauthorized false
+                                     :token-sequence ["test-token-shrleg"]
+                                     :token-service-mapping "legacy"}})]
         (doseq [{:keys [expected name passthrough-headers waiter-headers]} test-cases]
           (testing (str "Test " name)
             (let [actual (prepare-service-description-sources
@@ -900,7 +917,7 @@
                           :token-authentication-disabled true
                           :token-preauthorized true
                           :token-sequence [test-token]
-                          :token-service-mapping nil}]
+                          :token-service-mapping "legacy"}]
             (is (= expected actual))))))
 
     (testing "limited-access token"
@@ -932,7 +949,7 @@
                           :token-authentication-disabled false
                           :token-preauthorized true
                           :token-sequence [test-token]
-                          :token-service-mapping nil}]
+                          :token-service-mapping "legacy"}]
             (is (= expected actual))))))))
 
 (defn- compute-service-description-helper
@@ -3460,3 +3477,34 @@
   (is (false? (requires-parameters? {"env" {"LOREM" "v1" "IPSUM" "v2"}})))
   (is (false? (requires-parameters? {"run-as-user" "john.doe*"})))
   (is (false? (requires-parameters? {"run-as-user" "jane.doe*"}))))
+
+(deftest test-retrieve-most-recent-component-update-time
+  (is (= 0 (retrieve-most-recent-component-update-time {})))
+  (is (= 0 (retrieve-most-recent-component-update-time {:fee nil})))
+  (is (= 0 (retrieve-most-recent-component-update-time {:fee 0})))
+  (is (= 10 (retrieve-most-recent-component-update-time {:fee 10})))
+  (is (= 10 (retrieve-most-recent-component-update-time {:fee 10 :fie nil})))
+  (is (= 20 (retrieve-most-recent-component-update-time {:fee nil :fie 20})))
+  (is (= 20 (retrieve-most-recent-component-update-time {:fee 10 :fie 20})))
+  (is (= 20 (retrieve-most-recent-component-update-time {:fee 20 :fie 10})))
+  (is (= 20 (retrieve-most-recent-component-update-time {:fee 10 :fie 20 :foe nil})))
+  (is (= 30 (retrieve-most-recent-component-update-time {:fee 10 :fie 30 :foe 20})))
+  (is (= 30 (retrieve-most-recent-component-update-time {:fee 10 :fie 20 :foe 30}))))
+
+(deftest test-adjust-waiter-config-token
+  (let [basic-description {"cmd" "ls"
+                           "cpus" 1
+                           "env" {"FOO" "BAR"
+                                  "WAITER_CONFIG_TOKEN" "foo"}
+                           "mem" 32}
+        promotion-start-epoch-time (-> (t/now) (t/plus (t/days 1)) (tc/to-long))]
+    (with-redefs [config/retrieve-exclusive-promotion-start-epoch-time (constantly promotion-start-epoch-time)]
+      (doseq [service-mapping ["default" "exclusive" "legacy"]]
+        (is (= basic-description
+               (adjust-waiter-config-token basic-description service-mapping (inc promotion-start-epoch-time))))
+        (is (= (cond-> basic-description
+                 (= service-mapping "default") (utils/dissoc-in sd/waiter-config-token-path))
+               (adjust-waiter-config-token basic-description service-mapping promotion-start-epoch-time)))
+        (is (= (cond-> basic-description
+                 (= service-mapping "default") (utils/dissoc-in sd/waiter-config-token-path))
+               (adjust-waiter-config-token basic-description service-mapping (dec promotion-start-epoch-time))))))))

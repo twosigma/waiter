@@ -123,7 +123,7 @@
    (s/optional-key "https-redirect") s/Bool
    (s/optional-key "maintenance") {(s/required-key "message") (s/constrained s/Str #(<= 1 (count %) 512))}
    (s/optional-key "owner") schema/non-empty-string
-   (s/optional-key "service-mapping") (s/pred #(contains? #{"legacy" "exclusive"} %) 'valid-service-mapping?)
+   (s/optional-key "service-mapping") (s/pred #(contains? #{"default" "exclusive" "legacy"} %) 'valid-service-mapping?)
    (s/optional-key "stale-timeout-mins") (s/both s/Int (s/pred #(<= 0 % (t/in-minutes (t/hours 4))) 'at-most-4-hours))
    s/Str s/Any})
 
@@ -510,7 +510,7 @@
                                          (attach-error-message-for-parameter
                                            parameter->issues
                                            :service-mapping
-                                           "service-mapping must be one of legacy or exclusive")
+                                           "service-mapping must be one of default, exclusive or legacy")
                                          (attach-error-message-for-parameter
                                            parameter->issues
                                            :stale-timeout-mins
@@ -832,10 +832,26 @@
                              (retrieve-token-update-epoch-time token (token->token-parameters token) version)))
                       (reduce utils/nil-safe-max nil))))))
 
+(def ^:const waiter-config-token-path ["env" "WAITER_CONFIG_TOKEN"])
+
 (defn- assoc-token-in-env
   "Attaches the token sequence as an environment variable in the service description."
   [service-description token-sequence]
-  (assoc-in service-description ["env" "WAITER_CONFIG_TOKEN"] (str/join "," token-sequence)))
+  (assoc-in service-description waiter-config-token-path (str/join "," token-sequence)))
+
+(defn- promote-default-to-exclusive?
+  "Determines if a service description should be promoted to exclusive mode based on reference last update time."
+  [reference-update-epoch-time]
+  (let [exclusive-promotion-start-epoch-time (config/retrieve-exclusive-promotion-start-epoch-time)]
+    (< exclusive-promotion-start-epoch-time reference-update-epoch-time)))
+
+(defn adjust-waiter-config-token
+  "Dissociates the exclusive mapping token from the environment variable if it was added as part of default promotion after the promotion start time."
+  [service-description token-service-mapping reference-update-epoch-time]
+  (cond-> service-description
+    (and (= "default" token-service-mapping)
+         (not (promote-default-to-exclusive? reference-update-epoch-time)))
+    (utils/dissoc-in waiter-config-token-path)))
 
 (defn- assoc-approved-run-as-requester-parameters
   "Attaches run-as-requester parameters if the services has been approved."
@@ -857,16 +873,18 @@
   ServiceDescriptionBuilder
 
   (build [this user-service-description
-          {:keys [assoc-run-as-user-approved? component->previous-descriptor-fns reference-type->entry
+          {:keys [assoc-run-as-user-approved? component->last-update-epoch-time component->previous-descriptor-fns reference-type->entry
                   service-id-prefix source-tokens token-sequence token-service-mapping username]}]
-    (let [core-service-description
+    (let [exclusive-mode? (or (= "exclusive" token-service-mapping)
+                              (and (= "default" token-service-mapping)
+                                   (-> component->last-update-epoch-time
+                                     (retrieve-most-recent-component-update-time)
+                                     (promote-default-to-exclusive?))))
+          core-service-description
           (cond-> user-service-description
             ;; include token name in the service description to enforce unique token->service mappings
             ;; leverage WAITER_CONFIG_ prefixed environment variables being allowed
-            (or (= "exclusive" token-service-mapping)
-                (and (= "default" token-service-mapping)
-                     (let [exclusive-promotion-start-epoch-time (config/retrieve-exclusive-promotion-start-epoch-time)]
-                       (< exclusive-promotion-start-epoch-time (retrieve-most-recent-component-update-time component->last-update-epoch-time)))))
+            exclusive-mode?
             (assoc-token-in-env token-sequence)
             (not (contains? user-service-description "run-as-user"))
             (assoc-approved-run-as-requester-parameters assoc-run-as-user-approved? service-id-prefix username))
@@ -1059,8 +1077,10 @@
   [attach-service-defaults-fn attach-token-defaults-fn token-sequence token->token-data]
   (let [merged-token-data (attach-token-defaults-fn
                             (token-sequence->merged-data token->token-data token-sequence))
-        token-service-mapping (when (-> token-sequence (remove-service-entry-tokens identity) (seq))
-                                (get merged-token-data "service-mapping"))
+        token-service-mapping (or (when (-> token-sequence (remove-service-entry-tokens identity) (seq))
+                                    (get merged-token-data "service-mapping"))
+                                  ;; use legacy mode in the absence of tokens
+                                  "legacy")
         service-description-template (select-keys merged-token-data service-parameter-keys)
         source-tokens (mapv #(source-tokens-entry % (token->token-data %)) token-sequence)]
     {:fallback-period-secs (get merged-token-data "fallback-period-secs")
@@ -1196,7 +1216,7 @@
             sanitized-service-description (utils/remove-keys service-description metadata-keys)]
         (assoc sanitized-service-description "metadata" renamed-metadata-map)))))
 
-(defn- waiter-headers->service-parameters
+(defn waiter-headers->service-parameters
   "Converts the x-waiter headers to service parameters."
   [waiter-headers]
   (-> waiter-headers
