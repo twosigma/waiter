@@ -13,7 +13,9 @@
 ;; See the License for the specific language governing permissions and
 ;; limitations under the License.
 ;;
-(ns waiter.config)
+(ns waiter.config
+  (:require [clj-time.coerce :as tc]
+            [waiter.util.date-utils :as du]))
 
 (def ^:private config-promise (promise))
 
@@ -36,3 +38,11 @@
   []
   {:pre [(realized? config-promise)]}
   (get-in @config-promise [:waiter-principal]))
+
+(defn retrieve-exclusive-promotion-start-epoch-time
+  "Retrieves the configured (or system default) exclusive promotion start epoch time."
+  []
+  {:pre [(realized? config-promise)]}
+  (let [default-exclusive-promotion-start-time "2022-02-01T00:00:00.000Z"
+        exclusive-promotion-start-time (get-in @config-promise [:token-config :exclusive-promotion-start-time] default-exclusive-promotion-start-time)]
+    (-> exclusive-promotion-start-time (du/str-to-date) (tc/to-long))))

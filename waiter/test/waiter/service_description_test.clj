@@ -22,6 +22,8 @@
             [clojure.tools.logging :as log]
             [schema.core :as s]
             [waiter.authorization :as authz]
+            [waiter.config :as config]
+            [waiter.headers :as headers]
             [waiter.kv :as kv]
             [waiter.service-description :refer :all]
             [waiter.status-codes :refer :all]
@@ -995,6 +997,193 @@
                                 (-> (compute-service-description-helper sources :waiter-headers waiter-headers)
                                   :source-tokens))]
     (is (= source-tokens (compute-source-tokens {})))))
+
+(deftest test-compute-service-description-service-mapping
+  (let [assoc-run-as-user-approved? (constantly true)
+        component->previous-descriptor-fns {}
+        kv-store (kv/->LocalKeyValueStore (atom {}))
+        metric-group-mappings []
+        current-user "current-request-user"
+        service-id-prefix "test-service-"
+        test-token "test-token"
+        service-description-defaults {"health-check-url" "/ping"
+                                      "metric-group" "test-group"
+                                      "permitted-user" "bob"}
+        profile-defaults {"health-check-url" "/pong"
+                          "permitted-user" "ann"}
+        profile->defaults {:default profile-defaults}
+        builder-context {:kv-store kv-store
+                         :metric-group-mappings metric-group-mappings
+                         :profile->defaults profile->defaults
+                         :service-description-defaults service-description-defaults}
+        current-time (t/now)
+        basic-token-data {"cmd" "test-cmd"
+                          "cpus" 1
+                          "last-update-time" (tc/to-long current-time)
+                          "mem" 1024
+                          "run-as-user" current-user
+                          "version" "test-version"}
+        run-computation (fn [{:strs [service-mapping] :as token-data} &
+                             {:keys [request-headers exclusive-promotion-start-time token-authentication-disabled token-preauthorized]
+                              :or {request-headers {}
+                                   exclusive-promotion-start-time (-> current-time (t/plus (t/days 1)) (du/date-to-str))
+                                   token-authentication-disabled false
+                                   token-preauthorized true}}]
+                          (let [exclusive-promotion-start-epoch-time (-> exclusive-promotion-start-time (du/str-to-date) (tc/to-long))
+                                service-description-builder (create-default-service-description-builder builder-context)
+                                service-description-template (select-keys token-data service-parameter-keys)
+                                {:keys [passthrough-headers waiter-headers]} (headers/split-headers request-headers)
+                                source-headers (waiter-headers->service-parameters waiter-headers)
+                                sources {:headers source-headers
+                                         :service-description-template service-description-template
+                                         :source-tokens (source-tokens-entry test-token token-data)
+                                         :token->token-data {test-token token-data}
+                                         :token-authentication-disabled token-authentication-disabled
+                                         :token-preauthorized token-preauthorized
+                                         :token-sequence [test-token]
+                                         :token-service-mapping service-mapping}]
+                            (with-redefs [config/retrieve-exclusive-promotion-start-epoch-time (constantly exclusive-promotion-start-epoch-time)]
+                              (compute-service-description
+                                sources waiter-headers passthrough-headers component->previous-descriptor-fns service-id-prefix
+                                current-user assoc-run-as-user-approved? service-description-builder))))]
+    (testing "missing service-mapping on token"
+      (let [token-data basic-token-data
+            result-map (run-computation token-data)
+            service-description-template (select-keys token-data service-parameter-keys)]
+        (is (= {:component->previous-descriptor-fns {}
+                :core-service-description service-description-template
+                :on-the-fly? nil
+                :reference-type->entry {:token {:sources (seq (source-tokens-entry test-token token-data))}}
+                :service-authentication-disabled false
+                :service-description (merge service-description-defaults service-description-template)
+                :service-id (service-description->service-id service-id-prefix service-description-template)
+                :service-preauthorized true
+                :source-tokens (source-tokens-entry test-token token-data)}
+               result-map))))
+
+    (testing "default service-mapping resolving to legacy on token"
+      (let [token-data (assoc basic-token-data "service-mapping" "default")
+            result-map (run-computation token-data)
+            service-description-template (select-keys token-data service-parameter-keys)]
+        (is (= {:component->previous-descriptor-fns {}
+                :core-service-description service-description-template
+                :on-the-fly? nil
+                :reference-type->entry {:token {:sources (seq (source-tokens-entry test-token token-data))}}
+                :service-authentication-disabled false
+                :service-description (merge service-description-defaults service-description-template)
+                :service-id (service-description->service-id service-id-prefix service-description-template)
+                :service-preauthorized true
+                :source-tokens (source-tokens-entry test-token token-data)}
+               result-map))))
+
+    (testing "default service-mapping resolving to exclusive on token"
+      (let [token-data (assoc basic-token-data "service-mapping" "default")
+            exclusive-promotion-start-time (-> current-time (t/minus (t/days 1)) (du/date-to-str))
+            result-map (run-computation token-data :exclusive-promotion-start-time exclusive-promotion-start-time)
+            service-description-template (-> token-data
+                                           (select-keys service-parameter-keys)
+                                           (assoc-in ["env" "WAITER_CONFIG_TOKEN"] test-token))]
+        (is (= {:component->previous-descriptor-fns {}
+                :core-service-description service-description-template
+                :on-the-fly? nil
+                :reference-type->entry {:token {:sources (seq (source-tokens-entry test-token token-data))}}
+                :service-authentication-disabled false
+                :service-description (merge service-description-defaults service-description-template)
+                :service-id (service-description->service-id service-id-prefix service-description-template)
+                :service-preauthorized true
+                :source-tokens (source-tokens-entry test-token token-data)}
+               result-map))))
+
+    (testing "legacy service-mapping on token"
+      (let [token-data (assoc basic-token-data "service-mapping" "legacy")
+            result-map (run-computation token-data)
+            service-description-template (select-keys token-data service-parameter-keys)]
+        (is (= {:component->previous-descriptor-fns {}
+                :core-service-description service-description-template
+                :on-the-fly? nil
+                :reference-type->entry {:token {:sources (seq (source-tokens-entry test-token token-data))}}
+                :service-authentication-disabled false
+                :service-description (merge service-description-defaults service-description-template)
+                :service-id (service-description->service-id service-id-prefix service-description-template)
+                :service-preauthorized true
+                :source-tokens (source-tokens-entry test-token token-data)}
+               result-map))))
+
+    (testing "exclusive service-mapping on token"
+      (let [token-data (assoc basic-token-data "service-mapping" "exclusive")
+            result-map (run-computation token-data)
+            service-description-template (-> token-data
+                                           (select-keys service-parameter-keys)
+                                           (assoc-in ["env" "WAITER_CONFIG_TOKEN"] test-token))]
+        (is (= {:component->previous-descriptor-fns {}
+                :core-service-description service-description-template
+                :on-the-fly? nil
+                :reference-type->entry {:token {:sources (seq (source-tokens-entry test-token token-data))}}
+                :service-authentication-disabled false
+                :service-description (merge service-description-defaults service-description-template)
+                :service-id (service-description->service-id service-id-prefix service-description-template)
+                :service-preauthorized true
+                :source-tokens (source-tokens-entry test-token token-data)}
+               result-map))))
+
+    (testing "exclusive service-mapping on token with on-the-fly header"
+      (let [token-data (assoc basic-token-data "service-mapping" "exclusive")
+            request-headers {"x-waiter-cpus" "2"}
+            result-map (run-computation token-data :request-headers request-headers)
+            service-description-template (-> token-data
+                                           (select-keys service-parameter-keys)
+                                           (assoc "cpus" 2 "permitted-user" current-user)
+                                           (assoc-in ["env" "WAITER_CONFIG_TOKEN"] test-token))]
+        (is (= {:component->previous-descriptor-fns {}
+                :core-service-description service-description-template
+                :on-the-fly? true
+                :reference-type->entry {:token {:sources (seq (source-tokens-entry test-token token-data))}}
+                :service-authentication-disabled false
+                :service-description (merge service-description-defaults service-description-template)
+                :service-id (service-description->service-id service-id-prefix service-description-template)
+                :service-preauthorized false
+                :source-tokens (source-tokens-entry test-token token-data)}
+               result-map))))
+
+    (testing "exclusive service-mapping on token with on-the-fly params header"
+      (let [token-data (assoc basic-token-data "allowed-params" #{"FEE" "FIE"} "service-mapping" "exclusive")
+            request-headers {"x-waiter-param-fee" "F1"
+                             "x-waiter-param-fie" "F2"}
+            result-map (run-computation token-data :request-headers request-headers)
+            service-description-template (-> token-data
+                                           (select-keys service-parameter-keys)
+                                           (assoc "env" {"FEE" "F1"
+                                                         "FIE" "F2"
+                                                         "WAITER_CONFIG_TOKEN" test-token}))]
+        (is (= {:component->previous-descriptor-fns {}
+                :core-service-description service-description-template
+                :on-the-fly? nil
+                :reference-type->entry {:token {:sources (seq (source-tokens-entry test-token token-data))}}
+                :service-authentication-disabled false
+                :service-description (merge service-description-defaults service-description-template)
+                :service-id (service-description->service-id service-id-prefix service-description-template)
+                :service-preauthorized true
+                :source-tokens (source-tokens-entry test-token token-data)}
+               result-map))))
+
+    (testing "exclusive service-mapping on token with run-as-requester"
+      (let [token-data (assoc basic-token-data "run-as-user" "*" "service-mapping" "exclusive")
+            request-headers {}
+            result-map (run-computation token-data :request-headers request-headers)
+            service-description-template (-> token-data
+                                           (select-keys service-parameter-keys)
+                                           (assoc "run-as-user" current-user "permitted-user" current-user)
+                                           (assoc-in ["env" "WAITER_CONFIG_TOKEN"] test-token))]
+        (is (= {:component->previous-descriptor-fns {}
+                :core-service-description service-description-template
+                :on-the-fly? nil
+                :reference-type->entry {:token {:sources (seq (source-tokens-entry test-token token-data))}}
+                :service-authentication-disabled false
+                :service-description (merge service-description-defaults service-description-template)
+                :service-id (service-description->service-id service-id-prefix service-description-template)
+                :service-preauthorized true
+                :source-tokens (source-tokens-entry test-token token-data)}
+               result-map))))))
 
 (deftest test-compute-service-description
   (testing "Service description computation"

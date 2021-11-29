@@ -26,6 +26,7 @@
             [schema.core :as s]
             [slingshot.slingshot :as sling]
             [waiter.authorization :as authz]
+            [waiter.config :as config]
             [waiter.headers :as headers]
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
@@ -847,8 +848,12 @@
         candidate-service-description)
       service-description)))
 
-(defrecord DefaultServiceDescriptionBuilder [kv-store max-constraints-schema metric-group-mappings profile->defaults
-                                             service-description-defaults]
+(defn retrieve-most-recent-component-update-time
+  "Computes the most recent last-update-time from the component->last-update-epoch-time map."
+  [component->last-update-epoch-time]
+  (reduce utils/nil-safe-max 0 (vals component->last-update-epoch-time)) )
+
+(defrecord DefaultServiceDescriptionBuilder [kv-store max-constraints-schema metric-group-mappings profile->defaults service-description-defaults]
   ServiceDescriptionBuilder
 
   (build [this user-service-description
@@ -858,7 +863,10 @@
           (cond-> user-service-description
             ;; include token name in the service description to enforce unique token->service mappings
             ;; leverage WAITER_CONFIG_ prefixed environment variables being allowed
-            (= "exclusive" token-service-mapping)
+            (or (= "exclusive" token-service-mapping)
+                (and (= "default" token-service-mapping)
+                     (let [exclusive-promotion-start-epoch-time (config/retrieve-exclusive-promotion-start-epoch-time)]
+                       (< exclusive-promotion-start-epoch-time (retrieve-most-recent-component-update-time component->last-update-epoch-time)))))
             (assoc-token-in-env token-sequence)
             (not (contains? user-service-description "run-as-user"))
             (assoc-approved-run-as-requester-parameters assoc-run-as-user-approved? service-id-prefix username))
