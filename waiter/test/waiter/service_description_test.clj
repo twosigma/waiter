@@ -3490,24 +3490,3 @@
   (is (= 20 (retrieve-most-recent-component-update-time {:fee 10 :fie 20 :foe nil})))
   (is (= 30 (retrieve-most-recent-component-update-time {:fee 10 :fie 30 :foe 20})))
   (is (= 30 (retrieve-most-recent-component-update-time {:fee 10 :fie 20 :foe 30}))))
-
-(deftest test-adjust-waiter-config-token
-  (let [basic-description {"cmd" "ls"
-                           "cpus" 1
-                           "env" {"FOO" "BAR"
-                                  "WAITER_CONFIG_TOKEN" "foo"}
-                           "mem" 32}
-        promotion-start-epoch-time (-> (t/now) (t/plus (t/days 1)) (tc/to-long))]
-    (with-redefs [config/retrieve-exclusive-promotion-start-epoch-time (constantly promotion-start-epoch-time)]
-      (doseq [service-mapping ["default" "exclusive" "legacy"]]
-        (is (= basic-description
-               (adjust-waiter-config-token basic-description service-mapping (inc promotion-start-epoch-time))))
-        (is (= (cond-> basic-description
-                 (= service-mapping "default") (utils/dissoc-in sd/waiter-config-token-path))
-               (adjust-waiter-config-token basic-description service-mapping promotion-start-epoch-time)))
-        (is (= (cond-> basic-description
-                 (= service-mapping "default") (utils/dissoc-in sd/waiter-config-token-path))
-               (adjust-waiter-config-token basic-description service-mapping (dec promotion-start-epoch-time)))))
-      (let [service-description-1 (assoc basic-description "env" {"WAITER_CONFIG_TOKEN" "foo"})]
-        (is (= (dissoc service-description-1 "env")
-               (adjust-waiter-config-token service-description-1 "default" (dec promotion-start-epoch-time))))))))
