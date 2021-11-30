@@ -366,8 +366,9 @@
                                                      (and (false? ready) (integer? restartCount)))
                                                    init-container-statuses)
           app-container-statuses (get pod-status :containerStatuses)
-          ;; preserve the primary container status as the first entry
-          container-statuses (concat app-container-statuses init-container-statuses)
+          ;; preserve the application container statuses as the leading entries
+          container-statuses (concat (map #(assoc % :type :app) app-container-statuses)
+                                     (map #(assoc % :type :init) init-container-statuses))
           ;; uses restart count from init containers when any of them are not ready
           pod-restart-count (if (seq unready-init-containers-statuses)
                               (reduce max (map :restartCount unready-init-containers-statuses))
@@ -404,12 +405,13 @@
                        revision-timestamp (assoc :k8s/revision-timestamp revision-timestamp)
                        revision-version (assoc :k8s/revision-version revision-version)
                        (seq container-statuses) (assoc :k8s/container-statuses
-                                                       (map (fn [{:keys [state] :as status}]
+                                                       (map (fn [{:keys [restartCount state] :as status}]
                                                               (when (> (count state) 1)
                                                                 (log/warn "received multiple states for container:" status))
                                                               (let [[state {:keys [reason]}] (first state)]
-                                                                (cond-> (select-keys status [:image :name :ready])
+                                                                (cond-> (select-keys status [:image :name :ready :type])
                                                                   (some? reason) (assoc :reason reason)
+                                                                  (some? restartCount) (assoc :restart-count restartCount)
                                                                   (some? state) (assoc :state state))))
                                                             container-statuses))))]
       (when exceeded-restart-kill-threshold?

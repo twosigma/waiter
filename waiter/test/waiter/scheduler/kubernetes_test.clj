@@ -1114,7 +1114,12 @@
                         :healthy? false
                         :host "0.0.0.0"
                         :id "test-app-1234.test-app-1234-abcd0-0"
-                        :k8s/container-statuses [{:name waiter-primary-container-name :ready false :reason "ContainerCreating":state :waiting}]
+                        :k8s/container-statuses [{:name waiter-primary-container-name
+                                                  :ready false
+                                                  :reason "ContainerCreating"
+                                                  :restart-count 0
+                                                  :state :waiting
+                                                  :type :app}]
                         :k8s/node-name "node-0.k8s.com"
                         :k8s/pod-phase "Pending"
                         :k8s/revision-timestamp "2020-09-22T20:00:00.000Z"
@@ -1127,7 +1132,11 @@
                         :healthy? true
                         :host "10.141.141.11"
                         :id "test-app-1234.test-app-1234-abcd1-0"
-                        :k8s/container-statuses [{:name waiter-primary-container-name :ready true :state :running}]
+                        :k8s/container-statuses [{:name waiter-primary-container-name
+                                                  :ready true
+                                                  :restart-count 0
+                                                  :state :running
+                                                  :type :app}]
                         :k8s/pod-phase "Running"
                         :k8s/revision-timestamp "2020-09-22T20:11:11.000Z"
                         :k8s/revision-version "0"
@@ -1140,7 +1149,10 @@
                         :healthy? true
                         :host "10.141.141.12"
                         :id "test-app-1234.test-app-1234-abcd2-0"
-                        :k8s/container-statuses [{:name waiter-primary-container-name :ready true}]
+                        :k8s/container-statuses [{:name waiter-primary-container-name
+                                                  :ready true
+                                                  :restart-count 0
+                                                  :type :app}]
                         :k8s/node-name "node-2.k8s.com"
                         :k8s/revision-timestamp "2020-09-22T20:22:22.000Z"
                         :k8s/revision-version "1"
@@ -1154,7 +1166,11 @@
                         :healthy? false
                         :host "10.141.141.13"
                         :id "test-app-1234.test-app-1234-abcd3-0"
-                        :k8s/container-statuses [{:name waiter-primary-container-name :ready true :state :running}]
+                        :k8s/container-statuses [{:name waiter-primary-container-name
+                                                  :ready true
+                                                  :restart-count 0
+                                                  :state :running
+                                                  :type :app}]
                         :k8s/pod-phase "Failed"
                         :k8s/revision-timestamp "2020-09-22T20:11:11.000Z"
                         :log-directory "/home/myself/r0"
@@ -1175,7 +1191,10 @@
                        {:healthy? true
                         :host "10.141.141.13"
                         :id "test-app-6789.test-app-6789-abcd1-0"
-                        :k8s/container-statuses [{:name waiter-primary-container-name :ready true}]
+                        :k8s/container-statuses [{:name waiter-primary-container-name
+                                                  :ready true
+                                                  :restart-count 0
+                                                  :type :app}]
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-6789"
@@ -1184,7 +1203,9 @@
                        {:healthy? false
                         :host "10.141.141.14"
                         :id "test-app-6789.test-app-6789-abcd2-1"
-                        :k8s/container-statuses [{:name waiter-primary-container-name}]
+                        :k8s/container-statuses [{:name waiter-primary-container-name
+                                                  :restart-count 1
+                                                  :type :app}]
                         :log-directory "/home/myself/r1"
                         :port 8080
                         :service-id "test-app-6789"
@@ -1193,7 +1214,9 @@
                        {:healthy? false
                         :host "10.141.141.15"
                         :id "test-app-6789.test-app-6789-abcd3-0"
-                        :k8s/container-statuses [{:name waiter-primary-container-name}]
+                        :k8s/container-statuses [{:name waiter-primary-container-name
+                                                  :restart-count 0
+                                                  :type :app}]
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-6789"
@@ -1203,8 +1226,13 @@
                         :healthy? false
                         :host "10.141.141.16"
                         :id "test-app-6789.test-app-6789-abcd4-0"
-                        :k8s/container-statuses [{:name waiter-primary-container-name}
-                                                 {:name "waiter-setup" :ready false}]
+                        :k8s/container-statuses [{:name waiter-primary-container-name
+                                                  :restart-count 0
+                                                  :type :app}
+                                                 {:name "waiter-setup"
+                                                  :ready false
+                                                  :restart-count 200
+                                                  :type :init}]
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-6789"
@@ -1215,7 +1243,9 @@
                         :healthy? false
                         :host "10.141.141.14"
                         :id "test-app-6789.test-app-6789-abcd2-0"
-                        :k8s/container-statuses [{:name waiter-primary-container-name}]
+                        :k8s/container-statuses [{:name waiter-primary-container-name
+                                                  :restart-count 1
+                                                  :type :app}]
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-6789"
@@ -2540,7 +2570,10 @@
                       :started-at (timestamp-str->datetime pod-start-time-k8s-str)
                       :k8s/api-server-url api-server-url
                       :k8s/app-name service-id
-                      :k8s/container-statuses [{:name waiter-primary-container-name :ready true}]
+                      :k8s/container-statuses [{:name waiter-primary-container-name
+                                                :ready true
+                                                :restart-count 9
+                                                :type :app}]
                       :k8s/namespace "myself"
                       :k8s/pod-name "test-app-1234-abcd1"
                       :k8s/port->protocol {:p1234 "http"}
