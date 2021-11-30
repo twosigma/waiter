@@ -305,7 +305,7 @@
    token->token-hash request]
   (let [{:keys [all-available-service-ids service-id->healthy-instances service-id->unhealthy-instances] :as global-state} (query-state-fn)]
     (let [{:strs [run-as-user token token-version] :as request-params} (-> request ru/query-params-request :query-params)
-          service-description-filter-predicate (sd/query-params->service-description-filter-predicate request-params)
+          service-description-filter-predicate (sd/query-params->service-description-filter-predicate request-params sd/service-parameter-keys)
           auth-user (get request :authorization/user)
           viewable-service-ids (filter
                                  (fn [service-id]
@@ -319,12 +319,12 @@
                                           (or (seq run-as-user)
                                               (authz/manage-service? entitlement-manager auth-user service-id service-description))
                                           (or (str/blank? token)
-                                              (let [filter-fn (utils/str->filter-fn token true)]
+                                              (let [filter-fn (utils/str->filter-fn token)]
                                                 (->> source-tokens
                                                   (map #(get % "token"))
                                                   (some filter-fn))))
                                           (or (str/blank? token-version)
-                                              (let [filter-fn (utils/str->filter-fn token-version true)]
+                                              (let [filter-fn (utils/str->filter-fn token-version)]
                                                 (->> source-tokens
                                                   (map #(get % "version"))
                                                   (some filter-fn)))))))

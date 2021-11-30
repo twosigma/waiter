@@ -2892,6 +2892,24 @@
                {"maintenance" false "owner" "owner3" "token" "token6"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
+    (let [request {:request-method :get :query-string "run-as-user=*"}
+          {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
+      (is (= http-200-ok status))
+      (is (= #{{"maintenance" false "owner" "owner3" "token" "token5"}
+               {"maintenance" false "owner" "owner3" "token" "token6"}}
+             (set (json/read-str body))))
+      (is (nil? (async/poll! token-watch-channels-update-chan))))
+    (let [request {:request-method :get :query-string "run-as-user=t.*"}
+          {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
+      (is (= http-200-ok status))
+      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
+               {"maintenance" false "owner" "owner1" "token" "token2"}
+               {"maintenance" false "owner" "owner2" "token" "token3"}
+               {"maintenance" false "owner" "owner3" "token" "token7"}
+               {"maintenance" false "owner" "owner3" "token" "token8"}
+               {"maintenance" true "owner" "owner3" "token" "token9"}}
+             (set (json/read-str body))))
+      (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "permitted-user=*&owner=owner3"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))

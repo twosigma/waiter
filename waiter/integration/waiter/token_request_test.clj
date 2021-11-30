@@ -423,7 +423,7 @@
 
         (testing "star in token filter"
           (doseq [[_ router-url] (routers waiter-url)]
-            (let [query-params {"token" (str service-name ".t*")}
+            (let [query-params {"token" (str service-name ".t.*")}
                   _ (log/info query-params)
                   {:keys [body] :as response} (make-request router-url "/apps" :cookies cookies :query-params query-params)
                   services (json/read-str body)

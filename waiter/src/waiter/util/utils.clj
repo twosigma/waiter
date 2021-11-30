@@ -852,20 +852,21 @@
     watch-chans))
 
 (defn str->filter-fn
-  "Returns a value-filtering function given a user-provided value as filter string"
-  [value regex-support?]
-  (if regex-support?
-    (let [pattern (-> (str value)
-                    (str/replace #"\." "\\\\.")
-                    (str/replace #"\*+" ".*")
-                    re-pattern)]
-      #(re-matches pattern %))
-    #(= value %)))
+  "Returns a value-filtering function given a user-provided value as filter string."
+  [value]
+  (let [value-str (str value)
+        pattern (when-not (or (= "" value-str) (= "*" value-str))
+                  (try
+                    (re-pattern value-str)
+                    (catch Exception _
+                      nil)))]
+    #(or (= value-str %)
+         (and pattern (re-matches pattern %)))))
 
 (defn strs->filter-fn
   "Returns a value-filtering function that matches on any of the given sequence of user-provided values as filter string."
-  [values regex-support?]
-  (let [filter-fns (map #(str->filter-fn % regex-support?) values)]
+  [values]
+  (let [filter-fns (map #(str->filter-fn %) values)]
     (fn [value] (some #(%1 value) filter-fns))))
 
 (defn match-yes-like

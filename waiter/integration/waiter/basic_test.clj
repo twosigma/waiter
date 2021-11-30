@@ -647,7 +647,7 @@
               (is (get-in service ["request-metrics" "total"]) (str service))
               (is (get service "resource-usage") (str service))
               (is (get service "scaling-state") (str service))
-              (is (pos? (get-in service ["service-description" "cpus"])) service)))
+              (is (pos? (get-in service ["service-description" "cpus"] -1)) service)))
 
           (assert-service-healthy-on-all-routers waiter-url service-id cookies)
 
@@ -665,10 +665,10 @@
               (is (get-in service ["request-metrics" "total"]) (str service))
               (is (get service "resource-usage") (str service))
               (is (get service "scaling-state") (str service))
-              (is (pos? (get-in service ["service-description" "cpus"])) service)))
+              (is (pos? (get-in service ["service-description" "cpus"] -1)) service)))
 
           (testing "with star run-as-user parameter"
-            (let [run-as-user-param (->> current-user reverse (drop 2) (cons "*") reverse (str/join ""))
+            (let [run-as-user-param (->> current-user reverse (drop 2) (cons ".*") reverse (str/join ""))
                   service (service waiter-url service-id {"run-as-user" run-as-user-param})] ;; see my app as myself
               (is service)
               (is (contains? #{"Running"} (get service "status")))
@@ -677,7 +677,7 @@
               (is (get-in service ["request-metrics" "total"]) (str service))
               (is (get service "resource-usage") (str service))
               (is (get service "scaling-state") (str service))
-              (is (pos? (get-in service ["service-description" "cpus"])) service)))
+              (is (pos? (get-in service ["service-description" "cpus"] -1)) service)))
 
           (testing "waiter user disabled" ;; see my app as myself
             (let [service (service waiter-url service-id {"force" "false"})]
@@ -688,7 +688,7 @@
               (is (get-in service ["request-metrics" "total"]) (str service))
               (is (get service "resource-usage") (str service))
               (is (get service "scaling-state") (str service))
-              (is (pos? (get-in service ["service-description" "cpus"])) service)))
+              (is (pos? (get-in service ["service-description" "cpus"] -1)) service)))
 
           (testing "waiter user disabled and same user" ;; see my app as myself
             (let [service (service waiter-url service-id {"force" "false", "run-as-user" current-user})]
@@ -699,7 +699,7 @@
               (is (get-in service ["request-metrics" "total"]) (str service))
               (is (get service "resource-usage") (str service))
               (is (get service "scaling-state") (str service))
-              (is (pos? (get-in service ["service-description" "cpus"])) service)))
+              (is (pos? (get-in service ["service-description" "cpus"] -1)) service)))
 
           (testing "different run-as-user" ;; no such app
             (let [service (service waiter-url service-id {"run-as-user" "test-user"}
@@ -738,7 +738,7 @@
               (is (-> (get service "last-request-time") du/str-to-date .getMillis pos?))
               (is (get service "resource-usage") (str service))
               (is (get service "scaling-state") (str service))
-              (is (pos? (get-in service ["service-description" "cpus"])) service))))))))
+              (is (pos? (get-in service ["service-description" "cpus"] -1)) service))))))))
 
 (deftest ^:parallel ^:integration-fast test-delete-service
   (testing-using-waiter-url

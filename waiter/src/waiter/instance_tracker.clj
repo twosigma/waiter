@@ -217,7 +217,7 @@
                                                    default-streaming-timeout-ms)]
           (let [should-watch? (utils/request-flag request-params "watch")
                 service-description-filter-predicate
-                (sd/query-params->service-description-filter-predicate request-params)
+                (sd/query-params->service-description-filter-predicate request-params sd/service-parameter-keys)
                 correlation-id (cid/get-correlation-id)
                 watch-chan-xform
                 (comp
