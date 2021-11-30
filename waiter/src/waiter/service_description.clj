@@ -26,6 +26,7 @@
             [schema.core :as s]
             [slingshot.slingshot :as sling]
             [waiter.authorization :as authz]
+            [waiter.config :as config]
             [waiter.headers :as headers]
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
@@ -122,7 +123,7 @@
    (s/optional-key "https-redirect") s/Bool
    (s/optional-key "maintenance") {(s/required-key "message") (s/constrained s/Str #(<= 1 (count %) 512))}
    (s/optional-key "owner") schema/non-empty-string
-   (s/optional-key "service-mapping") (s/pred #(contains? #{"legacy" "exclusive"} %) 'valid-service-mapping?)
+   (s/optional-key "service-mapping") (s/pred #(contains? #{"default" "exclusive" "legacy"} %) 'valid-service-mapping?)
    (s/optional-key "stale-timeout-mins") (s/both s/Int (s/pred #(<= 0 % (t/in-minutes (t/hours 4))) 'at-most-4-hours))
    s/Str s/Any})
 
@@ -509,7 +510,7 @@
                                          (attach-error-message-for-parameter
                                            parameter->issues
                                            :service-mapping
-                                           "service-mapping must be one of legacy or exclusive")
+                                           "service-mapping must be one of default, exclusive or legacy")
                                          (attach-error-message-for-parameter
                                            parameter->issues
                                            :stale-timeout-mins
@@ -831,10 +832,18 @@
                              (retrieve-token-update-epoch-time token (token->token-parameters token) version)))
                       (reduce utils/nil-safe-max nil))))))
 
+(def ^:const waiter-config-token-path ["env" "WAITER_CONFIG_TOKEN"])
+
 (defn- assoc-token-in-env
   "Attaches the token sequence as an environment variable in the service description."
   [service-description token-sequence]
-  (assoc-in service-description ["env" "WAITER_CONFIG_TOKEN"] (str/join "," token-sequence)))
+  (assoc-in service-description waiter-config-token-path (str/join "," token-sequence)))
+
+(defn promote-default-to-exclusive?
+  "Determines if a service description should be promoted to exclusive mode based on reference last update time."
+  [reference-update-epoch-time]
+  (let [exclusive-promotion-start-epoch-time (config/retrieve-exclusive-promotion-start-epoch-time)]
+    (< exclusive-promotion-start-epoch-time reference-update-epoch-time)))
 
 (defn- assoc-approved-run-as-requester-parameters
   "Attaches run-as-requester parameters if the services has been approved."
@@ -847,18 +856,27 @@
         candidate-service-description)
       service-description)))
 
-(defrecord DefaultServiceDescriptionBuilder [kv-store max-constraints-schema metric-group-mappings profile->defaults
-                                             service-description-defaults]
+(defn retrieve-most-recent-component-update-time
+  "Computes the most recent last-update-time from the component->last-update-epoch-time map."
+  [component->last-update-epoch-time]
+  (reduce utils/nil-safe-max 0 (vals component->last-update-epoch-time)) )
+
+(defrecord DefaultServiceDescriptionBuilder [kv-store max-constraints-schema metric-group-mappings profile->defaults service-description-defaults]
   ServiceDescriptionBuilder
 
   (build [this user-service-description
-          {:keys [assoc-run-as-user-approved? component->previous-descriptor-fns reference-type->entry
+          {:keys [assoc-run-as-user-approved? component->last-update-epoch-time component->previous-descriptor-fns reference-type->entry
                   service-id-prefix source-tokens token-sequence token-service-mapping username]}]
-    (let [core-service-description
+    (let [exclusive-mode? (or (= "exclusive" token-service-mapping)
+                              (and (= "default" token-service-mapping)
+                                   (-> component->last-update-epoch-time
+                                     (retrieve-most-recent-component-update-time)
+                                     (promote-default-to-exclusive?))))
+          core-service-description
           (cond-> user-service-description
             ;; include token name in the service description to enforce unique token->service mappings
             ;; leverage WAITER_CONFIG_ prefixed environment variables being allowed
-            (= "exclusive" token-service-mapping)
+            exclusive-mode?
             (assoc-token-in-env token-sequence)
             (not (contains? user-service-description "run-as-user"))
             (assoc-approved-run-as-requester-parameters assoc-run-as-user-approved? service-id-prefix username))
@@ -1051,8 +1069,10 @@
   [attach-service-defaults-fn attach-token-defaults-fn token-sequence token->token-data]
   (let [merged-token-data (attach-token-defaults-fn
                             (token-sequence->merged-data token->token-data token-sequence))
-        token-service-mapping (when (-> token-sequence (remove-service-entry-tokens identity) (seq))
-                                (get merged-token-data "service-mapping"))
+        token-service-mapping (or (when (-> token-sequence (remove-service-entry-tokens identity) (seq))
+                                    (get merged-token-data "service-mapping"))
+                                  ;; use legacy mode in the absence of tokens
+                                  "legacy")
         service-description-template (select-keys merged-token-data service-parameter-keys)
         source-tokens (mapv #(source-tokens-entry % (token->token-data %)) token-sequence)]
     {:fallback-period-secs (get merged-token-data "fallback-period-secs")
@@ -1188,7 +1208,7 @@
             sanitized-service-description (utils/remove-keys service-description metadata-keys)]
         (assoc sanitized-service-description "metadata" renamed-metadata-map)))))
 
-(defn- waiter-headers->service-parameters
+(defn waiter-headers->service-parameters
   "Converts the x-waiter headers to service parameters."
   [waiter-headers]
   (-> waiter-headers
@@ -1223,6 +1243,14 @@
       (assoc service-description "metadata" sanitized-metadata))
     service-description))
 
+(defn retrieve-most-recent-last-update-time
+  "Computes the most recent last-update-time from the token->token-data map."
+  [token->token-data]
+  (->> token->token-data
+    (pc/map-vals (fn [{:strs [last-update-time]}] (or last-update-time 0)))
+    (vals)
+    (reduce max 0)))
+
 (let [error-message-map-fn (fn [passthrough-headers waiter-headers]
                              {:status http-400-bad-request
                               :non-waiter-headers (dissoc passthrough-headers "authorization")
@@ -1239,7 +1267,7 @@
      If a non-param on-the-fly header is provided, the username is included as the run-as-user in on-the-fly headers.
      If after the merge a run-as-user is not available, then `username` becomes the run-as-user.
      If after the merge a permitted-user is not available, then `username` becomes the permitted-user."
-    [{:keys [headers service-description-template source-tokens token-authentication-disabled token-preauthorized token-sequence token-service-mapping]}
+    [{:keys [headers service-description-template source-tokens token->token-data token-authentication-disabled token-preauthorized token-sequence token-service-mapping]}
      waiter-headers passthrough-headers component->previous-descriptor-fns service-id-prefix username
      assoc-run-as-user-approved? service-description-builder]
     (let [headers-without-params (dissoc headers "param")
@@ -1295,8 +1323,12 @@
           (throw (ex-info "idle-timeout-mins on-the-fly header configured to a value of zero is not supported"
                           {:log-level :info :status http-400-bad-request :waiter-headers waiter-headers}))))
       (sling/try+
-        (let [build-map (build service-description-builder user-service-description
+        (let [component->last-update-epoch-time (cond-> {}
+                                                  (seq token->token-data)
+                                                  (assoc :token (retrieve-most-recent-last-update-time token->token-data)))
+              build-map (build service-description-builder user-service-description
                                {:assoc-run-as-user-approved? assoc-run-as-user-approved?
+                                :component->last-update-epoch-time component->last-update-epoch-time
                                 :component->previous-descriptor-fns component->previous-descriptor-fns
                                 :reference-type->entry {}
                                 :service-id-prefix service-id-prefix
@@ -1383,9 +1415,7 @@
     (some->> descriptor
       :sources
       :token->token-data
-      (pc/map-vals (fn [{:strs [last-update-time]}] (or last-update-time 0)))
-      vals
-      (reduce max))
+      (retrieve-most-recent-last-update-time))
     0))
 
 (defn service-id->service-description

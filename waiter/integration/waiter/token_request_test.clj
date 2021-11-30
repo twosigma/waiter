@@ -1986,7 +1986,7 @@
         (let [{:keys [body] :as response} (post-token waiter-url (assoc token-description :service-mapping "on"))]
           (assert-response-status response http-400-bad-request)
           (is (str/includes? (str body) "Validation failed for token"))
-          (is (str/includes? (str body) "service-mapping must be one of legacy or exclusive"))))
+          (is (str/includes? (str body) "service-mapping must be one of default, exclusive or legacy"))))
 
       (testing "invalid env in exclusive service-mapping"
         (let [{:keys [body] :as response} (post-token waiter-url (assoc token-description :env {"WAITER_CONFIG_TOKEN" token} :service-mapping "exclusive"))]
