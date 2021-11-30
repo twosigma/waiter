@@ -682,7 +682,7 @@
 
 (defn create-service
   "Reify a Waiter Service as a Kubernetes ReplicaSet."
-  [{:keys [service-description service-id]}
+  [{:keys [run-as-user-source service-description service-id]}
    {:keys [api-server-url pdb-api-version pdb-spec-builder-fn replicaset-api-version
            response->deployment-error-msg-fn service-id->deployment-error-cache] :as scheduler}]
   (let [{:strs [cmd-type]} service-description]
@@ -691,7 +691,8 @@
                       {:cmd-type cmd-type
                        :service-description service-description
                        :service-id service-id}))))
-  (let [rs-spec (invoke-replicaset-spec-builder-fn scheduler service-id service-description {})
+  (let [rs-spec-builder-context {:run-as-user-source run-as-user-source}
+        rs-spec (invoke-replicaset-spec-builder-fn scheduler service-id service-description rs-spec-builder-context)
         request-namespace (k8s-object->namespace rs-spec)
         request-url (str api-server-url "/apis/" replicaset-api-version "/namespaces/" request-namespace "/replicasets")
         response-json
@@ -1160,10 +1161,12 @@
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
            mem min-instances ports run-as-user termination-grace-period-secs]
     :as service-description}
-   {:keys [container-init-commands default-container-image log-bucket-url image-aliases]
+   {:keys [container-init-commands default-container-image log-bucket-url image-aliases run-as-user-source]
     :as context}]
   (when-not (or image default-container-image)
     (throw (ex-info "Waiter configuration is missing a default image for Kubernetes pods" {})))
+  (when (nil? run-as-user-source)
+    (throw (ex-info "ReplicaSet spec builder context is missing run-as-user-source" {:context context})))
   (let [rs-namespace (determine-replicaset-namespace-fn scheduler service-id service-description context)
         work-path (str "/home/" run-as-user)
         home-path (str work-path "/latest")
@@ -1240,6 +1243,7 @@
        :apiVersion replicaset-api-version
        :metadata {:annotations {:waiter/revision-timestamp revision-timestamp
                                 :waiter/revision-version revision-version
+                                :waiter/run-as-user-source run-as-user-source
                                 ;; Since there are length restrictions on Kubernetes label values,
                                 ;; we store just the 32-char hash portion of the service-id as a searchable label,
                                 ;; but store the full service-id as an annotation.
@@ -1261,6 +1265,7 @@
                                                   :waiter/port-onto-protocol (utils/clj->json port->protocol)
                                                   :waiter/revision-timestamp revision-timestamp
                                                   :waiter/revision-version revision-version
+                                                  :waiter/run-as-user-source run-as-user-source
                                                   :waiter/service-id service-id
                                                   :waiter/service-port (str service-port)}
                                     :labels {:app k8s-name

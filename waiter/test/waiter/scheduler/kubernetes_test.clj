@@ -160,9 +160,11 @@
                                         :predicate-fn (constantly fileserver-enabled)
                                         :scheme "http"}
                            :service-id->service-description-fn (constantly service-description)})
-              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler test-service-id service-description {})]
+              rs-spec-builder-context {:run-as-user-source "unknown"}
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler test-service-id service-description rs-spec-builder-context)]
           (is (= {:waiter/revision-timestamp (du/date-to-str current-time)
                   :waiter/revision-version "0"
+                  :waiter/run-as-user-source "unknown"
                   :waiter/service-id test-service-id}
                  (get-in replicaset-spec [:metadata :annotations])))
           (is (= {:app test-service-id
@@ -186,17 +188,20 @@
       (let [service-description (assoc dummy-service-description "health-check-port-index" 2 "ports" 3)
             scheduler (make-dummy-scheduler ["test-service-id"]
                                             {:service-id->service-description-fn (constantly service-description)})
-            replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description {})]
+            rs-spec-builder-context {:run-as-user-source "unknown"}
+            replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description rs-spec-builder-context)]
         (is (= {:waiter/port-count "3"
                 :waiter/port-onto-protocol "{\"p8330\":\"http\",\"p8332\":\"http\"}"
                 :waiter/revision-timestamp (du/date-to-str current-time)
                 :waiter/revision-version "0"
+                :waiter/run-as-user-source "unknown"
                 :waiter/service-id "test-service-id"
                 :waiter/service-port "8330"}
                (get-in replicaset-spec [:spec :template :metadata :annotations])))))))
 
 (deftest test-replicaset-spec-termination-grace-period-secs
-  (let [current-time (t/now)]
+  (let [current-time (t/now)
+        rs-spec-builder-context {:run-as-user-source "unknown"}]
     (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                   config/retrieve-waiter-principal (constantly "waiter@test.com")
                   t/now (constantly current-time)]
@@ -209,7 +214,7 @@
               {:keys [log-bucket-sync-secs replicaset-spec-builder-fn] :as scheduler}
               (make-dummy-scheduler ["test-service-id"]
                                     {:service-id->service-description-fn (constantly service-description)})
-              replicaset-spec (replicaset-spec-builder-fn scheduler "test-service-id" service-description {})]
+              replicaset-spec (replicaset-spec-builder-fn scheduler "test-service-id" service-description rs-spec-builder-context)]
           (is (= (+ log-bucket-sync-secs spec-termination-grace-period-secs)
                  (get-in replicaset-spec [:spec :template :spec :terminationGracePeriodSeconds])))))
 
@@ -220,7 +225,7 @@
                                   {:log-bucket-sync-secs 10
                                    :log-bucket-url nil
                                    :pod-sigkill-delay-secs pod-sigkill-delay-secs})
-            replicaset-spec (replicaset-spec-builder-fn scheduler "test-service-id" service-description {})]
+            replicaset-spec (replicaset-spec-builder-fn scheduler "test-service-id" service-description rs-spec-builder-context)]
         (is (= pod-sigkill-delay-secs (get-in replicaset-spec [:spec :template :spec :terminationGracePeriodSeconds]))))
 
       (let [log-bucket-url "http://service.example.com:1234/service-logs"
@@ -232,7 +237,7 @@
                                   {:log-bucket-sync-secs log-bucket-sync-secs
                                    :log-bucket-url nil
                                    :pod-sigkill-delay-secs pod-sigkill-delay-secs})
-            replicaset-spec (replicaset-spec-builder-fn scheduler "test-service-id" service-description {})]
+            replicaset-spec (replicaset-spec-builder-fn scheduler "test-service-id" service-description rs-spec-builder-context)]
         (is (= (+ pod-sigkill-delay-secs log-bucket-sync-secs)
                (get-in replicaset-spec [:spec :template :spec :terminationGracePeriodSeconds])))))))
 
@@ -282,7 +287,8 @@
           service-description (assoc dummy-service-description "env" {custom-raven-flag "true"
                                                                       "PORT0" "to-be-overwritten"
                                                                       "SERVICE_PORT" "to-be-overwritten"})
-          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description {})
+          rs-spec-builder-context {:run-as-user-source "unknown"}
+          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description rs-spec-builder-context)
           app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
           app-env (get-container-env-map app-container)
           sidecar-container (some
@@ -364,7 +370,8 @@
                                                                           custom-raven-tls-flag (str tls?)
                                                                           "PORT0" "to-be-overwritten"
                                                                           "SERVICE_PORT" "to-be-overwritten"})
-              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description {})
+              rs-spec-builder-context {:run-as-user-source "unknown"}
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description rs-spec-builder-context)
               app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
               app-env (get-container-env-map app-container)
               readiness-probe-scheme (get-in app-container [:readinessProbe :httpGet :scheme])
@@ -408,7 +415,8 @@
                                             "SERVICE_PORT" "to-be-overwritten"}
                                      "health-check-port-index" 5
                                      "ports" 9)
-          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description {})
+          rs-spec-builder-context {:run-as-user-source "unknown"}
+          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description rs-spec-builder-context)
           app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
           app-env (get-container-env-map app-container)
           sidecar-container (some
@@ -494,7 +502,8 @@
         (let [service-description dummy-service-description
               scheduler (make-dummy-scheduler ["test-service-id"]
                                               {:service-id->service-description-fn (constantly service-description)})
-              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description {})
+              rs-spec-builder-context {:run-as-user-source "unknown"}
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description rs-spec-builder-context)
               waiter-app-container (get-in replicaset-spec [:spec :template :spec :containers 0])]
           (is (= (assoc basic-probe :failureThreshold 3 :initialDelaySeconds 7)
                  (:livenessProbe waiter-app-container)))
@@ -504,7 +513,8 @@
         (let [service-description (assoc dummy-service-description "grace-period-secs" 0)
               scheduler (make-dummy-scheduler ["test-service-id"]
                                               {:service-id->service-description-fn (constantly service-description)})
-              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description {})
+              rs-spec-builder-context {:run-as-user-source "unknown"}
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description rs-spec-builder-context)
               waiter-app-container (get-in replicaset-spec [:spec :template :spec :containers 0])]
           (is (not (contains? waiter-app-container :livenessProbe)))
           (is (= basic-probe (:readinessProbe waiter-app-container))))))))
@@ -517,7 +527,8 @@
         (let [scheduler (make-dummy-scheduler [service-id]
                                               {:default-namespace "*"
                                                :service-id->service-description-fn (constantly dummy-service-description)})
-              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id dummy-service-description {})
+              rs-spec-builder-context {:run-as-user-source "unknown"}
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id dummy-service-description rs-spec-builder-context)
               {:strs [run-as-user]} dummy-service-description]
           (is (nil? (scheduler/validate-service scheduler service-id)))
           (is (= run-as-user (get-in replicaset-spec [:metadata :namespace])))
@@ -525,14 +536,17 @@
       (testing "Default namespace"
         (let [scheduler (make-dummy-scheduler [service-id]
                                               {:service-id->service-description-fn (constantly dummy-service-description)})
-              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id dummy-service-description {})]
+              rs-spec-builder-context {:run-as-user-source "unknown"}
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id dummy-service-description rs-spec-builder-context)]
           (is (nil? (scheduler/validate-service scheduler service-id)))
           (is (= dummy-scheduler-default-namespace (get-in replicaset-spec [:metadata :namespace])))
           (is (false? (get-in replicaset-spec [:spec :template :spec :automountServiceAccountToken])))))
       (testing "Override namespace"
         (let [scheduler (make-dummy-scheduler [service-id]
                                               {:service-id->service-description-fn (constantly dummy-service-description)})
-              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id dummy-service-description {:override-namespace "john"})]
+              rs-spec-builder-context {:override-namespace "john"
+                                       :run-as-user-source "unknown"}
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id dummy-service-description rs-spec-builder-context)]
           (is (nil? (scheduler/validate-service scheduler service-id)))
           (is (= "john" (get-in replicaset-spec [:metadata :namespace])))
           (is (false? (get-in replicaset-spec [:spec :template :spec :automountServiceAccountToken])))))
@@ -541,7 +555,8 @@
               service-description (assoc dummy-service-description "namespace" target-namespace)
               scheduler (make-dummy-scheduler [service-id]
                                               {:service-id->service-description-fn (constantly service-description)})
-              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description {})]
+              rs-spec-builder-context {:run-as-user-source "unknown"}
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description rs-spec-builder-context)]
           (is (nil? (scheduler/validate-service scheduler service-id)))
           (is (= target-namespace (get-in replicaset-spec [:metadata :namespace])))
           (is (true? (get-in replicaset-spec [:spec :template :spec :automountServiceAccountToken])))))
@@ -549,30 +564,34 @@
         (let [target-namespace "myself"
               service-description (assoc dummy-service-description "namespace" target-namespace)
               scheduler (make-dummy-scheduler [service-id] {:namespace target-namespace})
-              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description {})]
+              rs-spec-builder-context {:run-as-user-source "unknown"}
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description rs-spec-builder-context)]
           (is (nil? (scheduler/validate-service scheduler service-id)))
           (is (= target-namespace (get-in replicaset-spec [:metadata :namespace])))
           (is (true? (get-in replicaset-spec [:spec :template :spec :automountServiceAccountToken])))))
       (testing "Custom namespace does not match scheduler namespace"
         (let [target-namespace "myself"
               service-description (assoc dummy-service-description "namespace" target-namespace)
-              scheduler (make-dummy-scheduler [service-id] {:namespace (str "x" target-namespace)})]
+              scheduler (make-dummy-scheduler [service-id] {:namespace (str "x" target-namespace)})
+              rs-spec-builder-context {:run-as-user-source "unknown"}]
           (is (thrown-with-msg? RuntimeException #"service namespace does not match scheduler namespace"
-              ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description {}))))))))
+                                ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description rs-spec-builder-context))))))))
 
 (deftest test-replicaset-spec-no-image
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [scheduler (make-dummy-scheduler ["test-service-id"])
-          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" dummy-service-description {})]
+          rs-spec-builder-context {:run-as-user-source "unknown"}
+          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" dummy-service-description rs-spec-builder-context)]
       (is (= "twosigma/waiter-test-apps:latest" (get-in replicaset-spec [:spec :template :spec :containers 0 :image]))))))
 
 (deftest test-replicaset-spec-custom-image
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [scheduler (make-dummy-scheduler ["test-service-id"])
-          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id"
-                            (assoc dummy-service-description "image" "custom/image") {})]
+          rs-spec-builder-context {:run-as-user-source "unknown"}
+          service-description (assoc dummy-service-description "image" "custom/image")
+          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description rs-spec-builder-context)]
       (is (= "custom/image" (get-in replicaset-spec [:spec :template :spec :containers 0 :image]))))))
 
 (deftest test-default-pdb-spec-builder
@@ -1392,7 +1411,8 @@
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [service-id "test-service-id"
           service {:service-id service-id}
-          descriptor {:service-description dummy-service-description
+          descriptor {:run-as-user-source "unknown"
+                      :service-description dummy-service-description
                       :service-id service-id}
           dummy-scheduler (make-dummy-scheduler [service-id])]
       (testing "unsuccessful-create: app already exists"
@@ -1509,7 +1529,8 @@
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (testing "namespaced keywords in annotation keys and values correctly converted"
       (let [service-id "test-service-id"
-            descriptor {:service-description dummy-service-description
+            descriptor {:run-as-user-source "unknown"
+                        :service-description dummy-service-description
                         :service-id service-id}
             dummy-scheduler (-> (make-dummy-scheduler [service-id])
                                 (update :replicaset-spec-builder-fn
