@@ -839,7 +839,7 @@
   [service-description token-sequence]
   (assoc-in service-description waiter-config-token-path (str/join "," token-sequence)))
 
-(defn- promote-default-to-exclusive?
+(defn promote-default-to-exclusive?
   "Determines if a service description should be promoted to exclusive mode based on reference last update time."
   [reference-update-epoch-time]
   (let [exclusive-promotion-start-epoch-time (config/retrieve-exclusive-promotion-start-epoch-time)]
@@ -847,11 +847,16 @@
 
 (defn adjust-waiter-config-token
   "Dissociates the exclusive mapping token from the environment variable if it was added as part of default promotion after the promotion start time."
-  [service-description token-service-mapping reference-update-epoch-time]
-  (cond-> service-description
-    (and (= "default" token-service-mapping)
-         (not (promote-default-to-exclusive? reference-update-epoch-time)))
-    (utils/dissoc-in waiter-config-token-path)))
+  [{:keys [env] :as service-description} token-service-mapping reference-update-epoch-time]
+  (let [remove-waiter-config-token (and (= "default" token-service-mapping)
+                                        (not (promote-default-to-exclusive? reference-update-epoch-time)))]
+    (cond-> service-description
+      remove-waiter-config-token
+      (utils/dissoc-in waiter-config-token-path)
+      (and remove-waiter-config-token
+           (= 1 (count env))
+           (some? (get-in env waiter-config-token-path)))
+      (dissoc "env"))))
 
 (defn- assoc-approved-run-as-requester-parameters
   "Attaches run-as-requester parameters if the services has been approved."

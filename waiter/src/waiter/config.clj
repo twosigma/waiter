@@ -43,6 +43,6 @@
   "Retrieves the configured (or system default) exclusive promotion start epoch time."
   []
   {:pre [(realized? config-promise)]}
-  (let [default-exclusive-promotion-start-time "2022-02-01T00:00:00.000Z"
+  (let [default-exclusive-promotion-start-time "2050-06-01T00:00:00.000Z"
         exclusive-promotion-start-time (get-in @config-promise [:token-config :exclusive-promotion-start-time] default-exclusive-promotion-start-time)]
     (-> exclusive-promotion-start-time (du/str-to-date) (tc/to-long))))

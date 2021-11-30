@@ -3507,4 +3507,7 @@
                (adjust-waiter-config-token basic-description service-mapping promotion-start-epoch-time)))
         (is (= (cond-> basic-description
                  (= service-mapping "default") (utils/dissoc-in sd/waiter-config-token-path))
-               (adjust-waiter-config-token basic-description service-mapping (dec promotion-start-epoch-time))))))))
+               (adjust-waiter-config-token basic-description service-mapping (dec promotion-start-epoch-time)))))
+      (let [service-description-1 (assoc basic-description "env" {"WAITER_CONFIG_TOKEN" "foo"})]
+        (is (= (dissoc service-description-1 "env")
+               (adjust-waiter-config-token service-description-1 "default" (dec promotion-start-epoch-time))))))))
