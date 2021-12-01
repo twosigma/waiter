@@ -723,7 +723,7 @@
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
             (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
-        (let [request (assoc request :authorization/user "test-user1" :query-string "run-as-user=test-user1*")]
+        (let [request (assoc request :authorization/user "test-user1" :query-string "run-as-user=test-user1.*")]
           (let [{:keys [body] :as response}
                 (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
@@ -748,7 +748,7 @@
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
             (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
-        (let [request (assoc request :query-string "run-as-user=another-user&run-as-user=test-user*")]
+        (let [request (assoc request :query-string "run-as-user=another-user&run-as-user=test-user.*")]
           (let [{:keys [body] :as response}
                 (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
@@ -763,7 +763,7 @@
             (assert-successful-json-response response)
             (is (= (conj other-user-services "service1")
                    (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
-        (let [request (assoc request :query-string "run-as-user=another-user&run-as-user=test-user1*")]
+        (let [request (assoc request :query-string "run-as-user=another-user&run-as-user=test-user1.*")]
           (let [{:keys [body] :as response}
                 (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
@@ -869,7 +869,7 @@
                                     (authorized? [_ _ _ _]
                                       ; use (constantly true) for authorized? to verify that filter still applies
                                       true))
-              request (assoc request :authorization/user "another-user" :query-string "run-as-user=*")]
+              request (assoc request :authorization/user "another-user" :query-string "run-as-user=.*")]
           (let [{:keys [body] :as response}
                 (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
@@ -882,7 +882,7 @@
                                     (authorized? [_ _ _ _]
                                       ; use (constantly true) for authorized? to verify that filter still applies
                                       true))
-              request (assoc request :authorization/user "another-user" :query-string "run-as-user=*user*")]
+              request (assoc request :authorization/user "another-user" :query-string "run-as-user=.*user.*")]
           (let [{:keys [body] :as response}
                 (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
@@ -895,7 +895,7 @@
                                     (authorized? [_ _ _ _]
                                       ; use (constantly true) for authorized? to verify that filter still applies
                                       true))
-              request (assoc request :authorization/user "another-user" :query-string "run-as-user=another*")]
+              request (assoc request :authorization/user "another-user" :query-string "run-as-user=another.*")]
           (let [{:keys [body] :as response}
                 (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
@@ -908,7 +908,7 @@
                                     (authorized? [_ _ _ _]
                                       ; use (constantly true) for authorized? to verify that filter still applies
                                       true))
-              request (assoc request :authorization/user test-user :query-string "run-as-user=another*")]
+              request (assoc request :authorization/user test-user :query-string "run-as-user=another.*")]
           (let [{:keys [body] :as response}
                 (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
@@ -950,11 +950,11 @@
                 {"t1.com" #(= % "t1.com")
                  "t2.org" #(= % "t2.org")
                  "tn.none" #(= % "tn.none")
-                 "*o*" #(str/includes? % "o")
-                 "*t*" #(str/includes? % "t")
-                 "t*" #(str/starts-with? % "t")
-                 "*com" #(str/ends-with? % "com")
-                 "*org" #(str/ends-with? % "org")}]
+                 ".*o.*" #(str/includes? % "o")
+                 ".*t.*" #(str/includes? % "t")
+                 "t.*" #(str/starts-with? % "t")
+                 ".*com" #(str/ends-with? % "com")
+                 ".*org" #(str/ends-with? % "org")}]
           (let [request (assoc request :query-string (str "token=" query-param))
                 {:keys [body] :as response}
                 ; without a run-as-user, should return all apps
@@ -975,10 +975,10 @@
                 {"v1" #(= % "v1")
                  "v2" #(= % "v2")
                  "vn" #(= % "vn")
-                 "*v*" #(str/includes? % "v")
-                 "v*" #(str/starts-with? % "v")
-                 "*1" #(str/ends-with? % "1")
-                 "*2" #(str/ends-with? % "2")}]
+                 ".*v.*" #(str/includes? % "v")
+                 "v.*" #(str/starts-with? % "v")
+                 ".*1" #(str/ends-with? % "1")
+                 ".*2" #(str/ends-with? % "2")}]
           (let [request (assoc request :query-string (str "token-version=" query-param))
                 {:keys [body] :as response}
                 ; without a run-as-user, should return all apps

@@ -669,7 +669,7 @@
                           (coll? owner-param) (set owner-param)
                           :else (list-token-owners kv-store))
                  service-description-filter-predicate (-> (dissoc request-params "deleted" "maintenance" "owner" "previous")
-                                                        (sd/query-params->service-description-filter-predicate sd/token-data-keys false))
+                                                        (sd/query-params->service-description-filter-predicate sd/token-data-keys))
                  index-filter-fn
                  (every-pred
                    (fn list-tokens-delete-predicate [entry]

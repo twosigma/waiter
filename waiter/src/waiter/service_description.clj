@@ -1690,30 +1690,28 @@
 (defn param-value->filter-fn
   "Accepts a single string or a sequence of strings as input.
    Creates the filter function that does substring match for the input string or any string in the sequence."
-  [param-value regex-support?]
+  [param-value]
   (if (string? param-value)
-    (utils/str->filter-fn param-value regex-support?)
-    (utils/strs->filter-fn param-value regex-support?)))
+    (utils/str->filter-fn param-value)
+    (utils/strs->filter-fn param-value)))
 
 (defn query-params->service-description-filter-predicate
   "Creates the filter function for service descriptions that matches every parameter provided in the request-params map."
-  ([request-params]
-   (query-params->service-description-filter-predicate request-params service-parameter-keys true))
-  ([request-params parameter-keys regex-support?]
-   (let [service-description-params (utils/filterm
-                                      (fn [[param-name _]]
-                                        (->> (str/split param-name #"\.")
-                                          (first)
-                                          (contains? parameter-keys)))
-                                      request-params)
-         param-predicates (map (fn [[param-name param-value]]
-                                 (let [param-predicate (param-value->filter-fn param-value regex-support?)]
-                                   (fn [service-description]
-                                     (->> (str/split param-name #"\.")
-                                       (get-in service-description)
-                                       (str)
-                                       (param-predicate)))))
-                               (seq service-description-params))]
-     (fn [service-description]
-       (or (empty? param-predicates)
-           (every? #(%1 service-description) param-predicates))))))
+  [request-params parameter-keys]
+  (let [service-description-params (utils/filterm
+                                     (fn [[param-name _]]
+                                       (->> (str/split param-name #"\.")
+                                         (first)
+                                         (contains? parameter-keys)))
+                                     request-params)
+        param-predicates (map (fn [[param-name param-value]]
+                                (let [param-predicate (param-value->filter-fn param-value)]
+                                  (fn [service-description]
+                                    (->> (str/split param-name #"\.")
+                                      (get-in service-description)
+                                      (str)
+                                      (param-predicate)))))
+                              (seq service-description-params))]
+    (fn [service-description]
+      (or (empty? param-predicates)
+          (every? #(%1 service-description) param-predicates)))))
