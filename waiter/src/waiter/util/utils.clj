@@ -76,6 +76,20 @@
   [pred map]
   `(into {} (filter ~pred ~map)))
 
+(defn sub-map?
+  "Returns true if the map mc is a subset of the map mf."
+  [mc mf]
+  (if (= mc mf)
+    true
+    (loop [[[k v] & rem-key-val] (seq mc)]
+      (let [vf (get mf k)
+            val-match? (if (and (map? v) (map? vf))
+                         (sub-map? v vf)
+                         (= v vf))]
+        (if (or (not val-match?) (nil? rem-key-val))
+          val-match?
+          (recur rem-key-val))))))
+
 (defn is-uuid?
   "Returns true if `s` is an uuid"
   [s]
