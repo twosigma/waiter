@@ -865,7 +865,7 @@
   ServiceDescriptionBuilder
 
   (build [this user-service-description
-          {:keys [assoc-run-as-user-approved? component->last-update-epoch-time component->previous-descriptor-fns reference-type->entry
+          {:keys [assoc-run-as-user-approved? component->last-update-epoch-time component->previous-descriptor-fns reference-type->entry run-as-user-changed?
                   service-id-prefix source-tokens token-sequence token-service-mapping username]}]
     (let [exclusive-mode? (or (= "exclusive" token-service-mapping)
                               (and (= "default" token-service-mapping)
@@ -884,10 +884,14 @@
           service-description (compute-effective this service-id core-service-description)
           reference-type->entry (cond-> (or reference-type->entry {})
                                   (seq source-tokens)
-                                  (assoc :token {:sources (map walk/keywordize-keys source-tokens)}))]
+                                  (assoc :token {:sources (map walk/keywordize-keys source-tokens)}))
+          ;; only for exclusive mapping can we be sure that the service will always have the run-as-user coming from the token
+          ;; for legacy mapping services, it is possible for the run-as-user to come from the token or the request
+          run-as-user-source (if (and (not run-as-user-changed?) exclusive-mode?) "token" "unknown")]
       {:component->previous-descriptor-fns component->previous-descriptor-fns
        :core-service-description core-service-description
        :reference-type->entry reference-type->entry
+       :run-as-user-source run-as-user-source
        :service-description service-description
        :service-id service-id}))
 
@@ -1311,7 +1315,10 @@
                                      (assoc-run-as-requester-fields username)
                                      contains-service-parameter-header?
                                      ; can only set the permitted-user if some service-description-keys waiter header was provided
-                                     (assoc "permitted-user" (or (get headers "permitted-user") username)))]
+                                     (assoc "permitted-user" (or (get headers "permitted-user") username)))
+          ;; determine if the service's run-as-user is different from token's if token was used to create the service
+          run-as-user-changed? (not= (get user-service-description "run-as-user" username)
+                                     (get service-description-template "run-as-user"))]
       (when-not (seq user-service-description)
         (throw (ex-info (utils/message :cannot-identify-service)
                         (error-message-map-fn passthrough-headers waiter-headers))))
@@ -1331,6 +1338,7 @@
                                 :component->last-update-epoch-time component->last-update-epoch-time
                                 :component->previous-descriptor-fns component->previous-descriptor-fns
                                 :reference-type->entry {}
+                                :run-as-user-changed? run-as-user-changed?
                                 :service-id-prefix service-id-prefix
                                 :source-tokens source-tokens
                                 :token-sequence token-sequence
@@ -1340,7 +1348,7 @@
               service-authentication-disabled (and token-authentication-disabled (empty? service-description-based-on-headers))]
           (-> build-map
             (select-keys [:component->previous-descriptor-fns :core-service-description :reference-type->entry
-                          :service-description :service-id])
+                          :run-as-user-source :service-description :service-id])
             (assoc :on-the-fly? on-the-fly?
                    :service-authentication-disabled service-authentication-disabled
                    :service-preauthorized service-preauthorized
