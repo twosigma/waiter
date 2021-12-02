@@ -97,6 +97,21 @@
     (is (= "lorem-scheduler" (selector-fn "baz")))
     (is (thrown-with-msg? ExceptionInfo #"No matching scheduler found!" (selector-fn "foo")))))
 
+(deftest test-service-id+some-image-parameter->scheduler
+  (let [service-id->service-description-fn {"bar" {"image" "i1"}
+                                            "baz" {"name" "no-image"}}
+        scheduler-id->scheduler {"lorem" "lorem-scheduler"
+                                 "ipsum" "ipsum-scheduler"}
+        default-scheduler :lorem
+        image-scheduler :ipsum
+        selector-fn (create-some-image-parameter-based-selector
+                      {:default-scheduler default-scheduler
+                       :image-scheduler image-scheduler
+                       :scheduler-id->scheduler scheduler-id->scheduler
+                       :service-id->service-description-fn service-id->service-description-fn})]
+    (is (= "ipsum-scheduler" (selector-fn "bar")))
+    (is (= "lorem-scheduler" (selector-fn "baz")))))
+
 (defn create-test-scheduler
   [{:keys [scheduler-name service-ids service-id->service-description-fn service-id->password-fn]}]
   (is service-id->service-description-fn)
@@ -303,6 +318,33 @@
       (let [scheduler-config (assoc scheduler-config
                                :default-scheduler :foo
                                :selector-context {:factory-fn 'waiter.scheduler.composite/create-scheduler-parameter-based-selector})]
+        (is (thrown-with-msg? AssertionError #"Assert failed"
+                              (create-composite-scheduler scheduler-config)))))
+
+    (testing "using image-parameter selector context"
+      (let [old-create-some-image-parameter-based-selector create-some-image-parameter-based-selector
+            function-called-atom (atom nil)]
+        (with-redefs [create-some-image-parameter-based-selector
+                      (fn [context]
+                        (reset! function-called-atom true)
+                        (old-create-some-image-parameter-based-selector context))]
+          (let [scheduler-config (assoc scheduler-config
+                                   :selector-context {:factory-fn 'waiter.scheduler.composite/create-some-image-parameter-based-selector
+                                                      :image-scheduler :ipsum})
+                composite-scheduler (create-composite-scheduler scheduler-config)]
+            (is composite-scheduler)
+            (is @function-called-atom))))
+
+      (let [scheduler-config (assoc scheduler-config
+                               :selector-context {:factory-fn 'waiter.scheduler.composite/create-some-image-parameter-based-selector
+                                                  :image-scheduler :lorem})]
+        (is (thrown-with-msg? AssertionError #"Assert failed"
+                              (create-composite-scheduler scheduler-config))))
+
+      (let [scheduler-config (-> scheduler-config
+                               (dissoc :default-scheduler)
+                               (assoc :selector-context {:factory-fn 'waiter.scheduler.composite/create-some-image-parameter-based-selector
+                                                         :image-scheduler :ipsum}))]
         (is (thrown-with-msg? AssertionError #"Assert failed"
                               (create-composite-scheduler scheduler-config)))))))
 

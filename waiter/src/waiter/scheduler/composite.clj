@@ -148,6 +148,29 @@
     (service-id+scheduler-parameter->scheduler
       service-id->service-description-fn scheduler-id->scheduler default-scheduler service-id)))
 
+(defn- service-id+some-image-parameter->scheduler
+  "Resolves the scheduler for a given service-id using the image parameter in the description.
+   If the service has an image parameter, the image-scheduler is chosen for it.
+   Else the default-scheduler is chosen for the service."
+  [service-id->service-description-fn scheduler-id->scheduler default-scheduler image-scheduler service-id]
+  (let [service-description (service-id->service-description-fn service-id)
+        scheduler-id (if (some? (get service-description "image"))
+                       (name image-scheduler)
+                       (name default-scheduler))]
+    (scheduler-id->scheduler scheduler-id)))
+
+(defn create-some-image-parameter-based-selector
+  "Returns a function that returns the scheduler for a given service-id using the image parameter in the description."
+  [{:keys [default-scheduler image-scheduler scheduler-id->scheduler service-id->service-description-fn]}]
+  {:pre [(some? default-scheduler)
+         (contains? scheduler-id->scheduler (name default-scheduler))
+         (some? image-scheduler)
+         (contains? scheduler-id->scheduler (name image-scheduler))
+         (not= default-scheduler image-scheduler)]}
+  (fn service-id+some-image-parameter->scheduler-fn [service-id]
+    (service-id+some-image-parameter->scheduler
+      service-id->service-description-fn scheduler-id->scheduler default-scheduler image-scheduler service-id)))
+
 (defn invoke-component-factory
   "Creates a component based on the factory-fn specified in the component-config."
   [context {:keys [factory-fn] :as component-config}]
