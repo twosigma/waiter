@@ -23,6 +23,7 @@
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all])
   (:import (java.io EOFException InputStreamReader)
+           (java.net SocketException)
            (org.apache.http ConnectionClosedException)))
 
 (deftest ^:parallel ^:integration-fast test-support-success-chunked-gzip-response
@@ -226,8 +227,14 @@
         (is (= 1 (get (get-state) "pending-http-requests")))
         ; Client eagerly terminates the request
         (.shutdown connection-manager)
-        ; Wait up to 10 seconds for the connection to get cleaned up. If waiter consumes the entire stream it will take
-        ; much longer.
+        ; Wait up to 10 seconds for the connection to get cleaned up.
+        ; If waiter consumes the entire stream it will take much longer.
         (is (wait-for #(= 0 (get (get-state) "pending-http-requests")) :interval 1 :timeout 10))
-        (let [body-data (-> body (InputStreamReader.) slurp)]
+        (let [body-data (try
+                          (-> body (InputStreamReader.) (slurp))
+                          (catch SocketException se
+                            ;; JDK17 upgraded introduces a change in behavior with the InpuStream read() method
+                            (log/error "slurping body resulted in error" (.getMessage se))
+                            (is (= "Socket closed" (.getMessage se)))
+                            nil))]
           (is (not= data-length (-> body-data str count)) "Waiter streamed entire response!"))))))
