@@ -83,20 +83,19 @@
   (state [_ _]
     {:operation :scheduler-state :scheduler-name scheduler-name}))
 
-(deftest test-service-id->scheduler
+(deftest test-service-id+scheduler-parameter->scheduler
   (let [service-id->service-description-fn {"bar" {"scheduler" "lorem"}
                                             "baz" {"name" "no-scheduler"}
                                             "foo" {"scheduler" "ipsum"}}
         scheduler-id->scheduler {"lorem" "lorem-scheduler"}
-        default-scheduler :lorem]
-
-    (is (= "lorem-scheduler"
-           (service-id->scheduler service-id->service-description-fn scheduler-id->scheduler default-scheduler "bar")))
-    (is (= "lorem-scheduler"
-           (service-id->scheduler service-id->service-description-fn scheduler-id->scheduler default-scheduler "baz")))
-    (is (thrown-with-msg?
-          ExceptionInfo #"No matching scheduler found!"
-          (service-id->scheduler service-id->service-description-fn scheduler-id->scheduler default-scheduler "foo")))))
+        default-scheduler :lorem
+        selector-fn (create-scheduler-parameter-based-selector
+                      {:default-scheduler default-scheduler
+                       :scheduler-id->scheduler scheduler-id->scheduler
+                       :service-id->service-description-fn service-id->service-description-fn})]
+    (is (= "lorem-scheduler" (selector-fn "bar")))
+    (is (= "lorem-scheduler" (selector-fn "baz")))
+    (is (thrown-with-msg? ExceptionInfo #"No matching scheduler found!" (selector-fn "foo")))))
 
 (defn create-test-scheduler
   [{:keys [scheduler-name service-ids service-id->service-description-fn service-id->password-fn]}]
@@ -266,6 +265,46 @@
                                                  "foe" (tc/from-long 13000)}
                        :scheduler-id->type->messages {}}
                       (query-state-fn))))))))))
+
+(deftest test-create-composite-scheduler-with-selectors
+  (let [scheduler-state-chan (async/chan)
+        default-scheduler :lorem
+        service-id->password-fn (constantly "password")
+        service-id->service-description-fn (constantly {})
+        scheduler-config {:components {:lorem {:factory-fn 'waiter.scheduler.composite-test/create-test-scheduler
+                                               :scheduler-name "lorem"
+                                               :service-ids ["lorem-fie" "lorem-foe" "ipsum-bar"]}
+                                       :ipsum {:factory-fn 'waiter.scheduler.composite-test/create-test-scheduler
+                                               :scheduler-name "ipsum"
+                                               :service-ids ["ipsum-fee" "ipsum-foo" "ipsum-fuu"]}}
+                          :default-scheduler default-scheduler
+                          :scheduler-state-chan scheduler-state-chan
+                          :service-id->password-fn service-id->password-fn
+                          :service-id->service-description-fn service-id->service-description-fn}]
+
+    (testing "missing selector context"
+      (let [composite-scheduler (create-composite-scheduler scheduler-config)]
+        (is composite-scheduler)
+        (is (fn? (:query-aggregator-state-fn composite-scheduler)))))
+
+    (testing "using scheduler-parameter selector context"
+      (let [old-create-scheduler-parameter-based-selector create-scheduler-parameter-based-selector
+            function-called-atom (atom nil)]
+        (with-redefs [create-scheduler-parameter-based-selector
+                      (fn [context]
+                        (reset! function-called-atom true)
+                        (old-create-scheduler-parameter-based-selector context))]
+          (let [scheduler-config (assoc scheduler-config
+                                   :selector-context {:factory-fn 'waiter.scheduler.composite/create-scheduler-parameter-based-selector})
+                composite-scheduler (create-composite-scheduler scheduler-config)]
+            (is composite-scheduler)
+            (is @function-called-atom))))
+
+      (let [scheduler-config (assoc scheduler-config
+                               :default-scheduler :foo
+                               :selector-context {:factory-fn 'waiter.scheduler.composite/create-scheduler-parameter-based-selector})]
+        (is (thrown-with-msg? AssertionError #"Assert failed"
+                              (create-composite-scheduler scheduler-config)))))))
 
 (deftest test-composite-scheduler
   (let [scheduler-state-chan (async/chan)
