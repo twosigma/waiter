@@ -17,7 +17,7 @@
   :dependencies [[twosigma/jet "0.7.10-20200709_171405-gea4b7b6"]
                  [clj-time "0.15.2"]
                  [commons-codec/commons-codec "1.13"]
-                 [org.clojure/clojure "1.10.1"]
+                 [org.clojure/clojure "1.10.3"]
                  [org.clojure/core.async "0.5.527"]
                  [org.clojure/data.json "0.2.6"]
                  [org.clojure/tools.cli "0.4.2"]

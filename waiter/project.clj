@@ -80,7 +80,7 @@
                                io.netty/netty]]
                  [org.apache.curator/curator-x-discovery "2.11.0"
                   :exclusions [io.netty/netty org.slf4j/slf4j-api]]
-                 [org.clojure/clojure "1.10.1"]
+                 [org.clojure/clojure "1.10.3"]
                  [org.clojure/core.async "1.2.603"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
                  [org.clojure/core.memoize "1.0.236"
