@@ -396,7 +396,15 @@
                                 ;; The scheduler to use by default if the service does not specify one explicitly.
                                 ;; This is an optional config and can be nil. When provided it must match one of
                                 ;; the component schedulers that have been configured.
-                                :default-scheduler :marathon}
+                                :default-scheduler :marathon
+
+                                ;; The selection function used to determine a scheduler for a given service id can be configured.
+                                ;; This is an optional config and can be nil.
+                                :selector-context {;; a factory function may optionally be provided which accepts a context map
+                                                   ;; and returns a function that takes a service-id as input and returns a scheduler
+                                                   :factory-fn 'waiter.scheduler.composite/create-scheduler-parameter-based-selector
+                                                   ;; additional name-value pairs may be provided as context to the factory function
+                                                   :todo :additional-config}}
 
                     ;; :kind :kubernetes uses Kubernetes (https://kubernetes.io/) for scheduling Waiter services and instances:
                     ;:kind :kubernetes
