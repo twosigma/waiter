@@ -658,14 +658,12 @@
 (defn extract-token-data-param-vals
   "Extracts the values of parameters from the provided token description."
   [token-description display-params-keys]
-  (loop [[entry-keys & remaining-keys] display-params-keys
-         result-map {}]
-    (if entry-keys
-      (recur remaining-keys
-             (let [entry-val (get-in token-description entry-keys)]
-               (cond-> result-map
-                 (some? entry-val) (assoc-in entry-keys entry-val))))
-      result-map)))
+  (reduce (fn extract-token-data-param-vals-reducer [result-map entry-keys]
+            (let [entry-val (get-in token-description entry-keys)]
+              (cond-> result-map
+                (some? entry-val) (assoc-in entry-keys entry-val))))
+          {}
+          display-params-keys))
 
 (defn handle-list-tokens-request
   [retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms tokens-watch-channels-update-chan
