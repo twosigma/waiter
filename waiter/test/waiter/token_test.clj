@@ -3190,3 +3190,29 @@
         (is (au/chan? watch-chan))
         (async/put! watch-chan initial-event)
         (is (nil? (async/<!! body)))))))
+
+(deftest test-extract-token-data-param-keys
+  (is (= [] (extract-token-data-param-keys nil)))
+  (is (= [] (extract-token-data-param-keys [])))
+  (is (= [["cpus"]] (extract-token-data-param-keys ["fie" "bar" "cpus"])))
+  (is (= [["env" "FOO"]] (extract-token-data-param-keys ["fie" "bar" "env.FOO"])))
+  (is (= [["metadata" "bar"]] (extract-token-data-param-keys ["fie" "bar" "metadata.bar"])))
+  (is (= #{["cpus"] ["mem"]}
+         (set (extract-token-data-param-keys ["fie" "bar" "cpus" "mem"]))))
+  (is (= #{["cpus"] ["env" "FOO"] ["metadata" "bar"]}
+         (set (extract-token-data-param-keys ["fie" "bar" "cpus" "env.FOO" "metadata.bar"])))))
+
+(deftest test-extract-token-data-param-vals
+  (is (= {} (extract-token-data-param-vals {} [])))
+  (is (= {} (extract-token-data-param-vals {} [["cpus"]])))
+  (is (= {} (extract-token-data-param-vals {"mem" 1024} [["cpus"]])))
+  (is (= {} (extract-token-data-param-vals {"cpus" 1 "mem" 1024} [["env" "FOO"]])))
+  (is (= {} (extract-token-data-param-vals {"cpus" 1 "mem" 1024} [["metadata" "bar"]])))
+  (is (= {"mem" 1024}
+         (extract-token-data-param-vals {"cpus" 1 "mem" 1024} [["mem"]])))
+  (is (= {"cpus" 1 "mem" 1024}
+         (extract-token-data-param-vals {"cpus" 1 "mem" 1024} [["cpus"] ["mem"]])))
+  (is (= {"mem" 1024}
+         (extract-token-data-param-vals {"cpus" 1 "mem" 1024 "env" {"BAR" "b1"}} [["mem"] ["env" "FOO"]])))
+  (is (= {"env" {"FOO" "f1"} "mem" 1024}
+         (extract-token-data-param-vals {"cpus" 1 "mem" 1024 "env" {"BAR" "b1" "FOO" "f1"}} [["mem"] ["env" "FOO"]]))))

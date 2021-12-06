@@ -646,6 +646,25 @@
                          :streaming-timeout streaming-timeout})]
         (utils/exception->response ex request)))))
 
+(defn extract-token-data-param-keys
+  "Extracts the parameters (with paths) from the list of include parameters."
+  [parameters]
+  (->> parameters
+    (set)
+    (map #(-> % (str/split #"\.") (vec)))
+    (filter #(contains? sd/token-data-keys (first %)))
+    (vec)))
+
+(defn extract-token-data-param-vals
+  "Extracts the values of parameters from the provided token description."
+  [token-description display-params-keys]
+  (reduce (fn extract-token-data-param-vals-reducer [result-map entry-keys]
+            (let [entry-val (get-in token-description entry-keys)]
+              (cond-> result-map
+                (some? entry-val) (assoc-in entry-keys entry-val))))
+          {}
+          display-params-keys))
+
 (defn handle-list-tokens-request
   [retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms tokens-watch-channels-update-chan
    {:keys [request-method] :as req}]
@@ -668,6 +687,12 @@
                           (string? owner-param) #{owner-param}
                           (coll? owner-param) (set owner-param)
                           :else (list-token-owners kv-store))
+                 display-param (get request-params "parameters")
+                 display-params-keys (-> (cond
+                                           (string? display-param) [display-param]
+                                           (coll? display-param) display-param
+                                           :else [])
+                                       (extract-token-data-param-keys))
                  service-description-filter-predicate (-> (dissoc request-params "deleted" "maintenance" "owner" "previous")
                                                         (sd/query-params->service-description-filter-predicate sd/token-data-keys))
                  index-filter-fn
@@ -698,7 +723,12 @@
                      (not show-metadata)
                      (dissoc :deleted :etag :last-update-time)
                      include-cluster
-                     (assoc :cluster (get (sd/token->token-metadata kv-store token :error-on-missing false) "cluster"))
+                     (assoc :cluster (some-> (sd/token->token-metadata kv-store token :error-on-missing false)
+                                       (get "cluster")))
+                     (seq display-params-keys)
+                     (assoc :parameters (some-> (sd/token->token-parameters
+                                                  kv-store token :error-on-missing false :include-deleted include-deleted)
+                                          (extract-token-data-param-vals display-params-keys)))
                      (and include-service-id (not deleted))
                      (assoc :service-id (when-let [{:strs [run-as-user] :as service-description-template}
                                                    (sd/token->service-parameter-template kv-store token :error-on-missing false)]

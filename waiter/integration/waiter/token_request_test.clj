@@ -2168,18 +2168,20 @@
 
 (deftest ^:parallel ^:integration-fast test-token-list-filtering
   (testing-using-waiter-url
-    (let [retrieve-tokens (fn [query-params]
+    (let [retrieve-tokens (fn [query-params & {:keys [mode] :or {mode :token-params}}]
                             (let [tokens-response (make-request waiter-url "/tokens" :query-params query-params)]
                               (assert-response-status tokens-response http-200-ok)
-                              (->> tokens-response
-                                :body
-                                (try-parse-json)
-                                (walk/keywordize-keys)
-                                (map :token)
-                                (set))))
-          token-1 (rand-name)
+                              (let [entries (->> tokens-response
+                                              :body
+                                              (try-parse-json)
+                                              (walk/keywordize-keys))]
+                                (if (= mode :token-params)
+                                  (pc/for-map [{:keys [parameters token]} entries] token parameters)
+                                  (set (map :token entries))))))
+          base-name (rand-name)
+          token-1 (str base-name "-1")
           description-1 {:env {"FLAG" "true"} :load-balancing "oldest" :metadata {"flag" "false"} :name "test-token-1" :permitted-user "*" :token token-1}
-          token-2 (rand-name)
+          token-2 (str base-name "-2")
           description-2 {:env {"FLAG" "false"} :load-balancing "youngest" :metadata {"flag" "true"} :name "test-token-2" :token token-2}]
       (testing "invalid authentication and health-check-authentication"
         (try
@@ -2254,6 +2256,24 @@
               (let [token-set (retrieve-tokens {"permitted-user" ["" "*"]})]
                 (is (contains? token-set token-1) (str token-set))
                 (is (contains? token-set token-2) (str token-set))))
+
+            (testing "parameter loading"
+              (let [token-map (retrieve-tokens {"parameters" ["cpus"] "permitted-user" "*"} :mode :token-params)]
+                (is (utils/sub-map? {token-1 {}} token-map) (str token-map)))
+              (let [token-map (retrieve-tokens {"parameters" ["load-balancing"] "permitted-user" "*"} :mode :token-params)]
+                (is (utils/sub-map? {token-1 {:load-balancing "oldest"}} token-map) (str token-map)))
+              (let [token-map (retrieve-tokens {"parameters" ["permitted-user"] "permitted-user" "*"} :mode :token-params)]
+                (is (utils/sub-map? {token-1 {:permitted-user "*"}} token-map) (str token-map)))
+              (let [token-map (retrieve-tokens {"parameters" ["load-balancing" "permitted-user"] "permitted-user" "*"} :mode :token-params)]
+                (is (utils/sub-map? {token-1 {:load-balancing "oldest" :permitted-user "*"}} token-map) (str token-map)))
+              (let [token-map (retrieve-tokens {"parameters" ["env" "metadata"] "permitted-user" "*"} :mode :token-params)]
+                (is (utils/sub-map? {token-1 {:env {:FLAG "true"} :metadata {:flag "false"}}} token-map) (str token-map)))
+              (let [token-map (retrieve-tokens {"parameters" ["env.flag" "metadata.flag"] "permitted-user" "*"} :mode :token-params)]
+                (is (utils/sub-map? {token-1 {:metadata {:flag "false"}}} token-map) (str token-map)))
+              (let [token-map (retrieve-tokens {"parameters" ["env.FLAG" "metadata.FLAG"] "permitted-user" "*"} :mode :token-params)]
+                (is (utils/sub-map? {token-1 {:env {:FLAG "true"}}} token-map) (str token-map)))
+              (let [token-map (retrieve-tokens {"parameters" ["env.FOO" "metadata.bar"] "permitted-user" "*"} :mode :token-params)]
+                (is (utils/sub-map? {token-1 {}} token-map) (str token-map))))
 
             (finally
               (delete-token-and-assert waiter-url token-2)))
