@@ -3194,14 +3194,13 @@
 (deftest test-extract-token-data-param-keys
   (is (= [] (extract-token-data-param-keys nil)))
   (is (= [] (extract-token-data-param-keys [])))
-  (is (= [] (extract-token-data-param-keys ["fie""cpus" "env.FOO"])))
-  (is (= [["cpus"]] (extract-token-data-param-keys ["fie""param.bar" "param.cpus"])))
-  (is (= [["env" "FOO"]] (extract-token-data-param-keys ["fie""param.bar" "param.env.FOO"])))
-  (is (= [["metadata" "bar"]] (extract-token-data-param-keys ["fie""param.bar" "param.metadata.bar"])))
+  (is (= [["cpus"]] (extract-token-data-param-keys ["fie" "bar" "cpus"])))
+  (is (= [["env" "FOO"]] (extract-token-data-param-keys ["fie" "bar" "env.FOO"])))
+  (is (= [["metadata" "bar"]] (extract-token-data-param-keys ["fie" "bar" "metadata.bar"])))
   (is (= #{["cpus"] ["mem"]}
-         (set (extract-token-data-param-keys ["fie""param.bar" "param.cpus" "param.mem"]))))
+         (set (extract-token-data-param-keys ["fie" "bar" "cpus" "mem"]))))
   (is (= #{["cpus"] ["env" "FOO"] ["metadata" "bar"]}
-         (set (extract-token-data-param-keys ["fie""param.bar" "param.cpus" "param.env.FOO" "param.metadata.bar"])))))
+         (set (extract-token-data-param-keys ["fie" "bar" "cpus" "env.FOO" "metadata.bar"])))))
 
 (deftest test-extract-token-data-param-vals
   (is (= {} (extract-token-data-param-vals {} [])))

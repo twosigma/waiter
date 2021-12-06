@@ -647,12 +647,11 @@
         (utils/exception->response ex request)))))
 
 (defn extract-token-data-param-keys
-  "Extracts the names of parameters from the list of include parameters."
-  [include-params]
-  (->> include-params
-    (filter #(str/starts-with? (str %) "param."))
+  "Extracts the parameters (with paths) from the list of include parameters."
+  [parameters]
+  (->> parameters
     (set)
-    (map #(-> % (str/split #"\.") (rest) (vec)))
+    (map #(-> % (str/split #"\.") (vec)))
     (filter #(contains? sd/token-data-keys (first %)))
     (vec)))
 
@@ -690,10 +689,10 @@
                           (string? owner-param) #{owner-param}
                           (coll? owner-param) (set owner-param)
                           :else (list-token-owners kv-store))
-                 include-param (get request-params "include")
+                 display-param (get request-params "parameters")
                  display-params-keys (-> (cond
-                                           (string? include-param) [include-param]
-                                           (coll? include-param) include-param
+                                           (string? display-param) [display-param]
+                                           (coll? display-param) display-param
                                            :else [])
                                        (extract-token-data-param-keys))
                  service-description-filter-predicate (-> (dissoc request-params "deleted" "maintenance" "owner" "previous")

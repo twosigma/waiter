@@ -2258,21 +2258,21 @@
                 (is (contains? token-set token-2) (str token-set))))
 
             (testing "parameter loading"
-              (let [token-map (retrieve-tokens {"include" ["param.cpus"] "permitted-user" "*"} :mode :token-params)]
+              (let [token-map (retrieve-tokens {"parameters" ["cpus"] "permitted-user" "*"} :mode :token-params)]
                 (is (utils/sub-map? {token-1 {}} token-map) (str token-map)))
-              (let [token-map (retrieve-tokens {"include" ["param.load-balancing"] "permitted-user" "*"} :mode :token-params)]
+              (let [token-map (retrieve-tokens {"parameters" ["load-balancing"] "permitted-user" "*"} :mode :token-params)]
                 (is (utils/sub-map? {token-1 {:load-balancing "oldest"}} token-map) (str token-map)))
-              (let [token-map (retrieve-tokens {"include" ["param.permitted-user"] "permitted-user" "*"} :mode :token-params)]
+              (let [token-map (retrieve-tokens {"parameters" ["permitted-user"] "permitted-user" "*"} :mode :token-params)]
                 (is (utils/sub-map? {token-1 {:permitted-user "*"}} token-map) (str token-map)))
-              (let [token-map (retrieve-tokens {"include" ["param.load-balancing" "param.permitted-user"] "permitted-user" "*"} :mode :token-params)]
+              (let [token-map (retrieve-tokens {"parameters" ["load-balancing" "permitted-user"] "permitted-user" "*"} :mode :token-params)]
                 (is (utils/sub-map? {token-1 {:load-balancing "oldest" :permitted-user "*"}} token-map) (str token-map)))
-              (let [token-map (retrieve-tokens {"include" ["param.env" "param.metadata"] "permitted-user" "*"} :mode :token-params)]
+              (let [token-map (retrieve-tokens {"parameters" ["env" "metadata"] "permitted-user" "*"} :mode :token-params)]
                 (is (utils/sub-map? {token-1 {:env {:FLAG "true"} :metadata {:flag "false"}}} token-map) (str token-map)))
-              (let [token-map (retrieve-tokens {"include" ["param.env.flag" "param.metadata.flag"] "permitted-user" "*"} :mode :token-params)]
+              (let [token-map (retrieve-tokens {"parameters" ["env.flag" "metadata.flag"] "permitted-user" "*"} :mode :token-params)]
                 (is (utils/sub-map? {token-1 {:metadata {:flag "false"}}} token-map) (str token-map)))
-              (let [token-map (retrieve-tokens {"include" ["param.env.FLAG" "param.metadata.FLAG"] "permitted-user" "*"} :mode :token-params)]
+              (let [token-map (retrieve-tokens {"parameters" ["env.FLAG" "metadata.FLAG"] "permitted-user" "*"} :mode :token-params)]
                 (is (utils/sub-map? {token-1 {:env {:FLAG "true"}}} token-map) (str token-map)))
-              (let [token-map (retrieve-tokens {"include" ["param.env.FOO" "param.metadata.bar"] "permitted-user" "*"} :mode :token-params)]
+              (let [token-map (retrieve-tokens {"parameters" ["env.FOO" "metadata.bar"] "permitted-user" "*"} :mode :token-params)]
                 (is (utils/sub-map? {token-1 {}} token-map) (str token-map))))
 
             (finally
