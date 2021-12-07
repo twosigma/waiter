@@ -304,8 +304,9 @@
    service-id->service-description-fn service-id->metrics-fn service-id->references-fn service-id->source-tokens-entries-fn
    token->token-hash request]
   (let [{:keys [all-available-service-ids service-id->healthy-instances service-id->unhealthy-instances] :as global-state} (query-state-fn)]
-    (let [{:strs [run-as-user token token-version] :as request-params} (-> request ru/query-params-request :query-params)
-          service-description-filter-predicate (sd/query-params->service-description-filter-predicate request-params sd/service-parameter-keys)
+    (let [{:strs [run-as-user star-mode token token-version] :as request-params} (-> request ru/query-params-request :query-params)
+          star-means-all? (or (nil? star-mode) (= star-mode "all"))
+          service-description-filter-predicate (sd/query-params->service-description-filter-predicate request-params sd/service-parameter-keys star-means-all?)
           auth-user (get request :authorization/user)
           viewable-service-ids (filter
                                  (fn [service-id]
@@ -319,12 +320,12 @@
                                           (or (seq run-as-user)
                                               (authz/manage-service? entitlement-manager auth-user service-id service-description))
                                           (or (str/blank? token)
-                                              (let [filter-fn (utils/str->filter-fn token)]
+                                              (let [filter-fn (utils/str->filter-fn token star-means-all?)]
                                                 (->> source-tokens
                                                   (map #(get % "token"))
                                                   (some filter-fn))))
                                           (or (str/blank? token-version)
-                                              (let [filter-fn (utils/str->filter-fn token-version)]
+                                              (let [filter-fn (utils/str->filter-fn token-version star-means-all?)]
                                                 (->> source-tokens
                                                   (map #(get % "version"))
                                                   (some filter-fn)))))))
