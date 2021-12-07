@@ -419,6 +419,7 @@
       (testing "streams updated healthy instances for service-ids that match service description filter"
         (let [watch (start-watch waiter-url cookies
                                  :query-params {"metadata.foo" "random-value-required"
+                                                "streaming-timeout" "120000"
                                                 "watch" "true"})
               {:keys [service-id] :as response}
               (make-request-with-debug-info
