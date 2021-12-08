@@ -1690,14 +1690,14 @@
 (defn param-value->filter-fn
   "Accepts a single string or a sequence of strings as input.
    Creates the filter function that does substring match for the input string or any string in the sequence."
-  [param-value]
+  [param-value star-means-all?]
   (if (string? param-value)
-    (utils/str->filter-fn param-value)
-    (utils/strs->filter-fn param-value)))
+    (utils/str->filter-fn param-value star-means-all?)
+    (utils/strs->filter-fn param-value star-means-all?)))
 
 (defn query-params->service-description-filter-predicate
   "Creates the filter function for service descriptions that matches every parameter provided in the request-params map."
-  [request-params parameter-keys]
+  [request-params parameter-keys star-means-all?]
   (let [service-description-params (utils/filterm
                                      (fn [[param-name _]]
                                        (->> (str/split param-name #"\.")
@@ -1705,7 +1705,7 @@
                                          (contains? parameter-keys)))
                                      request-params)
         param-predicates (map (fn [[param-name param-value]]
-                                (let [param-predicate (param-value->filter-fn param-value)]
+                                (let [param-predicate (param-value->filter-fn param-value star-means-all?)]
                                   (fn [service-description]
                                     (->> (str/split param-name #"\.")
                                       (get-in service-description)

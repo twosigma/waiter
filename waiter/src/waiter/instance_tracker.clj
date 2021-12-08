@@ -211,13 +211,14 @@
   (try
     (case request-method
       :get
-      (let [{:strs [service-id streaming-timeout] :as request-params} (-> req ru/query-params-request :query-params)]
+      (let [{:strs [service-id star-mode streaming-timeout] :as request-params} (-> req ru/query-params-request :query-params)
+            star-means-all? (or (nil? star-mode) (= star-mode "all"))]
         (if-let [configured-streaming-timeout-ms (if streaming-timeout
                                                    (utils/parse-int streaming-timeout)
                                                    default-streaming-timeout-ms)]
           (let [should-watch? (utils/request-flag request-params "watch")
                 service-description-filter-predicate
-                (sd/query-params->service-description-filter-predicate request-params sd/service-parameter-keys)
+                (sd/query-params->service-description-filter-predicate request-params sd/service-parameter-keys star-means-all?)
                 correlation-id (cid/get-correlation-id)
                 watch-chan-xform
                 (comp

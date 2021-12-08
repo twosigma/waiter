@@ -694,7 +694,7 @@
                                            :else [])
                                        (extract-token-data-param-keys))
                  service-description-filter-predicate (-> (dissoc request-params "deleted" "maintenance" "owner" "previous")
-                                                        (sd/query-params->service-description-filter-predicate sd/token-data-keys))
+                                                        (sd/query-params->service-description-filter-predicate sd/token-data-keys false))
                  index-filter-fn
                  (every-pred
                    (fn list-tokens-delete-predicate [entry]

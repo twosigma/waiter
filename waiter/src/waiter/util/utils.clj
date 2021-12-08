@@ -867,7 +867,7 @@
 
 (defn str->filter-fn
   "Returns a value-filtering function given a user-provided value as filter string."
-  [value]
+  [value star-means-all?]
   (let [value-str (str value)
         pattern (when-not (or (= "" value-str) (= "*" value-str))
                   (try
@@ -875,12 +875,14 @@
                     (catch Exception _
                       nil)))]
     #(or (= value-str %)
+         (when (and star-means-all? (= "*" value-str))
+           (pos? (count (str %))))
          (and pattern (re-matches pattern %)))))
 
 (defn strs->filter-fn
   "Returns a value-filtering function that matches on any of the given sequence of user-provided values as filter string."
-  [values]
-  (let [filter-fns (map #(str->filter-fn %) values)]
+  [values star-means-all?]
+  (let [filter-fns (map #(str->filter-fn % star-means-all?) values)]
     (fn [value] (some #(%1 value) filter-fns))))
 
 (defn match-yes-like
