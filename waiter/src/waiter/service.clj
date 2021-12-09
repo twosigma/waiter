@@ -273,7 +273,7 @@
                          :error-message (utils/message instance)}
                         (and service-deployment-error-msg service-deployment-error-details)
                         (-> (assoc :error-message service-deployment-error-msg)
-                            (update :error-map #(merge service-deployment-error-details %))))]
+                            (update :error-map #(merge {:error-class "waiter.DeploymentError"} service-deployment-error-details %))))]
                   (ex-info (str deployment-error-prefix error-message) error-map))
                 (if-not (t/before? (t/now) expiry-time)
                   (do
@@ -292,16 +292,17 @@
                                       " Check that your service is able to start properly!")
                                     (when (and (pos? outstanding-requests) (pos? healthy-instances))
                                       " Check that your service is able to scale properly!"))
-                               {:service-id service-id
+                               {:error-class "waiter.RequestTimeout"
                                 :outstanding-requests outstanding-requests
                                 :requests-waiting-to-stream requests-waiting-to-stream
-                                :waiting-for-available-instance waiting-for-available-instance
+                                :service-id service-id
                                 :slots-assigned (counters/value (metrics/service-counter service-id "instance-counts" "slots-assigned"))
                                 :slots-available (counters/value (metrics/service-counter service-id "instance-counts" "slots-available"))
                                 :slots-in-use (counters/value (metrics/service-counter service-id "instance-counts" "slots-in-use"))
+                                :status http-503-service-unavailable
+                                :waiting-for-available-instance waiting-for-available-instance
                                 :work-stealing-offers-received (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))
-                                :work-stealing-offers-sent (counters/value (metrics/service-counter service-id "work-stealing" "sent-to" "in-flight"))
-                                :status http-503-service-unavailable})))
+                                :work-stealing-offers-sent (counters/value (metrics/service-counter service-id "work-stealing" "sent-to" "in-flight"))})))
                   (do
                     (cid/with-correlation-id cid (service-not-found-fn))
                     (async/<! (async/timeout 1500))

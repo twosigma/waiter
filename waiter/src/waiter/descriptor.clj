@@ -328,6 +328,7 @@
                   (and auth-user (can-run-as? auth-user run-as-user)))
       (throw (ex-info "Authenticated user cannot run service"
                       {:authenticated-user auth-user
+                       :error-class "waiter.ServiceForbidden"
                        :log-level :warn
                        :run-as-user run-as-user
                        :service-description service-description
@@ -336,6 +337,7 @@
     (when-not (request-authorized? auth-user permitted-user)
       (throw (ex-info "This user isn't allowed to invoke this service"
                       {:authenticated-user auth-user
+                       :error-class "waiter.ServiceForbidden"
                        :log-level :warn
                        :service-description service-description
                        :service-id service-id
