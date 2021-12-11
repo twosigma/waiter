@@ -520,7 +520,10 @@
                                  :pod-suffix-length 5
                                  :raven-sidecar {:cmd ["/opt/waiter/raven/bin/raven-start"]
                                                  ;; environment variables use by provided predicate functions
-                                                 :env-vars {;; flag env vars set to a "true"-like value enable raven,
+                                                 :env-vars {;; The default env vars configured in the Raven sidecar.
+                                                            ;; These may be overridden by user-provided env vars in the service description.
+                                                            :defaults {}
+                                                            ;; flag env vars set to a "true"-like value enable raven,
                                                             ;; "false"-like values disable raven
                                                             :flags ["RAVEN_ENABLED"]
                                                             ;; configuring a raven feature implicitly enables raven
