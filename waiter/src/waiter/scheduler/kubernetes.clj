@@ -1095,9 +1095,10 @@
              [:spec :template :spec :containers]
              conj
              (let [{:keys [cmd resources image]} raven-sidecar
+                   raven-base-env (get-in raven-sidecar [:env-vars :defaults])
                    user-env (:env service-description)
-                   env-map (-> user-env
-                               (merge base-env)
+                   env-map (-> raven-base-env
+                               (merge user-env base-env)
                                (assoc "FORCE_TLS_TERMINATION" (str force-tls?)
                                       "HEALTH_CHECK_PORT_INDEX" (str health-check-port-index)
                                       "HEALTH_CHECK_PROTOCOL" health-check-proto

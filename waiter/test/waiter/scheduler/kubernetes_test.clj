@@ -280,7 +280,9 @@
     (let [service-id "proxy-test-service-id"
           custom-raven-flag "MY_RAVEN_FLAG"
           scheduler (make-dummy-scheduler [service-id] {:raven-sidecar {:cmd ["/opt/waiter/raven/bin/raven-start"]
-                                                                        :env-vars {:flags [custom-raven-flag]}
+                                                                        :env-vars {:defaults {"PORT0" "P0"
+                                                                                              "RAVEN_E1" "V1"}
+                                                                                   :flags [custom-raven-flag]}
                                                                         :image "twosigma/waiter-raven"
                                                                         :predicate-fn raven-sidecar-opt-in?
                                                                         :resources {:cpu 0.1 :mem 256}}})
@@ -307,6 +309,9 @@
 
       (testing "sidecar container has unique entries in environment"
         (is (= (count sidecar-env) (-> sidecar-container :env count))))
+
+      (testing "configure default variables are present in environment"
+        (is (some #(and (contains? #{"RAVEN_E1"} (:name %)) (= "V1" (:value %))) (:env sidecar-container))))
 
       (testing "user defined environment variables are correctly overwritten"
         (is (not-any? #(and (contains? #{"PORT0" "SERVICE_PORT"} (:name %))
