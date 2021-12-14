@@ -69,7 +69,8 @@
                         1234
                         []
                         "log-dir"
-                        "instance-message")]
+                        "instance-message"
+                        nil)]
     (testing (str "Test record ServiceInstance")
       (is (= "instance-id" (:id test-instance)))
       (is (= "service-id" (:service-id test-instance)))
@@ -283,9 +284,9 @@
                                                      "health-check-port-index" 2
                                                      "health-check-url" (str "/" id)})
         started-at (t/minus (clock) (t/hours 1))
-        instance1 (->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test")
-        instance2 (->ServiceInstance "s1.i2" "s1" started-at true nil #{} nil "host" 123 [] "/log" "test")
-        instance3 (->ServiceInstance "s1.i3" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test")
+        instance1 (->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test" "Unhealthy")
+        instance2 (->ServiceInstance "s1.i2" "s1" started-at true nil #{} nil "host" 123 [] "/log" "test" "Healthy")
+        instance3 (->ServiceInstance "s1.i3" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test" "Unhealthy")
         get-service->instances (constantly
                                  {(->Service "s1" {} {} {}) {:active-instances [instance1 instance2 instance3]
                                                              :failed-instances []}

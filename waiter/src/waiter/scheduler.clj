@@ -116,7 +116,8 @@
    port
    extra-ports
    ^String log-directory
-   ^String message])
+   ^String message
+   ^String status])
 
 (defn make-ServiceInstance [value-map]
   (map->ServiceInstance (merge {:extra-ports [] :flags #{}} value-map)))
@@ -579,8 +580,8 @@
     (let [{healthy-instances true, unhealthy-instances false} (group-by (comp boolean :healthy?) service-instances)]
       (log/trace "retrieve-instances-for-service" service-id "has" (count healthy-instances) "healthy instance(s)"
                  "and" (count unhealthy-instances) " unhealthy instance(s).")
-      {:healthy-instances (vec healthy-instances)
-       :unhealthy-instances (vec unhealthy-instances)})))
+      {:healthy-instances (->> healthy-instances (map #(utils/assoc-if-absent % :status "Healthy")) (vec))
+       :unhealthy-instances (->> unhealthy-instances (map #(utils/assoc-if-absent % :status "Unhealthy")) (vec))})))
 
 (defn start-health-checks
   "Takes a map from service -> service instances and replaces each active instance with a ref which performs a

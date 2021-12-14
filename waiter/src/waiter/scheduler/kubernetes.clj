@@ -245,7 +245,8 @@
                                                       :id newest-failure-id
                                                       :log-directory (log-dir-path (:k8s/user live-instance)
                                                                                    (dec restart-count))
-                                                      :started-at newest-failure-start-time)
+                                                      :started-at newest-failure-start-time
+                                                      :status "Failed")
                                               ;; To match the behavior of the marathon scheduler,
                                               ;; we don't include the exit code in failed instances that were killed by k8s.
                                               (not (killed-by-k8s? newest-failure))
@@ -339,6 +340,16 @@
   ;; see https://clojure.org/reference/reader#_literals
   (keyword (str "p" port-number)))
 
+(defn retrieve-failing-container-names
+  "Retrieves the names of containers that are failing (i.e. in a CrashLoopBackOff)."
+  [container-statuses type-filter]
+  (->> container-statuses
+    (filter (fn retrieve-failing-containers-crash-loop? [{:keys [ready reason type]}]
+              (and (= type type-filter)
+                   (false? ready)
+                   (= "CrashLoopBackOff" reason))))
+    (map :name)))
+
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
   [{:keys [api-server-url leader?-fn restart-kill-threshold] :as scheduler} pod]
@@ -376,16 +387,36 @@
           pod-started-at (-> pod (get-in [:status :startTime]) timestamp-str->datetime)
           {:keys [waiter/revision-timestamp waiter/revision-version]} (get-in pod [:metadata :annotations])
           pod-name (k8s-object->id pod)
+          primary-container-ready (true? (get primary-container-status :ready))
+          healthy? (and primary-container-ready
+                        ;; Note that when exceeded-restart-kill-threshold? becomes true, the container *just* restarted and is non-ready,
+                        ;; therefore it's impossible to observe a healthy? status between the time the container restarted
+                        ;; and the time that the instance was marked permanently unhealthy due to the high restart count.
+                        (not exceeded-restart-kill-threshold?))
+          pod-container-statuses (map (fn [{:keys [restartCount state] :as status}]
+                                        (when (> (count state) 1)
+                                          (log/warn "received multiple states for container:" status))
+                                        (let [[state {:keys [reason]}] (first state)]
+                                          (cond-> (select-keys status [:image :name :ready :type])
+                                            (some? reason) (assoc :reason reason)
+                                            (some? restartCount) (assoc :restart-count restartCount)
+                                            (some? state) (assoc :state state))))
+                                      container-statuses)
+          failing-init-containers (retrieve-failing-container-names pod-container-statuses :init)
+          failing-app-containers (retrieve-failing-container-names pod-container-statuses :app)
+          status-message (cond
+                           (seq failing-init-containers) (str "Init container(s) in crash loop: " (str/join ", " failing-init-containers))
+                           exceeded-restart-kill-threshold? "Application restarting frequently"
+                           (some #(= waiter-primary-container-name %) failing-app-containers) "Application in crash loop"
+                           (seq failing-app-containers) (str "Application container(s) in crash loop: " (str/join ", " failing-app-containers))
+                           healthy? "Healthy"
+                           :else "Unhealthy")
           instance (scheduler/make-ServiceInstance
                      (cond-> {:extra-ports (->> pod-annotations :waiter/port-count Integer/parseInt range next (mapv #(+ port0 %)))
                               :flags (cond-> #{}
                                        (check-expired scheduler service-id instance-id pod-restart-count pod-annotations primary-container-status pod-started-at)
                                        (conj :expired))
-                              :healthy? (and (true? (get primary-container-status :ready))
-                                             ;; Note that when exceeded-restart-kill-threshold? becomes true, the container *just* restarted and is non-ready,
-                                             ;; therefore it's impossible to observe a healthy? status between the time the container restarted
-                                             ;; and the time that the instance was marked permanently unhealthy due to the high restart count.
-                                             (not exceeded-restart-kill-threshold?))
+                              :healthy? healthy?
                               :host (get-in pod [:status :podIP] scheduler/UNKNOWN-IP)
                               :id instance-id
                               :k8s/api-server-url api-server-url
@@ -399,21 +430,13 @@
                               :log-directory (log-dir-path run-as-user primary-container-restart-count)
                               :port port0
                               :service-id service-id
-                              :started-at pod-started-at}
+                              :started-at pod-started-at
+                              :status status-message}
                        node-name (assoc :k8s/node-name node-name)
                        phase (assoc :k8s/pod-phase phase)
                        revision-timestamp (assoc :k8s/revision-timestamp revision-timestamp)
                        revision-version (assoc :k8s/revision-version revision-version)
-                       (seq container-statuses) (assoc :k8s/container-statuses
-                                                       (map (fn [{:keys [restartCount state] :as status}]
-                                                              (when (> (count state) 1)
-                                                                (log/warn "received multiple states for container:" status))
-                                                              (let [[state {:keys [reason]}] (first state)]
-                                                                (cond-> (select-keys status [:image :name :ready :type])
-                                                                  (some? reason) (assoc :reason reason)
-                                                                  (some? restartCount) (assoc :restart-count restartCount)
-                                                                  (some? state) (assoc :state state))))
-                                                            container-statuses))))]
+                       (seq pod-container-statuses) (assoc :k8s/container-statuses pod-container-statuses)))]
       (when exceeded-restart-kill-threshold?
         (try
           (if (leader?-fn)
@@ -536,7 +559,7 @@
         (->> all-instances (remove nil?) (group-by #(-> % :k8s/pod-phase (= "Failed")) ))]
     ;; pods with Failed phase are treated as failed instances
     (doseq [{:keys [service-id] :as failed-instance} failed-instances]
-      (->> (assoc failed-instance :healthy? false)
+      (->> (assoc failed-instance :healthy? false :status "Failed")
         (scheduler/add-to-store-and-track-failed-instance!
           service-id->failed-instances-transient-store scheduler/max-failed-instances-to-keep service-id)))
     ;; returns only pods with non-Failed phase
