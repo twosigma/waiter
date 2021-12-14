@@ -778,7 +778,9 @@
                     :spec {:replicas 2
                            :selector {:matchLabels {:app "test-app-1234"
                                                     :waiter/cluster "waiter"}}
-                           :template {:metadata {:annotations {:waiter/service-id "test-app-1234"}}}}
+                           :template {:metadata {:annotations {:waiter/service-id "test-app-1234"}}
+                                      :spec {:containers [{:name waiter-primary-container-name
+                                                           :resources {:requests {:cpu "1" :memory "1Gi"}}}]}}}
                     :status {:replicas 2
                              :readyReplicas 2
                              :availableReplicas 2}}
@@ -793,7 +795,9 @@
                     :spec {:replicas 3
                            :selector {:matchLabels {:app "test-app-6789"
                                                     :waiter/cluster "waiter"}}
-                           :template {:metadata {:annotations {:waiter/service-id "test-app-6789"}}}}
+                           :template {:metadata {:annotations {:waiter/service-id "test-app-6789"}}
+                                      :spec {:containers [{:name waiter-primary-container-name
+                                                           :resources {:requests {:cpu "2" :memory "512Mi"}}}]}}}
                     :status {:replicas 3
                              :readyReplicas 1
                              :availableReplicas 2
@@ -801,7 +805,8 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-1234"
                                     :instances 2
-                                    :k8s/containers []
+                                    :k8s/container-resources [{:cpus 1.0 :mem 1024.0 :name waiter-primary-container-name}]
+                                    :k8s/containers [waiter-primary-container-name]
                                     :k8s/replicaset-creation-timestamp "2019-08-01T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :k8s/replicaset-pod-annotations {}
@@ -809,7 +814,8 @@
                                     :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
            (scheduler/make-Service {:id "test-app-6789"
                                     :instances 3
-                                    :k8s/containers []
+                                    :k8s/container-resources [{:cpus 2.0 :mem 512.0 :name waiter-primary-container-name}]
+                                    :k8s/containers [waiter-primary-container-name]
                                     :k8s/replicaset-creation-timestamp "2019-08-05T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :k8s/replicaset-pod-annotations {}
@@ -829,7 +835,9 @@
                     :spec {:replicas 2
                            :selector {:matchLabels {:app "test-app-abcd"
                                                     :waiter/cluster "waiter"}}
-                           :template {:metadata {:annotations {:waiter/service-id "test-app-abcd"}}}}
+                           :template {:metadata {:annotations {:waiter/service-id "test-app-abcd"}}
+                                      :spec {:containers [{:name waiter-primary-container-name
+                                                           :resources {:requests {:cpu "1.5" :memory "512Mi"}}}]}}}
                     :status {:replicas 2
                              :readyReplicas 2
                              :availableReplicas 2}}
@@ -845,7 +853,11 @@
                     :spec {:replicas 3
                            :selector {:matchLabels {:app "test-app-wxyz"
                                                     :waiter/cluster "waiter"}}
-                           :template {:metadata {:annotations {:waiter/service-id "test-app-wxyz"}}}}
+                           :template {:metadata {:annotations {:waiter/service-id "test-app-wxyz"}}
+                                      :spec {:containers [{:name waiter-primary-container-name
+                                                           :resources {:requests {:cpu "1.1" :memory "512Mi"}}}
+                                                          {:name waiter-fileserver-sidecar-name
+                                                           :resources {:requests {:cpu "0.1" :memory "256Mi"}}}]}}}
                     :status {:replicas 3
                              :readyReplicas 1
                              :availableReplicas 2
@@ -853,7 +865,8 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-abcd"
                                     :instances 2
-                                    :k8s/containers []
+                                    :k8s/container-resources [{:cpus 1.5 :mem 512.0 :name waiter-primary-container-name}]
+                                    :k8s/containers [waiter-primary-container-name]
                                     :k8s/replicaset-creation-timestamp "2019-09-07T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :k8s/replicaset-pod-annotations {}
@@ -861,7 +874,9 @@
                                     :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
            (scheduler/make-Service {:id "test-app-wxyz"
                                     :instances 3
-                                    :k8s/containers []
+                                    :k8s/container-resources [{:cpus 1.1 :mem 512.0 :name waiter-primary-container-name}
+                                                              {:cpus 0.1 :mem 256.0 :name waiter-fileserver-sidecar-name}]
+                                    :k8s/containers [waiter-primary-container-name waiter-fileserver-sidecar-name]
                                     :k8s/replicaset-creation-timestamp "2019-10-15T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :k8s/replicaset-pod-annotations {}
@@ -882,7 +897,13 @@
                     :spec {:replicas 3
                            :selector {:matchLabels {:app "test-app-4321"
                                                     :waiter/cluster "waiter"}}
-                           :template {:metadata {:annotations {:waiter/service-id "test-app-4321"}}}}
+                           :template {:metadata {:annotations {:waiter/service-id "test-app-4321"}}
+                                      :spec {:containers [{:name waiter-primary-container-name
+                                                           :resources {:requests {:cpu "1.1" :memory "512Mi"}}}
+                                                          {:name waiter-fileserver-sidecar-name
+                                                           :resources {:requests {:cpu "0.1" :memory "256Mi"}}}
+                                                          {:name waiter-raven-sidecar-name
+                                                           :resources {:requests {:cpu "0.2" :memory "128Mi"}}}]}}}
                     :status {:replicas 3
                              :readyReplicas 1
                              :availableReplicas 1
@@ -890,7 +911,10 @@
           :expected-result
           [(scheduler/make-Service {:id "test-app-4321"
                                     :instances 3
-                                    :k8s/containers []
+                                    :k8s/container-resources [{:cpus 1.1 :mem 512.0 :name waiter-primary-container-name}
+                                                              {:cpus 0.1 :mem 256.0 :name waiter-fileserver-sidecar-name}
+                                                              {:cpus 0.2 :mem 128.0 :name waiter-raven-sidecar-name}]
+                                    :k8s/containers [waiter-primary-container-name waiter-fileserver-sidecar-name waiter-raven-sidecar-name]
                                     :k8s/replicaset-creation-timestamp "2020-03-04T05:06:07.000Z"
                                     :k8s/replicaset-annotations {}
                                     :k8s/replicaset-pod-annotations {}
@@ -914,13 +938,15 @@
                                                     :waiter/cluster "waiter"}}
                            :template {:metadata {:annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"
                                                                :waiter/service-id "test-app-9999"}}
-                                      :spec {:containers [{:name waiter-primary-container-name}]}}}
+                                      :spec {:containers [{:name waiter-primary-container-name
+                                                           :resources {:requests {:cpu "1.1" :memory "512Mi"}}}]}}}
                     :status {:replicas 0
                              :readyReplicas 0
                              :availableReplicas 0}}]}
           :expected-result
           [(scheduler/make-Service {:id "test-app-9999"
                                     :instances 0
+                                    :k8s/container-resources [{:cpus 1.1 :mem 512.0 :name waiter-primary-container-name}]
                                     :k8s/containers [waiter-primary-container-name]
                                     :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                     :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"}
@@ -947,13 +973,15 @@
                            :template {:metadata {:annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"
                                                                :waiter/revision-version "3"
                                                                :waiter/service-id "test-app-9999"}}
-                                      :spec {:containers [{:name waiter-primary-container-name}]}}}
+                                      :spec {:containers [{:name waiter-primary-container-name
+                                                           :resources {:requests {:cpu "1.1" :memory "512Mi"}}}]}}}
                     :status {:replicas 0
                              :readyReplicas 0
                              :availableReplicas 0}}]}
           :expected-result
           [(scheduler/make-Service {:id "test-app-9999"
                                     :instances 0
+                                    :k8s/container-resources [{:cpus 1.1 :mem 512.0 :name waiter-primary-container-name}]
                                     :k8s/containers [waiter-primary-container-name]
                                     :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                     :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"
@@ -1001,8 +1029,10 @@
                   :spec {:replicas 2
                          :template {:metadata {:annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"
                                                              :waiter/service-id "test-app-1234"}}
-                                    :spec {:containers [{:name waiter-primary-container-name}
-                                                        {:name waiter-fileserver-sidecar-name}]}}}
+                                    :spec {:containers [{:name waiter-primary-container-name
+                                                         :resources {:requests {:cpu "1.1" :memory "512Mi"}}}
+                                                        {:name waiter-fileserver-sidecar-name
+                                                         :resources {:requests {:cpu "0.1" :memory "256Mi"}}}]}}}
                   :status {:replicas 2
                            :readyReplicas 2
                            :availableReplicas 2}}
@@ -1016,9 +1046,12 @@
                              :uid "test-app-6789-uid"}
                   :spec {:replicas 3
                          :template {:metadata {:annotations {:waiter/service-id "test-app-6789"}}
-                                    :spec {:containers [{:name waiter-primary-container-name}
-                                                        {:name waiter-fileserver-sidecar-name}
-                                                        {:name waiter-raven-sidecar-name}]}}}
+                                    :spec {:containers [{:name waiter-primary-container-name
+                                                         :resources {:requests {:cpu "0.6" :memory "400Mi"}}}
+                                                        {:name waiter-fileserver-sidecar-name
+                                                         :resources {:requests {:cpu "0.4" :memory "200Mi"}}}
+                                                        {:name waiter-raven-sidecar-name
+                                                         :resources {:requests {:cpu "0.2" :memory "100Mi"}}}]}}}
                   :status {:replicas 3
                            :readyReplicas 1
                            :availableReplicas 2
@@ -1159,6 +1192,8 @@
         expected (hash-map
                    (scheduler/make-Service {:id "test-app-1234"
                                             :instances 2
+                                            :k8s/container-resources [{:cpus 1.1 :mem 512.0 :name waiter-primary-container-name}
+                                                                      {:cpus 0.1 :mem 256.0 :name waiter-fileserver-sidecar-name}]
                                             :k8s/containers [waiter-primary-container-name waiter-fileserver-sidecar-name]
                                             :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                             :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"}
@@ -1241,6 +1276,9 @@
 
                    (scheduler/make-Service {:id "test-app-6789"
                                             :instances 3
+                                            :k8s/container-resources [{:cpus 0.6 :mem 400.0 :name waiter-primary-container-name}
+                                                                      {:cpus 0.4 :mem 200.0 :name waiter-fileserver-sidecar-name}
+                                                                      {:cpus 0.2 :mem 100.0 :name waiter-raven-sidecar-name}]
                                             :k8s/containers [waiter-primary-container-name waiter-fileserver-sidecar-name waiter-raven-sidecar-name]
                                             :k8s/replicaset-creation-timestamp "2020-09-08T07:06:05.000Z"
                                             :k8s/replicaset-annotations {}
@@ -2962,3 +3000,39 @@
                                           {:authenticate-health-checks? authenticate-health-checks?
                                            :service-id->service-description-fn service-id->service-description})]
       (is (= expected-result (scheduler/use-authenticated-health-checks? scheduler service-id))))))
+
+(deftest test-quantity->double-value
+  (is (= (Math/pow 1024 5) (quantity->double-value "1Pi")))
+  (is (= (Math/pow 1024 4) (quantity->double-value "1Ti")))
+  (is (= (Math/pow 1024 3) (quantity->double-value "1Gi")))
+  (is (= (Math/pow 1024 2) (quantity->double-value "1Mi")))
+  (is (= (Math/pow 1024 1) (quantity->double-value "1Ki")))
+  (is (= 1e15 (quantity->double-value "1P")))
+  (is (= 1e12 (quantity->double-value "1T")))
+  (is (= 1e9 (quantity->double-value "1G")))
+  (is (= 1e6 (quantity->double-value "1M")))
+  (is (= 1e3 (quantity->double-value "1K")))
+  (is (= 1e-2 (quantity->double-value "10m")))
+  (is (= 1e0 (quantity->double-value "1"))))
+
+(deftest test-compute-instance-usage
+  (let [service-id "test-service-id"
+        service-id->service-description (constantly {"cpus" 0.2 "mem" 1380})
+        {:keys [watch-state] :as scheduler} (make-dummy-scheduler [service-id] {:service-id->service-description-fn service-id->service-description})]
+    (swap! watch-state assoc-in [:service-id->service service-id :k8s/container-resources]
+           [{:cpus 0.2 :mem 1380.0 :name waiter-primary-container-name}])
+    (is (= {:cpus 0.2 :mem 1380.0 :k8s/num-containers 1}
+           (scheduler/compute-instance-usage scheduler service-id)))
+
+    (swap! watch-state assoc-in [:service-id->service service-id :k8s/container-resources]
+           [{:cpus 0.2 :mem 1380.0 :name waiter-primary-container-name}
+            {:cpus 0.2 :mem 100.0 :name waiter-raven-sidecar-name}])
+    (is (= {:cpus 0.4 :mem 1480.0 :k8s/num-containers 2}
+           (scheduler/compute-instance-usage scheduler service-id)))
+
+    (swap! watch-state assoc-in [:service-id->service service-id :k8s/container-resources]
+           [{:cpus 0.2 :mem 1380.0 :name waiter-primary-container-name}
+            {:cpus 0.4 :mem 200.0 :name waiter-fileserver-sidecar-name}
+            {:cpus 0.2 :mem 100.0 :name waiter-raven-sidecar-name}])
+    (is (= {:cpus 0.8 :mem 1680.0 :k8s/num-containers 3}
+           (scheduler/compute-instance-usage scheduler service-id)))))

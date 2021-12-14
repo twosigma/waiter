@@ -174,7 +174,10 @@
 
   (validate-service [this ^String service-id]
     "Verify creating a services on the underlying scheduler platform;
-     e.g., by checking that the run-as-user has the proper permissions."))
+     e.g., by checking that the run-as-user has the proper permissions.")
+
+  (compute-instance-usage [this ^String service-id]
+    "Returns a dictionary with :cpus and :mem keys indicating the cpu and mem resource usage of individual instances."))
 
 (defn retry-on-transient-server-exceptions-fn
   "Helper function for `retry-on-transient-server-exceptions`.

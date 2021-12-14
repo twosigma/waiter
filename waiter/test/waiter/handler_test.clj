@@ -676,6 +676,11 @@
                                   (and (str/includes? (str test-user id) user)
                                        (= action :manage)
                                        (some #(= % service-id) test-user-services)))))
+        scheduler (reify scheduler/ServiceScheduler
+                    (compute-instance-usage [_ service-id]
+                      (let [id (subs service-id (count "service"))]
+                        {:cpus (Integer/parseInt id)
+                         :mem (* 10 (Integer/parseInt id))})))
         retrieve-token-based-fallback-fn (constantly nil)
         token->token-hash (constantly nil)
         list-services-handler (wrap-handler-json-response list-services-handler)
@@ -702,14 +707,14 @@
 
       (testing "list-services-handler:success-regular-user"
         (let [{:keys [body] :as response}
-              (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+              (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                      service-id->service-description-fn service-id->metrics-fn
                                      service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
           (assert-successful-json-response response)
           (is (= test-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set))))
         (let [request (assoc request :authorization/user "test-user1")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -718,14 +723,14 @@
       (testing "list-services-handler:success-regular-user-with-filter-for-another-user"
         (let [request (assoc request :query-string "run-as-user=another-user")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
             (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
         (let [request (assoc request :authorization/user "test-user1" :query-string "run-as-user=test-user1.*")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -734,7 +739,7 @@
       (testing "list-services-handler:success-regular-user-with-filter-for-another-user"
         (let [request (assoc request :query-string "run-as-user=another-user&run-as-user=another-user")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -743,21 +748,21 @@
       (testing "list-services-handler:success-regular-user-with-filter-for-another-user"
         (let [request (assoc request :query-string "run-as-user=another-user&run-as-user=test-user")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
             (is (= other-user-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
         (let [request (assoc request :query-string "run-as-user=another-user&run-as-user=test-user.*")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
             (is (= all-services (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
         (let [request (assoc request :query-string "run-as-user=another-user&run-as-user=test-user1")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -765,7 +770,7 @@
                    (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
         (let [request (assoc request :query-string "run-as-user=another-user&run-as-user=test-user1.*")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -775,7 +780,7 @@
       (testing "list-services-handler:success-with-filter-for-cpus"
         (let [request (assoc request :query-string "cpus=1")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -784,7 +789,7 @@
       (testing "list-services-handler:success-with-filter-for-metric-group"
         (let [request (assoc request :query-string "metric-group=mg3")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -793,7 +798,7 @@
       (testing "list-services-handler:success-with-filter-for-multiple-metric-groups"
         (let [request (assoc request :query-string "metric-group=mg1&metric-group=mg2")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -802,7 +807,7 @@
       (testing "list-services-handler:success-with-filter-for-single-env-variable"
         (let [request (assoc request :query-string "env.E_ID=id-1")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -811,7 +816,7 @@
       (testing "list-services-handler:success-with-filter-for-multiple-env-variables"
         (let [request (assoc request :query-string "env.E_ID=id-1&env.E_ID=id-2")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -820,7 +825,7 @@
       (testing "list-services-handler:success-with-filter-for-single-metadata-variable"
         (let [request (assoc request :query-string "metadata.m-id=id-1")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -829,7 +834,7 @@
       (testing "list-services-handler:success-with-filter-for-multiple-metadata-variables"
         (let [request (assoc request :query-string "metadata.m-id=id-1&metadata.m-id=id-2")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -838,14 +843,14 @@
       (testing "list-services-handler:success-with-filter-for-multiple-nested-parameters"
         (let [request (assoc request :query-string "env.E_ID=id-1&metadata.m-id=id-1")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
             (is (= #{"service1"} (->> body json/read-str walk/keywordize-keys (map :service-id) set)))))
         (let [request (assoc request :query-string "env.E_ID=id-1&metadata.m-id=id-2")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -858,7 +863,7 @@
                                       true))
               request (assoc request :authorization/user "another-user" :query-string "run-as-user=another-user")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -871,7 +876,7 @@
                                       true))
               request (assoc request :authorization/user "another-user" :query-string "run-as-user=.*")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -884,7 +889,7 @@
                                       true))
               request (assoc request :authorization/user "another-user" :query-string "run-as-user=.*user.*")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -897,7 +902,7 @@
                                       true))
               request (assoc request :authorization/user "another-user" :query-string "run-as-user=another.*")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -910,7 +915,7 @@
                                       true))
               request (assoc request :authorization/user test-user :query-string "run-as-user=another.*")]
           (let [{:keys [body] :as response}
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -923,7 +928,7 @@
               exception-message "Custom message from test case"
               prepend-waiter-url (fn [_] (throw (ex-info exception-message {:status http-400-bad-request})))
               list-services-handler (core/wrap-error-handling
-                                      #(list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                                      #(list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                                               service-id->service-description-fn service-id->metrics-fn
                                                               service-id->references-fn service-id->source-tokens-entries-fn token->token-hash %))
               {:keys [body headers status]} (list-services-handler request)]
@@ -939,7 +944,7 @@
                                            (contains? all-services service-id))))
               {:keys [body] :as response}
               ; without a run-as-user, should return all apps
-              (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+              (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                      service-id->service-description-fn service-id->metrics-fn
                                      service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
           (assert-successful-json-response response)
@@ -958,7 +963,7 @@
           (let [request (assoc request :query-string (str "token=" query-param))
                 {:keys [body] :as response}
                 ; without a run-as-user, should return all apps
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -982,7 +987,7 @@
           (let [request (assoc request :query-string (str "token-version=" query-param))
                 {:keys [body] :as response}
                 ; without a run-as-user, should return all apps
-                (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+                (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                        service-id->service-description-fn service-id->metrics-fn
                                        service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
             (assert-successful-json-response response)
@@ -998,7 +1003,7 @@
         (let [request (assoc request :query-string "token=t1&token-version=v1")
               {:keys [body] :as response}
               ; without a run-as-user, should return all apps
-              (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+              (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                      service-id->service-description-fn service-id->metrics-fn
                                      service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)]
           (assert-successful-json-response response)
@@ -1014,7 +1019,7 @@
       (testing "list-services-handler:include-healthy-instances"
         (let [request (assoc request :query-string "include=healthy-instances")
               {:keys [body] :as response}
-              (list-services-handler entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+              (list-services-handler entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
                                      service-id->service-description-fn service-id->metrics-fn
                                      service-id->references-fn service-id->source-tokens-entries-fn token->token-hash request)
               service-id->healthy-instances (->> body

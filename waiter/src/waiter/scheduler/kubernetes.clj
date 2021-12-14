@@ -123,6 +123,25 @@
       (pos? hash-offset)
       (subs hash-offset))))
 
+(defn quantity->double-value
+  "Converts a k8s quantity string to a numeric value.
+   A k8s quantity is a fixed-point representation of a number defined at
+   https://kubernetes.io/docs/reference/kubernetes-api/common-definitions/quantity/"
+  [quantity]
+  (cond
+    (str/ends-with? quantity "Pi") (-> quantity (str/replace "Pi" "") (utils/parse-double) (* 1024 1024 1024 1024 1024))
+    (str/ends-with? quantity "Ti") (-> quantity (str/replace "Ti" "") (utils/parse-double) (* 1024 1024 1024 1024))
+    (str/ends-with? quantity "Gi") (-> quantity (str/replace "Gi" "") (utils/parse-double) (* 1024 1024 1024))
+    (str/ends-with? quantity "Mi") (-> quantity (str/replace "Mi" "") (utils/parse-double) (* 1024 1024))
+    (str/ends-with? quantity "Ki") (-> quantity (str/replace "Ki" "") (utils/parse-double) (* 1024))
+    (str/ends-with? quantity "P") (-> quantity (str/replace "P" "") (utils/parse-double) (* 1000 1000 1000 1000 1000))
+    (str/ends-with? quantity "T") (-> quantity (str/replace "T" "") (utils/parse-double) (* 1000 1000 1000 1000))
+    (str/ends-with? quantity "G") (-> quantity (str/replace "G" "") (utils/parse-double) (* 1000 1000 1000))
+    (str/ends-with? quantity "M") (-> quantity (str/replace "M" "") (utils/parse-double) (* 1000 1000))
+    (str/ends-with? quantity "K") (-> quantity (str/replace "K" "") (utils/parse-double) (* 1000))
+    (str/ends-with? quantity "m") (-> quantity (str/replace "m" "") (utils/parse-double) (/ 1000))
+    :else (-> (utils/parse-double quantity))))
+
 (defn replicaset->Service
   "Convert a Kubernetes ReplicaSet JSON response into a Waiter Service record."
   [replicaset-json]
@@ -134,7 +153,14 @@
        ;; for backward compatibility where the revision timestamp is missing we cannot use the destructuring above
        rs-annotations (get-in replicaset-json [:metadata :annotations] nil)
        rs-pod-annotations (get-in replicaset-json [:spec :template :metadata :annotations] nil)
-       rs-containers (vec (map :name (get-in replicaset-json [:spec :template :spec :containers])))
+       containers (get-in replicaset-json [:spec :template :spec :containers])
+       rs-containers (vec (map :name containers))
+       rs-container-resources (mapv (fn [{:keys [name] :as container-spec}]
+                                      (let [{:keys [cpu memory]} (get-in container-spec [:resources :requests])]
+                                        {:cpus (-> cpu (str) (quantity->double-value))
+                                         :mem (-> memory (str) (quantity->double-value) (/ (* 1024 1024)))
+                                         :name name}))
+                                    containers)
        rs-creation-timestamp (some-> replicaset-json (get-in [:metadata :creationTimestamp]) (timestamp-str->datetime) (du/date-to-str))
        requested (get spec :replicas 0)
        staged (- replicas (+ availableReplicas unavailableReplicas))]
@@ -142,6 +168,7 @@
         {:id service-id
          :instances requested
          :k8s/app-name name
+         :k8s/container-resources rs-container-resources
          :k8s/containers rs-containers
          :k8s/namespace namespace
          :k8s/replicaset-annotations (dissoc rs-annotations :waiter/service-id)
@@ -179,8 +206,8 @@
    Valid on ReplicaSets, Pods, and watch-update objects."
   [k8s-obj]
   (some-> k8s-obj
-          (get-in [:metadata :resourceVersion])
-          (Long/parseLong)))
+    (get-in [:metadata :resourceVersion])
+    (Long/parseLong)))
 
 (defn k8s-object->service-id
   "Get the Waiter service-id from a ReplicaSet or Pod's annotations"
@@ -474,8 +501,8 @@
     (when-not (hu/status-2XX? status)
       (ss/throw+ response))
     (-> body
-        InputStreamReader.
-        (cheshire/parsed-seq keyword-keys?))))
+      InputStreamReader.
+      (cheshire/parsed-seq keyword-keys?))))
 
 (defn streaming-watch-api-request
   "Make a long-lived watch connection to the Kubernetes API server via the streaming-api-request function.
@@ -531,7 +558,7 @@
         (let [deployment-error (get-in service-id->deployment-error [service-id :data])
               service (or (get service-id->service service-id) (create-empty-service service-id))]
           (cond-> service
-                  deployment-error (assoc :deployment-error deployment-error))))
+            deployment-error (assoc :deployment-error deployment-error))))
       service-ids)))
 
 (defn- get-replicaset-pods
@@ -1028,7 +1055,21 @@
 
   (validate-service [this service-id]
     (let [{:strs [run-as-user]} (retrieve-service-description this service-id)]
-      (authz/check-user authorizer run-as-user service-id))))
+      (authz/check-user authorizer run-as-user service-id)))
+
+  (compute-instance-usage [this service-id]
+    (let [{:strs [cpus mem]} (service-id->service-description-fn service-id)]
+      (try
+        (let [{:keys [k8s/container-resources]} (service-id->service this service-id)]
+          (if (seq container-resources)
+            (->> container-resources
+              (map #(select-keys % [:cpus :mem]))
+              (apply merge-with +)
+              (merge {:k8s/num-containers (count container-resources)}))
+            {:cpus cpus :mem mem}))
+        (catch Exception ex
+          (log/error ex "error in computing resource usage" {:service-id service-id})
+          {:cpus cpus :mem mem})))))
 
 (defn compute-image
   "Compute the image to use for the service"
@@ -1544,8 +1585,8 @@
   [scheduler options pods-url]
   (let [{:keys [items version]} (global-state-query scheduler options pods-url)
         service-id->pod-id->pod (->> items
-                                     (group-by k8s-object->service-id)
-                                     (pc/map-vals (partial pc/map-from-vals k8s-object->id)))]
+                                  (group-by k8s-object->service-id)
+                                  (pc/map-vals (partial pc/map-from-vals k8s-object->id)))]
     {:service-id->pod-id->pod service-id->pod-id->pod
      :version version}))
 
@@ -1588,9 +1629,9 @@
   [scheduler options rs-url]
   (let [{:keys [items version]} (global-state-query scheduler options rs-url)
         service-id->service (->> items
-                                 (map replicaset->Service)
-                                 (filter some?)
-                                 (pc/map-from-vals :id))]
+                              (map replicaset->Service)
+                              (filter some?)
+                              (pc/map-from-vals :id))]
     {:service-id->service service-id->service
      :version version}))
 
@@ -1735,9 +1776,9 @@
                                 (assert (fn? f) "PodDisruptionBudget spec function must be a Clojure fn")
                                 f))
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
-                                               :factory-fn
-                                               utils/resolve-symbol
-                                               deref)]
+                                             :factory-fn
+                                             utils/resolve-symbol
+                                             deref)]
                                      (assert (fn? f) "ReplicaSet spec function must be a Clojure fn")
                                      (fn [scheduler service-id service-description in-context]
                                        (let [context (merge replicaset-spec-builder-ctx in-context)]

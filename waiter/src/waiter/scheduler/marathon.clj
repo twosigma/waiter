@@ -491,7 +491,11 @@
         (throw (ex-info "Unsupported health check authentication on service"
                         {:health-check-authentication health-check-authentication
                          :service-description service-description
-                         :service-id service-id}))))))
+                         :service-id service-id})))))
+
+  (compute-instance-usage [_ service-id]
+    (let [{:strs [cpus mem]} (service-id->service-description-fn service-id)]
+      {:cpus cpus :mem mem})))
 
 (defn- get-apps-with-deployments
   "Retrieves the apps with the deployment info embedded."

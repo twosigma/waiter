@@ -32,6 +32,28 @@
             [waiter.util.utils :as utils])
   (:import (java.net URLEncoder)))
 
+(defn- retrieve-expected-resource-usage
+  [waiter-url service-id {:keys [cpus mem]}]
+  (if (using-k8s? waiter-url)
+    (let [{:keys [cookies] :as auth-response} (make-request waiter-url "/waiter-auth")
+          _ (assert-response-status auth-response http-200-ok)
+          watch-state-json (get-k8s-watch-state waiter-url cookies)
+          service (get-in watch-state-json ["service-id->service" service-id])]
+      (if (map? service)
+        (let [{:keys [k8s/container-resources]} (walk/keywordize-keys service)]
+          (-> (->> container-resources
+                (map #(select-keys % [:cpus :mem]))
+                (apply merge-with +))
+            ;; the sum should never be lower than what the service description already specifies
+            (update :cpus utils/nil-safe-max cpus)
+            (update :mem utils/nil-safe-max mem)))
+        (do
+          (is false (str {:message "service unavailable in k8s watch state"
+                          :service-id service-id
+                          :watch-state-json watch-state-json}))
+          nil)))
+    {:cpus cpus :mem mem}))
+
 (deftest ^:parallel ^:integration-fast test-basic-functionality
   (testing-using-waiter-url
     (let [{:keys [service-id request-headers]} (make-request-with-debug-info
@@ -45,7 +67,8 @@
           (is (get-in service-settings [:instances :failed-instances]))
           (is (get-in service-settings [:instances :killed-instances]))
           (let [active-instance-count (count (get-in service-settings [:instances :active-instances]))
-                {:keys [cpus mem]} (get service-settings :service-description)]
+                service-description (get service-settings :service-description)
+                {:keys [cpus mem] :as resource-usage} (retrieve-expected-resource-usage waiter-url service-id service-description)]
             (is (every? #(let [metric (get-in service-settings [:request-metrics %])]
                            (and (integer? metric) (not (neg? metric))))
                         [:outstanding :total])
@@ -53,7 +76,7 @@
             (is (= {:cpus (* active-instance-count cpus)
                     :mem (* active-instance-count mem)}
                    (get service-settings :resource-usage))
-                (str service-settings)))))
+                (str {:resource-usage resource-usage :service-settings service-settings})))))
 
       (testing "status is reported"
         (is (wait-for #(= "Running" (get (service-settings waiter-url service-id) :status)) :interval 2 :timeout 30)

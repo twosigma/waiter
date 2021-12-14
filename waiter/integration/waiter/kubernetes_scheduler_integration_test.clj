@@ -8,10 +8,6 @@
             [waiter.util.client-tools :refer :all]
             [waiter.util.utils :as utils]))
 
-(defn- get-watch-state [state-json]
-  (or (get-in state-json ["state" "watch-state"])
-      (get-in state-json ["state" "components" "kubernetes" "watch-state"])))
-
 (deftest ^:parallel ^:integration-fast test-k8s-service-and-instance-fields
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
@@ -36,22 +32,18 @@
 
           (testing "k8s scheduler service fields"
             (doseq [router-url (-> waiter-url routers vals)]
-              (let [{:keys [body] :as response} (make-request router-url "/state/scheduler"
-                                                              :cookies cookies
-                                                              :method :get
-                                                              :query-params {"include" ["components" "watch-state-details"]})
-                    _ (assert-response-status response http-200-ok)
-                    body-json (-> body str try-parse-json)
-                    watch-state-json (get-watch-state body-json)
+              (let [watch-state-json (get-k8s-watch-state router-url cookies)
                     service (get-in watch-state-json ["service-id->service" service-id])]
                 (if (map? service)
-                  (let [{:keys [k8s/app-name k8s/containers k8s/namespace k8s/replicaset-annotations
+                  (let [{:keys [k8s/app-name k8s/container-resources k8s/containers k8s/namespace k8s/replicaset-annotations
                                 k8s/replicaset-pod-annotations k8s/replicaset-uid]} (walk/keywordize-keys service)
                         k8s-containers (set containers)
                         assertion-message (str {:router-url router-url :service service})]
                     (is (= service-id (get service "id")) assertion-message)
                     (is app-name assertion-message)
+                    (is (seq container-resources) assertion-message)
                     (is (seq k8s-containers) assertion-message)
+                    (is (= (set k8s-containers) (set (map :name container-resources))) assertion-message)
                     (is (contains? k8s-containers "waiter-app") assertion-message)
                     (is namespace assertion-message)
                     (is replicaset-uid assertion-message)
@@ -69,13 +61,7 @@
     (when (using-k8s? waiter-url)
       (let [cookies (all-cookies waiter-url)
             router-url (-> waiter-url routers first val)
-            {:keys [body] :as response} (make-request router-url "/state/scheduler"
-                                                      :cookies cookies
-                                                      :method :get
-                                                      :query-params {"include" ["components" "watch-state-details"]})
-            _ (assert-response-status response http-200-ok)
-            body-json (-> body str try-parse-json)
-            watch-state-json (get-watch-state body-json)
+            watch-state-json (get-k8s-watch-state router-url cookies)
             initial-pods-snapshot-version (get-in watch-state-json ["pods-metadata" "version" "snapshot"])
             initial-pods-watch-version (get-in watch-state-json ["pods-metadata" "version" "watch"])
             initial-rs-snapshot-version (get-in watch-state-json ["rs-metadata" "version" "snapshot"])
@@ -85,13 +71,7 @@
                                    #(make-kitchen-request waiter-url % :path "/hello"))]
         (with-service-cleanup
           service-id
-          (let [{:keys [body] :as response} (make-request router-url "/state/scheduler"
-                                                          :cookies cookies
-                                                          :method :get
-                                                          :query-params {"include" ["components" "watch-state-details"]})
-                _ (assert-response-status response http-200-ok)
-                body-json (-> body str try-parse-json)
-                watch-state-json (get-watch-state body-json)
+          (let [watch-state-json (get-k8s-watch-state router-url cookies)
                 pods-snapshot-version' (get-in watch-state-json ["pods-metadata" "version" "snapshot"])
                 pods-watch-version' (get-in watch-state-json ["pods-metadata" "version" "watch"])
                 rs-snapshot-version' (get-in watch-state-json ["rs-metadata" "version" "snapshot"])
@@ -260,13 +240,7 @@
                       error)))
     (with-service-cleanup
       service-id
-      (let [{:keys [body] :as response} (make-request router-url "/state/scheduler"
-                                                      :cookies cookies
-                                                      :method :get
-                                                      :query-params {"include" ["components" "watch-state-details"]})
-            _ (assert-response-status response http-200-ok)
-            body-json (-> body str try-parse-json)
-            watch-state-json (get-watch-state body-json)
+      (let [watch-state-json (get-k8s-watch-state router-url cookies)
             pod-spec (-> watch-state-json (get-in ["service-id->pod-id->pod" service-id]) first val)
             pod-namespace (get-in pod-spec ["metadata" "namespace"])]
         (is (some? pod-spec))
