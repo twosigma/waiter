@@ -219,8 +219,8 @@
             router-state-chan (au/latest-chan)
             watch-chans (create-watch-chans 10)
             started-at (t/minus (clock) (t/hours 1))
-            inst-1-original (scheduler/->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test")
-            inst-1-changed (scheduler/->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "different-host" 123 [] "/log" "test")
+            inst-1-original (scheduler/->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test" nil)
+            inst-1-changed (scheduler/->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "different-host" 123 [] "/log" "test" nil)
             {:keys [exit-chan go-chan instance-watch-channels-update-chan]}
             (start-instance-tracker clock router-state-chan ev-handler)]
         (async/>!! router-state-chan {:service-id->failed-instances {}

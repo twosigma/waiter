@@ -1150,7 +1150,8 @@
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
-                        :started-at (du/str-to-date "2014-09-13T00:24:46Z" k8s-timestamp-format)})
+                        :started-at (du/str-to-date "2014-09-13T00:24:46Z" k8s-timestamp-format)
+                        :status "Unhealthy"})
                      (scheduler/make-ServiceInstance
                        {:flags #{:expired}
                         :healthy? true
@@ -1167,7 +1168,8 @@
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
-                        :started-at (du/str-to-date "2014-09-13T00:24:46Z" k8s-timestamp-format)})
+                        :started-at (du/str-to-date "2014-09-13T00:24:46Z" k8s-timestamp-format)
+                        :status "Healthy"})
                      (scheduler/make-ServiceInstance
                        {:flags #{:expired}
                         :healthy? true
@@ -1183,7 +1185,8 @@
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
-                        :started-at (du/str-to-date "2014-09-13T00:24:47Z" k8s-timestamp-format)})]
+                        :started-at (du/str-to-date "2014-09-13T00:24:47Z" k8s-timestamp-format)
+                        :status "Healthy"})]
                     :failed-instances
                     [(scheduler/make-ServiceInstance
                        {:flags #{:expired}
@@ -1200,7 +1203,8 @@
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-1234"
-                        :started-at (du/str-to-date "2014-09-13T00:24:13Z" k8s-timestamp-format)})]}
+                        :started-at (du/str-to-date "2014-09-13T00:24:13Z" k8s-timestamp-format)
+                        :status "Failed"})]}
 
                    (scheduler/make-Service {:id "test-app-6789"
                                             :instances 3
@@ -1222,7 +1226,8 @@
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-6789"
-                        :started-at (du/str-to-date "2014-09-13T00:24:35Z" k8s-timestamp-format)})
+                        :started-at (du/str-to-date "2014-09-13T00:24:35Z" k8s-timestamp-format)
+                        :status "Healthy"})
                      (scheduler/make-ServiceInstance
                        {:healthy? false
                         :host "10.141.141.14"
@@ -1233,7 +1238,8 @@
                         :log-directory "/home/myself/r1"
                         :port 8080
                         :service-id "test-app-6789"
-                        :started-at (du/str-to-date "2014-09-13T00:24:37Z" k8s-timestamp-format)})
+                        :started-at (du/str-to-date "2014-09-13T00:24:37Z" k8s-timestamp-format)
+                        :status "Unhealthy"})
                      (scheduler/make-ServiceInstance
                        {:healthy? false
                         :host "10.141.141.15"
@@ -1244,7 +1250,8 @@
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-6789"
-                        :started-at (du/str-to-date "2014-09-13T00:24:38Z" k8s-timestamp-format)})
+                        :started-at (du/str-to-date "2014-09-13T00:24:38Z" k8s-timestamp-format)
+                        :status "Unhealthy"})
                      (scheduler/make-ServiceInstance
                        {:flags #{:expired}
                         :healthy? false
@@ -1260,7 +1267,8 @@
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-6789"
-                        :started-at (du/str-to-date "2014-09-13T00:24:48Z" k8s-timestamp-format)})]
+                        :started-at (du/str-to-date "2014-09-13T00:24:48Z" k8s-timestamp-format)
+                        :status "Unhealthy"})]
                     :failed-instances
                     [(scheduler/make-ServiceInstance
                        {:exit-code 255
@@ -1273,7 +1281,8 @@
                         :log-directory "/home/myself/r0"
                         :port 8080
                         :service-id "test-app-6789"
-                        :started-at (du/str-to-date "2014-09-13T00:24:36Z" k8s-timestamp-format)})]})
+                        :started-at (du/str-to-date "2014-09-13T00:24:36Z" k8s-timestamp-format)
+                        :status "Failed"})]})
         watch-state-atom (atom {:service-id->service {"test-app-1234" "2020-09-22T20:33:33.000Z"}})
         dummy-scheduler (make-dummy-scheduler ["test-app-1234" "test-app-6789"]
                                               {:container-running-grace-secs 0
@@ -2554,6 +2563,9 @@
       (is (= expected-pod-names (set @killed-pods))))))
 
 (deftest test-pod->ServiceInstance
+  ;; TODO SHAMS
+  ;; TODO Add test-cases and then remove comment
+  ;; TODO SHAMS
   (let [api-server-url "https://k8s-api.example/"
         service-id "test-app-1234"
         revision-timestamp-0 "2020-09-22T20:00:00.000Z"
@@ -2606,10 +2618,92 @@
                       :k8s/raven "disabled"
                       :k8s/revision-timestamp revision-timestamp-1
                       :k8s/restart-count 9
-                      :k8s/user "myself"}
+                      :k8s/user "myself"
+                      :status "Healthy"}
         expired-instance-map (assoc instance-map :flags #{:expired})
-        expired-unhealthy-instance-map (assoc expired-instance-map :healthy? false)
+        expired-unhealthy-instance-map (assoc expired-instance-map :healthy? false :status "Unhealthy")
         rs-revision-timestamp-path [:service-id->service service-id :k8s/replicaset-annotations :waiter/revision-timestamp]]
+
+    (testing "pod init containers"
+      (testing "succeeding"
+        (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
+              pod' (-> pod
+                     (assoc-in [:status :initContainerStatuses] [{:name "waiter-setup" :ready true :restartCount 1 :state {:waiting {:reason "CrashLoopBackOff"}}}
+                                                                 {:name "waiter-load" :ready true}]))
+              instance (pod->ServiceInstance dummy-scheduler pod')
+              expected-instance-map (assoc instance-map
+                                      :k8s/container-statuses [{:name waiter-primary-container-name :ready true :restart-count 9 :type :app}
+                                                               {:name "waiter-setup" :ready true :reason "CrashLoopBackOff" :restart-count 1 :state :waiting :type :init}
+                                                               {:name "waiter-load" :ready true :type :init}])]
+          (is (= (scheduler/make-ServiceInstance expected-instance-map) instance))))
+
+      (testing "failing"
+        (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
+              pod' (-> pod
+                     (assoc-in [:status :initContainerStatuses] [{:name "waiter-setup" :ready false :restartCount 5 :state {:waiting {:reason "CrashLoopBackOff"}}}])
+                     (assoc-in [:status :containerStatuses] [{:name waiter-primary-container-name :ready false}]))
+              instance (pod->ServiceInstance dummy-scheduler pod')
+              expected-instance-map (assoc instance-map
+                                      :healthy? false
+                                      :id "test-app-1234.test-app-1234-abcd1-0"
+                                      :k8s/container-statuses [{:name waiter-primary-container-name :ready false :type :app}
+                                                               {:name "waiter-setup" :ready false :reason "CrashLoopBackOff" :restart-count 5 :state :waiting :type :init}]
+                                      :k8s/restart-count 0
+                                      :log-directory "/home/myself/r0"
+                                      :status "Init container(s) in crash loop: waiter-setup")]
+          (is (= (scheduler/make-ServiceInstance expected-instance-map) instance)))
+
+        (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
+              pod' (-> pod
+                     (assoc-in [:status :initContainerStatuses] [{:name "waiter-setup" :ready true :restartCount 1 :state {:waiting {:reason "CrashLoopBackOff"}}}
+                                                                 {:name "waiter-load" :ready false :restartCount 5 :state {:waiting {:reason "CrashLoopBackOff"}}}])
+                     (assoc-in [:status :containerStatuses] [{:name waiter-primary-container-name
+                                                              :ready false}]))
+              instance (pod->ServiceInstance dummy-scheduler pod')
+              expected-instance-map (assoc instance-map
+                                      :healthy? false
+                                      :id "test-app-1234.test-app-1234-abcd1-0"
+                                      :k8s/container-statuses [{:name waiter-primary-container-name :ready false :type :app}
+                                                               {:name "waiter-setup" :ready true :reason "CrashLoopBackOff" :restart-count 1 :state :waiting :type :init}
+                                                               {:name "waiter-load" :ready false :reason "CrashLoopBackOff" :restart-count 5 :state :waiting :type :init}]
+                                      :k8s/restart-count 0
+                                      :log-directory "/home/myself/r0"
+                                      :status "Init container(s) in crash loop: waiter-load")]
+          (is (= (scheduler/make-ServiceInstance expected-instance-map) instance)))))
+
+    (testing "pod app containers"
+      (testing "app sidecar failing"
+        (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
+              pod' (-> pod
+                     (assoc-in [:status :initContainerStatuses] [{:name "waiter-setup" :ready true}
+                                                                 {:name "waiter-load" :ready true}])
+                     (assoc-in [:status :containerStatuses] [{:name waiter-primary-container-name :ready true :restartCount 9}
+                                                             {:name waiter-fileserver-sidecar-name :ready false :restartCount 5 :state {:waiting {:reason "CrashLoopBackOff"}}}]))
+              instance (pod->ServiceInstance dummy-scheduler pod')
+              expected-instance-map (assoc instance-map
+                                      :k8s/container-statuses [{:name waiter-primary-container-name :ready true :restart-count 9 :type :app}
+                                                               {:name waiter-fileserver-sidecar-name :ready false :reason "CrashLoopBackOff" :restart-count 5 :state :waiting :type :app}
+                                                               {:name "waiter-setup" :ready true :type :init}
+                                                               {:name "waiter-load" :ready true :type :init}]
+                                      :status (str "Application container(s) in crash loop: " waiter-fileserver-sidecar-name))]
+          (is (= (scheduler/make-ServiceInstance expected-instance-map) instance))))
+
+      (testing "main container failing"
+        (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
+              pod' (-> pod
+                     (assoc-in [:status :initContainerStatuses] [{:name "waiter-setup" :ready true}
+                                                                 {:name "waiter-load" :ready true}])
+                     (assoc-in [:status :containerStatuses] [{:name waiter-primary-container-name :ready false :restartCount 9 :state {:waiting {:reason "CrashLoopBackOff"}}}
+                                                             {:name waiter-fileserver-sidecar-name :ready true :restartCount 5 :state {:running {}}}]))
+              instance (pod->ServiceInstance dummy-scheduler pod')
+              expected-instance-map (assoc instance-map
+                                      :healthy? false
+                                      :k8s/container-statuses [{:name waiter-primary-container-name :ready false :reason "CrashLoopBackOff" :restart-count 9 :state :waiting :type :app}
+                                                               {:name waiter-fileserver-sidecar-name :ready true :restart-count 5 :state :running :type :app}
+                                                               {:name "waiter-setup" :ready true :type :init}
+                                                               {:name "waiter-load" :ready true :type :init}]
+                                      :status "Application in crash loop")]
+          (is (= (scheduler/make-ServiceInstance expected-instance-map) instance)))))
 
     (testing "pod to live instance"
       (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
@@ -2649,8 +2743,9 @@
             killed-pod-name-atom (atom nil)
             instance (with-redefs [kill-restart-threshold-exceeded-pod (fn [_ {:keys [k8s/pod-name]}]
                                                                          (reset! killed-pod-name-atom pod-name))]
-                       (pod->ServiceInstance dummy-scheduler pod))]
-        (is (= (scheduler/make-ServiceInstance expired-unhealthy-instance-map) instance))
+                       (pod->ServiceInstance dummy-scheduler pod))
+            expected-instance-map (assoc expired-unhealthy-instance-map :status "Application restarting frequently")]
+        (is (= (scheduler/make-ServiceInstance expected-instance-map) instance))
         (is (= (k8s-object->id pod) @killed-pod-name-atom)))
 
       (let [dummy-scheduler (assoc base-scheduler
@@ -2661,8 +2756,9 @@
             killed-pod-name-atom (atom nil)
             instance (with-redefs [kill-restart-threshold-exceeded-pod (fn [_ {:keys [k8s/pod-name]}]
                                                                          (reset! killed-pod-name-atom pod-name))]
-                       (pod->ServiceInstance dummy-scheduler pod))]
-        (is (= (scheduler/make-ServiceInstance expired-unhealthy-instance-map) instance))
+                       (pod->ServiceInstance dummy-scheduler pod))
+            expected-instance-map (assoc expired-unhealthy-instance-map :status "Application restarting frequently")]
+        (is (= (scheduler/make-ServiceInstance expected-instance-map) instance))
         (is (nil? @killed-pod-name-atom))))
 
     (testing "pod to expired instance exceeded running grace period"
