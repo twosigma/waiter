@@ -2321,3 +2321,59 @@
               (delete-token-and-assert waiter-url token-2)))
           (finally
             (delete-token-and-assert waiter-url token-1)))))))
+
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-service-mapping-fallback-support
+  (testing-using-waiter-url
+    (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
+          fallback-period-secs 30
+          current-user (retrieve-username)]
+      (doseq [[mapping-old mapping-new] [["legacy" "exclusive"] ["exclusive" "legacy"]]]
+        (testing (str "fallback from " mapping-new " to " mapping-old)
+          (let [service-name (rand-name)
+                token (create-token-name waiter-url ".")
+                basic-service-description (-> (kitchen-request-headers :prefix "")
+                                            (assoc :fallback-period-secs fallback-period-secs
+                                                   :name (str service-name "-v1")
+                                                   :permitted-user "*"
+                                                   :run-as-user current-user
+                                                   :service-mapping mapping-old
+                                                   :version "v1"))
+                request-headers {:x-waiter-token token}]
+            (try
+              (let [token-description-1 (assoc basic-service-description :token token)
+                    post-response (post-token waiter-url token-description-1)
+                    _ (assert-response-status post-response http-200-ok)
+                    response-1 (make-request-with-debug-info request-headers #(make-request waiter-url "/environment" :headers %))
+                    service-id-1 (:service-id response-1)
+                    env-token-old (when (= "exclusive" mapping-old) token)]
+                (assert-response-status response-1 http-200-ok)
+                (is (some? service-id-1))
+                (assert-service-mapping-response waiter-url service-id-1 (-> response-1 :body str) env-token-old)
+                (with-service-cleanup
+                  service-id-1
+                  (assert-service-healthy-on-all-routers waiter-url service-id-1 cookies)
+                  (let [service-description-2 (assoc basic-service-description
+                                                :cmd (kitchen-cmd (str "-p $PORT0 --start-up-sleep-ms 5000"))
+                                                :name (str service-name "-v2")
+                                                :service-mapping mapping-new
+                                                :version "v2")
+                        token-description-2 (assoc service-description-2 :token token)
+                        post-response (post-token waiter-url token-description-2)
+                        _ (assert-response-status post-response http-200-ok)
+                        response-2 (make-request-with-debug-info request-headers #(make-request waiter-url "/environment" :headers %))
+                        service-id-2 (:service-id response-2)]
+                    (assert-response-status response-2 http-200-ok)
+                    ;; fallback to service-id-1
+                    (is (= service-id-1 service-id-2))
+                    (assert-service-mapping-response waiter-url service-id-2 (-> response-2 :body str) env-token-old)
+                    (let [no-fallback-request-headers (assoc request-headers :x-waiter-fallback-period-secs 0)
+                          response-3 (make-request-with-debug-info no-fallback-request-headers #(make-request waiter-url "/environment" :headers %))
+                          service-id-3 (:service-id response-3)
+                          env-token-new (when (= "exclusive" mapping-new) token)]
+                      (with-service-cleanup
+                        service-id-3
+                        (assert-response-status response-3 http-200-ok)
+                        (is (not= service-id-1 service-id-3))
+                        (assert-service-mapping-response waiter-url service-id-3 (-> response-3 :body str) env-token-new))))))
+              (finally
+                (delete-token-and-assert waiter-url token)))))))))
