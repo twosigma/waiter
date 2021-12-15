@@ -580,8 +580,8 @@
     (let [{healthy-instances true, unhealthy-instances false} (group-by (comp boolean :healthy?) service-instances)]
       (log/trace "retrieve-instances-for-service" service-id "has" (count healthy-instances) "healthy instance(s)"
                  "and" (count unhealthy-instances) " unhealthy instance(s).")
-      {:healthy-instances (->> healthy-instances (map #(utils/assoc-if-absent % :status "Healthy")) (vec))
-       :unhealthy-instances (->> unhealthy-instances (map #(utils/assoc-if-absent % :status "Unhealthy")) (vec))})))
+      {:healthy-instances (mapv #(utils/assoc-if-absent % :status "Healthy") healthy-instances)
+       :unhealthy-instances (mapv #(utils/assoc-if-absent % :status "Unhealthy") unhealthy-instances)})))
 
 (defn start-health-checks
   "Takes a map from service -> service instances and replaces each active instance with a ref which performs a
