@@ -343,12 +343,11 @@
 (defn retrieve-failing-container-names
   "Retrieves the names of containers that are failing (i.e. in a CrashLoopBackOff)."
   [container-statuses type-filter]
-  (->> container-statuses
-    (filter (fn retrieve-failing-containers-crash-loop? [{:keys [ready reason type]}]
-              (and (= type type-filter)
+  (for [{:keys [name ready reason type]} container-statuses
+        :when (and (= type type-filter)
                    (false? ready)
-                   (= "CrashLoopBackOff" reason))))
-    (map :name)))
+                   (= "CrashLoopBackOff" reason))]
+    name))
 
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
@@ -393,15 +392,15 @@
                         ;; therefore it's impossible to observe a healthy? status between the time the container restarted
                         ;; and the time that the instance was marked permanently unhealthy due to the high restart count.
                         (not exceeded-restart-kill-threshold?))
-          pod-container-statuses (map (fn [{:keys [restartCount state] :as status}]
-                                        (when (> (count state) 1)
-                                          (log/warn "received multiple states for container:" status))
-                                        (let [[state {:keys [reason]}] (first state)]
-                                          (cond-> (select-keys status [:image :name :ready :type])
-                                            (some? reason) (assoc :reason reason)
-                                            (some? restartCount) (assoc :restart-count restartCount)
-                                            (some? state) (assoc :state state))))
-                                      container-statuses)
+          pod-container-statuses (for [{:keys [restartCount state] :as status} container-statuses
+                                       :let [[state-key {:keys [reason]}] (first state)]]
+                                   (do
+                                     (when (> (count state) 1)
+                                       (log/warn "received multiple states for container:" status))
+                                     (cond-> (select-keys status [:image :name :ready :type])
+                                       (some? reason) (assoc :reason reason)
+                                       (some? restartCount) (assoc :restart-count restartCount)
+                                       (some? state-key) (assoc :state state-key))))
           failing-init-containers (retrieve-failing-container-names pod-container-statuses :init)
           failing-app-containers (retrieve-failing-container-names pod-container-statuses :app)
           status-message (cond
