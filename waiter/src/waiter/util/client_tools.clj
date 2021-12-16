@@ -1322,6 +1322,11 @@
 (defn exclusive-mode-by-default?
   "Returns true if service-mapping is exclusive by default."
   [waiter-url]
-  (-> (waiter-settings waiter-url)
-    (get-in [:token-config :token-defaults :service-mapping])
-    (= "exclusive")))
+  (let [settings (waiter-settings waiter-url)
+        service-mapping (get-in settings [:token-config :token-defaults :service-mapping])]
+    (or (= service-mapping "exclusive")
+        (and (= service-mapping "default")
+             (-> settings
+               (get-in [:token-config :exclusive-promotion-start-time] "2050-06-01T00:00:00.000Z")
+               (du/str-to-date)
+               (t/before? (t/now)))))))
