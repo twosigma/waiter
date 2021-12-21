@@ -492,12 +492,15 @@
           new-token-metadata (cond-> new-token-metadata
                                (string? last-update-time)
                                (update "last-update-time" parse-last-update-time))
+          new-token-cluster (get new-token-metadata "cluster")
           new-user-editable-token-data (-> (merge new-service-parameter-template new-token-metadata)
                                            (select-keys sd/token-user-editable-keys))
           existing-token-description (sd/token->token-description kv-store token :include-deleted false)
+          existing-token-cluster (get-in existing-token-description [:token-metadata "cluster"])
           existing-editable-token-data (token-description->editable-token-parameters existing-token-description)
           [overridden-token-data overriding-token-data _] (data/diff existing-editable-token-data new-user-editable-token-data)]
       (if (and (not admin-mode?)
+               (= existing-token-cluster new-token-cluster)
                (= existing-editable-token-data new-user-editable-token-data))
         (-> (utils/clj->json-response
               {:message (str "No changes detected for " token)
