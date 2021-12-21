@@ -54,10 +54,6 @@
            (org.eclipse.jetty.websocket.api UpgradeException)
            (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
 
-(def ^:const error-class-maintenance "waiter.Maintenance")
-(def ^:const error-class-queue-length "waiter.QueueLength")
-(def ^:const error-class-suspended "waiter.Suspended")
-
 (defn make-auth-user-map
   "Creates a map containing the username and principal from a request"
   [{:keys [authorization/metadata authorization/principal]}]
@@ -305,6 +301,7 @@
         (let [byte-buffer (ByteBuffer/wrap buffer-bytes 0 bytes-read)]
           (when-not (au/timed-offer!! body-ch byte-buffer streaming-timeout-ms)
             (let [description-map {:bytes-pending bytes-read
+                                   :error-class error-class-stream-timeout
                                    :status http-503-service-unavailable
                                    :streaming-timeout-ms streaming-timeout-ms}]
               (log/error "unable to stream request bytes" description-map)
@@ -555,7 +552,8 @@
                                                      :bytes-pending bytes-read
                                                      :bytes-streamed bytes-streamed
                                                      :correlation-id (cid/get-correlation-id)
-                                                     :error-cause :client-error}
+                                                     :error-cause :client-error
+                                                     :error-class error-class-stream-failure}
                                                     error)]
                                     (meters/mark! stream-back-pressure)
                                     (deliver reservation-status-promise :client-error)
@@ -576,7 +574,8 @@
                           (catch Exception e
                             (histograms/update! (metrics/service-histogram service-id "response-size") bytes-streamed)
                             ; Handle lower down
-                            (throw (ex-info (str "error occurred after streaming " bytes-streamed " bytes in response") {} e))))]
+                            (throw (ex-info (str "error occurred after streaming " bytes-streamed " bytes in response")
+                                            (or (ex-data e) {}) e))))]
                     (let [bytes-reported-to-statsd'
                           (let [unreported-bytes (- bytes-streamed' bytes-reported-to-statsd)]
                             (if (or (and (not more-bytes-possibly-available?) (pos? unreported-bytes))

@@ -89,3 +89,20 @@
 (def ^:const envoy-upstream-connection-failure "UF")
 (def ^:const envoy-upstream-connection-termination "UC")
 (def ^:const envoy-upstream-request-timeout "UT")
+
+;; waiter error class constants
+(def ^:const error-class-cors-preflight-forbidden "waiter.CorsPreflightForbidden")
+(def ^:const error-class-cors-request-forbidden "waiter.CorsRequestForbidden")
+(def ^:const error-class-deployment-error "waiter.DeploymentError")
+(def ^:const error-class-kerberos-negotiate "waiter.KerberosNegotiate")
+(def ^:const error-class-kerberos-queue-length "waiter.KerberosQueueLength")
+(def ^:const error-class-maintenance "waiter.Maintenance")
+(def ^:const error-class-prestashed-tickets "waiter.PrestashedTickets")
+(def ^:const error-class-queue-length "waiter.QueueLength")
+(def ^:const error-class-request-timeout "waiter.RequestTimeout")
+(def ^:const error-class-stream-failure "waiter.StreamFailure")
+(def ^:const error-class-stream-timeout "waiter.StreamTimeout")
+(def ^:const error-class-service-forbidden "waiter.ServiceForbidden")
+(def ^:const error-class-suspended "waiter.Suspended")
+(def ^:const error-class-unsupported-auth "waiter.UnsupportedAuth")
+
