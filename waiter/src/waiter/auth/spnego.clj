@@ -60,10 +60,13 @@
   (log/info "triggering 401 response for spnego authentication" cause)
   (counters/inc! (metrics/waiter-counter "core" "response-status" "401"))
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "401"))
-  (-> {:message "Unauthorized"
-       :status http-401-unauthorized}
-    (utils/data->error-response request)
-    (cookies/cookies-response)))
+  (let [waiter-token (get-in request [:waiter-discovery :token])]
+    (cond->
+      (-> {:message "Unauthorized"
+           :status http-401-unauthorized}
+        (utils/data->error-response request)
+        (cookies/cookies-response))
+      waiter-token (assoc :waiter/token waiter-token))))
 
 (defn response-http-401-unauthorized-negotiate
   "Tell the client you'd like them to use kerberos"
