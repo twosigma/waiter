@@ -483,10 +483,45 @@
           (is (empty? (sd/fetch-core kv-store service-id-1)))
           (is (empty? (sd/fetch-core kv-store service-id-2)))))
 
+      (testing "post:update-service-description:cluster-changes"
+        (let [_ (kv/store kv-store token (-> service-description-2
+                                           (dissoc "token")
+                                           (assoc "cluster" (str token-root "-old-cluster")
+                                                  "owner" auth-user)))
+              existing-service-parameter-template (kv/fetch kv-store token :refresh true)
+              {:keys [body headers status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
+                {:authorization/user auth-user
+                 :body (-> existing-service-parameter-template (dissoc "cluster") (assoc "token" token) (utils/clj->json) (StringBufferInputStream.))
+                 :headers {}
+                 :request-method :post})]
+          (is (= http-200-ok status))
+          (is (str/includes? body (str "Successfully updated " token)))
+          (is (= (get headers "x-waiter-operation-result") "token-updated"))
+          (is (= (select-keys service-description-2 sd/token-data-keys)
+                 (sd/token->service-parameter-template kv-store token)))
+          (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
+            (is (= (dissoc service-description-2 "token") service-parameter-template))
+            (is (= {"cluster" (str token-root "-cluster")
+                    "last-update-time" (clock-millis)
+                    "last-update-user" "tu1"
+                    "owner" "tu1"
+                    "previous" existing-service-parameter-template
+                    "root" token-root}
+                   token-metadata)))
+          (is (= (-> existing-service-parameter-template
+                   (dissoc "cluster" "owner")
+                   (select-keys sd/token-data-keys))
+                 (sd/token->service-parameter-template kv-store token)))
+          (is (empty? (sd/fetch-core kv-store service-id-1)))
+          (is (empty? (sd/fetch-core kv-store service-id-2)))))
+
       (testing "post:update-service-description:no-changes"
         (let [_ (kv/store kv-store token (-> service-description-1
                                              (dissoc "token")
-                                             (assoc "owner" auth-user)))
+                                             (assoc "cluster" (str token-root "-cluster")
+                                                    "owner" auth-user)))
               existing-service-parameter-template (kv/fetch kv-store token :refresh true)
               {:keys [body headers status]}
               (run-handle-token-request
@@ -499,12 +534,13 @@
           (is (str/includes? body (str "No changes detected for " token)))
           (is (= (get headers "x-waiter-operation-result") "token-no-op"))
           (is (= (-> existing-service-parameter-template
-                     (dissoc "owner")
+                     (dissoc "cluster" "owner")
                      (select-keys sd/token-data-keys))
                  (sd/token->service-parameter-template kv-store token)))
           (let [{:keys [service-parameter-template token-metadata]} (sd/token->token-description kv-store token)]
-            (is (= (dissoc existing-service-parameter-template "owner") service-parameter-template))
-            (is (= {"owner" auth-user
+            (is (= (dissoc existing-service-parameter-template "cluster" "owner") service-parameter-template))
+            (is (= {"cluster" (str token-root "-cluster")
+                    "owner" auth-user
                     "previous" {}}
                    token-metadata)))
           (is (empty? (sd/fetch-core kv-store service-id-1)))
@@ -599,11 +635,12 @@
           (is (-> body json/read-str (get "last-update-time") du/str-to-date))
           (let [body-map (-> body str json/read-str)]
             (doseq [key sd/service-parameter-keys]
-              (is (= (get service-description-2 key) (get body-map key))))
-            (doseq [key (disj required-metadata-keys "deleted")]
-              (is (contains? body-map key) (str "Missing entry for " key)))
-            (doseq [key (conj optional-metadata-keys "deleted")]
-              (is (not (contains? body-map key)) (str "Existing entry for " key)))
+              (is (= (get service-description-2 key) (get body-map key))
+                  (str {:body-map body-map :service-description service-description-2})))
+            (doseq [key (-> required-metadata-keys (conj "cluster") (disj "deleted"))]
+              (is (contains? body-map key) (str "Missing entry for " key " in " body-map)))
+            (doseq [key (-> optional-metadata-keys (disj "cluster") (conj "deleted"))]
+              (is (not (contains? body-map key)) (str "Existing entry for " key " in " body-map)))
             (is (not (contains? body-map "deleted"))))))
 
       (testing "get:updated-service-description:include-foo"
@@ -635,9 +672,9 @@
           (let [body-map (-> body str json/read-str)]
             (doseq [key sd/service-parameter-keys]
               (is (= (get service-description-2 key) (get body-map key))))
-            (doseq [key (disj required-metadata-keys "deleted")]
+            (doseq [key (-> required-metadata-keys (conj "cluster") (disj "deleted"))]
               (is (contains? body-map key) (str "Missing entry for " key)))
-            (doseq [key (conj optional-metadata-keys "deleted")]
+            (doseq [key (-> optional-metadata-keys (disj "cluster") (conj "deleted"))]
               (is (not (contains? body-map key)) (str "Existing entry for " key)))
             (is (not (contains? body-map "deleted"))))))
 
@@ -814,8 +851,8 @@
             (let [body-map (-> body str json/read-str)]
               (doseq [key sd/service-parameter-keys]
                 (is (= (get service-description key) (get body-map key))))
-              (doseq [key (disj sd/user-metadata-keys "stale-timeout-mins")]
-                (is (= (get service-description key) (get body-map key))))
+              (doseq [key (disj sd/user-metadata-keys "cluster" "stale-timeout-mins")]
+                (is (= (get service-description key) (get body-map key)) (str key)))
               (doseq [key sd/system-metadata-keys]
                 (is (not (contains? body-map key)) (str key)))))))
 
@@ -823,10 +860,15 @@
         (let [token (str token (rand-int 100000))
               kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description-1 (walk/stringify-keys
-                                      {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*"
+                                      {:cmd "tc1"
+                                       :cpus 1
                                        :fallback-period-secs 100
-                                       :last-update-time (- (clock-millis) 1000) :owner auth-user
-                                       :token token})
+                                       :last-update-time (- (clock-millis) 1000)
+                                       :mem 200
+                                       :owner auth-user
+                                       :run-as-user "*"
+                                       :token token
+                                       :version "a1b2c3"})
               _ (kv/store kv-store token service-description-1)
               service-description-2 (-> service-description-1
                                         (assoc "fallback-period-secs" 120)
@@ -858,12 +900,18 @@
         (let [token (str token (rand-int 100000))
               kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description-1 (walk/stringify-keys
-                                      {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "*"
+                                      {:cluster (str token-root "-cluster")
+                                       :cmd "tc1"
+                                       :cpus 1
                                        :fallback-period-secs 120
-                                       :last-update-time (- (clock-millis) 1000) :owner auth-user
-                                       :token token})
+                                       :last-update-time (- (clock-millis) 1000)
+                                       :mem 200
+                                       :owner auth-user
+                                       :run-as-user "*"
+                                       :token token
+                                       :version "a1b2c3"})
               _ (kv/store kv-store token service-description-1)
-              service-description-2 (dissoc service-description-1 "last-update-time" "owner")
+              service-description-2 (dissoc service-description-1 "cluster" "last-update-time" "owner")
               {:keys [body headers status]}
               (run-handle-token-request
                 kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
