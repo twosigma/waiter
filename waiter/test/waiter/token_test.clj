@@ -637,9 +637,9 @@
             (doseq [key sd/service-parameter-keys]
               (is (= (get service-description-2 key) (get body-map key))
                   (str {:body-map body-map :service-description service-description-2})))
-            (doseq [key (-> required-metadata-keys (conj "cluster") (disj "deleted"))]
+            (doseq [key (disj required-metadata-keys "deleted")]
               (is (contains? body-map key) (str "Missing entry for " key " in " body-map)))
-            (doseq [key (-> optional-metadata-keys (disj "cluster") (conj "deleted"))]
+            (doseq [key (conj optional-metadata-keys "deleted")]
               (is (not (contains? body-map key)) (str "Existing entry for " key " in " body-map)))
             (is (not (contains? body-map "deleted"))))))
 
@@ -672,9 +672,9 @@
           (let [body-map (-> body str json/read-str)]
             (doseq [key sd/service-parameter-keys]
               (is (= (get service-description-2 key) (get body-map key))))
-            (doseq [key (-> required-metadata-keys (conj "cluster") (disj "deleted"))]
+            (doseq [key (disj required-metadata-keys "deleted")]
               (is (contains? body-map key) (str "Missing entry for " key)))
-            (doseq [key (-> optional-metadata-keys (disj "cluster") (conj "deleted"))]
+            (doseq [key (conj optional-metadata-keys "deleted")]
               (is (not (contains? body-map key)) (str "Existing entry for " key)))
             (is (not (contains? body-map "deleted"))))))
 
@@ -851,7 +851,7 @@
             (let [body-map (-> body str json/read-str)]
               (doseq [key sd/service-parameter-keys]
                 (is (= (get service-description key) (get body-map key))))
-              (doseq [key (disj sd/user-metadata-keys "cluster" "stale-timeout-mins")]
+              (doseq [key (disj sd/user-metadata-keys "stale-timeout-mins")]
                 (is (= (get service-description key) (get body-map key)) (str key)))
               (doseq [key sd/system-metadata-keys]
                 (is (not (contains? body-map key)) (str key)))))))
