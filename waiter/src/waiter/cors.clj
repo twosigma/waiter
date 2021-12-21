@@ -61,7 +61,7 @@
         (let [{:keys [headers request-method]} request
               {:strs [origin]} headers]
           (when (str/blank? origin)
-            (throw (ex-info "No origin provided" {:error-class "waiter.CorsPreflightForbidden"
+            (throw (ex-info "No origin provided" {:error-class error-class-cors-preflight-forbidden
                                                   :status http-403-forbidden})))
           (let [{:keys [allowed? allowed-methods summary]}
                 (if (waiter-request? request)
@@ -73,7 +73,7 @@
             (when-not allowed?
               (log/info "cors preflight request not allowed" summary)
               (throw (ex-info "Cross-origin request not allowed" {:cors-checks summary
-                                                                  :error-class "waiter.CorsPreflightForbidden"
+                                                                  :error-class error-class-cors-preflight-forbidden
                                                                   :origin origin
                                                                   :request-method request-method
                                                                   :status http-403-forbidden
@@ -122,7 +122,7 @@
               (log/info "cors request not allowed" summary)
               (throw (ex-info "Cross-origin request not allowed"
                               {:cors-checks summary
-                               :error-class "waiter.CorsRequestForbidden"
+                               :error-class error-class-cors-request-forbidden
                                :origin origin
                                :request-method request-method
                                :status http-403-forbidden

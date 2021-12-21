@@ -27,8 +27,6 @@
             [waiter.util.utils :as utils])
   (:import (java.util.concurrent LinkedBlockingQueue ThreadPoolExecutor TimeUnit)))
 
-(def ^:const error-class-prestashed-tickets "waiter.PrestashedTickets")
-
 (defn get-opt-in-accounts
   "Returns the list of users whose tickets are prestashed on host"
   [host]

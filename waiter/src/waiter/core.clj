@@ -1194,7 +1194,7 @@
                                               (throw (ex-info (str "authentication must be one of: '"
                                                                    (str/join "', '" (sort authentication-providers)) "'")
                                                               {:authentication authentication
-                                                               :error-class "waiter.UnsupportedAuth"
+                                                               :error-class error-class-unsupported-auth
                                                                :status http-400-bad-request}))))
                                           (sd/validate service-description-builder service-description {}))))
    :waiter-request?-fn (pc/fnk [[:state waiter-hostnames]]

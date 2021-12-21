@@ -54,12 +54,6 @@
            (org.eclipse.jetty.websocket.api UpgradeException)
            (org.eclipse.jetty.websocket.servlet ServletUpgradeResponse)))
 
-(def ^:const error-class-maintenance "waiter.Maintenance")
-(def ^:const error-class-queue-length "waiter.QueueLength")
-(def ^:const error-class-stream-failure "waiter.StreamFailure")
-(def ^:const error-class-stream-timeout "waiter.StreamTimeout")
-(def ^:const error-class-suspended "waiter.Suspended")
-
 (defn make-auth-user-map
   "Creates a map containing the username and principal from a request"
   [{:keys [authorization/metadata authorization/principal]}]

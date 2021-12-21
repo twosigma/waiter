@@ -32,8 +32,6 @@
            (org.ietf.jgss GSSContext GSSCredential GSSException GSSManager)))
 
 (def ^:const negotiate-prefix "Negotiate ")
-(def ^:const error-class-kerberos-negotiate "waiter.KerberosNegotiate")
-(def ^:const error-class-kerberos-queue-length "waiter.KerberosQueueLength")
 
 (defn- negotiate-token?
   "Predicate to determine if an authorization header represents a spnego negotiate token."
