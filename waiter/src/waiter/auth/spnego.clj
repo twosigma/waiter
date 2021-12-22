@@ -45,15 +45,17 @@
     (some-> negotiate-token (str/split #" " 2) last str .getBytes b64/decode)))
 
 (defn encode-output-token
-  "Take a token from a gss accept context call and encode it for use in a -authenticate header"
+  "Take a token from a gss accept context call and encode it for use in a www-authenticate header"
   [token]
   (str negotiate-prefix (String. ^bytes (b64/encode token))))
 
 (defn do-gss-auth-check
-  [^GSSContext gss-context req]
-  (when-let [intok (decode-input-token req)]
-    (when-let [ntok (.acceptSecContext gss-context intok 0 (alength intok))]
-      (encode-output-token ntok))))
+  "Returns a string containing the token to be sent to the peer for use in a www-authenticate header.
+   null indicates that no token is generated"
+  [^GSSContext gss-context input-token]
+  (when input-token
+    (when-let [output-token (.acceptSecContext gss-context input-token 0 (alength input-token))]
+      (encode-output-token output-token))))
 
 (defn- response-http-401-unauthorized
   [request cause]
@@ -105,8 +107,25 @@
     gss))
 
 (defn gss-get-principal
+  "Returns the name of the context initiator, i.e. the authenticated principal."
   [^GSSContext gss]
   (str (.getSrcName gss)))
+
+(defn authenticate-token
+  "Authenticates the input token and returns map containing a principal and a negotiate token for use in www-authenticate header."
+  [input-token]
+  (let [^GSSContext gss-context (gss-context-init)
+        token (do-gss-auth-check gss-context input-token)
+        principal (when (.isEstablished gss-context)
+                    (gss-get-principal gss-context))]
+    {:principal principal
+     :token token}))
+
+(defn authenticate-request
+  "Authenticates the request by extracting the Kerberos negotiate token and then using a GSSContext."
+  [request]
+  (let [input-token (decode-input-token request)]
+    (authenticate-token input-token)))
 
 (defn too-many-pending-auth-requests?
   "Returns true if there are too many pending Kerberos auth requests."
@@ -128,12 +147,7 @@
           current-correlation-id
           (try
             (timers/stop timer-context)
-            (let [^GSSContext gss-context (gss-context-init)
-                  token (do-gss-auth-check gss-context request)
-                  principal (when (.isEstablished gss-context)
-                              (gss-get-principal gss-context))]
-              (async/>!! response-chan {:principal principal
-                                        :token token}))
+            (async/>!! response-chan (authenticate-request request))
             (catch GSSException ex
               (log/error ex "gss exception during kerberos auth")
               (async/>!! response-chan
