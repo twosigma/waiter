@@ -589,6 +589,8 @@
                                :authorizer {:kind :kerberos
                                             :kerberos {;; kerberos-prestash determines user authorization via the presence of prestashed tickets
                                                        :factory-fn waiter.auth.kerberos/kerberos-authorizer
+                                                       ;; pluggable function used to authenticate requests
+                                                       :authenticate-request-fn waiter.auth.spnego/authenticate-request
                                                        ;; the minimum interval after which prestash kerberos tickets needs to refreshed
                                                        :prestash-cache-min-refresh-ms 100
                                                        ;; the maximum interval after which prestash kerberos tickets are forcibly refreshed

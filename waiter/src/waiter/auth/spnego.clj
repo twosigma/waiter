@@ -137,7 +137,7 @@
 
 (defn populate-gss-credentials
   "Perform Kerberos authentication on the provided thread pool and populate the result in the response channel."
-  [^ThreadPoolExecutor thread-pool-executor request response-chan]
+  [authenticate-request-fn ^ThreadPoolExecutor thread-pool-executor request response-chan]
   (let [current-correlation-id (cid/get-correlation-id)
         timer-context (timers/start (metrics/waiter-timer "core" "kerberos" "throttle" "delay"))]
     (.execute
@@ -147,7 +147,7 @@
           current-correlation-id
           (try
             (timers/stop timer-context)
-            (async/>!! response-chan (authenticate-request request))
+            (async/>!! response-chan (authenticate-request-fn request))
             (catch GSSException ex
               (log/error ex "gss exception during kerberos auth")
               (async/>!! response-chan
@@ -167,7 +167,7 @@
    will be run, otherwise the handler will not be run and 401
    returned instead.  This middleware doesn't handle cookies for
    authentication, but that should be stacked before this handler."
-  [request-handler ^ThreadPoolExecutor thread-pool-executor max-queue-length password]
+  [request-handler authenticate-request-fn ^ThreadPoolExecutor thread-pool-executor max-queue-length password]
   (fn require-gss-handler [request]
     (cond
       ;; spnego auth disabled for the service
@@ -181,7 +181,7 @@
       (let [current-correlation-id (cid/get-correlation-id)
             gss-response-chan (async/promise-chan)]
         ;; launch task that will populate the response in response-chan
-        (populate-gss-credentials thread-pool-executor request gss-response-chan)
+        (populate-gss-credentials authenticate-request-fn thread-pool-executor request gss-response-chan)
         (async/go
           (cid/with-correlation-id
             current-correlation-id
