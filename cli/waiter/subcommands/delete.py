@@ -1,7 +1,7 @@
 import logging
 
 from waiter import http_util, terminal
-from waiter.querying import query_token, print_no_data, get_services_using_token
+from waiter.querying import query_token, print_no_data, get_services_using_token, get_target_cluster_from_token
 from waiter.util import guard_no_cluster, str2bool, response_message, print_error
 
 
@@ -49,38 +49,36 @@ def delete_token_on_cluster(cluster, token_name, token_etag):
         print_error(message)
 
 
-def delete(clusters, args, _, __):
+def delete(clusters, args, _, enforce_cluster):
     """Deletes the token with the given token name."""
     guard_no_cluster(clusters)
+    force_delete = args.get('force', False)
     token_name = args.get('token')[0]
     query_result = query_token(clusters, token_name)
     if query_result['count'] == 0:
         print_no_data(clusters)
         return 1
 
-    cluster_data_pairs = sorted(query_result['clusters'].items())
-    num_clusters = len(cluster_data_pairs)
-    clusters_by_name = {c['name']: c for c in clusters}
-    if num_clusters == 1:
-        cluster_name = cluster_data_pairs[0][0]
-        token_etag = cluster_data_pairs[0][1]['etag']
-        cluster = clusters_by_name[cluster_name]
-        success = delete_token_on_cluster(cluster, token_name, token_etag)
-        return 0 if success else 1
-    elif num_clusters > 1:
-        overall_success = True
+    if force_delete:
+        cluster_data_pairs = sorted(query_result['clusters'].items())
+        clusters_by_name = {c['name']: c for c in clusters}
+        num_clusters = len(cluster_data_pairs)
         cluster_names_found = [p[0] for p in cluster_data_pairs]
+
         print(f'Token {terminal.bold(token_name)} exists in {num_clusters} clusters: {", ".join(cluster_names_found)}.')
+        overall_success = True
         for cluster_name, data in cluster_data_pairs:
-            if args.get('force', False):
-                should_delete = True
-            else:
-                should_delete = str2bool(input(f'Delete token in {terminal.bold(cluster_name)}? '))
-            if should_delete:
-                cluster = clusters_by_name[cluster_name]
-                success = delete_token_on_cluster(cluster, token_name, data['etag'])
-                overall_success = overall_success and success
-        return 0 if overall_success else 1
+            cluster = clusters_by_name[cluster_name]
+            success = delete_token_on_cluster(cluster, token_name, data['etag'])
+            overall_success = overall_success and success
+    else:
+        cluster = get_target_cluster_from_token(clusters, token_name, enforce_cluster)
+        if cluster is None:
+            print_no_data(clusters)
+        else:
+            token_etag = query_result['clusters'][cluster['name']]['etag']
+            success = delete_token_on_cluster(cluster, token_name, token_etag)
+            return 0 if success else 1
 
 
 def register(add_parser):
