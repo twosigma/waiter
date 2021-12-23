@@ -106,11 +106,12 @@
   (nil? (s/check {(s/required-key :factory-fn) s/Symbol, s/Keyword s/Any} (get config kind))))
 
 (def valid-raven-sidecar-config
-  {:cmd [s/Str]
-   (s/optional-key :env-vars) {(s/optional-key :flags) [s/Str]
-                               (s/optional-key :features) [s/Str]
-                               (s/optional-key :tls-flags) [s/Str]}
-   :image s/Str
+  {:cmd [non-empty-string]
+   (s/optional-key :env-vars) {(s/optional-key :defaults) {non-empty-string non-empty-string}
+                               (s/optional-key :flags) [non-empty-string]
+                               (s/optional-key :features) [non-empty-string]
+                               (s/optional-key :tls-flags) [non-empty-string]}
+   :image non-empty-string
    :predicate-fn s/Symbol
    :resources {:cpu s/Num
                :mem s/Int}})
