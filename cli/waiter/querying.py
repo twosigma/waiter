@@ -179,7 +179,7 @@ def _get_latest_cluster(clusters, query_result):
     """
     token_descriptions = list(query_result['clusters'].values())
     token_result = max(token_descriptions, key=lambda token: token['token']['last-update-time'])
-    if token_result['token']['deleted']:
+    if token_result['token'].get('deleted', False):
         return None
     cluster_name_goal = token_result['token']['cluster']
     provided_cluster_names = []
