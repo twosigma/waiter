@@ -137,9 +137,17 @@ class MultiWaiterCliTest(util.WaiterTest):
             finally:
                 util.delete_token(self.waiter_url_2, token_name, assert_response=False)
         finally:
-            util.delete_token(self.waiter_url_1, token_name, assert_response=True)       
+            util.delete_token(self.waiter_url_1, token_name, assert_response=True)
 
-    def test_delete_token_in_multiple_cluster_groups_force(self):
+    def test_delete_token_in_single_cluster_group(self):
+        config = {'clusters': [{'name': 'waiter1',
+                                'url': self.waiter_url_1,
+                                'default-for-create': True,
+                                'sync-group': 'production'},
+                               {'name': 'waiter2',
+                                'url': self.waiter_url_2,
+                                'sync-group': 'production'}]}
+        primary_cluster = 'waiter1'
         token_name = self.token_name()
         version_1 = str(uuid.uuid4())
         util.post_token(self.waiter_url_1, token_name, {'version': version_1})
@@ -147,22 +155,24 @@ class MultiWaiterCliTest(util.WaiterTest):
             version_2 = str(uuid.uuid4())
             util.post_token(self.waiter_url_2, token_name, {'version': version_2})
             try:
-                config = self.__two_cluster_config()
                 with cli.temp_config_file(config) as path:
-                    # failed delete because the target cluster couldn't be inferred when the token is in mutliple cluster groups
-                    cp = cli.delete(token_name=token_name, flags=f'--config {path}', delete_flags='-f')
+                    # deletes token in the primary cluster only, and relies on token syncer that will sync the delete
+                    cp = cli.delete(token_name=token_name, flags=f'--config {path}')
                     self.assertEqual(0, cp.returncode, cp.stderr)
-                    self.assertIn(f'Token {token_name} exists in 2 cluster(s)', cli.stdout(cp))
-                    self.assertIn(f'Successfully deleted {token_name} in waiter1', cli.stdout(cp))
-                    self.assertIn(f'Successfully deleted {token_name} in waiter2', cli.stdout(cp))
+                    self.assertIn(f'Successfully deleted {token_name} in {primary_cluster}.', cli.stdout(cp))
                     util.load_token(self.waiter_url_1, token_name, expected_status_code=404)
-                    util.load_token(self.waiter_url_2, token_name, expected_status_code=404)
+                    util.load_token(self.waiter_url_2, token_name, expected_status_code=200)
+                    # attempting to delete again yields a no-op as the token is effectively deleted in the cluster group
+                    cp_noop = cli.delete(token_name=token_name, flags=f'--config {path}')
+                    self.assertEqual(0, cp_noop.returncode, cp_noop.stderr)
+                    self.assertIn('No matching data found in', cli.stdout(cp_noop))
+                    self.assertIn('waiter1', cli.stdout(cp_noop))
+                    self.assertIn('waiter2', cli.stdout(cp_noop))
             finally:
-                util.delete_token(self.waiter_url_2, token_name, assert_response=False)
+                util.delete_token(self.waiter_url_2, token_name, assert_response=True)
         finally:
-            util.delete_token(self.waiter_url_1, token_name, assert_response=False)       
-
-    # def test_delete_token_in_single_cluster_group(self):
+            util.delete_token(self.waiter_url_1, token_name, assert_response=False)        
+        
 
     # def test_delete_token_in_single_cluster_group_force(self):
 

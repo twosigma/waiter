@@ -65,13 +65,7 @@ def delete(clusters, args, _, enforce_cluster):
     sync_opt_out = any(get_in(token_config, ['token', 'metadata', 'waiter-token-sync-opt-out']) == 'true'
                        for _, token_config in cluster_data_pairs)
 
-    if num_clusters == 1:
-        cluster_name = cluster_data_pairs[0][0]
-        token_etag = cluster_data_pairs[0][1]['etag']
-        cluster = clusters_by_name[cluster_name]
-        success = delete_token_on_cluster(cluster, token_name, token_etag)
-        return 0 if success else 1
-    elif force_delete or sync_opt_out:
+    if force_delete or sync_opt_out:
         cluster_data_pairs = sorted(query_result['clusters'].items())
         clusters_by_name = {c['name']: c for c in clusters}
         num_clusters = len(cluster_data_pairs)
@@ -80,7 +74,7 @@ def delete(clusters, args, _, enforce_cluster):
         print(f'Token {terminal.bold(token_name)} exists in {num_clusters} cluster(s): {", ".join(cluster_names_found)}.')
         overall_success = True
         for cluster_name, data in cluster_data_pairs:
-            if force_delete:
+            if force_delete or (num_clusters == 1):
                 should_delete = True
             else:
                 should_delete = str2bool(input(f'Delete token in {terminal.bold(cluster_name)}? '))
