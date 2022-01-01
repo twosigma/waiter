@@ -77,7 +77,7 @@ class MultiWaiterCliTest(util.WaiterTest):
                     # Delete the token in both clusters
                     cp = cli.delete(token_name=token_name, flags='--config %s' % path, delete_flags='--force')
                     self.assertEqual(0, cp.returncode, cp.stderr)
-                    self.assertIn('exists in 2 clusters', cli.stdout(cp))
+                    self.assertIn('exists in 2 cluster(s)', cli.stdout(cp))
                     self.assertIn('waiter1', cli.stdout(cp))
                     self.assertIn('waiter2', cli.stdout(cp))
                     self.assertEqual(2, cli.stdout(cp).count('Deleting token'))
