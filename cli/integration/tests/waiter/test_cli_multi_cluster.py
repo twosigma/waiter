@@ -158,7 +158,6 @@ class MultiWaiterCliTest(util.WaiterTest):
                     # deletes token in the primary cluster only, and relies on token syncer that will sync the delete
                     cp = cli.delete(token_name=token_name, flags=f'--config {path}')
                     self.assertEqual(0, cp.returncode, cp.stderr)
-                    # TODO: figure out why "waiter1" is not deterministic, we should put admin mode and put cluster waiter1?
                     self.assertIn(f'Successfully deleted {token_name} in waiter1.', cli.stdout(cp))
                     util.load_token(self.waiter_url_1, token_name, expected_status_code=404)
                     util.load_token(self.waiter_url_2, token_name, expected_status_code=200)
