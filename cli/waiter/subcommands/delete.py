@@ -1,8 +1,8 @@
 import logging
 
 from waiter import http_util, terminal
-from waiter.querying import query_token, print_no_data, get_services_using_token, get_target_cluster_from_token
-from waiter.util import guard_no_cluster, response_message, print_error, get_in, str2bool
+from waiter.querying import get_services_using_token, get_target_cluster_from_token, print_no_data, query_token
+from waiter.util import get_in, guard_no_cluster, response_message, print_error, str2bool
 
 
 def delete_token_on_cluster(cluster, token_name, token_etag):
