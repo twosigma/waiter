@@ -82,6 +82,7 @@ def delete(clusters, args, _, enforce_cluster):
                 cluster = clusters_by_name[cluster_name]
                 success = delete_token_on_cluster(cluster, token_name, data['etag'])
                 overall_success = overall_success and success
+        return 0 if overall_success else 1
     else:
         cluster = get_target_cluster_from_token(clusters, token_name, enforce_cluster)
         if cluster is None:
