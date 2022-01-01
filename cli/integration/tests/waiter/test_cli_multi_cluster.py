@@ -195,7 +195,7 @@ class MultiWaiterCliTest(util.WaiterTest):
                     self.assertIn(f'Successfully deleted {token_name} in waiter2.', cli.stdout(cp))
                     util.load_token(self.waiter_url_1, token_name, expected_status_code=404)
                     util.load_token(self.waiter_url_2, token_name, expected_status_code=404)
-                    # attempting to delete again yields a no-op as the token is effectively deleted in the cluster group
+                    # attempting to delete again yields a no-op as the token should be completely deleted
                     cp_noop = cli.delete(token_name=token_name, flags=f'--config {path}')
                     self.assertEqual(1, cp_noop.returncode, cp_noop.stderr)
                     self.assertIn('No matching data found in', cli.stdout(cp_noop))
@@ -206,16 +206,28 @@ class MultiWaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url_1, token_name, assert_response=False)
 
-    # def test_delete_token_in_single_cluster_group_no_data(self):
-
-    # def test_delete_token_sync_disabled(self):
-    
-    
-    # TODO:
-    # 1. second delete results in no op if token is only in one cluster group
-    # 2. if token has syncing turned off, then revert to old way of displaying delete information
-    # 3. deleting token in multiple cluster groups result in an error
-
+    def test_delete_token_sync_disabled(self):
+        token_name = self.token_name()
+        version_1 = str(uuid.uuid4())
+        util.post_token(self.waiter_url_1, token_name, {'version': version_1})
+        try:
+            version_2 = str(uuid.uuid4())
+            util.post_token(self.waiter_url_2, token_name, {'version': version_2,
+                                                            'metadata': {'waiter-token-sync-opt-out': 'true'}})
+            try:
+                config = self.__two_cluster_config()
+                with cli.temp_config_file(config) as path:
+                    # Delete the token in both clusters
+                    cp = cli.delete(token_name=token_name, flags=f'--config {path}', stdin='Yes\nYes\n'.encode('utf8'))
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    self.assertIn(f'Successfully deleted {token_name} in waiter1.', cli.stdout(cp))
+                    self.assertIn(f'Successfully deleted {token_name} in waiter2.', cli.stdout(cp))
+                    util.load_token(self.waiter_url_1, token_name, expected_status_code=404)
+                    util.load_token(self.waiter_url_2, token_name, expected_status_code=404)
+            finally:
+                util.delete_token(self.waiter_url_2, token_name, assert_response=False)
+        finally:
+            util.delete_token(self.waiter_url_1, token_name, assert_response=False)
 
     def test_federated_ping(self):
         # Create in cluster #1
