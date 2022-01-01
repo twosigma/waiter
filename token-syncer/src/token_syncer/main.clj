@@ -69,7 +69,8 @@
                     (fn store-token-dry-run-version [cluster-url token token-etag token-description]
                       (log/info "[dry-run] store-token" token "on" cluster-url "with etag" token-etag
                                 "and description" token-description)
-                      {:status "dry-run"})
+                      {:body {:message "dry-run"}
+                       :status 200})
                     (partial waiter/store-token api-http-client))}))
 
 (def base-command-config
