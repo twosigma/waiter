@@ -147,7 +147,6 @@ class MultiWaiterCliTest(util.WaiterTest):
                                {'name': 'waiter2',
                                 'url': self.waiter_url_2,
                                 'sync-group': 'production'}]}
-        primary_cluster = 'waiter1'
         token_name = self.token_name()
         version_1 = str(uuid.uuid4())
         util.post_token(self.waiter_url_1, token_name, {'version': version_1})
@@ -159,22 +158,53 @@ class MultiWaiterCliTest(util.WaiterTest):
                     # deletes token in the primary cluster only, and relies on token syncer that will sync the delete
                     cp = cli.delete(token_name=token_name, flags=f'--config {path}')
                     self.assertEqual(0, cp.returncode, cp.stderr)
-                    self.assertIn(f'Successfully deleted {token_name} in {primary_cluster}.', cli.stdout(cp))
+                    self.assertIn(f'Successfully deleted {token_name} in waiter1.', cli.stdout(cp))
                     util.load_token(self.waiter_url_1, token_name, expected_status_code=404)
                     util.load_token(self.waiter_url_2, token_name, expected_status_code=200)
                     # attempting to delete again yields a no-op as the token is effectively deleted in the cluster group
                     cp_noop = cli.delete(token_name=token_name, flags=f'--config {path}')
-                    self.assertEqual(0, cp_noop.returncode, cp_noop.stderr)
+                    self.assertEqual(1, cp_noop.returncode, cp_noop.stderr)
                     self.assertIn('No matching data found in', cli.stdout(cp_noop))
                     self.assertIn('waiter1', cli.stdout(cp_noop))
                     self.assertIn('waiter2', cli.stdout(cp_noop))
             finally:
                 util.delete_token(self.waiter_url_2, token_name, assert_response=True)
         finally:
-            util.delete_token(self.waiter_url_1, token_name, assert_response=False)        
+            util.delete_token(self.waiter_url_1, token_name, assert_response=False)
         
-
-    # def test_delete_token_in_single_cluster_group_force(self):
+    def test_delete_token_in_single_cluster_group_force(self):
+        config = {'clusters': [{'name': 'waiter1',
+                                'url': self.waiter_url_1,
+                                'default-for-create': True,
+                                'sync-group': 'production'},
+                               {'name': 'waiter2',
+                                'url': self.waiter_url_2,
+                                'sync-group': 'production'}]}
+        token_name = self.token_name()
+        version_1 = str(uuid.uuid4())
+        util.post_token(self.waiter_url_1, token_name, {'version': version_1})
+        try:
+            version_2 = str(uuid.uuid4())
+            util.post_token(self.waiter_url_2, token_name, {'version': version_2})
+            try:
+                with cli.temp_config_file(config) as path:
+                    # deletes token in the primary cluster with force will delete the token in all clusters, not just primary cluster
+                    cp = cli.delete(token_name=token_name, flags=f'--config {path}', delete_flags='-f')
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    self.assertIn(f'Successfully deleted {token_name} in waiter1.', cli.stdout(cp))
+                    self.assertIn(f'Successfully deleted {token_name} in waiter2.', cli.stdout(cp))
+                    util.load_token(self.waiter_url_1, token_name, expected_status_code=404)
+                    util.load_token(self.waiter_url_2, token_name, expected_status_code=404)
+                    # attempting to delete again yields a no-op as the token is effectively deleted in the cluster group
+                    cp_noop = cli.delete(token_name=token_name, flags=f'--config {path}')
+                    self.assertEqual(1, cp_noop.returncode, cp_noop.stderr)
+                    self.assertIn('No matching data found in', cli.stdout(cp_noop))
+                    self.assertIn('waiter1', cli.stdout(cp_noop))
+                    self.assertIn('waiter2', cli.stdout(cp_noop))
+            finally:
+                util.delete_token(self.waiter_url_2, token_name, assert_response=False)
+        finally:
+            util.delete_token(self.waiter_url_1, token_name, assert_response=False)
 
     # def test_delete_token_in_single_cluster_group_no_data(self):
 

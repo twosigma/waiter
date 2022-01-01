@@ -86,6 +86,7 @@ def delete(clusters, args, _, enforce_cluster):
         cluster = get_target_cluster_from_token(clusters, token_name, enforce_cluster)
         if cluster is None:
             print_no_data(clusters)
+            return 1
         else:
             token_config = query_result['clusters'][cluster['name']]
             token_etag = token_config['etag']
