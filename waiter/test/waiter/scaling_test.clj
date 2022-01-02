@@ -17,6 +17,7 @@
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data.json :as json]
+            [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.walk :as walk]
             [full.async :refer [<? <?? go-try]]
@@ -868,23 +869,22 @@
 
 (let [leader?-fn (constantly true)
       instance-killer-multiplexer-fn (fn [_])
-      service-id->service-description (fn [id] {:service-id id
-                                                "min-instances" 1})
+      service-id->service-description (fn [service-id]
+                                        (cond-> {:service-id service-id
+                                                 "concurrency-level" 1
+                                                 "expired-instance-restart-rate" 0.1
+                                                 "jitter-threshold" 0.5
+                                                 "min-instances" 1
+                                                 "max-instances" 100
+                                                 "scale-down-factor" 0.001
+                                                 "scale-factor" 1
+                                                 "scale-up-factor" 0.1}
+                                          (str/includes? service-id "minst3")
+                                          (assoc "min-instances" 3)))
+      service-id->stale? (fn [service-id]
+                           (str/includes? service-id "stale"))
       timeout-interval-ms 10000
-      scale-service-fn (fn [_ state]
-                         (case (int (:total-instances state))
-                           2
-                           {:scale-to-instances 3
-                            :target-instances 3
-                            :scale-amount 1}
-                           3
-                           {:scale-to-instances 4
-                            :target-instances 4
-                            :scale-amount 2}
-                           4
-                           {:scale-to-instances 0
-                            :target-instances 0
-                            :scale-amount -4}))
+      scale-service-fn scale-service
       max-expired-unhealthy-instances-to-consider 2
       start-autoscaler-goroutine (fn start-autoscaler-goroutine [initial-state scheduler-data scheduler-interactions-thread-pool]
                                    (let [metrics-chan (async/chan 1)
@@ -904,7 +904,7 @@
                                                                  :previous-cycle-start-time (t/minus (t/now) (t/seconds 10))
                                                                  :timeout-chan initial-timeout-chan)
                                                                leader?-fn service-id->metrics-fn instance-killer-multiplexer-fn scheduler
-                                                               timeout-interval-ms scale-service-fn service-id->service-description state-mult
+                                                               timeout-interval-ms scale-service-fn service-id->service-description service-id->stale? state-mult
                                                                scheduler-interactions-thread-pool max-expired-unhealthy-instances-to-consider
                                                                update-service-scale-state!)]
                                      (async/tap state-mult state-chan-reader)
@@ -972,6 +972,9 @@
                             :healthy-instances 1
                             :instances 2
                             :outstanding-requests 2
+                            :scale-amount 1
+                            :scale-to-instances 3
+                            :target-instances 2.0
                             :task-count 2}]
         (async/>!! query {:response-chan query-response :service-id service-id})
         (is (= expected-state (select-keys (async/<!! query-response) (keys expected-state))))
@@ -979,7 +982,7 @@
       (async/>!! exit :kill)
       (.shutdown scheduler-interactions-thread-pool)))
 
-  (deftest test-autoscaler-goroutine-scaler-does-not-scale-during-pending-scaling-operation
+  (deftest test-autoscaler-goroutine-scaler-up-expired-healthy-instance
     (let [service-id "service1"
           scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
           {:keys [exit initial-timeout-chan metrics-chan query query-service-state-fn]}
@@ -999,7 +1002,9 @@
                             :healthy-instances 1
                             :instances 2
                             :outstanding-requests 2
-                            :target-instances 3
+                            :scale-amount 1
+                            :scale-to-instances 3
+                            :target-instances 2.0
                             :task-count 3}]
         (async/>!! query {:response-chan query-response :service-id service-id})
         (is (= expected-state (select-keys (async/<!! query-response) (keys expected-state))))
@@ -1007,29 +1012,31 @@
       (async/>!! exit :kill)
       (.shutdown scheduler-interactions-thread-pool)))
 
-  (deftest test-autoscaler-goroutine-scaler-scale-up-after-pending-scaling-operation-completes
+  (deftest test-autoscaler-goroutine-scaler-scale-up-with-outstanding-requests
     (let [service-id "service1"
           scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
           {:keys [exit initial-timeout-chan metrics-chan query query-service-state-fn]}
-          (start-autoscaler-goroutine {:global-state {service-id {"outstanding" 2}}
+          (start-autoscaler-goroutine {:global-state {service-id {"outstanding" 4}}
                                        :service-id->scale-state {service-id {:target-instances 2 :scale-to-instances 2 :scale-amount 0}}
-                                       :service-id->router-state {service-id {:healthy-instances 1
-                                                                              :expired-healthy-instances 1
+                                       :service-id->router-state {service-id {:healthy-instances 2
+                                                                              :expired-healthy-instances 0
                                                                               :expired-unhealthy-instances 0}}
-                                       :service-id->scheduler-state {service-id {:instances 2 :task-count 3}}}
-                                      [{:id service-id :instances 3 :task-count 3}]
+                                       :service-id->scheduler-state {service-id {:instances 2 :task-count 2}}}
+                                      [{:id service-id :instances 2 :task-count 2}]
                                       scheduler-interactions-thread-pool)]
-      (async/>!! metrics-chan {service-id {"outstanding" 2}})
+      (async/>!! metrics-chan {service-id {"outstanding" 4}})
       (async/>!! initial-timeout-chan :timeout)
       (let [query-response (async/promise-chan)
-            expected-state {:expired-healthy-instances 1
+            expected-state {:expired-healthy-instances 0
                             :expired-unhealthy-instances 0
-                            :healthy-instances 1
-                            :instances 3
-                            :outstanding-requests 2
-                            :target-instances 4
-                            :task-count 3}]
+                            :healthy-instances 2
+                            :instances 2
+                            :outstanding-requests 4
+                            :scale-amount 2
+                            :scale-to-instances 4
+                            :task-count 2}]
         (async/>!! query {:response-chan query-response :service-id service-id})
+        (is (< 3.2 (:target-instances (async/<!! query-response)) 4.0))
         (is (= expected-state (select-keys (async/<!! query-response) (keys expected-state))))
         (is (= expected-state (select-keys (query-service-state-fn {:service-id service-id}) (keys expected-state)))))
       (async/>!! exit :kill)
@@ -1059,6 +1066,8 @@
                             :healthy-instances 2
                             :instances 3
                             :outstanding-requests 2
+                            :scale-amount 2
+                            :scale-to-instances 4
                             :target-instances 4
                             :task-count 3}]
         (async/>!! query {:response-chan query-response :service-id service-id})
@@ -1097,6 +1106,8 @@
                             :healthy-instances 4
                             :instances 3
                             :outstanding-requests 2
+                            :scale-amount 2
+                            :scale-to-instances 4
                             :target-instances 4
                             :task-count 3}]
         (async/>!! query {:response-chan query-response :service-id service-id})
@@ -1105,33 +1116,69 @@
       (async/>!! exit :kill)
       (.shutdown scheduler-interactions-thread-pool)))
 
-  (deftest test-autoscaler-goroutine-scaler-scales-down-before-scale-up-is-completed
-    (let [service-id "service1"
+  (deftest test-autoscaler-goroutine-min-instances-3
+    (let [service-id "service1-minst3"
           scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
           {:keys [exit initial-timeout-chan metrics-chan query query-service-state-fn state-chan state-chan-reader]}
-          (start-autoscaler-goroutine {:global-state {service-id {"outstanding" 2}}
-                                       :service-id->scale-state {service-id {:target-instances 4 :scale-to-instances 4 :scale-amount 2}}
+          (start-autoscaler-goroutine {:global-state {service-id {"outstanding" 0}}
+                                       :service-id->scale-state {service-id {:target-instances 2 :scale-to-instances 2 :scale-amount 0}}
                                        :service-id->router-state {service-id {:healthy-instances 2
-                                                                              :expired-healthy-instances 1
+                                                                              :expired-healthy-instances 0
                                                                               :expired-unhealthy-instances 0}}
-                                       :service-id->scheduler-state {service-id {:instances 3 :task-count 3}}}
-                                      [{:id service-id :instances 4 :task-count 3}]
-                                      scheduler-interactions-thread-pool)]
-      (async/>!! state-chan {:service-id->healthy-instances {service-id [{:id "instance-1"} {:id "instance-3"}]}
-                             :service-id->unhealthy-instances {service-id [{:id "instance-2"}]}
-                             :service-id->expired-instances {service-id [{:healthy? true :id "instance-1"}]}})
+                                       :service-id->scheduler-state {service-id {:instances 2 :task-count 2}}}
+                                      [{:id service-id :instances 2 :task-count 2}] scheduler-interactions-thread-pool)]
+      (async/>!! state-chan {:service-id->healthy-instances {service-id [{:id "instance-1"}
+                                                                         {:id "instance-2"}]}
+                             :service-id->unhealthy-instances {}
+                             :service-id->expired-instances {}})
       (async/<!! state-chan-reader) ;; ensure delivery from mult
-      (async/>!! metrics-chan {service-id {"outstanding" 2}})
+      (async/>!! metrics-chan {service-id {"outstanding" 0}})
       (async/>!! initial-timeout-chan :timeout)
       (let [query-response (async/promise-chan)
-            expected-state {:expired-healthy-instances 1
+            expected-state {:expired-healthy-instances 0
                             :expired-unhealthy-instances 0
                             :healthy-instances 2
-                            :instances 4
-                            :outstanding-requests 2
-                            :target-instances 0
-                            :task-count 3}]
+                            :instances 2
+                            :outstanding-requests 0
+                            :scale-amount 1
+                            :scale-to-instances 3
+                            :target-instances 3
+                            :task-count 2}]
         (async/>!! query {:response-chan query-response :service-id service-id})
+        (is (= expected-state (select-keys (async/<!! query-response) (keys expected-state))))
+        (is (= expected-state (select-keys (query-service-state-fn {:service-id service-id}) (keys expected-state)))))
+      (async/>!! exit :kill)
+      (.shutdown scheduler-interactions-thread-pool)))
+
+  (deftest test-autoscaler-goroutine-stale-service-with-min-instances-3
+    (let [service-id "service1-minst3-stale"
+          scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
+          {:keys [exit initial-timeout-chan metrics-chan query query-service-state-fn state-chan state-chan-reader]}
+          (start-autoscaler-goroutine {:global-state {service-id {"outstanding" 0}}
+                                       :service-id->scale-state {service-id {:target-instances 2 :scale-to-instances 2 :scale-amount 0}}
+                                       :service-id->router-state {service-id {:healthy-instances 2
+                                                                              :expired-healthy-instances 0
+                                                                              :expired-unhealthy-instances 0}}
+                                       :service-id->scheduler-state {service-id {:instances 2 :task-count 2}}}
+                                      [{:id service-id :instances 2 :task-count 2}] scheduler-interactions-thread-pool)]
+      (async/>!! state-chan {:service-id->healthy-instances {service-id [{:id "instance-1"}
+                                                                         {:id "instance-2"}]}
+                             :service-id->unhealthy-instances {}
+                             :service-id->expired-instances {}})
+      (async/<!! state-chan-reader) ;; ensure delivery from mult
+      (async/>!! metrics-chan {service-id {"outstanding" 0}})
+      (async/>!! initial-timeout-chan :timeout)
+      (let [query-response (async/promise-chan)
+            expected-state {:expired-healthy-instances 0
+                            :expired-unhealthy-instances 0
+                            :healthy-instances 2
+                            :instances 2
+                            :outstanding-requests 0
+                            :scale-amount 0
+                            :scale-to-instances 2
+                            :task-count 2}]
+        (async/>!! query {:response-chan query-response :service-id service-id})
+        (is (< 1.98 (:target-instances (async/<!! query-response)) 2.0))
         (is (= expected-state (select-keys (async/<!! query-response) (keys expected-state))))
         (is (= expected-state (select-keys (query-service-state-fn {:service-id service-id}) (keys expected-state)))))
       (async/>!! exit :kill)

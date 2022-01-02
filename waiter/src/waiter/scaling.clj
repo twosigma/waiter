@@ -421,7 +421,7 @@
                                :service-id->scale-state service-id->scale-state
                                :scale-ticks scale-ticks})
     (pc/map-from-keys
-      (fn [service-id]
+      (fn scale-services-helper [service-id]
         (let [outstanding-requests (or (service-id->outstanding-requests service-id) 0)
               {:keys [healthy-instances expired-healthy-instances expired-unhealthy-instances]} (service-id->router-state service-id)
               expired-instances (+ expired-healthy-instances (min max-expired-unhealthy-instances-to-consider expired-unhealthy-instances))
@@ -483,7 +483,7 @@
   "Autoscaler encapsulated in goroutine.
    Acquires state of services and passes to scale-services."
   [initial-state leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler timeout-interval-ms scale-service-fn
-   service-id->service-description-fn state-mult scheduler-interactions-thread-pool max-expired-unhealthy-instances-to-consider
+   service-id->service-description-fn service-id->stale? state-mult scheduler-interactions-thread-pool max-expired-unhealthy-instances-to-consider
    update-service-scale-state!]
   (let [state-atom (atom (merge {:continue-looping true
                                  :global-state {}
@@ -494,6 +494,12 @@
                                  :service-id->scheduler-state {}
                                  :timeout-chan (async/timeout timeout-interval-ms)}
                                 initial-state))
+        retrieve-adjusted-service-description (fn retrieve-adjusted-service-description [service-id]
+                                                (let [{:strs [min-instances] :as service-description} (service-id->service-description-fn service-id)]
+                                                  (cond-> service-description
+                                                    (and (> min-instances 1)
+                                                         (service-id->stale? service-id))
+                                                    (assoc "min-instances" 1))))
         exit-chan (async/chan)
         query-chan (async/chan 10)
         state-chan (au/latest-chan)
@@ -551,7 +557,7 @@
                               service-id->scheduler-state' result]
                           (timers/start-stop-time!
                             (metrics/waiter-timer "autoscaler" "processing")
-                            (let [service->scale-state'
+                            (let [service-id->scale-state'
                                   (if (seq service-id->router-state)
                                     (let [router-service-ids (set (keys service-id->router-state))
                                           scheduler-service-ids (set (keys service-id->scheduler-state'))
@@ -565,7 +571,7 @@
                                       (when (seq excluded-service-ids)
                                         (log/info "services excluded this iteration" excluded-service-ids))
                                       (scale-services scalable-service-ids
-                                                      (pc/map-from-keys service-id->service-description-fn scalable-service-ids)
+                                                      (pc/map-from-keys retrieve-adjusted-service-description scalable-service-ids)
                                                       ; default to 0 outstanding requests for services without metrics
                                                       (pc/map-from-keys #(get-in global-state' [% "outstanding"] 0) scalable-service-ids)
                                                       service-id->scale-state
@@ -578,11 +584,11 @@
                                                       max-expired-unhealthy-instances-to-consider))
                                     service-id->scale-state)]
                               (log/info "scaling iteration took" (difference-in-millis (t/now) cycle-start-time)
-                                        "ms for" (count service->scale-state') "services.")
+                                        "ms for" (count service-id->scale-state') "services.")
                               (assoc current-state
                                 :global-state global-state'
                                 :previous-cycle-start-time cycle-start-time
-                                :service-id->scale-state service->scale-state'
+                                :service-id->scale-state service-id->scale-state'
                                 :service-id->scheduler-state service-id->scheduler-state'
                                 :continue-looping true
                                 :timeout-chan (async/timeout timeout-interval-ms)))))

@@ -1064,6 +1064,11 @@
                              (if (str/blank? endpoint-url)
                                endpoint-url
                                (str "http://" hostname ":" (primary-port port) endpoint-url)))))
+   :reference-type->stale-info-fn (pc/fnk [[:state service-description-builder]
+                                           token->token-hash token->token-parameters]
+                                    (let [context {:token->token-hash token->token-hash
+                                                   :token->token-parameters token->token-parameters}]
+                                      (sd/retrieve-reference-type->stale-info-fn service-description-builder context)))
    :refresh-service-descriptions-fn (pc/fnk [[:state kv-store]]
                                       (fn refresh-service-descriptions-fn [service-ids]
                                         (sd/refresh-service-descriptions kv-store service-ids)))
@@ -1108,16 +1113,11 @@
                                 :service-id->metrics-fn (fn service-id->metrics [] (metrics-sync/agent->service-id->metrics router-metrics-agent))
                                 :service-id->router-id->metrics (fn service-id->router-id->metrics [service-id]
                                                                   (metrics-sync/agent->service-id->router-id->metrics router-metrics-agent service-id))}))
-   :service->gc-time-fn (pc/fnk [[:state service-description-builder]
-                                 attach-token-defaults-fn service-id->service-description-fn service-id->references-fn
-                                 token->token-hash token->token-parameters]
-                          (let [context {:token->token-hash token->token-hash
-                                         :token->token-parameters token->token-parameters}
-                                reference-type->stale-info-fn (sd/retrieve-reference-type->stale-info-fn service-description-builder context)]
-                            (fn service->gc-time-fn [service-id last-modified-time]
-                              (sd/service->gc-time
-                                service-id->service-description-fn service-id->references-fn token->token-parameters
-                                reference-type->stale-info-fn attach-token-defaults-fn service-id last-modified-time))))
+   :service->gc-time-fn (pc/fnk [attach-token-defaults-fn reference-type->stale-info-fn service-id->service-description-fn service-id->references-fn token->token-parameters]
+                          (fn service->gc-time-fn [service-id last-modified-time]
+                            (sd/service->gc-time
+                              service-id->service-description-fn service-id->references-fn token->token-parameters
+                              reference-type->stale-info-fn attach-token-defaults-fn service-id last-modified-time)))
    :service-id->password-fn (pc/fnk [[:scheduler service-id->password-fn*]]
                               service-id->password-fn*)
    :service-id->references-fn (pc/fnk [[:state kv-store]]
@@ -1126,6 +1126,9 @@
                                          service-id->service-description-fn*)
    :service-id->source-tokens-entries-fn (pc/fnk [[:state kv-store]]
                                            (partial sd/service-id->source-tokens-entries kv-store))
+   :service-id->stale? (pc/fnk [reference-type->stale-info-fn service-id->references-fn]
+                         (fn service-id->stale? [service-id]
+                           (sd/service-id->stale? reference-type->stale-info-fn service-id->references-fn service-id)))
    :service-invocation-authorized?-fn (pc/fnk [can-run-as?-fn]
                                         (fn service-invocation-authorized?-fn
                                           [auth-user descriptor]
@@ -1216,7 +1219,7 @@
                                       (handler (assoc request :waiter-discovery discovered-parameters))))))})
 
 (def daemons
-  {:autoscaler (pc/fnk [[:routines router-metrics-helpers service-id->service-description-fn]
+  {:autoscaler (pc/fnk [[:routines router-metrics-helpers service-id->service-description-fn service-id->stale?]
                         [:scheduler scheduler]
                         [:settings [:scaling autoscaler-interval-ms max-expired-unhealthy-instances-to-consider]]
                         [:state leader?-fn scheduler-interactions-thread-pool]
@@ -1230,7 +1233,7 @@
                                                        populate-maintainer-chan! service-id scaling-state))]
                    (scaling/autoscaler-goroutine
                      {} leader?-fn service-id->metrics-fn executor-multiplexer-chan scheduler autoscaler-interval-ms
-                     scaling/scale-service service-id->service-description-fn router-state-push-mult
+                     scaling/scale-service service-id->service-description-fn service-id->stale? router-state-push-mult
                      scheduler-interactions-thread-pool max-expired-unhealthy-instances-to-consider
                      update-service-scale-state!)))
    :autoscaling-multiplexer (pc/fnk [[:routines delegate-instance-kill-request-fn peers-acknowledged-eject-requests-fn

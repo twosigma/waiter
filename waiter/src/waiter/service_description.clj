@@ -1602,6 +1602,14 @@
       (pos? idle-timeout-mins)
       (t/plus last-modified-time (t/minutes idle-timeout-mins)))))
 
+(defn service-id->stale?
+  "Returns true if all the references used to access the service have gone stale.
+   Note: a service created without references never goes stale."
+  [reference-type->stale-info-fn service-id->references-fn service-id]
+  (let [references (service-id->references-fn service-id)
+        {:keys [stale?]} (references->stale-info reference-type->stale-info-fn references)]
+    (true? stale?)))
+
 (let [service-id->key #(str "^REFERENCES#" %)]
 
   (defn service-id->references
