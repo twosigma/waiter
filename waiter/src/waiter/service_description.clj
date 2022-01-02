@@ -1256,10 +1256,11 @@
     (reduce max 0)))
 
 (let [error-message-map-fn (fn [passthrough-headers waiter-headers]
-                             {:status http-400-bad-request
+                             {:error-class error-class-service-misconfigured
+                              :log-level :warn
                               :non-waiter-headers (dissoc passthrough-headers "authorization")
-                              :x-waiter-headers waiter-headers
-                              :log-level :warn})]
+                              :status http-400-bad-request
+                              :x-waiter-headers waiter-headers})]
   (defn compute-service-description
     "Computes the service description applying any processing rules,
      It also validates the services description.
@@ -1321,14 +1322,22 @@
                                      (get service-description-template "run-as-user"))]
       (when-not (seq user-service-description)
         (throw (ex-info (utils/message :cannot-identify-service)
-                        (error-message-map-fn passthrough-headers waiter-headers))))
+                        (-> (error-message-map-fn passthrough-headers waiter-headers)
+                          (assoc :error-class error-class-service-unidentified)))))
       (when (and (= "*" raw-run-as-user) raw-namespace (not= "*" raw-namespace))
         (throw (ex-info "Cannot use run-as-requester with a specific namespace"
-                        {:namespace raw-namespace :run-as-user raw-run-as-user :status http-400-bad-request :log-level :warn})))
+                        {:error-class error-class-service-misconfigured
+                         :namespace raw-namespace
+                         :run-as-user raw-run-as-user
+                         :status http-400-bad-request
+                         :log-level :warn})))
       (when-let [idle-timeout-mins-header (get waiter-headers (str headers/waiter-header-prefix "idle-timeout-mins"))]
         (when (zero? idle-timeout-mins-header)
           (throw (ex-info "idle-timeout-mins on-the-fly header configured to a value of zero is not supported"
-                          {:log-level :info :status http-400-bad-request :waiter-headers waiter-headers}))))
+                          {:error-class error-class-service-misconfigured
+                           :log-level :info
+                           :status http-400-bad-request
+                           :waiter-headers waiter-headers}))))
       (sling/try+
         (let [component->last-update-epoch-time (cond-> {}
                                                   (seq token->token-data)

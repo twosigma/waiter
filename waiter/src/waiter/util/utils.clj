@@ -296,7 +296,7 @@
 (def ^:const error-class->error-title
   {error-class-cors-preflight-forbidden "CORS Preflight Forbidden"
    error-class-cors-request-forbidden "CORS Request Forbidden"
-   error-class-deployment-error "Deployment Error"
+   error-class-deployment-error "Service Deployment Error"
    error-class-kerberos-negotiate "Kerberos Negotiate Error"
    error-class-kerberos-queue-length "Kerberos Queue Length Exceeded"
    error-class-maintenance "Service in Maintenance"
@@ -306,6 +306,8 @@
    error-class-stream-failure "Request Stream Failure"
    error-class-stream-timeout "Request Stream Timeout"
    error-class-service-forbidden "Service Forbidden"
+   error-class-service-misconfigured "Service Configured Incorrectly"
+   error-class-service-unidentified "Service Cannot be Identified"
    error-class-suspended "Service Suspended"
    error-class-unsupported-auth "Unsupported Authentication Method"})
 
