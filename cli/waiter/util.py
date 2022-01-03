@@ -12,6 +12,17 @@ TRUE_STRINGS = ('yes', 'true', 'y')
 FALSE_STRINGS = ('no', 'false', 'n')
 
 
+def get_in(obj, keys, default_value=None):
+    """Given a list of keys and a value, return the nested value in the object or the default"""
+    cur_node = obj
+    for key in keys:
+        if key in cur_node:
+            cur_node = cur_node[key]
+        else:
+            return default_value
+    return cur_node
+
+
 def update_in(obj, keys, value):
     """Given a list of keys and a value, return a new object with that value set"""
     cur_node = obj

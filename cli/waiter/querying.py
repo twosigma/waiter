@@ -59,9 +59,12 @@ def print_no_instances(service):
     print(f'Check the --include flags for active, failed, and killed instances.')
 
 
-def get_token_on_cluster(cluster, token_name, include_services=False):
+def get_token_on_cluster(cluster, token_name, include_services=False, include_deleted=False):
     """Gets the token with the given name on the given cluster"""
-    token_data, token_etag = get_token(cluster, token_name, include='metadata')
+    include_flags = ['metadata']
+    if include_deleted:
+        include_flags.append('deleted')
+    token_data, token_etag = get_token(cluster, token_name, include=include_flags)
     if token_data:
         data = {'count': 1, 'token': token_data, 'etag': token_etag}
         if include_services:
@@ -72,14 +75,14 @@ def get_token_on_cluster(cluster, token_name, include_services=False):
         return {'count': 0}
 
 
-def query_token(clusters, token, include_services=False):
+def query_token(clusters, token, include_services=False, include_deleted=False):
     """
     Uses query_across_clusters to make the token
     requests in parallel across the given clusters
     """
 
     def submit(cluster, executor):
-        return executor.submit(get_token_on_cluster, cluster, token, include_services)
+        return executor.submit(get_token_on_cluster, cluster, token, include_services, include_deleted)
 
     return query_across_clusters(clusters, submit)
 
@@ -176,6 +179,8 @@ def _get_latest_cluster(clusters, query_result):
     """
     token_descriptions = list(query_result['clusters'].values())
     token_result = max(token_descriptions, key=lambda token: token['token']['last-update-time'])
+    if token_result['token'].get('deleted', False):
+        return None
     cluster_name_goal = token_result['token']['cluster']
     provided_cluster_names = []
     for c in clusters:
@@ -195,7 +200,7 @@ def get_target_cluster_from_token(clusters, token_name, enforce_cluster):
     :param enforce_cluster: boolean describing if cluster was explicitly specified as an cli argument
     :return: Return the target cluster config for various token operations
     """
-    query_result = query_token(clusters, token_name)
+    query_result = query_token(clusters, token_name, include_deleted=True)
     if query_result["count"] == 0:
         raise Exception('The token does not exist. You must create it first.')
     elif enforce_cluster:
