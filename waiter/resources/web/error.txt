@@ -1,5 +1,5 @@
 
-Waiter Error <%= status %>
+<%= title %>
 ================
 
   <%= message %>

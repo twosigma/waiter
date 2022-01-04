@@ -103,6 +103,8 @@
 (def ^:const error-class-stream-failure "waiter.StreamFailure")
 (def ^:const error-class-stream-timeout "waiter.StreamTimeout")
 (def ^:const error-class-service-forbidden "waiter.ServiceForbidden")
+(def ^:const error-class-service-misconfigured "waiter.ServiceMisconfigured")
+(def ^:const error-class-service-unidentified "waiter.ServiceUnknown")
 (def ^:const error-class-suspended "waiter.Suspended")
 (def ^:const error-class-unsupported-auth "waiter.UnsupportedAuth")
 

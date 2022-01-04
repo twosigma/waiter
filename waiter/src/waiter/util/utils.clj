@@ -15,7 +15,6 @@
 ;;
 (ns waiter.util.utils
   (:require [clojure.core.async :as async]
-            [clojure.data.codec.base64 :as b64]
             [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.pprint :as pprint]
@@ -24,7 +23,6 @@
             [clojure.walk :as walk]
             [comb.template :as template]
             [digest]
-            [full.async :as fa]
             [taoensso.nippy :as nippy]
             [taoensso.nippy.compression :as compression]
             [waiter.status-codes :refer :all]
@@ -294,6 +292,25 @@
     (= "application/json" content-type) "application/json"
     :else "text/plain"))
 
+;; waiter error page titles
+(def ^:const error-class->error-title
+  {error-class-cors-preflight-forbidden "CORS Preflight Forbidden"
+   error-class-cors-request-forbidden "CORS Request Forbidden"
+   error-class-deployment-error "Service Deployment Error"
+   error-class-kerberos-negotiate "Waiter Auth Error: Kerberos Negotiate"
+   error-class-kerberos-queue-length "Waiter Auth Error: Kerberos Queue Length Exceeded"
+   error-class-maintenance "Service in Maintenance"
+   error-class-prestashed-tickets "Waiter Auth Error: Prestashed Tickets"
+   error-class-queue-length "Service Queue Length Exceeded"
+   error-class-request-timeout "Request Timeout"
+   error-class-stream-failure "Request Stream Failure"
+   error-class-stream-timeout "Request Stream Timeout"
+   error-class-service-forbidden "Service Forbidden"
+   error-class-service-misconfigured "Service Configured Incorrectly"
+   error-class-service-unidentified "Service Cannot be Identified"
+   error-class-suspended "Service Suspended"
+   error-class-unsupported-auth "Unsupported Authentication Method"})
+
 (defn- build-error-context
   "Creates a context from a data map and a request.
    The data map is expected to contain the following keys: details, message, and status."
@@ -301,7 +318,10 @@
    {:keys [headers query-string request-method request-time support-info uri] :as request}]
   (let [{:strs [host x-cid]} headers
         {:keys [authorization/principal descriptor instance]} (merge request details)
-        {:keys [service-id]} descriptor]
+        {:keys [service-id]} descriptor
+        {:keys [error-class]} details
+        error-title (or (error-class->error-title error-class)
+                        (str "Waiter Error " status))]
     {:cid x-cid
      :details details
      :host host
@@ -314,6 +334,7 @@
      :status status
      :support-info support-info
      :timestamp (du/date-to-str request-time)
+     :title error-title
      :uri uri}))
 
 (defn- build-maintenance-context
@@ -327,7 +348,7 @@
 
 (let [html-fn (template/fn
                 [{:keys [cid details host instance-id message principal query-string request-method
-                         service-id status support-info timestamp uri]}]
+                         service-id status support-info timestamp title uri]}]
                 (slurp (io/resource "web/error.html")))]
   (defn- render-error-html
     "Renders error html"
@@ -336,7 +357,7 @@
 
 (let [text-fn (template/fn
                 [{:keys [cid details host instance-id message principal query-string request-method
-                         service-id status support-info timestamp uri]}]
+                         service-id status support-info timestamp title uri]}]
                 (slurp (io/resource "web/error.txt")))]
   (defn- render-error-text
     "Renders error text"
