@@ -1175,6 +1175,14 @@
   [{scheduler-namespace :namespace} _ service-description {:keys [default-namespace override-namespace]}]
   (determine-namespace scheduler-namespace default-namespace override-namespace service-description))
 
+(defn retrieve-unique-service-mapping-token
+  "Returns thr unique token being used to access a service.
+   Returns nil if multiple (partial) tokens are being used to create the service."
+  [{:strs [env]}]
+  (when-let [waiter-config-token (get env "WAITER_CONFIG_TOKEN")]
+    (when (nil? (str/index-of waiter-config-token ","))
+      waiter-config-token)))
+
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
   [{:keys [cluster-name determine-replicaset-namespace-fn fileserver pod-base-port pod-sigkill-delay-secs
@@ -1260,19 +1268,21 @@
         service-hash (service-id->service-hash service-id)
         fileserver-predicate-fn (-> fileserver :predicate-fn)
         fileserver-enabled? (fileserver-predicate-fn scheduler service-id service-description context)
-        fileserver-label (if fileserver-enabled? "enabled" "disabled")]
+        fileserver-label (if fileserver-enabled? "enabled" "disabled")
+        waiter-config-token (retrieve-unique-service-mapping-token service-description)]
     (cond->
       {:kind "ReplicaSet"
        :apiVersion replicaset-api-version
-       :metadata {:annotations {:waiter/revision-timestamp revision-timestamp
-                                :waiter/revision-version revision-version
-                                :waiter/run-as-user-source run-as-user-source
-                                ;; Since there are length restrictions on Kubernetes label values,
-                                ;; we store just the 32-char hash portion of the service-id as a searchable label,
-                                ;; but store the full service-id as an annotation.
-                                ;; https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/#syntax-and-character-set
-                                ;; https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
-                                :waiter/service-id service-id}
+       :metadata {:annotations (cond-> {:waiter/revision-timestamp revision-timestamp
+                                        :waiter/revision-version revision-version
+                                        :waiter/run-as-user-source run-as-user-source
+                                        ;; Since there are length restrictions on Kubernetes label values,
+                                        ;; we store just the 32-char hash portion of the service-id as a searchable label,
+                                        ;; but store the full service-id as an annotation.
+                                        ;; https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/#syntax-and-character-set
+                                        ;; https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
+                                        :waiter/service-id service-id}
+                                 waiter-config-token (assoc :waiter/token waiter-config-token))
                   :labels {:app k8s-name
                            :waiter/cluster cluster-name
                            :waiter/fileserver fileserver-label
@@ -1284,13 +1294,14 @@
        :spec {:replicas min-instances
               :selector {:matchLabels {:app k8s-name
                                        :waiter/user run-as-user}}
-              :template {:metadata {:annotations {:waiter/port-count (str ports)
-                                                  :waiter/port-onto-protocol (utils/clj->json port->protocol)
-                                                  :waiter/revision-timestamp revision-timestamp
-                                                  :waiter/revision-version revision-version
-                                                  :waiter/run-as-user-source run-as-user-source
-                                                  :waiter/service-id service-id
-                                                  :waiter/service-port (str service-port)}
+              :template {:metadata {:annotations (cond-> {:waiter/port-count (str ports)
+                                                          :waiter/port-onto-protocol (utils/clj->json port->protocol)
+                                                          :waiter/revision-timestamp revision-timestamp
+                                                          :waiter/revision-version revision-version
+                                                          :waiter/run-as-user-source run-as-user-source
+                                                          :waiter/service-id service-id
+                                                          :waiter/service-port (str service-port)}
+                                                   waiter-config-token (assoc :waiter/token waiter-config-token))
                                     :labels {:app k8s-name
                                              :waiter/cluster cluster-name
                                              :waiter/fileserver fileserver-label

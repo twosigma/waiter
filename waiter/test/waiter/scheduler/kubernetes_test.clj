@@ -199,6 +199,35 @@
                 :waiter/service-port "8330"}
                (get-in replicaset-spec [:spec :template :metadata :annotations])))))))
 
+(deftest test-replicaset-and-pod-annotations-waiter-config-token-env
+  (let [current-time (t/now)
+        service-id "test-service-id"]
+    (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                  config/retrieve-waiter-principal (constantly "waiter@test.com")
+                  t/now (constantly current-time)]
+      (let [service-description dummy-service-description
+            scheduler (make-dummy-scheduler [service-id] {:service-id->service-description-fn (constantly service-description)})
+            rs-spec-builder-context {:run-as-user-source "unknown"}
+            replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description rs-spec-builder-context)]
+        (is (nil? (get-in replicaset-spec [:metadata :annotations :waiter/token])))
+        (is (nil? (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/token]))))
+
+      (doseq [waiter-config-token-env ["foo-bar" "foo.test.com"]]
+        (let [service-description (assoc-in dummy-service-description ["env" "WAITER_CONFIG_TOKEN"] waiter-config-token-env)
+              scheduler (make-dummy-scheduler [service-id] {:service-id->service-description-fn (constantly service-description)})
+              rs-spec-builder-context {:run-as-user-source "unknown"}
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description rs-spec-builder-context)]
+          (is (= waiter-config-token-env (get-in replicaset-spec [:metadata :annotations :waiter/token])))
+          (is (= waiter-config-token-env (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/token])))))
+
+      (let [waiter-config-token-env "foo.test.com,bar.test.com"
+            service-description (assoc-in dummy-service-description ["env" "WAITER_CONFIG_TOKEN"] waiter-config-token-env)
+            scheduler (make-dummy-scheduler [service-id] {:service-id->service-description-fn (constantly service-description)})
+            rs-spec-builder-context {:run-as-user-source "unknown"}
+            replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description rs-spec-builder-context)]
+        (is (nil? (get-in replicaset-spec [:metadata :annotations :waiter/token])))
+        (is (nil? (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/token])))))))
+
 (deftest test-replicaset-spec-termination-grace-period-secs
   (let [current-time (t/now)
         rs-spec-builder-context {:run-as-user-source "unknown"}]
