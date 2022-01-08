@@ -522,7 +522,7 @@
    Faulty services are detected based on no changes to the healthy/failed instances state past the `broken-service-timeout-mins` period, respectively.
    They are then deleted by the leader using the `delete-service` function.
    If an error occurs while deleting a service, there will be repeated attempts to delete it later."
-  [service-gc-go-routine query-state-fn scheduler
+  [service-gc-go-routine query-state-fn service-id->service-description-fn scheduler
    {:keys [broken-service-timeout-mins broken-service-min-hosts scheduler-gc-broken-service-interval-ms]}]
   (let [service->raw-data-fn (fn scheduler-broken-services-gc-service->raw-data-fn []
                                (let [{:keys [all-available-service-ids service-id->failed-instances
@@ -540,11 +540,15 @@
                                      (or failed-hosts-limit-reached (>= (count failed-instance-hosts) broken-service-min-hosts)))
                               (-> data (dissoc "failed-instance-hosts") (assoc "failed-hosts-limit-reached" true))
                               data))
-        gc-service?-fn (fn [_ {:keys [last-modified-time state]} current-time]
+        gc-service?-fn (fn [service-id {:keys [last-modified-time state]} current-time]
                          (and (false? (get state "has-healthy-instances" false))
                               (true? (get state "has-failed-instances" false))
                               (get state "failed-hosts-limit-reached" false)
-                              (let [gc-time (t/plus last-modified-time (t/minutes broken-service-timeout-mins))]
+                              (let [{:strs [grace-period-secs]} (service-id->service-description-fn service-id)
+                                    ;; include the grace period to allow enough time to elapse for replacement instance to become healthy
+                                    gc-time (-> last-modified-time
+                                              (t/plus (t/seconds grace-period-secs))
+                                              (t/plus (t/minutes broken-service-timeout-mins)))]
                                 (t/after? current-time gc-time))))
         perform-gc-fn (fn [service-id]
                         (log/info "deleting broken service" service-id)
