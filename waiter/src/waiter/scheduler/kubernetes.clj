@@ -1240,17 +1240,18 @@
         port->protocol (cond-> {(port->key service-port) actual-backend-proto}
                          health-check-port
                          (assoc (port->key health-check-port) actual-health-check-proto))
-        env (into [;; We set these two "MESOS_*" variables to improve interoperability.
-                   ;; New clients should prefer using WAITER_SANDBOX.
-                   {:name "MESOS_DIRECTORY" :value home-path}
-                   {:name "MESOS_SANDBOX" :value home-path}
-                   {:name "WAITER_SANDBOX" :value home-path}
-                   ;; Number of seconds to wait after receiving a sigterm
-                   ;; before sending a sigkill to the user's process.
-                   ;; This is handled by the waiter-k8s-init script,
-                   ;; separately from the pod's grace period,
-                   ;; in order to provide extra time for logs to sync to an s3 bucket.
-                   {:name "WAITER_GRACE_SECS" :value (str configured-pod-sigkill-delay-secs)}]
+        env (into (cond-> [;; We set these two "MESOS_*" variables to improve interoperability.
+                           ;; New clients should prefer using WAITER_SANDBOX.
+                           {:name "MESOS_DIRECTORY" :value home-path}
+                           {:name "MESOS_SANDBOX" :value home-path}
+                           {:name "WAITER_SANDBOX" :value home-path}
+                           ;; Number of seconds to wait after receiving a sigterm
+                           ;; before sending a sigkill to the user's process.
+                           ;; This is handled by the waiter-k8s-init script,
+                           ;; separately from the pod's grace period,
+                           ;; in order to provide extra time for logs to sync to an s3 bucket.
+                           {:name "WAITER_GRACE_SECS" :value (str configured-pod-sigkill-delay-secs)}]
+                    has-raven? (conj {:name "WAITER_RAVEN_PORT" :value (str service-port)}))
                   (concat
                     (for [[k v] base-env]
                       {:name k :value v})

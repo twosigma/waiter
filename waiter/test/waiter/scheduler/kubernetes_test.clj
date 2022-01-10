@@ -363,7 +363,11 @@
           (is (= service-port (get-in sidecar-container [:ports 0 :containerPort])))
           (is (= (str service-port) env-service-port))
           (is (= port0 (get-in app-container [:ports 0 :containerPort])))
-          (is (= (str port0) env-port0))))
+          (is (= (str port0) env-port0))
+
+          (testing "waiter and raven ports in main container"
+            (is (= (str port0) (get app-env "PORT0" "missing")))
+            (is (= (str service-port) (get app-env "WAITER_RAVEN_PORT" "missing"))))))
 
       (testing "waiter/port-count annotation is correct"
         (let [port-count (get service-description "ports")]
