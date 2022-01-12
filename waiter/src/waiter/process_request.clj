@@ -658,7 +658,7 @@
   (if trailers
     (let [correlation-id (cid/get-correlation-id)
           trailers-copy-ch (async/chan 1)
-          {:keys [grpc-status] :as grpc-headers} (select-keys headers ["grpc-message" "grpc-status"])]
+          {:strs [grpc-status] :as grpc-headers} (select-keys headers ["grpc-message" "grpc-status"])]
       (if (hu/grpc-status-success? grpc-status)
         (do
           (async/go
