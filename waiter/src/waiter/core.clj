@@ -1367,13 +1367,14 @@
                                 {:exit-chan exit-chan
                                  :maintainer maintainer}))
    :scheduler-broken-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn]
+                                          [:routines service-id->service-description-fn]
                                           [:scheduler scheduler]
                                           [:settings scheduler-gc-config]
                                           [:state clock leader?-fn]
                                           router-state-maintainer]
                                    (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                          service-gc-go-routine (partial service-gc-go-routine gc-state-reader-fn gc-state-writer-fn leader?-fn clock)]
-                                     (scheduler/scheduler-broken-services-gc service-gc-go-routine query-state-fn scheduler scheduler-gc-config)))
+                                     (scheduler/scheduler-broken-services-gc service-gc-go-routine query-state-fn service-id->service-description-fn scheduler scheduler-gc-config)))
    :scheduler-services-gc (pc/fnk [[:curator gc-state-reader-fn gc-state-writer-fn]
                                    [:routines router-metrics-helpers service->gc-time-fn]
                                    [:scheduler scheduler]
