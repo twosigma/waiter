@@ -251,8 +251,15 @@
                   chunked-body-str (str (:body chunked-resp))
                   chunked-body-json (try-parse-json chunked-body-str)]
               (is (= request-length (get-in chunked-body-json ["request-length"])) chunked-body-str)
-              (is (= "chunked" (get-in chunked-body-json ["headers" "transfer-encoding"])) chunked-body-str)
-              (is (nil? (get-in chunked-body-json ["headers" "content-length"])) chunked-body-str)))))
+              (let [request-content-length (get-in chunked-body-json ["headers" "content-length"])]
+                ;; depending upon timing of chunks jetty may compress the body into a known length request
+                (if request-content-length
+                  (do
+                    (is (nil? (get-in chunked-body-json ["headers" "transfer-encoding"])) chunked-body-str)
+                    (is (= (str request-length) request-content-length) chunked-body-str))
+                  (do
+                    (is (= "chunked" (get-in chunked-body-json ["headers" "transfer-encoding"])) chunked-body-str)
+                    (is (nil? request-content-length) chunked-body-str))))))))
 
       (testing "large header"
         (let [all-chars (map char (range 33 127))
