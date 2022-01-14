@@ -79,7 +79,9 @@ def show(clusters, args, _, enforce_cluster):
         display_data(args, query_result)
     elif enforce_cluster:
         for cluster_name, entities in query_result['clusters'].items():
-            print(tabulate_token(cluster_name, entities['token'], token_name, entities.get('services', []), entities['etag']))
+            services = [{'cluster': cluster_name, **service}
+                        for service in entities.get('services', [])]
+            print(tabulate_token(cluster_name, entities['token'], token_name, services, entities['etag']))
             print()
     else:
         clusters_in_result = [cluster

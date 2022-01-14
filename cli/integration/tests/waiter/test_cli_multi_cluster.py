@@ -64,7 +64,7 @@ class MultiWaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url_1, token_name)
 
-    def __test_show_single_cluster_group(self, no_services=False):
+    def __test_show_single_cluster_group(self, no_services=False, enforce_cluster=False):
         config = {'clusters': [{'name': 'waiter1',
                                 'url': self.waiter_url_1,
                                 'default-for-create': True,
@@ -84,9 +84,14 @@ class MultiWaiterCliTest(util.WaiterTest):
             try:
                 service_id_2 = util.ping_token(self.waiter_url_2, token_name)
                 with cli.temp_config_file(config) as path:
-                    cp = cli.show(token_name=token_name, flags='--config %s' % path, show_flags='--no-services' if no_services else '')
+                    show_flags = '--no-services' if no_services else ''
+                    cli_flags = f'--config {path}' + (' --cluster waiter1' if enforce_cluster else '')
+                    cp = cli.show(token_name=token_name, flags=cli_flags, show_flags=show_flags)
                     self.assertEqual(0, cp.returncode, cp.stderr)
-                    self.assertIn(f'production / {token_name}', cli.stdout(cp))
+                    if enforce_cluster:
+                        self.assertIn(f'waiter1 / {token_name}', cli.stdout(cp))                    
+                    else:
+                        self.assertIn(f'production / {token_name}', cli.stdout(cp))
                     self.assertIn(version_1, cli.stdout(cp))
                     self.assertEqual(1, cli.stdout(cp).count(token_name))
 
@@ -94,15 +99,26 @@ class MultiWaiterCliTest(util.WaiterTest):
                         self.assertNotIn(service_id_1, cli.stdout(cp))
                         self.assertNotIn(service_id_2, cli.stdout(cp))
                     else:
+                        if enforce_cluster:
+                            expected_service_count = 1
+                            expected_inst_count = 1
+                            expected_total_mem = token_1['mem']
+                            expected_total_cpus = token_1['cpus']
+                        else:
+                            expected_service_count = 2
+                            expected_inst_count = 2
+                            expected_total_mem = token_1["mem"] + token_2["mem"]
+                            expected_total_cpus = token_1["cpus"] + token_2["cpus"]
+                            self.assertEqual(1, cli.stdout(cp).count(service_id_2))
+                            self.assertIsNotNone(re.search(f'^{service_id_2}\\s+waiter2[^\\n]+Running[^\\n]+Not Current$', cli.stdout(cp), re.MULTILINE))
+
+                        self.assertIsNotNone(re.search(f'^# Services\\s+{expected_service_count}$', cli.stdout(cp), re.MULTILINE))
+                        self.assertIsNotNone(re.search(f'^# Failing\\s+0$', cli.stdout(cp), re.MULTILINE))
+                        self.assertIsNotNone(re.search(f'^# Instances\\s+{expected_inst_count}$', cli.stdout(cp), re.MULTILINE))
+                        self.assertIsNotNone(re.search(f'^Total Memory\\s+{expected_total_mem} MiB$', cli.stdout(cp), re.MULTILINE))
+                        self.assertIsNotNone(re.search(f'^Total CPUs\\s+{expected_total_cpus}$', cli.stdout(cp), re.MULTILINE))
                         self.assertEqual(1, cli.stdout(cp).count(service_id_1))
-                        self.assertEqual(1, cli.stdout(cp).count(service_id_2))
-                        self.assertIsNotNone(re.search('^# Services\\s+2$', cli.stdout(cp), re.MULTILINE))
-                        self.assertIsNotNone(re.search('^# Failing\\s+0$', cli.stdout(cp), re.MULTILINE))
-                        self.assertIsNotNone(re.search('^# Instances\\s+2$', cli.stdout(cp), re.MULTILINE))
-                        self.assertIsNotNone(re.search(f'^Total Memory\\s+{token_1["mem"] + token_2["mem"]} MiB$', cli.stdout(cp), re.MULTILINE))
-                        self.assertIsNotNone(re.search(f'^Total CPUs\\s+{token_1["cpus"] + token_2["cpus"]}$', cli.stdout(cp), re.MULTILINE))
                         self.assertIsNotNone(re.search(f'^{service_id_1}\\s+waiter1[^\\n]+Running[^\\n]+Current$', cli.stdout(cp), re.MULTILINE))
-                        self.assertIsNotNone(re.search(f'^{service_id_2}\\s+waiter2[^\\n]+Running[^\\n]+Not Current$', cli.stdout(cp), re.MULTILINE))
             finally:
                 util.delete_token(self.waiter_url_2, token_name, assert_response=True, kill_services=True)
         finally:
@@ -113,8 +129,11 @@ class MultiWaiterCliTest(util.WaiterTest):
 
     def test_show_single_cluster_group_no_services(self):
         self.__test_show_single_cluster_group(no_services=True)
+    
+    def test_show_single_cluster_group_enforce_cluster(self):
+        self.__test_show_single_cluster_group(enforce_cluster=True)
 
-    def __test_show_multiple_cluster_groups(self, no_services=False):
+    def __test_show_multiple_cluster_groups(self, no_services=False, enforce_cluster=False):
         config = {'clusters': [{'name': 'waiter1',
                                 'url': self.waiter_url_1,
                                 'default-for-create': True,
@@ -134,27 +153,36 @@ class MultiWaiterCliTest(util.WaiterTest):
             try:
                 service_id_2 = util.ping_token(self.waiter_url_2, token_name)
                 with cli.temp_config_file(config) as path:
-                    cp = cli.show(token_name=token_name, flags='--config %s' % path, show_flags='--no-services' if no_services else '')
+                    show_flags = '--no-services' if no_services else ''
+                    cli_flags = f'--config {path}' + (' --cluster waiter1' if enforce_cluster else '')
+                    cp = cli.show(token_name=token_name, flags=cli_flags, show_flags=show_flags)
                     self.assertEqual(0, cp.returncode, cp.stderr)
-                    self.assertIn(f'production / {token_name}', cli.stdout(cp))
-                    self.assertIn(f'staging / {token_name}', cli.stdout(cp))
                     self.assertEqual(1, len(re.findall(f'^Version\\s+{version_1}$', cli.stdout(cp), re.MULTILINE)))
-                    self.assertEqual(1, len(re.findall(f'^Version\\s+{version_2}$', cli.stdout(cp), re.MULTILINE)))
-                    self.assertEqual(2, cli.stdout(cp).count(token_name))
-
+                    if enforce_cluster:
+                        expected_token_count = 1
+                        self.assertIn(f'waiter1 / {token_name}', cli.stdout(cp))
+                        self.assertEqual(1, cli.stdout(cp).count(token_name))
+                    else:
+                        expected_token_count = 2
+                        self.assertIn(f'production / {token_name}', cli.stdout(cp))
+                        self.assertIn(f'staging / {token_name}', cli.stdout(cp))
+                        self.assertEqual(1, len(re.findall(f'^Version\\s+{version_2}$', cli.stdout(cp), re.MULTILINE)))
+                        self.assertEqual(2, cli.stdout(cp).count(token_name))
                     if no_services:
                         self.assertNotIn(service_id_1, cli.stdout(cp))
                         self.assertNotIn(service_id_2, cli.stdout(cp))
                     else:
                         self.assertEqual(1, cli.stdout(cp).count(service_id_1))
-                        self.assertEqual(1, cli.stdout(cp).count(service_id_2))
-                        self.assertEqual(2, len(re.findall('^# Services\\s+1$', cli.stdout(cp), re.MULTILINE)))
-                        self.assertEqual(2, len(re.findall('^# Failing\\s+0$', cli.stdout(cp), re.MULTILINE)))
-                        self.assertEqual(2, len(re.findall('^# Instances\\s+1$', cli.stdout(cp), re.MULTILINE)))
-                        self.assertEqual(2, len(re.findall(f'^Total Memory\\s+{token_1["mem"]} MiB$', cli.stdout(cp), re.MULTILINE)))
-                        self.assertEqual(2, len(re.findall(f'^Total CPUs\\s+{token_1["cpus"]}$', cli.stdout(cp), re.MULTILINE)))
+                        self.assertEqual(expected_token_count, len(re.findall('^# Services\\s+1$', cli.stdout(cp), re.MULTILINE)))
+                        self.assertEqual(expected_token_count, len(re.findall('^# Failing\\s+0$', cli.stdout(cp), re.MULTILINE)))
+                        self.assertEqual(expected_token_count, len(re.findall('^# Instances\\s+1$', cli.stdout(cp), re.MULTILINE)))
+                        self.assertEqual(expected_token_count, len(re.findall(f'^Total Memory\\s+{token_1["mem"]} MiB$', cli.stdout(cp), re.MULTILINE)))
+                        self.assertEqual(expected_token_count, len(re.findall(f'^Total CPUs\\s+{token_1["cpus"]}$', cli.stdout(cp), re.MULTILINE)))
                         self.assertIsNotNone(re.search(f'^{service_id_1}\\s+waiter1[^\\n]+Running[^\\n]+Current$', cli.stdout(cp), re.MULTILINE))
-                        self.assertIsNotNone(re.search(f'^{service_id_2}\\s+waiter2[^\\n]+Running[^\\n]+Current$', cli.stdout(cp), re.MULTILINE))
+                        if not enforce_cluster:
+                            self.assertEqual(1, cli.stdout(cp).count(service_id_2))
+                            self.assertEqual(1, cli.stdout(cp).count(service_id_2))
+                            self.assertIsNotNone(re.search(f'^{service_id_2}\\s+waiter2[^\\n]+Running[^\\n]+Current$', cli.stdout(cp), re.MULTILINE))
             finally:
                 util.delete_token(self.waiter_url_2, token_name, assert_response=True, kill_services=True)
         finally:
@@ -165,6 +193,9 @@ class MultiWaiterCliTest(util.WaiterTest):
 
     def test_show_multiple_cluster_groups_no_services(self):
         self.__test_show_multiple_cluster_groups(no_services=True)
+
+    def test_show_multiple_cluster_groups_enforce_cluster(self):
+        self.__test_show_multiple_cluster_groups(enforce_cluster=True)
 
     def test_federated_delete(self):
         # Create in cluster #1
