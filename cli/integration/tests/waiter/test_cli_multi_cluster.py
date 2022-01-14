@@ -94,7 +94,6 @@ class MultiWaiterCliTest(util.WaiterTest):
                         self.assertIn(f'production / {token_name}', cli.stdout(cp))
                     self.assertIn(version_1, cli.stdout(cp))
                     self.assertEqual(1, cli.stdout(cp).count(token_name))
-
                     if no_services:
                         self.assertNotIn(service_id_1, cli.stdout(cp))
                         self.assertNotIn(service_id_2, cli.stdout(cp))
@@ -111,7 +110,6 @@ class MultiWaiterCliTest(util.WaiterTest):
                             expected_total_cpus = token_1["cpus"] + token_2["cpus"]
                             self.assertEqual(1, cli.stdout(cp).count(service_id_2))
                             self.assertIsNotNone(re.search(f'^{service_id_2}\\s+waiter2[^\\n]+Running[^\\n]+Not Current$', cli.stdout(cp), re.MULTILINE))
-
                         self.assertIsNotNone(re.search(f'^# Services\\s+{expected_service_count}$', cli.stdout(cp), re.MULTILINE))
                         self.assertIsNotNone(re.search(f'^# Failing\\s+0$', cli.stdout(cp), re.MULTILINE))
                         self.assertIsNotNone(re.search(f'^# Instances\\s+{expected_inst_count}$', cli.stdout(cp), re.MULTILINE))
