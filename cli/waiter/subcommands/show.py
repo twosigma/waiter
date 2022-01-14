@@ -75,7 +75,7 @@ def show(clusters, args, _, __):
     include_services = not args.get('no-services')
 
     query_result = query_token(clusters, token_name, include_services=include_services)
-
+    # TODO: what if --cluster is specified?
     if as_json or as_yaml:
         display_data(args, query_result)
     else:
@@ -94,7 +94,7 @@ def show(clusters, args, _, __):
             entities = query_result['clusters'][primary_cluster['name']]
             all_services_in_cluster_group = [{'cluster': cluster['name'], **service}
                                              for cluster in cluster_group_clusters
-                                             for service in query_result['clusters'][cluster['name']]['services']]
+                                             for service in query_result['clusters'][cluster['name']].get('services', [])]
             print(tabulate_token(cluster_group_name, entities['token'], token_name, all_services_in_cluster_group, entities['etag']))
             print()
 

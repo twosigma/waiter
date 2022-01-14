@@ -1,7 +1,9 @@
 import logging
 import os
+from sys import version
 import unittest
 import uuid
+import re
 
 import pytest
 
@@ -61,6 +63,108 @@ class MultiWaiterCliTest(util.WaiterTest):
                     util.delete_token(self.waiter_url_2, token_name)
         finally:
             util.delete_token(self.waiter_url_1, token_name)
+
+    def __test_show_single_cluster_group(self, no_services=False):
+        config = {'clusters': [{'name': 'waiter1',
+                                'url': self.waiter_url_1,
+                                'default-for-create': True,
+                                'sync-group': 'production'},
+                               {'name': 'waiter2',
+                                'url': self.waiter_url_2,
+                                'sync-group': 'production'}]}
+        token_name = self.token_name()
+        version_1 = str(uuid.uuid4())
+        token_1 = util.minimal_service_description(**{'cluster': 'waiter1', 'version': version_1})
+        util.post_token(self.waiter_url_1, token_name, token_1, update_mode_admin=True)
+        try:
+            service_id_1 = util.ping_token(self.waiter_url_1, token_name)
+            version_2 = str(uuid.uuid4())
+            token_2 = util.minimal_service_description(**{'cluster': 'waiter1', 'version': version_2})
+            util.post_token(self.waiter_url_2, token_name, token_2, update_mode_admin=True)
+            try:
+                service_id_2 = util.ping_token(self.waiter_url_2, token_name)
+                with cli.temp_config_file(config) as path:
+                    cp = cli.show(token_name=token_name, flags='--config %s' % path, show_flags='--no-services' if no_services else '')
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    self.assertIn(f'production / {token_name}', cli.stdout(cp))
+                    self.assertIn(version_1, cli.stdout(cp))
+                    self.assertEqual(1, cli.stdout(cp).count(token_name))
+
+                    if no_services:
+                        self.assertNotIn(service_id_1, cli.stdout(cp))
+                        self.assertNotIn(service_id_2, cli.stdout(cp))
+                    else:
+                        self.assertEqual(1, cli.stdout(cp).count(service_id_1))
+                        self.assertEqual(1, cli.stdout(cp).count(service_id_2))
+                        self.assertIsNotNone(re.search('^# Services\\s+2$', cli.stdout(cp), re.MULTILINE))
+                        self.assertIsNotNone(re.search('^# Failing\\s+0$', cli.stdout(cp), re.MULTILINE))
+                        self.assertIsNotNone(re.search('^# Instances\\s+2$', cli.stdout(cp), re.MULTILINE))
+                        self.assertIsNotNone(re.search(f'^Total Memory\\s+{token_1["mem"] + token_2["mem"]} MiB$', cli.stdout(cp), re.MULTILINE))
+                        self.assertIsNotNone(re.search(f'^Total CPUs\\s+{token_1["cpus"] + token_2["cpus"]}$', cli.stdout(cp), re.MULTILINE))
+                        self.assertIsNotNone(re.search(f'^{service_id_1}\\s+waiter1[^\\n]+Running[^\\n]+Current$', cli.stdout(cp), re.MULTILINE))
+                        self.assertIsNotNone(re.search(f'^{service_id_2}\\s+waiter2[^\\n]+Running[^\\n]+Not Current$', cli.stdout(cp), re.MULTILINE))
+            finally:
+                util.delete_token(self.waiter_url_2, token_name, assert_response=True, kill_services=True)
+        finally:
+            util.delete_token(self.waiter_url_1, token_name, assert_response=True, kill_services=True)
+
+    def test_show_single_cluster_group(self):
+        self.__test_show_single_cluster_group()
+
+    def test_show_single_cluster_group_no_services(self):
+        self.__test_show_single_cluster_group(no_services=True)
+
+    def __test_show_multiple_cluster_groups(self, no_services=False):
+        config = {'clusters': [{'name': 'waiter1',
+                                'url': self.waiter_url_1,
+                                'default-for-create': True,
+                                'sync-group': 'production'},
+                               {'name': 'waiter2',
+                                'url': self.waiter_url_2,
+                                'sync-group': 'staging'}]}
+        token_name = self.token_name()
+        version_1 = str(uuid.uuid4())
+        token_1 = util.minimal_service_description(**{'cluster': 'waiter1', 'version': version_1})
+        util.post_token(self.waiter_url_1, token_name, token_1, update_mode_admin=True)
+        try:
+            service_id_1 = util.ping_token(self.waiter_url_1, token_name)
+            version_2 = str(uuid.uuid4())
+            token_2 = util.minimal_service_description(**{'cluster': 'waiter2', 'version': version_2})
+            util.post_token(self.waiter_url_2, token_name, token_2, update_mode_admin=True)
+            try:
+                service_id_2 = util.ping_token(self.waiter_url_2, token_name)
+                with cli.temp_config_file(config) as path:
+                    cp = cli.show(token_name=token_name, flags='--config %s' % path, show_flags='--no-services' if no_services else '')
+                    self.assertEqual(0, cp.returncode, cp.stderr)
+                    self.assertIn(f'production / {token_name}', cli.stdout(cp))
+                    self.assertIn(f'staging / {token_name}', cli.stdout(cp))
+                    self.assertEqual(1, len(re.findall(f'^Version\\s+{version_1}$', cli.stdout(cp), re.MULTILINE)))
+                    self.assertEqual(1, len(re.findall(f'^Version\\s+{version_2}$', cli.stdout(cp), re.MULTILINE)))
+                    self.assertEqual(2, cli.stdout(cp).count(token_name))
+
+                    if no_services:
+                        self.assertNotIn(service_id_1, cli.stdout(cp))
+                        self.assertNotIn(service_id_2, cli.stdout(cp))
+                    else:
+                        self.assertEqual(1, cli.stdout(cp).count(service_id_1))
+                        self.assertEqual(1, cli.stdout(cp).count(service_id_2))
+                        self.assertEqual(2, len(re.findall('^# Services\\s+1$', cli.stdout(cp), re.MULTILINE)))
+                        self.assertEqual(2, len(re.findall('^# Failing\\s+0$', cli.stdout(cp), re.MULTILINE)))
+                        self.assertEqual(2, len(re.findall('^# Instances\\s+1$', cli.stdout(cp), re.MULTILINE)))
+                        self.assertEqual(2, len(re.findall(f'^Total Memory\\s+{token_1["mem"]} MiB$', cli.stdout(cp), re.MULTILINE)))
+                        self.assertEqual(2, len(re.findall(f'^Total CPUs\\s+{token_1["cpus"]}$', cli.stdout(cp), re.MULTILINE)))
+                        self.assertIsNotNone(re.search(f'^{service_id_1}\\s+waiter1[^\\n]+Running[^\\n]+Current$', cli.stdout(cp), re.MULTILINE))
+                        self.assertIsNotNone(re.search(f'^{service_id_2}\\s+waiter2[^\\n]+Running[^\\n]+Current$', cli.stdout(cp), re.MULTILINE))
+            finally:
+                util.delete_token(self.waiter_url_2, token_name, assert_response=True, kill_services=True)
+        finally:
+            util.delete_token(self.waiter_url_1, token_name, assert_response=True, kill_services=True)
+
+    def test_show_multiple_cluster_groups(self):
+        self.__test_show_multiple_cluster_groups()
+
+    def test_show_multiple_cluster_groups_no_services(self):
+        self.__test_show_multiple_cluster_groups(no_services=True)
 
     def test_federated_delete(self):
         # Create in cluster #1
