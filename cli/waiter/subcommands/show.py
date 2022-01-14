@@ -10,7 +10,7 @@ from waiter.querying import get_target_cluster_from_token, print_no_data, query_
 from waiter.util import guard_no_cluster
 
 
-def tabulate_token(cluster_name, token, token_name, services, token_etag):
+def tabulate_token(cluster_or_cluster_group_name, token, token_name, services, token_etag):
     """Given a token, returns a string containing tables for the fields"""
     table = [['Owner', token['owner']]]
     if token.get('name'):
@@ -55,7 +55,7 @@ def tabulate_token(cluster_name, token, token_name, services, token_etag):
                     'Current?']
     service_table, _ = tabulate_token_services(services, token_name, token_etag=token_etag, column_names=column_names)
     return f'\n' \
-        f'=== {terminal.bold(cluster_name)} / {terminal.bold(token_name)} ===\n' \
+        f'=== {terminal.bold(cluster_or_cluster_group_name)} / {terminal.bold(token_name)} ===\n' \
         f'\n' \
         f'Last Updated: {last_update_time}{last_update_user}\n' \
         f'\n' \
@@ -66,7 +66,7 @@ def tabulate_token(cluster_name, token, token_name, services, token_etag):
         f'{service_table}'
 
 
-def show(clusters, args, _, __):
+def show(clusters, args, _, enforce_cluster):
     """Prints info for the token with the given token name."""
     guard_no_cluster(clusters)
     as_json = args.get('json')
@@ -75,15 +75,19 @@ def show(clusters, args, _, __):
     include_services = not args.get('no-services')
 
     query_result = query_token(clusters, token_name, include_services=include_services)
-    # TODO: what if --cluster is specified?
     if as_json or as_yaml:
         display_data(args, query_result)
+    elif enforce_cluster:
+        cluster_name = clusters[0]['name']
+        entities = query_result['clusters'][cluster_name]
+        print(tabulate_token(cluster_name, entities['token'], token_name, entities.get('services', []), entities['etag']))
+        print()
     else:
         clusters_in_result = [cluster
                               for cluster in clusters
                               if cluster['name'] in query_result['clusters']]
         def add_cluster_to_cluster_group_dict(cluster_groups, cluster):
-            cluster_name = cluster.get('name')
+            cluster_name = cluster['name']
             cluster_group_name = cluster.get('sync-group', cluster_name)
             clusters_in_group = [*cluster_groups.get(cluster_group_name, []), cluster]
             return {**cluster_groups, f'{cluster_group_name}': clusters_in_group}
