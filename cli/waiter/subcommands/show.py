@@ -78,10 +78,9 @@ def show(clusters, args, _, enforce_cluster):
     if as_json or as_yaml:
         display_data(args, query_result)
     elif enforce_cluster:
-        cluster_name = clusters[0]['name']
-        entities = query_result['clusters'][cluster_name]
-        print(tabulate_token(cluster_name, entities['token'], token_name, entities.get('services', []), entities['etag']))
-        print()
+        for cluster_name, entities in query_result['clusters'].items():
+            print(tabulate_token(cluster_name, entities['token'], token_name, entities.get('services', []), entities['etag']))
+            print()
     else:
         clusters_in_result = [cluster
                               for cluster in clusters
