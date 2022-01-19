@@ -149,6 +149,9 @@
 (def ^:const service-parameter-keys
   (set/union service-override-keys service-non-override-keys))
 
+; keys in service description metadata that need a deep merge
+(def ^:const service-deep-merge-keys #{"env" "metadata"})
+
 ; keys allowed in service description metadata, these need to be distinct from service parameter keys
 (def ^:const service-metadata-keys #{})
 
@@ -390,6 +393,21 @@
            (> default-min-instances max-instances))
       (assoc "min-instances" (max max-instances minimum-min-instances)))))
 
+(defn- merge-parameters
+  "Merges the default and provided parameters.
+   Parameters in the `service-deep-merge-keys` sequence are deep merged, other parameters are shallow merged."
+  [default-params provided-params]
+  (loop [[parameter-key & remaining-parameter-keys] service-deep-merge-keys
+         loop-params (merge default-params provided-params)]
+    (if (some? parameter-key)
+      (let [default-param-value (get default-params parameter-key)
+            provided-param-value (get provided-params parameter-key)]
+        (recur remaining-parameter-keys
+               (cond-> loop-params
+                 (and (map? default-param-value) (map? provided-param-value))
+                 (assoc parameter-key (merge default-param-value provided-param-value)))))
+      loop-params)))
+
 (defn- compute-profile-defaults
   "Returns the default parameters for the specified allowed-keys in the profile.
    Throws an error if the profile is not supported.
@@ -403,7 +421,7 @@
             profile-parameters (select-keys profile-defaults allowed-keys)]
         (-> config-defaults
           (adjust-default-min-instances profile-parameters)
-          (merge profile-parameters))))))
+          (merge-parameters profile-parameters))))))
 
 (defn compute-service-defaults
   "Returns the default service parameters for the specified profile.
@@ -427,7 +445,7 @@
   (-> service-description-defaults
     (compute-service-defaults profile->defaults profile)
     (adjust-default-min-instances service-description-without-defaults)
-    (merge service-description-without-defaults)
+    (merge-parameters service-description-without-defaults)
     (metric-group-filter metric-group-mappings)))
 
 (defn default-and-override
@@ -1045,14 +1063,14 @@
        (-> run-as-user str/blank? not)
        (required-keys-present? description)))
 
-(defn- token-sequence->merged-data
+(defn token-sequence->merged-data
   "Computes the merged token-data using the provided token-sequence and token->token-data mapping.
    It removes the metadata keys from the returned result."
   [token->token-data token-sequence]
   (loop [loop-token-data {}
          [token & remaining-tokens] token-sequence]
     (if token
-      (recur (merge loop-token-data (token->token-data token))
+      (recur (merge-parameters loop-token-data (token->token-data token))
              remaining-tokens)
       loop-token-data)))
 
