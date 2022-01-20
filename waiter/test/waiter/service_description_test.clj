@@ -2660,6 +2660,36 @@
       (is (nil? (name->metric-group [[#"bar" "baz"]] "foo"))))))
 
 (deftest test-merge-defaults-into-service-description
+  (testing "deep-merge of env and metadata"
+    (let [service-description-defaults {"env" {"AFFINITY" "none"}
+                                        "mem" 2048}
+          profile->defaults {"basic" {"cpus" 1
+                                      "mem" 1024}
+                             "rpc" {"env" {"REGION" "west" "ZONE" "lax"}
+                                    "metadata" {"style" "grpc"}
+                                    "service-mapping" "legacy"}
+                             "service" {"concurrency-level" 30
+                                        "env" {"REGION" "central"}
+                                        "permitted-user" "*"}
+                             "webapp" {"concurrency-level" 120
+                                       "env" {"REGION" "east"}
+                                       "metadata" {"framework" "spring" "type" "webapp"}}}
+          metric-group-mappings [[#"r.*" "bar"]]]
+      (is (= {"cpus" 3 "env" {"AFFINITY" "none"} "mem" 2048 "metric-group" "other" "permitted-user" "john.doe" "version" "v1"}
+             (-> {"cpus" 3 "permitted-user" "john.doe" "version" "v1"}
+               (merge-defaults service-description-defaults profile->defaults metric-group-mappings))))
+      (is (= {"cpus" 3 "env" {"AFFINITY" "none"} "mem" 1024 "metric-group" "other" "permitted-user" "john.doe" "profile" "basic"}
+             (-> {"cpus" 3 "permitted-user" "john.doe" "profile" "basic"}
+               (merge-defaults service-description-defaults profile->defaults metric-group-mappings))))
+      (is (= {"cpus" 3 "env" {"AFFINITY" "none" "REGION" "west" "ZONE" "lax"} "mem" 2048 "metadata" {"style" "grpc"} "metric-group" "other" "permitted-user" "john.doe" "profile" "rpc"}
+             (-> {"cpus" 3 "permitted-user" "john.doe" "profile" "rpc"}
+               (merge-defaults service-description-defaults profile->defaults metric-group-mappings))))
+      (is (= {"concurrency-level" 30 "cpus" 3 "env" {"AFFINITY" "none" "REGION" "central"} "mem" 2048 "metric-group" "other" "permitted-user" "john.doe" "profile" "service"}
+             (-> {"cpus" 3 "permitted-user" "john.doe" "profile" "service"}
+               (merge-defaults service-description-defaults profile->defaults metric-group-mappings))))
+      (is (= {"concurrency-level" 120 "cpus" 3 "env" {"AFFINITY" "none" "REGION" "east"} "mem" 2048 "metadata" {"framework" "spring" "type" "webapp"} "metric-group" "other" "permitted-user" "john.doe" "profile" "webapp"}
+             (-> {"cpus" 3 "permitted-user" "john.doe" "profile" "webapp"}
+               (merge-defaults service-description-defaults profile->defaults metric-group-mappings))))))
   (testing "Merging defaults into service description"
     (let [profile->defaults {"webapp" {"concurrency-level" 120
                                        "fallback-period-secs" 100}}
@@ -2810,6 +2840,16 @@
       "We found common elements in system-metadata-keys and user-metadata-keys!")
   (is (empty? (set/intersection service-description-keys token-metadata-keys))
       "We found common elements in service-description-keys and token-metadata-keys!"))
+
+(deftest test-service-deep-merge-keys-constraints
+  (is (set/subset? service-deep-merge-keys service-description-keys)
+      "We found uncommon elements in service-description-keys and service-deep-merge-keys!")
+  (is (empty? (set/intersection service-deep-merge-keys user-metadata-keys))
+      "We found common elements in service-deep-merge-keys and user-metadata-keys!")
+  (is (empty? (set/intersection service-deep-merge-keys system-metadata-keys))
+      "We found common elements in service-deep-merge-keys and system-metadata-keys!")
+  (is (empty? (set/intersection service-deep-merge-keys token-metadata-keys))
+      "We found common elements in service-deep-merge-keys and token-metadata-keys!"))
 
 (deftest test-default-service-description-builder-validate
   (let [constraints {"cpus" {:max 100}
@@ -3577,3 +3617,61 @@
   (is (= 20 (retrieve-most-recent-component-update-time {:fee 10 :fie 20 :foe nil})))
   (is (= 30 (retrieve-most-recent-component-update-time {:fee 10 :fie 30 :foe 20})))
   (is (= 30 (retrieve-most-recent-component-update-time {:fee 10 :fie 20 :foe 30}))))
+
+(deftest test-token-sequence->merged-data
+  (let [token->token-data {"basic" {"cpus" 1
+                                    "mem" 1024}
+                           "rpc" {"env" {"REGION" "west" "ZONE" "lax"}
+                                  "fallback-period-secs" 300
+                                  "metadata" {"style" "grpc"}
+                                  "service-mapping" "legacy"}
+                           "service" {"concurrency-level" 30
+                                      "env" {"REGION" "central"}
+                                      "fallback-period-secs" 90
+                                      "permitted-user" "*"}
+                           "webapp" {"concurrency-level" 120
+                                     "env" {"REGION" "east"}
+                                     "fallback-period-secs" 100
+                                     "metadata" {"framework" "spring" "type" "webapp"}}}]
+    (is (= {} (token-sequence->merged-data token->token-data [])))
+    (doseq [token (keys token->token-data)]
+      (is (= (get token->token-data token) (token-sequence->merged-data token->token-data [token]))))
+    (doseq [token (keys token->token-data)]
+      (when-not (= token "basic")
+        (is (= (merge (get token->token-data "basic")  (get token->token-data token) )
+               (token-sequence->merged-data token->token-data ["basic" token])))
+        (is (= (merge (get token->token-data "basic")  (get token->token-data token) )
+               (token-sequence->merged-data token->token-data [token "basic"])))))
+    (is (= {"concurrency-level" 30
+            "cpus" 1
+            "env" {"REGION" "central"}
+            "fallback-period-secs" 90
+            "mem" 1024
+            "permitted-user" "*"}
+           (token-sequence->merged-data token->token-data ["basic" "service"])))
+    (is (= {"concurrency-level" 30
+            "env" {"REGION" "central"}
+            "fallback-period-secs" 90
+            "metadata" {"framework" "spring" "type" "webapp"}
+            "permitted-user" "*"}
+           (token-sequence->merged-data token->token-data ["webapp" "service"])))
+    (is (= {"concurrency-level" 120
+            "env" {"REGION" "east"}
+            "fallback-period-secs" 100
+            "metadata" {"framework" "spring" "type" "webapp"}
+            "permitted-user" "*"}
+           (token-sequence->merged-data token->token-data ["service" "webapp"])))
+    (is (= {"concurrency-level" 30
+            "fallback-period-secs" 300
+            "env" {"REGION" "west" "ZONE" "lax"}
+            "metadata" {"style" "grpc"}
+            "service-mapping" "legacy"
+            "permitted-user" "*"}
+           (token-sequence->merged-data token->token-data ["service" "rpc"])))
+    (is (= {"concurrency-level" 120
+            "env" {"REGION" "west" "ZONE" "lax"}
+            "fallback-period-secs" 300
+            "metadata" {"framework" "spring" "style" "grpc" "type" "webapp"}
+            "permitted-user" "*"
+            "service-mapping" "legacy"}
+           (token-sequence->merged-data token->token-data ["service" "webapp" "rpc"])))))

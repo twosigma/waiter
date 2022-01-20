@@ -91,32 +91,56 @@
                                          (filter #(= (name profile) (:name %)))
                                          first
                                          :defaults)
-                  _ (is (= profile-config-defaults profile-api-defaults)
-                        (str "Profile configuration and API output do not match!"
-                             {:profile profile
-                              :profile-api-defaults profile-api-defaults
-                              :profile-config-defaults profile-config-defaults}))
-                  new-request-headers (assoc request-headers "x-waiter-profile" (name profile))
-                  new-service-id (retrieve-service-id waiter-url new-request-headers)
-                  service-settings (service-settings waiter-url new-service-id
-                                                     :query-params {"effective-parameters" "true"})
-                  new-service-description (get service-settings :service-description)
-                  effective-service-description (get service-settings :effective-parameters)]
-              (is (= (assoc base-service-description :profile (name profile))
-                     new-service-description)
-                  (str {:base-service-description base-service-description
-                        :service-description new-service-description
-                        :service-id new-service-id}))
-              (is (= (merge service-description-defaults
-                            (select-keys profile-config-defaults (map keyword sd/service-parameter-keys))
-                            base-service-description
-                            {:profile (name profile)})
-                     effective-service-description)
-                  (str {:profile-config-defaults profile-config-defaults
-                        :service-description effective-service-description
-                        :service-id new-service-id}))
-              (is (not= service-id new-service-id)
-                  (str {:profile profile :request-headers request-headers}))))))
+                  merge-parameters (fn [base-desc extra-params]
+                                     (merge-with (fn [v1 v2] (if (or (map? v1) (map? v2)) (merge v1 v2) v2))
+                                                 base-desc extra-params))]
+              (is (= profile-config-defaults profile-api-defaults)
+                  (str "Profile configuration and API output do not match!"
+                       {:profile profile
+                        :profile-api-defaults profile-api-defaults
+                        :profile-config-defaults profile-config-defaults}))
+              (doseq [{:keys [extra-request-headers extra-parameters test-name]}
+                      [{:extra-request-headers {}
+                        :extra-parameters {}
+                        :test-name "basic profile"}
+                       {:extra-request-headers {"x-waiter-env-foo" "bar-1"}
+                        :extra-parameters {:env {:FOO "bar-1"}}
+                        :test-name "env with profile"}
+                       {:extra-request-headers {"x-waiter-metadata-foo" "baz-1"}
+                        :extra-parameters {:metadata {:foo "baz-1"}}
+                        :test-name "metadata with profile"}
+                       {:extra-request-headers {"x-waiter-env-foo" "bar-2"
+                                                "x-waiter-metadata-foo" "baz-2"}
+                        :extra-parameters {:env {:FOO "bar-2"}
+                                           :metadata {:foo "baz-2"}}
+                        :test-name "env and metadata with profile"}]]
+                (testing (str test-name " test")
+                  (let [new-request-headers (merge request-headers extra-request-headers {"x-waiter-profile" (name profile)})
+                        new-service-id (retrieve-service-id waiter-url new-request-headers)
+                        service-settings (service-settings waiter-url new-service-id
+                                                           :query-params {"effective-parameters" "true"})
+                        new-service-description (get service-settings :service-description)
+                        effective-service-description (get service-settings :effective-parameters)]
+                    (is (= (-> base-service-description
+                             (assoc :profile (name profile))
+                             (merge-parameters extra-parameters))
+                           new-service-description)
+                        (str {:base-service-description base-service-description
+                              :extra-parameters extra-parameters
+                              :service-description new-service-description
+                              :service-id new-service-id}))
+                    (is (= (-> service-description-defaults
+                             (merge (select-keys profile-config-defaults (map keyword sd/service-parameter-keys))
+                                    base-service-description
+                                    {:profile (name profile)})
+                             (merge-parameters extra-parameters))
+                           effective-service-description)
+                        (str {:extra-parameters extra-parameters
+                              :profile-config-defaults profile-config-defaults
+                              :service-description effective-service-description
+                              :service-id new-service-id}))
+                    (is (not= service-id new-service-id)
+                        (str {:profile profile :request-headers request-headers})))))))))
 
       (testing "user-agent sent to backend"
         (doseq [client-user-agent [nil ""]]
