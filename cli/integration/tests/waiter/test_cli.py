@@ -1499,7 +1499,6 @@ class WaiterCliTest(util.WaiterTest):
         iso_8601_time = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat()
         custom_fields = {
             'owner': getpass.getuser(),
-            'cluster': 'test_show_service_current',
             'root': 'test_show_service_current',
             'last-update-user': getpass.getuser(),
             'last-update-time': iso_8601_time
