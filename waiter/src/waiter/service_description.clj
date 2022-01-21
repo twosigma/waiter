@@ -404,7 +404,7 @@
             provided-param-value (get provided-params parameter-key)]
         (recur remaining-parameter-keys
                (cond-> loop-params
-                 (and (map? default-param-value) (map? provided-param-value))
+                 (and (map? default-param-value) (seq default-param-value) (map? provided-param-value))
                  (assoc parameter-key (merge default-param-value provided-param-value)))))
       loop-params)))
 
