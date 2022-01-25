@@ -123,7 +123,7 @@
 
 (defn authenticate-request
   "Authenticates the request by extracting the Kerberos negotiate token and then using a GSSContext."
-  [request]
+  [_ request]
   (let [input-token (decode-input-token request)]
     (authenticate-token input-token)))
 

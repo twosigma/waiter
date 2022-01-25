@@ -119,9 +119,11 @@
 
 (defn kerberos-authenticator
   "Factory function for creating Kerberos authenticator middleware"
-  [{:keys [authenticate-request-fn concurrency-level keep-alive-mins max-queue-length password]
-    :or {authenticate-request-fn 'waiter.auth.spnego/authenticate-request}}]
-  {:pre [(not-empty password)
+  [{:keys [authenticate-request-fn authenticate-request-fn-context concurrency-level keep-alive-mins max-queue-length password]
+    :or {authenticate-request-fn 'waiter.auth.spnego/authenticate-request
+         authenticate-request-fn-context {}}}]
+  {:pre [(map? authenticate-request-fn-context)
+         (not-empty password)
          (integer? concurrency-level)
          (pos? concurrency-level)
          (integer? keep-alive-mins)
@@ -130,7 +132,9 @@
          (pos? max-queue-length)]}
   (let [queue (LinkedBlockingQueue.)
         executor (ThreadPoolExecutor. concurrency-level concurrency-level keep-alive-mins TimeUnit/MINUTES queue)
-        resolved-authenticate-request-fn (utils/resolve-symbol! authenticate-request-fn)]
+        resolved-authenticate-request-fn (utils/resolve-symbol! authenticate-request-fn)
+        wrapped-authenticate-request-fn (fn wrapped-authenticate-request-fn [request]
+                                          (resolved-authenticate-request-fn authenticate-request-fn-context request))]
     (metrics/waiter-gauge #(.getActiveCount executor)
                           "core" "kerberos" "throttle" "active-thread-count")
     (metrics/waiter-gauge #(- concurrency-level (.getActiveCount executor))
@@ -141,7 +145,7 @@
                           "core" "kerberos" "throttle" "pending-task-count")
     (metrics/waiter-gauge #(.getTaskCount executor)
                           "core" "kerberos" "throttle" "scheduled-task-count")
-    (->KerberosAuthenticator resolved-authenticate-request-fn executor max-queue-length password)))
+    (->KerberosAuthenticator wrapped-authenticate-request-fn executor max-queue-length password)))
 
 (defrecord KerberosAuthorizer
   [prestash-cache query-chan]
