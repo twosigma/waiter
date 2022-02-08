@@ -560,7 +560,16 @@
                             (let [service-id->scale-state'
                                   (if (seq service-id->router-state)
                                     (let [router-service-ids (set (keys service-id->router-state))
-                                          scheduler-service-ids (set (keys service-id->scheduler-state'))
+                                          valid-service-description? (fn valid-service-description? [service-id]
+                                                                       (let [{:strs [cpus mem] :as service-description} (service-id->service-description-fn service-id)
+                                                                             valid? (and (map? service-description) (number? cpus) (number? mem))]
+                                                                         (when-not valid?
+                                                                           (log/warn "found invalid service" service-id "with description" service-description))
+                                                                         valid?))
+                                          scheduler-service-ids (->> service-id->scheduler-state'
+                                                                  (keys)
+                                                                  (filter valid-service-description?)
+                                                                  (set))
                                           scalable-service-ids (set/intersection router-service-ids scheduler-service-ids)
                                           excluded-service-ids (-> (set/union router-service-ids scheduler-service-ids)
                                                                  (set/difference scalable-service-ids))
