@@ -21,6 +21,7 @@
             [clojure.test :refer :all]
             [clojure.walk :as walk]
             [full.async :refer [<? <?? go-try]]
+            [plumbing.core :as pc]
             [waiter.correlation-id :as cid]
             [waiter.mocks :refer :all]
             [waiter.scaling :refer :all]
@@ -872,15 +873,21 @@
       service-id->service-description (fn [service-id]
                                         (cond-> {:service-id service-id
                                                  "concurrency-level" 1
+                                                 "cpus" 0.1
                                                  "expired-instance-restart-rate" 0.1
                                                  "jitter-threshold" 0.5
-                                                 "min-instances" 1
                                                  "max-instances" 100
+                                                 "mem" 1024
+                                                 "min-instances" 1
                                                  "scale-down-factor" 0.001
                                                  "scale-factor" 1
                                                  "scale-up-factor" 0.1}
                                           (str/includes? service-id "minst3")
-                                          (assoc "min-instances" 3)))
+                                          (assoc "min-instances" 3)
+                                          (str/includes? service-id "nocpus")
+                                          (dissoc "cpus")
+                                          (str/includes? service-id "nomem")
+                                          (dissoc "mem")))
       service-id->stale? (fn [service-id]
                            (str/includes? service-id "stale"))
       timeout-interval-ms 10000
@@ -1181,5 +1188,65 @@
         (is (< 1.98 (:target-instances (async/<!! query-response)) 2.0))
         (is (= expected-state (select-keys (async/<!! query-response) (keys expected-state))))
         (is (= expected-state (select-keys (query-service-state-fn {:service-id service-id}) (keys expected-state)))))
+      (async/>!! exit :kill)
+      (.shutdown scheduler-interactions-thread-pool)))
+
+  (deftest test-autoscaler-goroutine-excluded-services
+    (let [service-id-1 "service1"
+          service-id-2 "service2-nocpus"
+          service-id-3 "service3-nomem"
+          service-id-4 "service4"
+          valid-service-ids #{service-id-1 service-id-4}
+          service-ids #{service-id-1 service-id-2 service-id-3 service-id-4}
+          scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
+          {:keys [exit initial-timeout-chan metrics-chan query query-service-state-fn query-state-fn state-chan state-chan-reader]}
+          (start-autoscaler-goroutine {:global-state (pc/map-from-keys (constantly {"outstanding" 0})
+                                                                       service-ids)
+                                       :service-id->scale-state (pc/map-from-keys (constantly {:target-instances 2 :scale-to-instances 2 :scale-amount 0})
+                                                                                  service-ids)
+                                       :service-id->router-state (pc/map-from-keys (constantly {:healthy-instances 2
+                                                                                                :expired-healthy-instances 0
+                                                                                                :expired-unhealthy-instances 0})
+                                                                                   service-ids)
+                                       :service-id->scheduler-state (pc/map-from-keys (constantly {:instances 2 :task-count 2})
+                                                                                      service-ids)}
+                                      (map (fn [service-id] {:id service-id :instances 2 :task-count 2}) service-ids)
+                                      scheduler-interactions-thread-pool)]
+      (async/>!! state-chan {:service-id->healthy-instances (pc/map-from-keys (constantly [{:id "instance-1"} {:id "instance-2"}])
+                                                                              service-ids)
+                             :service-id->unhealthy-instances {}
+                             :service-id->expired-instances {}})
+      (async/<!! state-chan-reader) ;; ensure delivery from mult
+      (async/>!! metrics-chan (pc/map-from-keys (constantly {"outstanding" 0}) service-ids))
+      (async/>!! initial-timeout-chan :timeout)
+      (doseq [service-id [service-id-1 service-id-4]]
+        (let [query-response (async/promise-chan)
+              expected-state {:expired-healthy-instances 0
+                              :expired-unhealthy-instances 0
+                              :healthy-instances 2
+                              :instances 2
+                              :outstanding-requests 0
+                              :scale-amount 0
+                              :scale-to-instances 2
+                              :task-count 2}]
+          (async/>!! query {:response-chan query-response :service-id service-id})
+          (is (< 1.98 (:target-instances (async/<!! query-response)) 2.0))
+          (is (= expected-state (select-keys (async/<!! query-response) (keys expected-state))))
+          (is (= expected-state (select-keys (query-service-state-fn {:service-id service-id}) (keys expected-state))))))
+      (doseq [service-id [service-id-2 service-id-3]]
+        (let [query-response (async/promise-chan)
+              expected-state {:expired-healthy-instances 0
+                              :expired-unhealthy-instances 0
+                              :healthy-instances 2
+                              :outstanding-requests 0}]
+          (async/>!! query {:response-chan query-response :service-id service-id})
+          (is (nil? (:target-instances (async/<!! query-response))))
+          (is (= expected-state (select-keys (async/<!! query-response) (keys expected-state))))
+          (is (= expected-state (select-keys (query-service-state-fn {:service-id service-id}) (keys expected-state))))))
+      (let [{:keys [global-state service-id->router-state service-id->scale-state service-id->scheduler-state]} (query-state-fn)]
+        (is (= service-ids (-> global-state (keys) (set))))
+        (is (= service-ids (-> service-id->router-state (keys) (set))))
+        (is (= valid-service-ids (-> service-id->scale-state (keys) (set))))
+        (is (= service-ids (-> service-id->scheduler-state (keys) (set)))))
       (async/>!! exit :kill)
       (.shutdown scheduler-interactions-thread-pool))))
