@@ -277,6 +277,8 @@
   {:authenticator-config {:jwt :disabled
                           :kind :one-user
                           :kerberos {:factory-fn 'waiter.auth.kerberos/kerberos-authenticator
+                                     :authenticate-request-fn 'waiter.auth.spnego/authenticate-request
+                                     :authenticate-request-fn-context {}
                                      :concurrency-level 20
                                      :keep-alive-mins 5
                                      :max-queue-length 1000}
