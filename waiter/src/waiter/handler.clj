@@ -787,20 +787,23 @@
 
 (defn get-router-state
   "Outputs the state of the router as json."
-  [router-id query-state-fn request]
+  [router-id query-state-fn custom-components request]
   (try
     (let [{:keys [routers]} (query-state-fn)
           host (get-in request [:headers "host"])
           scheme (some-> request utils/request->scheme name)
           make-url (fn make-url [path]
                      (str (when scheme (str scheme "://")) host "/state/" path))]
-      (utils/clj->streaming-json-response {:details (->> ["autoscaler" "autoscaling-multiplexer" "codahale-reporters"
-                                                          "ejection-expiry" "entitlement-manager" "fallback"
-                                                          "gc-broken-services" "gc-services" "gc-transient-metrics" "instance-tracker" "interstitial"
-                                                          "jwt-auth-server" "kv-store" "launch-metrics" "leader" "local-usage"
-                                                          "maintainer" "router-metrics" "scheduler" "service-description-builder"
-                                                          "service-maintainer" "statsd" "token-validator" "token-watch-maintainer" "work-stealing"]
-                                                         (pc/map-from-keys make-url))
+      (utils/clj->streaming-json-response {:details (merge (->> ["autoscaler" "autoscaling-multiplexer" "codahale-reporters"
+                                                                 "ejection-expiry" "entitlement-manager" "fallback"
+                                                                 "gc-broken-services" "gc-services" "gc-transient-metrics" "instance-tracker" "interstitial"
+                                                                 "jwt-auth-server" "kv-store" "launch-metrics" "leader" "local-usage"
+                                                                 "maintainer" "router-metrics" "scheduler" "service-description-builder"
+                                                                 "service-maintainer" "statsd" "token-validator" "token-watch-maintainer" "work-stealing"]
+                                                             (pc/map-from-keys make-url))
+                                                           (pc/for-map [component-key (keys custom-components)]
+                                                             (str "custom-components:" (name component-key))
+                                                             (make-url (str "custom-components/" (name component-key)))))
                                            :router-id router-id
                                            :routers routers}))
     (catch Exception ex
@@ -851,6 +854,24 @@
   "Outputs the state retrieved by invoking the query-state-fn."
   [router-id query-state-fn request]
   (get-function-state query-state-fn router-id request))
+
+(defn get-custom-component-state
+  "Outputs a specific custom component state."
+  [router-id custom-components {:keys [route-params] :as request}]
+  (get-function-state-with-include-flags
+    (fn query-custom-component-state [include-flags]
+      (try
+        (let [{:keys [component-name]} route-params
+              component-key (keyword component-name)
+              query-fn (some-> custom-components
+                         (get-in [component-key :query-state]))]
+          (if query-fn
+            (query-fn include-flags)
+            {:component-name component-name
+             :message "State unavailable"}))
+        (catch Exception ex
+          (utils/exception->response ex request))))
+    router-id request))
 
 (defn get-ejection-expiry-state
   "Outputs the ejection-expiry-tracker state."
