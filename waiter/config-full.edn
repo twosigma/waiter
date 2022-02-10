@@ -985,6 +985,8 @@
  ;; Custom components allow sharing of components between the scheduler and service description builder.
  ;; The values in the entries must contain a :factory-fn and the necessary config for the component.
  ;; Components also get passed in the :kv-store-factory, :leader?-fn and :synchronize-fn for use in the factory.
+ ;; Components which contain a :query-state entry that maps to a function which takes include-flags as an argument
+ ;; can have their state queries and viewed at the /state/custom-component/<name> endpoint.
  :custom-components {:in-memory-kv-store {:factory-fn waiter.kv/new-local-kv-store}}
 
  ;; Certain messages that Waiter returns can be customized:

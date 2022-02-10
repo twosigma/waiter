@@ -1321,9 +1321,11 @@
 (deftest test-get-router-state
   (let [state-atom (atom nil)
         query-state-fn (fn [] @state-atom)
+        custom-components {:component-1 {}
+                           :component-2 {}}
         test-fn (fn [router-id query-state-fn request]
                   (let [handler (wrap-handler-json-response get-router-state)]
-                    (handler router-id query-state-fn request)))
+                    (handler router-id query-state-fn custom-components request)))
         router-id "test-router-id"]
 
     (reset! state-atom {:state-data {}})
@@ -1338,10 +1340,14 @@
       (testing "display router state"
         (let [{:keys [status body]} (test-fn router-id query-state-fn {})]
           (is (every? #(str/includes? (str body) %1)
-                      ["autoscaler" "autoscaling-multiplexer"
-                       "codahale-reporters" "fallback" "interstitial" "kv-store" "leader" "local-usage"
+                      ["autoscaler" "autoscaling-multiplexer" "codahale-reporters"
+                       "custom-components:component-1"  "custom-components:component-2"
+                       "fallback" "interstitial" "kv-store" "leader" "local-usage"
                        "maintainer" "router-metrics" "scheduler" "statsd"])
               (str "Body did not include necessary JSON keys:\n" body))
+          (is (every? #(str/includes? (str body) %1)
+                      ["custom-components/component-1"  "custom-components/component-2"])
+              (str "Body did not include custom component paths:\n" body))
           (is (= http-200-ok status)))))))
 
 (deftest test-get-query-fn-state
@@ -1359,6 +1365,40 @@
             {:keys [body status]} (test-fn router-id query-state-fn {})]
         (is (= http-500-internal-server-error status))
         (is (str/includes? body "Waiter Error 500"))))))
+
+(deftest test-get-custom-component-state
+  (let [router-id "test-router-id"
+        custom-components {:component-1 {:query-state (fn [include-flags]
+                                                        {:include-flags include-flags
+                                                         :name "component-1"})}
+                           :component-2 {}
+                           :component-3 (Object.)
+                           :component-4 {:query-state (fn [] {:name "component-4"})}}
+        test-fn (wrap-handler-json-response get-custom-component-state)]
+    (testing "successful response"
+      (let [state {"include-flags" [] "name" "component-1"}
+            request {:route-params {:component-name "component-1"}}
+            {:keys [body status]} (test-fn router-id custom-components request)]
+        (is (= http-200-ok status))
+        (is (= {"router-id" router-id, "state" state} (json/read-str body)))))
+
+    (testing "exception response"
+      (let [state {"component-name" "component-2" "message" "State unavailable"}
+            request {:route-params {:component-name "component-2"}}
+            {:keys [body status]} (test-fn router-id custom-components request)]
+        (is (= http-200-ok status))
+        (is (= {"router-id" router-id, "state" state} (json/read-str body))))
+
+      (let [state {"component-name" "component-3" "message" "State unavailable"}
+            request {:route-params {:component-name "component-3"}}
+            {:keys [body status]} (test-fn router-id custom-components request)]
+        (is (= http-200-ok status))
+        (is (= {"router-id" router-id, "state" state} (json/read-str body))))
+
+      (let [request {:route-params {:component-name "component-4"}}
+            {:keys [body status]} (test-fn router-id custom-components request)]
+        (is (= http-200-ok status))
+        (is (str/includes? (str body) "Wrong number of args"))))))
 
 (deftest test-get-kv-store-state
   (let [router-id "test-router-id"

@@ -119,6 +119,7 @@
                               ["/autoscaler" :state-autoscaler-handler-fn]
                               ["/autoscaling-multiplexer" :state-autoscaling-multiplexer-handler-fn]
                               ["/codahale-reporters" :state-codahale-reporters-handler-fn]
+                              [["/custom-components/" :component-name] :state-custom-component-handler-fn]
                               ["/ejection-expiry" :state-ejection-expiry-handler-fn]
                               ["/entitlement-manager" :state-entitlement-manager-handler-fn]
                               ["/fallback" :state-fallback-handler-fn]
@@ -1718,12 +1719,12 @@
                                          scheduler service-id admin-user?-fn allowed-to-manage-service?-fn generate-log-url-fn request))))
    :sim-request-handler (pc/fnk [] simulator/handle-sim-request)
    :state-all-handler-fn (pc/fnk [[:daemons router-state-maintainer]
-                                  [:state router-id]
+                                  [:state custom-components router-id]
                                   wrap-secure-request-fn]
                            (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer]
                              (wrap-secure-request-fn
                                (fn state-all-handler-fn [request]
-                                 (handler/get-router-state router-id query-state-fn request)))))
+                                 (handler/get-router-state router-id query-state-fn custom-components request)))))
    :state-autoscaler-handler-fn (pc/fnk [[:daemons autoscaler]
                                          [:state router-id]
                                          wrap-secure-request-fn]
@@ -1745,6 +1746,11 @@
                                               router-id
                                               #(pc/map-vals reporter/state codahale-reporters)
                                               request)))
+   :state-custom-component-handler-fn (pc/fnk [[:state custom-components router-id]
+                                               wrap-secure-request-fn]
+                                        (wrap-secure-request-fn
+                                          (fn custom-component-state-handler-fn [request]
+                                            (handler/get-custom-component-state router-id custom-components request))))
    :state-ejection-expiry-handler-fn (pc/fnk [[:state ejection-expiry-tracker router-id]
                                               wrap-secure-request-fn]
                                        (wrap-secure-request-fn

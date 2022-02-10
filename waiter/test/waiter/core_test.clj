@@ -1150,12 +1150,40 @@
            (exec-routes-mapper "/sim")))
     (is (= {:handler :state-all-handler-fn}
            (exec-routes-mapper "/state")))
+    (is (= {:handler :state-autoscaler-handler-fn}
+           (exec-routes-mapper "/state/autoscaler")))
+    (is (= {:handler :state-autoscaling-multiplexer-handler-fn}
+           (exec-routes-mapper "/state/autoscaling-multiplexer")))
+    (is (= {:handler :state-codahale-reporters-handler-fn}
+           (exec-routes-mapper "/state/codahale-reporters")))
+    (is (= {:handler :state-custom-component-handler-fn, :route-params {:component-name "component-1"}}
+           (exec-routes-mapper "/state/custom-components/component-1")))
+    (is (= {:handler :state-ejection-expiry-handler-fn}
+           (exec-routes-mapper "/state/ejection-expiry")))
+    (is (= {:handler :state-entitlement-manager-handler-fn}
+           (exec-routes-mapper "/state/entitlement-manager")))
+    (is (= {:handler :state-fallback-handler-fn}
+           (exec-routes-mapper "/state/fallback")))
+    (is (= {:handler :state-gc-for-broken-services}
+           (exec-routes-mapper "/state/gc-broken-services")))
+    (is (= {:handler :state-gc-for-services}
+           (exec-routes-mapper "/state/gc-services")))
+    (is (= {:handler :state-gc-for-transient-metrics}
+           (exec-routes-mapper "/state/gc-transient-metrics")))
+    (is (= {:handler :state-instance-tracker-fn}
+           (exec-routes-mapper "/state/instance-tracker")))
+    (is (= {:handler :state-interstitial-handler-fn}
+           (exec-routes-mapper "/state/interstitial")))
+    (is (= {:handler :state-jwt-auth-server-handler-fn}
+           (exec-routes-mapper "/state/jwt-auth-server")))
     (is (= {:handler :state-kv-store-handler-fn}
            (exec-routes-mapper "/state/kv-store")))
-    (is (= {:handler :state-local-usage-handler-fn}
-           (exec-routes-mapper "/state/local-usage")))
+    (is (= {:handler :state-launch-metrics-handler-fn}
+           (exec-routes-mapper "/state/launch-metrics")))
     (is (= {:handler :state-leader-handler-fn}
            (exec-routes-mapper "/state/leader")))
+    (is (= {:handler :state-local-usage-handler-fn}
+           (exec-routes-mapper "/state/local-usage")))
     (is (= {:handler :state-maintainer-handler-fn}
            (exec-routes-mapper "/state/maintainer")))
     (is (= {:handler :state-router-metrics-handler-fn}
@@ -1166,6 +1194,12 @@
            (exec-routes-mapper "/state/statsd")))
     (is (= {:handler :state-service-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/state/test-service")))
+    (is (= {:handler :state-token-validator-fn}
+           (exec-routes-mapper "/state/token-validator")))
+    (is (= {:handler :state-token-watch-maintainer-fn}
+           (exec-routes-mapper "/state/token-watch-maintainer")))
+    (is (= {:handler :state-work-stealing-handler-fn}
+           (exec-routes-mapper "/state/work-stealing")))
     (is (= {:handler :status-handler-fn}
            (exec-routes-mapper "/status")))
     (is (= {:handler :token-handler-fn}
