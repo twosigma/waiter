@@ -297,7 +297,7 @@
                              "content-length" "12341234"
                              "content-MD5" "Q2hlY2sgSW50ZWdyaXR5IQ=="
                              "content-type" "application/x-www-form-urlencoded"
-                             "cookie" "$Version=1; Skin=new;"
+                             "cookie" "$Version=1; Skin=new; x-waiter-auth=foo"
                              "date" "Tue, 15 Nov 2015 08:12:31 GMT"
                              "expect" "100-continue"
                              "expires" "2200-08-09"
@@ -342,6 +342,7 @@
                                         (is (= "body" (:body request-config)))
                                         (is (= 654321 (:idle-timeout request-config)))
                                         (is (= (-> passthrough-headers
+                                                   (assoc "cookie" "$Version=1; Skin=new")
                                                    (dissoc "expect" "authorization"
                                                            "connection" "keep-alive" "proxy-authenticate" "proxy-authorization"
                                                            "te" "trailers" "transfer-encoding" "upgrade")

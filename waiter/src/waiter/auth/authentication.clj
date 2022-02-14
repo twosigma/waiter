@@ -29,7 +29,13 @@
 
 (def ^:const AUTH-COOKIE-EXPIRES-AT "x-auth-expires-at")
 
+(def ^:const AUTH-COOKIE-EXPIRES-AT-ENTRY-PREFIX (str AUTH-COOKIE-EXPIRES-AT "="))
+
 (def ^:const AUTH-COOKIE-NAME "x-waiter-auth")
+
+(def ^:const AUTH-COOKIE-NAME-ENTRY-PREFIX (str AUTH-COOKIE-NAME "="))
+
+(def ^:const OIDC-CHALLENGE-COOKIE-PREFIX "x-waiter-oidc-challenge-")
 
 (def ^:const auth-expires-at-uri "/.well-known/auth/expires-at")
 
@@ -157,9 +163,9 @@
 (defn remove-auth-cookie
   "Removes the auth cookies"
   [cookie-string]
-  (-> cookie-string
-    (cookie-support/remove-cookie AUTH-COOKIE-EXPIRES-AT)
-    (cookie-support/remove-cookie AUTH-COOKIE-NAME)))
+  (when cookie-string
+    (->> [AUTH-COOKIE-EXPIRES-AT-ENTRY-PREFIX AUTH-COOKIE-NAME-ENTRY-PREFIX OIDC-CHALLENGE-COOKIE-PREFIX]
+      (cookie-support/remove-cookies cookie-string))))
 
 (defn select-auth-header
   "Filters and return the first authorization header that passes the predicate."

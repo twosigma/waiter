@@ -38,14 +38,14 @@
     (is (= "quotes\"abound" (cookie-value cookie-string #"special")))))
 
 (deftest test-remove-cookie
-  (is (= "" (remove-cookie "x-waiter-auth=foo" "x-waiter-auth")))
-  (is (= "bar=baz" (remove-cookie "x-waiter-auth=foo; bar=baz" "x-waiter-auth")))
-  (is (= "bar=baz" (remove-cookie "bar=baz; x-waiter-auth=foo" "x-waiter-auth")))
-  (is (= "bar=\"x-waiter-auth=this is a real cookie\"" (remove-cookie "x-waiter-auth=auth-value; bar=\"x-waiter-auth=this is a real cookie\""
-                                                                      "x-waiter-auth")))
-  (is (= "bar=x-waiter-auth=this is a real cookie" (remove-cookie "x-waiter-auth=auth-value; bar=x-waiter-auth=this is a real cookie"
-                                                                  "x-waiter-auth")))
-  (is (= "a=b; c=d" (remove-cookie "a=b; x-waiter-auth=auth; c=d" "x-waiter-auth"))))
+  (is (= "" (remove-cookies "x-waiter-auth=foo" ["x-waiter-auth="])))
+  (is (= "bar=baz" (remove-cookies "x-waiter-auth=foo; bar=baz" ["x-waiter-auth="])))
+  (is (= "bar=baz" (remove-cookies "bar=baz; x-waiter-auth=foo" ["x-waiter-auth="])))
+  (is (= "bar=\"x-waiter-auth=this is a real cookie\"" (remove-cookies "x-waiter-auth=auth-value; bar=\"x-waiter-auth=this is a real cookie\""
+                                                                       ["x-waiter-auth="])))
+  (is (= "bar=x-waiter-auth=this is a real cookie" (remove-cookies "x-waiter-auth=auth-value; bar=x-waiter-auth=this is a real cookie"
+                                                                   ["x-waiter-auth="])))
+  (is (= "a=b; c=d" (remove-cookies "a=b; x-waiter-auth=auth; c=d" ["x-waiter-auth="]))))
 
 (deftest test-add-encoded-cookie
   (let [cookie-attrs ";Max-Age=864000;Path=/;HttpOnly=true"
