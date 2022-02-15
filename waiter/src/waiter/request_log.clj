@@ -31,16 +31,18 @@
   "Convert a request into a context suitable for logging."
   [{:keys [client-protocol headers internal-protocol query-string remote-addr request-id
            request-method request-time server-port uri] :as request}]
-  (let [{:strs [content-length content-type host origin referer user-agent x-cid x-forwarded-for]} headers
+  (let [{:strs [content-length content-type cookie host origin referer user-agent x-cid x-forwarded-for]} headers
         remote-address (or x-forwarded-for remote-addr)]
     (cond-> {:cid x-cid
              :host host
              :path uri
+             :request-header-count (count headers)
              :request-id request-id
              :scheme (-> request utils/request->scheme name)}
       origin (assoc :origin origin)
       request-method (assoc :method (-> request-method name str/upper-case))
       client-protocol (assoc :client-protocol client-protocol)
+      cookie (assoc :cookie-header-length (-> cookie (str) (count)))
       internal-protocol (assoc :internal-protocol internal-protocol)
       query-string (assoc :query-string query-string)
       remote-address (assoc :remote-addr remote-address)
@@ -64,7 +66,7 @@
         {:strs [image metric-group profile run-as-user version]} service-description
         {:strs [content-length content-type grpc-status location server x-raven-response-flags x-waiter-operation-result]} headers
         {:keys [k8s/node-name k8s/pod-name]} instance]
-    (cond-> {}
+    (cond-> {:response-header-count (count headers)}
       status (assoc :status status)
       method (assoc :authentication-method (name method))
       backend-response-latency-ns (assoc :backend-response-latency-ns backend-response-latency-ns)

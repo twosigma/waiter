@@ -23,6 +23,7 @@
   (let [request {:client-protocol "HTTP/2.0"
                  :headers {"content-length" "20"
                            "content-type" "application/json"
+                           "cookie" "a=b; c=d; e=f; g=h"
                            "host" "host"
                            "origin" "www.origin.org"
                            "referer" "https://test.com/referer"
@@ -39,6 +40,7 @@
                  :uri "/"}]
     (is (= {:cid "123"
             :client-protocol "HTTP/2.0"
+            :cookie-header-length 18
             :host "host"
             :internal-protocol "HTTP/1.1"
             :method "POST"
@@ -49,6 +51,7 @@
             :remote-addr "127.0.0.1"
             :request-content-length "20"
             :request-content-type "application/json"
+            :request-header-count 8
             :request-id "abc"
             :request-time "2018-04-11T00:00:00.000Z"
             :scheme "http"
@@ -118,6 +121,7 @@
             :request-type "test-request"
             :response-content-length "40"
             :response-content-type "application/xml"
+            :response-header-count 7
             :response-location "/foo/bar"
             :run-as-user "john.doe"
             :server "foo-bar"
@@ -214,9 +218,11 @@
                 :k8s-pod-name "test-pod-name"
                 :latest-service-id "latest-service-id"
                 :metric-group "service-metric-group"
+                :request-header-count 6
                 :request-type "test-request"
                 :response-content-length "40"
                 :response-content-type "application/xml"
+                :response-header-count 5
                 :response-location "/foo/bar"
                 :run-as-user "john.doe"
                 :server "foo-bar"
@@ -250,7 +256,9 @@
                 :path "/path"
                 :remote-addr "127.0.0.1"
                 :request-content-type "text/plain"
+                :request-header-count 3
                 :request-id "abc"
+                :response-header-count 0
                 :scheme "http"
                 :status http-200-ok}
                (dissoc log-entry :handle-request-latency-ns)))))))
