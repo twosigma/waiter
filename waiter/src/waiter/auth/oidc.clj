@@ -35,7 +35,7 @@
 
 (def ^:const content-security-policy-value "default-src 'none'; frame-ancestors 'none'")
 
-(def ^:const oidc-challenge-cookie-prefix "x-waiter-oidc-challenge-")
+(def ^:const oidc-challenge-cookie-prefix auth/OIDC-CHALLENGE-COOKIE-PREFIX)
 
 (def ^:const oidc-callback-uri "/oidc/v1/callback")
 

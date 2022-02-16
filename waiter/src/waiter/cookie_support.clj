@@ -51,11 +51,14 @@
       (when-let [^String value (second (re-find name-regex cookie-string))]
         (-> value url-decode strip-double-quotes)))))
 
-(defn remove-cookie
-  "Removes the specified cookie"
-  [cookie-string cookie-name]
+(defn remove-cookies
+  "Removes the entries in the cookie string with the specified prefixes."
+  [cookie-string cookie-name-prefixes]
   (when cookie-string
-    (str/replace cookie-string (re-pattern (str "(?i)(^" cookie-name "=[^;]+(; )?)|(; " cookie-name "=[^;]+)")) "")))
+    ;; cookie pairs are separated by a semicolon and a space ('; ').
+    (->> (str/split cookie-string #"; ")
+      (remove (fn [entry] (some #(str/starts-with? entry %) cookie-name-prefixes)))
+      (str/join "; "))))
 
 (defn encode-cookie
   "Encodes the cookie value."
