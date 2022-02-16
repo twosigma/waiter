@@ -700,13 +700,14 @@
 (deftest test-remove-challenge-cookies
   (doseq [{:keys [cookie-string expected] :as test-case}
           [{:cookie-string nil :expected nil}
+           {:cookie-string "" :expected ""}
            {:cookie-string "a=b" :expected "a=b"}
            {:cookie-string "a=b; c=d" :expected "a=b; c=d"}
            {:cookie-string "x-waiter-oidc-challenge-A1B2C3=1234; a=b" :expected "a=b"}
            {:cookie-string "a=b; x-waiter-oidc-challenge-A1B2C3=1234" :expected "a=b"}
            {:cookie-string "x-waiter-oidc-challenge-a1b2c3=1234; a=b" :expected "a=b"}
            {:cookie-string "a=b; x-waiter-oidc-challenge-a1b2c3=1234" :expected "a=b"}
-           {:cookie-string "a=b; x-waiter-oidc-challenge-a1b2c3=1234" :expected "a=b"}
+           {:cookie-string "a=b; c-x-waiter-oidc-challenge-a1b2c3=1234" :expected "a=b; c-x-waiter-oidc-challenge-a1b2c3=1234"}
            {:cookie-string "x-waiter-oidc-challenge-a1b2c3=123; x-waiter-oidc-challenge-3cb2a1=321; a=b" :expected "a=b"}
            {:cookie-string "x-waiter-oidc-challenge-a1b2c3=123; a=b; x-waiter-oidc-challenge-3cb2a1=321" :expected "a=b"}
            {:cookie-string "a=b; x-waiter-oidc-challenge-a1b2c3=123; x-waiter-oidc-challenge-3cb2a1=321" :expected "a=b"}
@@ -715,6 +716,7 @@
            {:cookie-string "x-waiter-oidc-challenge-a1b2c3=1234; a=b; c=d" :expected "a=b; c=d"}
            {:cookie-string "a=b; x-waiter-oidc-challenge-a1b2c3=1234; c=d" :expected "a=b; c=d"}
            {:cookie-string "a=b; c=d; x-waiter-oidc-challenge-a1b2c3=1234" :expected "a=b; c=d"}
+           {:cookie-string "a=b; c=d; x-waiter-oidc-a1b2c3=1234" :expected "a=b; c=d; x-waiter-oidc-a1b2c3=1234"}
            {:cookie-string "x-waiter-oidc-challenge-a1b2c3=123; x-waiter-oidc-challenge-3cb2a1=321; a=b; c=d" :expected "a=b; c=d"}
            {:cookie-string "x-waiter-oidc-challenge-a1b2c3=123; a=b; x-waiter-oidc-challenge-3cb2a1=321; c=d" :expected "a=b; c=d"}
            {:cookie-string "x-waiter-oidc-challenge-a1b2c3=123; a=b; c=d; x-waiter-oidc-challenge-3cb2a1=321" :expected "a=b; c=d"}

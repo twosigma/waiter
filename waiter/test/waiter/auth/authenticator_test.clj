@@ -481,3 +481,21 @@
       (is (= http-400-bad-request response-status))
       (is (= http-400-bad-request (.getStatusCode upgrade-response)))
       (is (str/includes? (.getStatusReason upgrade-response) "An authentication disabled token may not be combined with on-the-fly headers")))))
+
+(deftest test-remove-auth-cookie
+  (doseq [{:keys [cookie-string expected] :as test-case}
+          [{:cookie-string nil :expected nil}
+           {:cookie-string "" :expected ""}
+           {:cookie-string "a=b" :expected "a=b"}
+           {:cookie-string "a=b; c=d" :expected "a=b; c=d"}
+           {:cookie-string "a=b; x-auth-expires-at=1234; c=d" :expected "a=b; c=d"}
+           {:cookie-string "a=b; x-auth-expires-at=1234; c=d; x-waiter-auth=1234" :expected "a=b; c=d"}
+           {:cookie-string "x-auth-expires-at=1234; a=b" :expected "a=b"}
+           {:cookie-string "x-waiter-auth=1234; a=b" :expected "a=b"}
+           {:cookie-string "a=b; x-waiter-auth=1234" :expected "a=b"}
+           {:cookie-string "x-waiter-auth-a1b2c3=1234; a=b" :expected "x-waiter-auth-a1b2c3=1234; a=b"}
+           {:cookie-string "a-x-waiter-auth=1234; a=b" :expected "a-x-waiter-auth=1234; a=b"}
+           {:cookie-string "a=b; c-x-auth-expires-at=1234" :expected "a=b; c-x-auth-expires-at=1234"}
+           {:cookie-string "a=b; x-auth-expires-at-c=1234" :expected "a=b; x-auth-expires-at-c=1234"}
+           {:cookie-string "x-waiter-oidc-challenge-a1b2c3=123; x-waiter-oidc-challenge-3cb2a1=321; a=b" :expected "a=b"}]]
+    (is (= expected (remove-auth-cookie cookie-string)) (str test-case))))
