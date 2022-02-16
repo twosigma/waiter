@@ -129,17 +129,17 @@
    https://kubernetes.io/docs/reference/kubernetes-api/common-definitions/quantity/"
   [quantity]
   (cond
-    (str/ends-with? quantity "Pi") (-> quantity (str/replace "Pi" "") (utils/parse-double) (* 1024 1024 1024 1024 1024))
-    (str/ends-with? quantity "Ti") (-> quantity (str/replace "Ti" "") (utils/parse-double) (* 1024 1024 1024 1024))
-    (str/ends-with? quantity "Gi") (-> quantity (str/replace "Gi" "") (utils/parse-double) (* 1024 1024 1024))
-    (str/ends-with? quantity "Mi") (-> quantity (str/replace "Mi" "") (utils/parse-double) (* 1024 1024))
-    (str/ends-with? quantity "Ki") (-> quantity (str/replace "Ki" "") (utils/parse-double) (* 1024))
-    (str/ends-with? quantity "P") (-> quantity (str/replace "P" "") (utils/parse-double) (* 1000 1000 1000 1000 1000))
-    (str/ends-with? quantity "T") (-> quantity (str/replace "T" "") (utils/parse-double) (* 1000 1000 1000 1000))
-    (str/ends-with? quantity "G") (-> quantity (str/replace "G" "") (utils/parse-double) (* 1000 1000 1000))
-    (str/ends-with? quantity "M") (-> quantity (str/replace "M" "") (utils/parse-double) (* 1000 1000))
-    (str/ends-with? quantity "K") (-> quantity (str/replace "K" "") (utils/parse-double) (* 1000))
-    (str/ends-with? quantity "m") (-> quantity (str/replace "m" "") (utils/parse-double) (/ 1000))
+    (str/ends-with? quantity "Pi") (-> quantity (str/replace "Pi" "") (utils/parse-double) (* 1.125899906842624e15))
+    (str/ends-with? quantity "Ti") (-> quantity (str/replace "Ti" "") (utils/parse-double) (* 1.099511627776e12))
+    (str/ends-with? quantity "Gi") (-> quantity (str/replace "Gi" "") (utils/parse-double) (* 1.073741824e9))
+    (str/ends-with? quantity "Mi") (-> quantity (str/replace "Mi" "") (utils/parse-double) (* 1.048576e6))
+    (str/ends-with? quantity "Ki") (-> quantity (str/replace "Ki" "") (utils/parse-double) (* 1.024e3))
+    (str/ends-with? quantity "P") (-> quantity (str/replace "P" "") (utils/parse-double) (* 1e15))
+    (str/ends-with? quantity "T") (-> quantity (str/replace "T" "") (utils/parse-double) (* 1e12))
+    (str/ends-with? quantity "G") (-> quantity (str/replace "G" "") (utils/parse-double) (* 1e9))
+    (str/ends-with? quantity "M") (-> quantity (str/replace "M" "") (utils/parse-double) (* 1e6))
+    (str/ends-with? quantity "K") (-> quantity (str/replace "K" "") (utils/parse-double) (* 1e3))
+    (str/ends-with? quantity "m") (-> quantity (str/replace "m" "") (utils/parse-double) (/ 1e3))
     :else (-> (utils/parse-double quantity))))
 
 (defn replicaset->Service
