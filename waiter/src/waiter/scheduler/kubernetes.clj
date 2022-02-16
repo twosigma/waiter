@@ -154,7 +154,7 @@
        rs-annotations (get-in replicaset-json [:metadata :annotations] nil)
        rs-pod-annotations (get-in replicaset-json [:spec :template :metadata :annotations] nil)
        containers (get-in replicaset-json [:spec :template :spec :containers])
-       rs-containers (vec (map :name containers))
+       rs-containers (mapv :name containers)
        rs-container-resources (mapv (fn [{:keys [name] :as container-spec}]
                                       (let [{:keys [cpu memory]} (get-in container-spec [:resources :requests])]
                                         {:cpus (-> cpu (str) (quantity->double-value))
