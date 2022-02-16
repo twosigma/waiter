@@ -350,7 +350,8 @@
                                   instance-count (reduce + (vals instance-counts-map))
                                   effective-service-description (service-id->service-description-fn service-id :effective? true)
                                   resource-usage (compute-resource-usage scheduler service-id instance-count)
-                                  service-metrics (get service-id->metrics service-id)]
+                                  service-metrics (get service-id->metrics service-id)
+                                  {:keys [deployment-error-message service-status-label]} (service/retrieve-service-status-and-deployment-error service-id global-state)]
                               (cond->
                                 {:instance-counts instance-counts-map
                                  :last-request-time (get service-metrics "last-request-time")
@@ -358,10 +359,12 @@
                                  :resource-usage resource-usage
                                  :service-id service-id
                                  :service-description core-service-description
-                                 :status (service/retrieve-service-status-label service-id global-state)
+                                 :status service-status-label
                                  :url (prepend-waiter-url (str "/apps/" service-id))}
                                 (seq current-for-tokens)
                                 (assoc :current-for-tokens current-for-tokens)
+                                deployment-error-message
+                                (assoc :deployment-error-message deployment-error-message)
                                 include-effective-parameters?
                                 (assoc :effective-parameters effective-service-description)
                                 include-healthy-instances?
@@ -501,8 +504,8 @@
                             (let [router-id->response-chan (make-inter-router-requests-fn (str "metrics?service-id=" service-id) :method :get)
                                   router-id->response (-> (pc/map-vals (fn [chan] (update (async/<!! chan) :body async/<!!))
                                                                        router-id->response-chan)
-                                                          (assoc router-id (-> (metrics/get-service-metrics service-id)
-                                                                               (utils/clj->json-response))))
+                                                        (assoc router-id (-> (metrics/get-service-metrics service-id)
+                                                                           (utils/clj->json-response))))
                                   response->service-metrics (fn response->metrics [{:keys [body]}]
                                                               (try
                                                                 (let [metrics (json/read-str (str body))]
@@ -537,13 +540,16 @@
         scaling-state (retrieve-scaling-state query-autoscaler-state-fn service-id)
         num-active-instances (count (:active-instances service-instance-maps))
         resource-usage (compute-resource-usage scheduler service-id num-active-instances)
+        {:keys [deployment-error-message service-status-label]} (service/retrieve-service-status-and-deployment-error service-id global-state)
         result-map (cond-> {:num-routers (count router->metrics)
                             :request-metrics (select-keys service-metrics ["outstanding" "total"])
                             :resource-usage resource-usage
                             :router-id router-id
-                            :status (service/retrieve-service-status-label service-id global-state)}
+                            :status service-status-label}
                      (seq current-for-tokens)
                      (assoc :current-for-tokens current-for-tokens)
+                     (some? deployment-error-message)
+                     (assoc :deployment-error-message deployment-error-message)
                      (and (not-empty core-service-description) include-effective-parameters?)
                      (assoc :effective-parameters effective-service-description)
                      (not-empty service-instance-maps)

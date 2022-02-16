@@ -48,27 +48,34 @@
   "Asserts that the given response has a status of 503 and body with the error message
   associated with the deployment error."
   [response deployment-error]
-  `(let [response# ~response
+  `(let [waiter-url# ~'waiter-url
+         response# ~response
+         deployment-error# ~deployment-error
          response-body# (some-> response# :body try-parse-json walk/keywordize-keys)
          ping-response# (:ping-response response-body#)
          service-state# (:service-state response-body#)
          ping-response-body# (some-> ping-response# :body try-parse-json walk/keywordize-keys)
          service-id# (response->service-id response#)
-         error-message# (get-in ping-response-body# [:waiter-error :message])]
+         error-message# (get-in ping-response-body# [:waiter-error :message])
+         deployment-error-message# (deployment-error->str waiter-url# deployment-error#)]
      (assert-waiter-response response#)
      (assert-response-status response# http-200-ok)
      (assert-response-status ping-response# http-503-service-unavailable)
      (is (= "received-response" (get ping-response# :result)) (str ping-response#))
      (is (= {:exists? true :healthy? false :service-id service-id# :status "Failing"} service-state#))
-     (is (= error-message# (deployment-error->str ~'waiter-url ~deployment-error))
-         (formatted-service-state ~'waiter-url service-id#))
+     (is (= error-message# deployment-error-message#)
+         (formatted-service-state waiter-url# service-id#))
      (testing "status is reported as failing"
-       (is
+       (let [service-settings-atom# (atom nil)]
          (wait-for
            (fn []
-             (let [service-settings# (service-settings ~'waiter-url service-id#)]
+             (let [service-settings# (service-settings waiter-url# service-id#)]
+               (reset! service-settings-atom# service-settings#)
                (= "Failing" (get service-settings# :status))))
-           :interval 2 :timeout 30)))))
+           :interval 2 :timeout 30)
+         (let [service-settings# @service-settings-atom#]
+           (is (= error-message# (get service-settings# :deployment-error-message)) (str service-settings#))
+           (is (= "Failing" (get service-settings# :status)) (str service-settings#)))))))
 
 (deftest ^:parallel ^:integration-slow test-invalid-health-check-response
   (testing-using-waiter-url

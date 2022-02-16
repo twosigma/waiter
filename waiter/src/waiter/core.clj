@@ -1577,7 +1577,7 @@
                                  user-agent (str "waiter-ping/" user-agent-version)
                                  handler (wrap-descriptor-fn
                                            (fn inner-ping-service-handler [request]
-                                             (let [retrieve-service-status-label-fn #(service/retrieve-service-status-label % (query-state-fn))
+                                             (let [retrieve-service-status-label-fn #(:service-status-label (service/retrieve-service-status-and-deployment-error % (query-state-fn)))
                                                    service-state-fn (partial descriptor/extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn)]
                                                (pr/ping-service user-agent process-request-fn service-state-fn health-check-config request))))]
                              (wrap-secure-request-fn
