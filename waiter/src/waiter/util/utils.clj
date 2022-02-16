@@ -718,6 +718,18 @@
       (log/info "cannot convert value to an int:" value)
       nil)))
 
+(defn parse-double
+  "Returns either the input as an double or nil if there was an error in parsing."
+  ([value]
+   (parse-double value 0))
+  ([value default-value]
+   (try
+     (when value
+       (Double/parseDouble (str value)))
+     (catch Exception _
+       (log/info "cannot convert value to a double:" value)
+       default-value))))
+
 (defn param-contains?
   "Returns true if and only if request parameter k is present in params and has a value equal to v."
   [params k v]

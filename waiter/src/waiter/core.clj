@@ -1663,6 +1663,7 @@
                                      [:routines prepend-waiter-url retrieve-token-based-fallback-fn router-metrics-helpers
                                       service-id->references-fn service-id->service-description-fn service-id->source-tokens-entries-fn
                                       token->token-hash]
+                                     [:scheduler scheduler]
                                      [:state entitlement-manager]
                                      wrap-secure-request-fn]
                               (let [query-autoscaler-state-fn (:query-state-fn autoscaler)
@@ -1671,7 +1672,7 @@
                                 (wrap-secure-request-fn
                                   (fn service-list-handler-fn [request]
                                     (handler/list-services-handler
-                                      entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url
+                                      entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url
                                       retrieve-token-based-fallback-fn service-id->service-description-fn
                                       service-id->metrics-fn service-id->references-fn service-id->source-tokens-entries-fn
                                       token->token-hash request)))))

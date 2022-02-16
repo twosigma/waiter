@@ -656,7 +656,8 @@
                                                                                  "mem" 2048)))
                                   :service-id->source-tokens-entries-fn (constantly #{})
                                   :token->token-hash identity}
-                       :scheduler {:scheduler (Object.)}
+                       :scheduler {:scheduler (reify scheduler/ServiceScheduler
+                                                (compute-instance-usage [_ _] {:cpus 1 :mem 2048}))}
                        :state {:kv-store nil
                                :router-id "router-id"
                                :scheduler-interactions-thread-pool scheduler-interactions-thread-pool

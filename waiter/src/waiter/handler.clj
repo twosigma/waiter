@@ -293,14 +293,15 @@
 
 (defn compute-resource-usage
   "Computes the resources used to a service."
-  [{:strs [cpus mem]} instance-count]
-  {:cpus (* instance-count cpus)
-   :mem (* instance-count mem)})
+  [scheduler service-id instance-count]
+  (let [{:keys [cpus mem]} (scheduler/compute-instance-usage scheduler service-id)]
+    {:cpus (* instance-count cpus)
+     :mem (* instance-count mem)}))
 
 (defn list-services-handler
   "Retrieves the list of services viewable by the currently logged in user.
    A service is viewable by the run-as-user or a waiter super-user."
-  [entitlement-manager query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
+  [entitlement-manager scheduler query-state-fn query-autoscaler-state-fn prepend-waiter-url retrieve-token-based-fallback-fn
    service-id->service-description-fn service-id->metrics-fn service-id->references-fn service-id->source-tokens-entries-fn
    token->token-hash request]
   (let [{:keys [all-available-service-ids service-id->healthy-instances service-id->unhealthy-instances] :as global-state} (query-state-fn)]
@@ -348,7 +349,7 @@
                                   instance-counts-map (retrieve-instance-counts service-id)
                                   instance-count (reduce + (vals instance-counts-map))
                                   effective-service-description (service-id->service-description-fn service-id :effective? true)
-                                  resource-usage (compute-resource-usage effective-service-description instance-count)
+                                  resource-usage (compute-resource-usage scheduler service-id instance-count)
                                   service-metrics (get service-id->metrics service-id)]
                               (cond->
                                 {:instance-counts instance-counts-map
@@ -470,8 +471,8 @@
 
 (defn- get-service-handler
   "Returns details about the service such as the service description, metrics, instances, etc."
-  [router-id service-id core-service-description kv-store admin-user?-fn allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-fn
-   service-id->service-description-fn service-id->source-tokens-entries-fn service-id->references-fn
+  [scheduler router-id service-id core-service-description kv-store admin-user?-fn allowed-to-manage-service?-fn generate-log-url-fn
+   make-inter-router-requests-fn service-id->service-description-fn service-id->source-tokens-entries-fn service-id->references-fn
    query-state-fn query-autoscaler-state-fn service-id->metrics-fn token->token-hash retrieve-token-based-fallback-fn
    request]
   (let [global-state (query-state-fn)
@@ -535,7 +536,7 @@
         last-request-time (get service-metrics "last-request-time")
         scaling-state (retrieve-scaling-state query-autoscaler-state-fn service-id)
         num-active-instances (count (:active-instances service-instance-maps))
-        resource-usage (compute-resource-usage effective-service-description num-active-instances)
+        resource-usage (compute-resource-usage scheduler service-id num-active-instances)
         result-map (cond-> {:num-routers (count router->metrics)
                             :request-metrics (select-keys service-metrics ["outstanding" "total"])
                             :resource-usage resource-usage
@@ -588,7 +589,7 @@
         (case (:request-method request)
           :delete (delete-service-handler router-id service-id core-service-description scheduler allowed-to-manage-service?-fn
                                           scheduler-interactions-thread-pool make-inter-router-requests-fn fallback-state-atom request)
-          :get (get-service-handler router-id service-id core-service-description kv-store admin-user?-fn allowed-to-manage-service?-fn
+          :get (get-service-handler scheduler router-id service-id core-service-description kv-store admin-user?-fn allowed-to-manage-service?-fn
                                     generate-log-url-fn make-inter-router-requests-fn service-id->service-description-fn
                                     service-id->source-tokens-entries-fn service-id->references-fn
                                     query-state-fn query-autoscaler-state-fn service-id->metrics-fn token->token-hash

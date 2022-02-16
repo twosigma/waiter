@@ -120,8 +120,13 @@
 
   (validate-service [_ service-id]
     (-> service-id
-        service-id->scheduler
-        (scheduler/validate-service service-id))))
+      service-id->scheduler
+      (scheduler/validate-service service-id)))
+
+  (compute-instance-usage [_ service-id]
+    (-> service-id
+      service-id->scheduler
+      (scheduler/compute-instance-usage service-id))))
 
 (defn- service-id+scheduler-parameter->scheduler
   "Resolves the scheduler for a given service-id using the scheduler parameter in the description.

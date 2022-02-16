@@ -1125,6 +1125,19 @@
       (get-in [:raven-sidecar :env-vars :flags])
       (first)))
 
+(defn get-k8s-watch-state
+  "Retrieves the k8s scheduler watch state."
+  [waiter-url cookies]
+  (let [{:keys [body] :as response} (make-request waiter-url "/state/scheduler"
+                                                  :cookies cookies
+                                                  :method :get
+                                                  :query-params {"include" ["components" "watch-state-details"]})
+        body-json (-> body str try-parse-json)
+        watch-state-json (or (get-in body-json ["state" "watch-state"])
+                             (get-in body-json ["state" "components" "kubernetes" "watch-state"]))]
+    (assert-response-status response http-200-ok)
+    watch-state-json))
+
 (defn get-authenticator-kind
   "Get the authenticator that Waiter is configured to use"
   [waiter-url]
