@@ -61,6 +61,7 @@
                  :as args}]
    (->
      {:api-server-url "https://k8s-api.example/"
+      :auth-str-atom (atom nil)
       :authenticate-health-checks? false
       :authorizer {:kind :default
                    :default {:factory-fn 'waiter.authorization/noop-authorizer}}
@@ -1972,13 +1973,14 @@
                 orig-start-auth-renewer start-auth-renewer
                 secret-value "secret-value"]
             (try
-              (with-redefs [start-auth-renewer (fn [context]
-                                                 (let [{:keys [cancel-fn]} (orig-start-auth-renewer context)]
+              (with-redefs [start-auth-renewer (fn [auth-str-atom context]
+                                                 (let [{:keys [cancel-fn]} (orig-start-auth-renewer auth-str-atom context)]
                                                    (reset! kill-task-fn cancel-fn)))]
-                (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :authentication {:action-fn `test-auth-refresher
-                                                                                                             :refresh-delay-mins 1
-                                                                                                             :refresh-value secret-value})))))
-              (is (ct/wait-for #(= secret-value @k8s-api-auth-str) :interval 1 :timeout 10))
+                (let [scheduler (kubernetes-scheduler (assoc base-config :authentication {:action-fn `test-auth-refresher
+                                                                                          :refresh-delay-mins 1
+                                                                                          :refresh-value secret-value}))]
+                  (is (instance? KubernetesScheduler scheduler))
+                  (is (ct/wait-for #(= secret-value (-> scheduler :auth-str-atom deref)) :interval 1 :timeout 10))))
               (finally
                 (@kill-task-fn)))))
 
@@ -2466,7 +2468,7 @@
         ;; which lets us test the watch-retries behavior here
         pods-watch-query-count (atom 0)
         pods-watch-stream (make-watch-stream pods-watch-updates watch-update-signals)
-        pods-watch-query-fn (fn pods-watch-query-fn [resource-name watch-url request-options]
+        pods-watch-query-fn (fn pods-watch-query-fn [scheduler resource-name watch-url request-options]
                               (is (= "Pods" resource-name))
                               (is (empty? request-options))
                               (swap! pods-watch-query-count inc)
