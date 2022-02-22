@@ -55,11 +55,6 @@
   (log/info "called waiter.scheduler.kubernetes/authorization-from-environment")
   {:auth-token (System/getenv "WAITER_K8S_AUTH_STRING")})
 
-(def k8s-api-auth-str
-  "Atom containing authentication string for the Kubernetes API server.
-   This value may be periodically refreshed asynchronously."
-  (atom nil))
-
 (def k8s-timestamp-format
   "Kubernetes reports dates in ISO8061 format, sans the milliseconds component."
   (DateTimeFormat/forPattern "yyyy-MM-dd'T'HH:mm:ss'Z'"))
@@ -490,9 +485,8 @@
   "Make a long-lived HTTP request to the Kubernetes API server using the configured authentication.
    If data is provided via :body, the application/json content type is added automatically.
    The response payload (if any) is returned as a lazy seq of parsed JSON objects."
-  [url request-options]
+  [url auth-str request-options]
   (let [keyword-keys? true
-        auth-str @k8s-api-auth-str
         request-options (cond-> (assoc request-options :as :stream)
                           auth-str (assoc :headers {"Authorization" auth-str}))
         {:keys [body error status] :as response} (clj-http/get url request-options)]
@@ -507,8 +501,8 @@
 (defn streaming-watch-api-request
   "Make a long-lived watch connection to the Kubernetes API server via the streaming-api-request function.
    If a Failure error is found in the response object stream, an exception is thrown."
-  [resource-name url request-options]
-  (for [update-json (streaming-api-request url request-options)]
+  [{:keys [auth-str-atom]} resource-name url request-options]
+  (for [update-json (streaming-api-request url @auth-str-atom request-options)]
     (if (and (= "ERROR" (:type update-json))
              (= "Failure" (-> update-json :object :status)))
       (throw (ex-info "k8s watch connection failed"
@@ -522,10 +516,11 @@
   "Make an HTTP request to the Kubernetes API server using the configured authentication.
    If data is provided via :body, the application/json content type is added automatically.
    The response payload (if any) is automatically parsed to JSON."
-  [url {:keys [http-client scheduler-name]} & {:keys [body content-type request-method] :or {request-method :get} :as options}]
+  [url {:keys [auth-str-atom http-client scheduler-name]}
+   & {:keys [body content-type request-method] :or {request-method :get} :as options}]
   (scheduler/log "making request to K8s API server:" url request-method body)
   (ss/try+
-    (let [auth-str @k8s-api-auth-str
+    (let [auth-str @auth-str-atom
           result (timers/start-stop-time!
                    (metrics/waiter-timer "scheduler" scheduler-name (name request-method))
                    (pc/mapply hu/http-request http-client url
@@ -820,6 +815,7 @@
 
 ; The Waiter Scheduler protocol implementation for Kubernetes
 (defrecord KubernetesScheduler [api-server-url
+                                auth-str-atom
                                 authenticate-health-checks?
                                 authorizer
                                 cluster-name
@@ -1455,9 +1451,9 @@
             :selector rs-selector}}))
 
 (defn start-auth-renewer
-  "Initialize the k8s-api-auth-str atom,
+  "Initialize the k8s-api auth-str atom,
    and optionally start a chime to periodically refresh the value."
-  [{:keys [action-fn refresh-delay-mins] :as context}]
+  [auth-str-atom {:keys [action-fn refresh-delay-mins] :as context}]
   {:pre [(or (nil? refresh-delay-mins)
              (pos-int? refresh-delay-mins))
          (symbol? action-fn)]}
@@ -1471,7 +1467,7 @@
                                          (-> auth-state
                                            (update :auth-token utils/truncate 20)
                                            (assoc :k8s/retrieve-time (t/now))))
-                                 (reset! k8s-api-auth-str auth-token))
+                                 (reset! auth-str-atom auth-token))
                                (log/info "auth token renewal failed:" auth-state))))]
     (assert (fn? refresh!) "Refresh function must be a Clojure fn")
     (auth-update-task)
@@ -1549,7 +1545,7 @@
                                                   socket-timeout-ms (assoc :socket-timeout socket-timeout-ms))
                                 watch-url (str resource-url "&watch=true&resourceVersion=" version)]
                             ;; process updates forever (unless there's an exception)
-                            (doseq [json-object (streaming-api-request-fn resource-name watch-url request-options)]
+                            (doseq [json-object (streaming-api-request-fn scheduler resource-name watch-url request-options)]
                               (when json-object
                                 (if (= "ERROR" (:type json-object))
                                   (log/info "received error update in watch" resource-name json-object)
@@ -1821,10 +1817,12 @@
                                             determine-replicaset-namespace)]
 
     (let [daemon-state (atom nil)
+          auth-str-atom (atom nil)
           auth-renewer (when authentication
-                         (start-auth-renewer authentication))
+                         (start-auth-renewer auth-str-atom authentication))
           retrieve-auth-token-state-fn (or (:query-state-fn auth-renewer) (constantly nil))
           scheduler-config {:api-server-url url
+                            :auth-str-atom auth-str-atom
                             :authenticate-health-checks? authenticate-health-checks?
                             :authorizer authorizer
                             :cluster-name cluster-name
