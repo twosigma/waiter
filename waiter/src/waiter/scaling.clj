@@ -322,14 +322,7 @@
       (normalize-factor 0.5 2) => 0.75
       (normalize-factor 0.9 2) => 0.99"
   [^double factor n]
-  (loop [i 0
-         result 0.0
-         remaining 1.0]
-    (if (>= i n)
-      result
-      (recur (inc i)
-             (+ result (* factor remaining))
-             (* remaining (- 1 factor))))))
+  (- 1 (Math/pow (- 1 factor) n)))
 
 (defn apply-scaling!
   "Given a scale-amount and scale-to-instances, performs the scaling operation."

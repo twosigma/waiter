@@ -764,9 +764,20 @@
            @service-id->scaling-states-atom))))
 
 (deftest normalize-factor-test
-  (is (= 0. (normalize-factor 0.5 0)))
-  (is (= 0.5 (normalize-factor 0.5 1)))
-  (is (= 0.75 (normalize-factor 0.5 2))))
+  (let [double-equals? (fn [d1 d2] (< (Math/abs (- d1 d2)) 0.001))]
+    (is (double-equals? 0. (normalize-factor 0.5 0)))
+    (is (double-equals? 0.5 (normalize-factor 0.5 1)))
+    (is (double-equals? 0.75 (normalize-factor 0.5 2)))
+    (is (double-equals? 0. (normalize-factor 0.6 0)))
+    (is (double-equals? 0.6 (normalize-factor 0.6 1)))
+    (is (double-equals? 0.84 (normalize-factor 0.6 2)))
+    (is (double-equals? 0.936 (normalize-factor 0.6 3)))
+    (is (double-equals? 0.9744 (normalize-factor 0.6 4)))
+    (is (double-equals? 0. (normalize-factor 1.6 0)))
+    (is (double-equals? 1.6 (normalize-factor 1.6 1)))
+    (is (double-equals? 0.64 (normalize-factor 1.6 2)))
+    (is (double-equals? 1.216 (normalize-factor 1.6 3)))
+    (is (double-equals? 0.8704 (normalize-factor 1.6 4)))))
 
 (defn scales-like
   [expected-scale-amount expected-scale-to-instances expected-target-instances
