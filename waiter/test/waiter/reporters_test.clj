@@ -204,3 +204,96 @@ services.service-id.counters.fee.fie
               :last-send-failed-time time
               :failed-writes-to-server 0
               :last-report-successful false} (state codahale-reporter))))))
+
+(deftest test-validate-datadog-reporter-config
+  (let [datadog-reporter-config {:extra-key 444
+                                 :filter-regex #".*"
+                                 :period-ms 300
+                                 :prefix ""
+                                 :host "localhost"
+                                 :port 7777
+                                 :retrying-lookup true
+                                 :tags []}]
+
+    (is (= datadog-reporter-config
+           (validate-datadog-reporter-config datadog-reporter-config)))
+
+    (let [datadog-reporter-config (dissoc datadog-reporter-config :filter-regex)]
+      (is (thrown-with-msg?
+            ExceptionInfo #"filter-regex missing-required-key"
+            (validate-datadog-reporter-config datadog-reporter-config))))
+    (let [datadog-reporter-config (assoc datadog-reporter-config :filter-regex "filter")]
+      (is (thrown-with-msg?
+            ExceptionInfo #"Value does not match schema"
+            (validate-datadog-reporter-config datadog-reporter-config))))
+
+    (let [datadog-reporter-config (dissoc datadog-reporter-config :host)]
+      (is (thrown-with-msg?
+            ExceptionInfo #"host missing-required-key"
+            (validate-datadog-reporter-config datadog-reporter-config))))
+    (let [datadog-reporter-config (assoc datadog-reporter-config :host 1234)]
+      (is (thrown-with-msg?
+            ExceptionInfo #"Value does not match schema"
+            (validate-datadog-reporter-config datadog-reporter-config))))
+
+    (let [datadog-reporter-config (dissoc datadog-reporter-config :period-ms)]
+      (is (thrown-with-msg?
+            ExceptionInfo #"period-ms missing-required-key"
+            (validate-datadog-reporter-config datadog-reporter-config))))
+
+    (let [datadog-reporter-config (dissoc datadog-reporter-config :prefix)]
+      (is (thrown-with-msg?
+            ExceptionInfo #"prefix missing-required-key"
+            (validate-datadog-reporter-config datadog-reporter-config))))
+
+    (let [datadog-reporter-config (dissoc datadog-reporter-config :port)]
+      (is (thrown-with-msg?
+            ExceptionInfo #"port missing-required-key"
+            (validate-datadog-reporter-config datadog-reporter-config))))
+    (let [datadog-reporter-config (assoc datadog-reporter-config :port "1234")]
+      (is (thrown-with-msg?
+            ExceptionInfo #"Value does not match schema"
+            (validate-datadog-reporter-config datadog-reporter-config))))
+
+    (let [datadog-reporter-config (dissoc datadog-reporter-config :retrying-lookup)]
+      (is (thrown-with-msg?
+            ExceptionInfo #"retrying-lookup missing-required-key"
+            (validate-datadog-reporter-config datadog-reporter-config))))
+    (let [datadog-reporter-config (assoc datadog-reporter-config :retrying-lookup "1234")]
+      (is (thrown-with-msg?
+            ExceptionInfo #"Value does not match schema"
+            (validate-datadog-reporter-config datadog-reporter-config))))
+
+    (let [datadog-reporter-config (dissoc datadog-reporter-config :tags)]
+      (is (thrown-with-msg?
+            ExceptionInfo #"tags missing-required-key"
+            (validate-datadog-reporter-config datadog-reporter-config))))))
+
+(deftest test-make-datadog-reporter
+  (let [period-ms 600000
+        filter-regex #".*"
+        prefix ""
+        host "localhost"
+        port 7777
+        retrying-lookup true
+        tags []
+        datadog-reporter (make-datadog-reporter period-ms filter-regex prefix host port tags retrying-lookup)
+        current-time (t/now)]
+    (with-redefs [t/now (constantly current-time)]
+      (try
+        (is (= {:run-state :created}
+               (state datadog-reporter)))
+
+        (start datadog-reporter)
+        (is (= {:run-state :started}
+               (state datadog-reporter)))
+
+        ;; succeeds since the DataDogReporter#report() doesn't throw an exception
+        (report datadog-reporter)
+        (is (= {:last-send-success-time current-time
+                :run-state :started}
+               (state datadog-reporter)))
+        (finally
+          (close! datadog-reporter))))
+    (is (= {:run-state :closed}
+           (select-keys (state datadog-reporter) [:run-state])))))
