@@ -652,11 +652,17 @@ public class GrpcClient {
         final int port = args.length > 1 ? Integer.parseInt(args[1]) : 8080;
         final String methodName = args.length > 2 ? args[2] : "runSendPackageSendErrorRetry";
         final String correlationId = args.length > 3 ? args[3] : ("courier-request-" + System.nanoTime());
+        final String methodArg0 = args.length > 4 ? args[4] : null;
+        final String methodArg1 = args.length > 5 ? args[5] : null;
+        final String methodArg2 = args.length > 6 ? args[6] : null;
 
         System.out.println("host = " + host);
         System.out.println("port = " + port);
         System.out.println("correlationId = " + correlationId);
         System.out.println("methodName = " + methodName);
+        System.out.println("methodArg0 = " + methodArg0);
+        System.out.println("methodArg1 = " + methodArg1);
+        System.out.println("methodArg2 = " + methodArg2);
 
         LoggingConfig.initializeLogging();
 
@@ -710,7 +716,7 @@ public class GrpcClient {
                 runSendPackageSendError(client, correlationId, Arrays.asList("CANCELLED", "UNAVAILABLE"));
                 break;
             case "runSendPackageSuccess":
-                runSendPackageSuccess(client, correlationId);
+                runSendPackageSuccess(client, correlationId, methodArg0, methodArg1, methodArg2);
                 break;
             default:
                 throw new IllegalArgumentException("Unsupported method: " + methodName);
@@ -729,11 +735,13 @@ public class GrpcClient {
         client.logFunction.apply("retrieveState status = " + retrieveStatus);
     }
 
-    private static void runSendPackageSuccess(final GrpcClient client, final String correlationId) {
+    private static void runSendPackageSuccess(final GrpcClient client, final String correlationId,
+                                              final String payloadStr, final String sleepDurationMsStr, final String deadlineDurationMsStr) {
         final String id = UUID.randomUUID().toString();
         final String user = "Jim";
         final StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < 100_000; i++) {
+        final int payload = payloadStr == null ? 100_000 : Integer.parseInt(payloadStr);
+        for (int i = 0; i < payload; i++) {
             sb.append("a");
             if (i % 1000 == 0) {
                 sb.append(".");
@@ -742,7 +750,9 @@ public class GrpcClient {
 
         final HashMap<String, Object> headers = new HashMap<>();
         headers.put("x-cid", correlationId);
-        final RpcResult<CourierReply> rpcResult = client.sendPackage(headers, id, user, sb.toString(), 10, 30000);
+        final int sleepDurationMillis = sleepDurationMsStr == null ? 10 : Integer.parseInt(sleepDurationMsStr);
+        final int deadlineDurationMillis = deadlineDurationMsStr == null ? 30000 : Integer.parseInt(deadlineDurationMsStr);
+        final RpcResult<CourierReply> rpcResult = client.sendPackage(headers, id, user, sb.toString(), sleepDurationMillis, deadlineDurationMillis);
         final CourierReply courierReply = rpcResult.result();
         client.logFunction.apply("sendPackage response = " + courierReply);
         final Status status = rpcResult.status();
