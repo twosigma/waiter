@@ -118,6 +118,55 @@
                                                  (pc/map-keys #(str headers/waiter-header-prefix %) (:waiter-headers input)))]
           (is (= expected actual)))))))
 
+(deftest test-prepare-grpc-compliant-request-properties
+  (let [request-properties-base {:async-check-interval-ms 1010
+                                 :async-request-timeout-ms 1020
+                                 :initial-socket-timeout-ms 1030
+                                 :queue-timeout-ms 1040
+                                 :streaming-timeout-ms 1050}]
+    (doseq [{:keys [backend-proto request-headers request-properties-expected] :as test-case}
+            [{:backend-proto "h2c"
+              :request-headers {"x-waiter-async-check-interval" "2100"
+                                "x-waiter-async-request-timeout" "2200"
+                                "x-waiter-timeout" "2300"
+                                "x-waiter-queue-timeout" "2400"
+                                "x-waiter-streaming-timeout" "2500"}
+              :request-properties-expected {:async-request-timeout-ms 2200
+                                            :async-check-interval-ms 2100
+                                            :initial-socket-timeout-ms 2300
+                                            :queue-timeout-ms 2400
+                                            :streaming-timeout-ms 2500}}
+             {:backend-proto "h2c"
+              :request-headers {}
+              :request-properties-expected {}}
+             {:backend-proto "h2c"
+              :request-headers {"x-waiter-queue-timeout" "2000"}
+              :request-properties-expected {:queue-timeout-ms 2000}}
+             {:backend-proto "h2c"
+              :request-headers {"grpc-timeout" "3S"}
+              :request-properties-expected {:queue-timeout-ms 1040}}
+             {:backend-proto "h2c"
+              :request-headers {"grpc-timeout" "3S"
+                                "x-waiter-queue-timeout" "2000"}
+              :request-properties-expected {:queue-timeout-ms 2000}}
+             {:backend-proto "http"
+              :request-headers {"content-type" "application/grpc"
+                                "grpc-timeout" "3S"}
+              :request-properties-expected {:queue-timeout-ms 1040}}
+             {:backend-proto "h2c"
+              :request-headers {"content-type" "application/grpc"
+                                "grpc-timeout" "3S"}
+              :request-properties-expected {:queue-timeout-ms 3100}}
+             {:backend-proto "h2c"
+              :request-headers {"content-type" "application/grpc"
+                                "grpc-timeout" "3S"
+                                "x-waiter-queue-timeout" "2000"}
+              :request-properties-expected {:queue-timeout-ms 2000}}]]
+      (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers request-headers)
+            request-properties-actual  (prepare-grpc-compliant-request-properties
+                                         request-properties-base backend-proto passthrough-headers waiter-headers)]
+        (is (= (merge request-properties-base request-properties-expected) request-properties-actual) (str test-case))))))
+
 (deftest test-stream-http-response-configure-idle-timeout
   (let [idle-timeout-atom (atom nil)
         output-stream (ByteArrayOutputStream.)]
