@@ -481,6 +481,11 @@
          (get-in [:state :terminated])
          (nil?))))
 
+(defn- drop-managed-fields
+  "Removes the :metadata :managedFields entry from a k8s object."
+  [k8s-obj]
+  (utils/dissoc-in k8s-obj [:metadata :managedFields]))
+
 (defn streaming-api-request
   "Make a long-lived HTTP request to the Kubernetes API server using the configured authentication.
    If data is provided via :body, the application/json content type is added automatically.
@@ -509,8 +514,8 @@
                       {:watch-resource resource-name
                        :watch-response update-json}))
       ;; Drop managedFields from response objects when present (much too verbose!)
-      ;; https://github.com/kubernetes/kubernetes/issues/90066#issuecomment-626828512
-      (utils/dissoc-in update-json [:object :metadata :managedFields]))))
+      ;; https://github.com/kubernetes/kubernetes/issues/90066
+      (update update-json :object drop-managed-fields))))
 
 (defn api-request
   "Make an HTTP request to the Kubernetes API server using the configured authentication.
@@ -527,7 +532,18 @@
                               :accept "application/json"
                               (cond-> options
                                 auth-str (assoc-in [:headers "Authorization"] auth-str)
-                                (and (not content-type) body) (assoc :content-type "application/json"))))]
+                                (and (not content-type) body) (assoc :content-type "application/json"))))
+          result-type (:kind result)
+          ;; Drop managedFields from response objects when present (much too verbose!)
+          ;; https://github.com/kubernetes/kubernetes/issues/90066
+          result (cond
+                   (or (= "Pod" result-type)
+                       (= "ReplicaSet" result-type))
+                   (drop-managed-fields result)
+                   (or (= "PodList" result-type)
+                       (= "ReplicaSetList" result-type))
+                   (update result :items #(mapv drop-managed-fields %))
+                   :else result)]
       (scheduler/log "response from K8s API server:" result)
       result)
     (catch [:status http-400-bad-request] response
@@ -1599,8 +1615,11 @@
                           (when namespace (str "/namespaces/" namespace))
                           "/pods?labelSelector=waiter%2Fcluster=" cluster-name)
        :metadata-key :pods-metadata
-       :update-fn (fn pods-watch-update [{pod :object update-type :type}]
+       :update-fn (fn pods-watch-update [{raw-pod :object update-type :type}]
                     (let [now (t/now)
+                          ;; Drop managedFields from response objects when present (much too verbose!)
+                          ;; https://github.com/kubernetes/kubernetes/issues/90066
+                          pod (drop-managed-fields raw-pod)
                           pod-id (k8s-object->id pod)
                           service-id (k8s-object->service-id pod)
                           version (k8s-object->resource-version pod)
