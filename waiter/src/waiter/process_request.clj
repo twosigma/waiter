@@ -240,7 +240,7 @@
     (str/ends-with? value "m") (-> value (str/replace "m" "") (utils/parse-double))
     (str/ends-with? value "u") (-> value (str/replace "u" "") (utils/parse-double) (* 1e-3))
     (str/ends-with? value "n") (-> value (str/replace "n" "") (utils/parse-double) (* 1e-6))
-    :else (-> (utils/parse-double value))))
+    :else (utils/parse-double value)))
 
 (defn retrieve-grpc-timeout-ms
   "Retrieves the grpc-timeout adjusted with a small delta to ensure the client has a lower timeout than the router.
