@@ -229,6 +229,42 @@
     (update :streaming-timeout-ms lookup-configured-timeout
             (headers/get-waiter-header waiter-headers "streaming-timeout") "streaming timeout")))
 
+(defn timeout-value->millis
+  "Converts a TimeoutValue quantity string with an associated timeout unit to a numeric value.
+   When a client specifies a timeout, it is added to the request headers at the key grpc-timeout with a numeric value and unit."
+  [value]
+  (cond
+    (str/ends-with? value "H") (-> value (str/replace "H" "") (utils/parse-double) (* 3.6e6))
+    (str/ends-with? value "M") (-> value (str/replace "M" "") (utils/parse-double) (* 6e4))
+    (str/ends-with? value "S") (-> value (str/replace "S" "") (utils/parse-double) (* 1e3))
+    (str/ends-with? value "m") (-> value (str/replace "m" "") (utils/parse-double))
+    (str/ends-with? value "u") (-> value (str/replace "u" "") (utils/parse-double) (* 1e-3))
+    (str/ends-with? value "n") (-> value (str/replace "n" "") (utils/parse-double) (* 1e-6))
+    :else (utils/parse-double value)))
+
+(defn retrieve-grpc-timeout-ms
+  "Retrieves the grpc-timeout adjusted with a small delta to ensure the client has a lower timeout than the router.
+   This allows triggering the idle timeout logic in the client and avoids a race in the router eagerly closing the connection."
+  [old-value {:strs [grpc-timeout]}]
+  (try
+    (let [delta-ms 100 ;; small increment to ensure client has a lower timeout than the router
+          timeout-ms (-> grpc-timeout (timeout-value->millis) (+ delta-ms) (int) (max 0))]
+      (log/info "request configuring queue-timeout to" timeout-ms "via grpc-timeout header")
+      timeout-ms)
+    (catch Exception _
+      (log/warn "cannot convert header grpc-timeout" grpc-timeout "to millis")
+      old-value)))
+
+(defn prepare-grpc-compliant-request-properties
+  "Processes request headers and converts them to instance request properties."
+  [instance-request-properties backend-proto passthrough-headers waiter-headers]
+  (cond-> (prepare-request-properties instance-request-properties waiter-headers)
+    (let [proto-version (hu/backend-protocol->http-version backend-proto)]
+      (and (hu/grpc? passthrough-headers proto-version)
+           (contains? passthrough-headers "grpc-timeout")
+           (not (contains? waiter-headers "x-waiter-queue-timeout"))))
+    (update :queue-timeout-ms retrieve-grpc-timeout-ms passthrough-headers)))
+
 (defn- prepare-instance
   "Tries to acquire an instance and set up a mechanism to release the instance when `request-state-chan` is closed.
    Takes `populate-maintainer-chan!`, `service-id` and `reason-map` to acquire the instance.
@@ -273,7 +309,7 @@
   [error reservation-status-promise service-id request]
   (let [[error-cause message status error-class] (classify-error error)
         metrics-map (metrics/retrieve-local-stats-for-service service-id)
-        error-map (assoc metrics-map 
+        error-map (assoc metrics-map
                     :error-class error-class
                     :status status)]
     (deliver reservation-status-promise error-cause)
@@ -355,7 +391,7 @@
                                              (counters/dec! request-body-streaming-counter)
                                              (report-request-size-metrics 0 true))
                                            (let [[error-cause] (when throwable
-                                                                     (classify-error throwable))]
+                                                                 (classify-error throwable))]
                                              (if (and throwable (not (eagerly-closed? error-cause)))
                                                (let [identifier-map {:identifier complete-trigger-id}
                                                      ;; the callback is necessary as there is a data race between aborting the
@@ -453,8 +489,8 @@
         ; Removing expect may be dangerous http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html, but makes requests 3x faster =}
         ; Also remove hop-by-hop headers https://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html#sec13.5.1
         headers (-> (dissoc passthrough-headers "authorization" "expect")
-                    (headers/dissoc-hop-by-hop-headers proto-version)
-                    (assoc "cookie" (auth/remove-auth-cookie (get passthrough-headers "cookie"))))
+                  (headers/dissoc-hop-by-hop-headers proto-version)
+                  (assoc "cookie" (auth/remove-auth-cookie (get passthrough-headers "cookie"))))
         ctrl-ch (when ctrl-mult
                   (async/tap ctrl-mult (au/latest-chan) true))
         waiter-debug-enabled? (utils/request->debug-enabled? request)]
@@ -798,7 +834,7 @@
         (timers/start-stop-time!
           process-timer
           (let [{:keys [service-id service-description]} descriptor
-                {:strs [metric-group]} service-description]
+                {:strs [backend-proto metric-group]} service-description]
             (send local-usage-agent metrics/update-last-request-time-usage-metric service-id request-time)
             (try
               (let [{:keys [waiter-headers passthrough-headers]} descriptor]
@@ -812,7 +848,7 @@
                 (metrics/with-timer!
                   (metrics/service-timer service-id "process")
                   (fn [nanos] (statsd/histo! metric-group "process" nanos))
-                  (let [instance-request-properties (prepare-request-properties instance-request-properties waiter-headers)
+                  (let [instance-request-properties (prepare-grpc-compliant-request-properties instance-request-properties backend-proto passthrough-headers waiter-headers)
                         start-new-service-fn (fn start-new-service-in-process [] (start-new-service-fn descriptor))
                         priority (determine-priority-fn waiter-headers)
                         reason-map (cond-> {:reason :serve-request
@@ -867,16 +903,16 @@
                                     (catch Exception e
                                       (async/close! request-state-chan)
                                       (handle-process-exception e request))))
-                                (assoc-debug-header "x-waiter-backend-response-ns" (str response-elapsed))))
+                              (assoc-debug-header "x-waiter-backend-response-ns" (str response-elapsed))))
                           (catch Exception e
                             (async/close! request-state-chan)
                             (handle-process-exception e request)))
-                        (update :headers headers/dissoc-hop-by-hop-headers proto-version)
-                        (assoc :get-instance-latency-ns instance-elapsed
-                               :instance instance
-                               :instance-proto request-proto
-                               :protocol proto-version)
-                        (assoc-debug-header "x-waiter-get-available-instance-ns" (str instance-elapsed))))))
+                      (update :headers headers/dissoc-hop-by-hop-headers proto-version)
+                      (assoc :get-instance-latency-ns instance-elapsed
+                             :instance instance
+                             :instance-proto request-proto
+                             :protocol proto-version)
+                      (assoc-debug-header "x-waiter-get-available-instance-ns" (str instance-elapsed))))))
               (catch Exception e ; Handle case where we couldn't get an instance
                 (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
                 (statsd/gauge-delta! metric-group "request_outstanding" -1)
@@ -895,7 +931,7 @@
         (log/info "service has been suspended" response-map)
         (meters/mark! (metrics/service-meter service-id "response-rate" "error" "suspended"))
         (-> {:details response-map, :message "Service has been suspended", :status http-503-service-unavailable}
-            (utils/data->error-response request)))
+          (utils/data->error-response request)))
       (handler request))))
 
 (defn- make-maintenance-mode
@@ -903,8 +939,8 @@
   with a custom message if specified to the on-maintenance-mode-error parameter."
   [handler on-maintenance-mode-error]
   (fn maintenance-mode-handler [{{:keys [service-description-template token]
-         {:strs [maintenance owner]} :token-metadata} :waiter-discovery
-        :as request}]
+                                  {:strs [maintenance owner]} :token-metadata} :waiter-discovery
+                                 :as request}]
     (let [response-map {:error-class error-class-maintenance
                         :name (get service-description-template "name")
                         :token token
@@ -952,7 +988,7 @@
           (log/info "max queue length exceeded" response-map)
           (meters/mark! (metrics/service-meter service-id "response-rate" "error" "queue-length"))
           (-> {:details response-map, :message "Max queue length exceeded", :status http-503-service-unavailable}
-              (utils/data->error-response request)))
+            (utils/data->error-response request)))
         (handler request)))))
 
 (defn determine-priority
@@ -997,7 +1033,7 @@
                                (getOutputStream [] servlet-output-stream)
                                (flushBuffer [] (.flush servlet-output-stream)))
             new-request (-> request
-                          (select-keys [:authorization/principal  :authorization/user
+                          (select-keys [:authorization/principal :authorization/user
                                         :character-encoding :client-protocol :content-type :descriptor :headers
                                         :internal-protocol :remote-addr :request-id :request-time :router-id
                                         :scheme :server-name :server-port :support-info])
