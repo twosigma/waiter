@@ -955,6 +955,25 @@
                                                  :filter-regex #config/regex ".*"
                                                  ;; Reporting period in milliseconds
                                                  :period-ms 30000}
+                                       ;; Enables a reporter that sends to a Datadog host:
+                                       :datadog {
+                                                 ;; Method that creates and starts an instance of com.codahale.metrics.graphite.GraphiteReporter
+                                                 :factory-fn waiter.reporter/datadog-reporter
+                                                 ;; A regex to filter by metric name
+                                                 :filter-regex #config/regex ".*"
+                                                 ;; The hostname of where the Datadog server is running
+                                                 :host "datadog.example.com"
+                                                 ;; Reporting period in milliseconds
+                                                 :period-ms 30000
+                                                 ;; The port on which the Datadog server is expecting metrics submissions
+                                                 :port 1111
+                                                 ;; Prefix for metric names
+                                                 :prefix "waiter-internal"
+                                                 ;; Refresh host lookup periodically to pick up any IP address changes
+                                                 :retrying-lookup true
+                                                 ;; Tags sent to Datadog along with metrics
+                                                 ;; https://docs.datadoghq.com/getting_started/tagging/
+                                                 :tags ["cluster:cluster-name" "host:localhost" "service:waiter" "source:router"]}
                                        ;; Enables a reporter that sends to a Graphite host:
                                        :graphite {
                                                   ;; Method that creates and starts an instance of com.codahale.metrics.graphite.GraphiteReporter

@@ -27,7 +27,9 @@
            (java.io IOException PrintStream)
            (java.net InetSocketAddress)
            (java.text DecimalFormat)
-           (java.util.concurrent TimeUnit)))
+           (java.util.concurrent TimeUnit)
+           (org.coursera.metrics.datadog DatadogReporter)
+           (org.coursera.metrics.datadog.transport Transport Transport$Request UdpTransport$Builder Transport$Request)))
 
 (defprotocol CodahaleReporter
   "A reporter for codahale metrics"
@@ -50,12 +52,18 @@
   (reify MetricFilter (matches [_ name _] (some? (re-matches filter-regex name)))))
 
 (defn- scheduled-reporter->codahale-reporter
-  "Create a CodahaleReporter from a com.codahale.metrics.ScheduledReporter"
-  [^ScheduledReporter scheduled-reporter state-atom period-ms]
+  "Create a CodahaleReporter from a com.codahale.metrics.ScheduledReporter.
+   The reporter name has to be passed in explicitly because ScheduledReporter does not provide a method to access the name."
+  [^ScheduledReporter scheduled-reporter reporter-name state-atom period-ms]
   (reify CodahaleReporter
-    (close! [_] (.close scheduled-reporter) (swap! state-atom assoc :run-state :closed))
-    (report [_] (.report scheduled-reporter))
+    (close! [_]
+      (log/info "closing scheduled reporter" reporter-name)
+      (.close scheduled-reporter)
+      (swap! state-atom assoc :run-state :closed))
+    (report [_]
+      (.report scheduled-reporter))
     (start [_]
+      (log/info "starting scheduled reporter" reporter-name)
       (.start scheduled-reporter period-ms TimeUnit/MILLISECONDS)
       (swap! state-atom assoc :run-state :started))
     (state [_] @state-atom)))
@@ -85,7 +93,7 @@
   [config]
   (let [{:keys [filter-regex period-ms]} (validate-console-reporter-config config)
         [console-reporter state-atom] (make-console-reporter filter-regex)
-        codahale-reporter (scheduled-reporter->codahale-reporter console-reporter state-atom period-ms)]
+        codahale-reporter (scheduled-reporter->codahale-reporter console-reporter "console-reporter" state-atom period-ms)]
     (start codahale-reporter)
     codahale-reporter))
 
@@ -203,5 +211,70 @@
   (let [valid-config (validate-graphite-reporter-config config)
         {:keys [filter-regex host period-ms pickled? port prefix refresh-interval-ms] :or {refresh-interval-ms 600000}} valid-config
         codahale-reporter (make-graphite-reporter period-ms filter-regex prefix host port pickled? refresh-interval-ms)]
+    (start codahale-reporter)
+    codahale-reporter))
+
+(defn validate-datadog-reporter-config
+  "Validates DatadogReporter settings and sets defaults."
+  [config]
+  (s/validate {(s/required-key :filter-regex) s/Regex
+               (s/required-key :host) s/Str
+               (s/required-key :period-ms) schema/positive-int
+               (s/required-key :port) schema/positive-int
+               (s/required-key :prefix) s/Str
+               (s/required-key :retrying-lookup) s/Bool
+               (s/required-key :tags) [schema/non-empty-string]
+               s/Any s/Any}
+              config))
+
+(defn make-datadog-transport
+  "Creates the transport layer for pushing metrics to datadog."
+  [state-atom reporter-name host port retrying-lookup]
+  (let [udp-transport (-> (UdpTransport$Builder.)
+                        (.withPort port)
+                        (.withRetryingLookup retrying-lookup)
+                        (.withStatsdHost host)
+                        (.build))]
+    (reify Transport
+      (prepare [_]
+        (let [udp-request (.prepare udp-transport)]
+          (reify Transport$Request
+            (addCounter [_ c]
+              (.addCounter udp-request c))
+            (addGauge [_ g]
+              (.addGauge udp-request g))
+            (send [_]
+              (try
+                (.send udp-request)
+                (swap! state-atom assoc :last-send-success-time (t/now))
+                (catch Exception ex
+                  (log/warn ex "failed to send metrics for" reporter-name)
+                  (swap! state-atom assoc :last-send-failed-time (t/now))
+                  (throw ex))))))))))
+
+(defn make-datadog-reporter
+  "Creates a DatadogReporter for metrics.
+   When retrying-lookup is true, the datadog server host is refreshed periodically to pick up any IP address changes."
+  [period-ms filter-regex prefix host port tags retrying-lookup]
+  (let [state-atom (atom {:run-state :created})
+        registry mc/default-registry
+        reporter-name "datadog-reporter"
+        transport (make-datadog-transport state-atom reporter-name host port retrying-lookup)
+        filter (filter-regex->metric-filter filter-regex)
+        datadog-reporter (-> (DatadogReporter/forRegistry registry)
+                           (.filter filter)
+                           (.withHost host)
+                           (.withPrefix prefix)
+                           (.withTags tags)
+                           (.withTransport transport)
+                           (.build))]
+    (scheduled-reporter->codahale-reporter datadog-reporter reporter-name state-atom period-ms)))
+
+(defn datadog-reporter
+  "Creates and starts a DatadogReporter for metrics"
+  [config]
+  (let [valid-config (validate-datadog-reporter-config config)
+        {:keys [filter-regex host period-ms port prefix retrying-lookup tags]} valid-config
+        codahale-reporter (make-datadog-reporter period-ms filter-regex prefix host port tags retrying-lookup)]
     (start codahale-reporter)
     codahale-reporter))

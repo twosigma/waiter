@@ -93,6 +93,10 @@
                  [org.clojure/tools.logging "1.1.0"]
                  [org.clojure/tools.namespace "1.0.0"]
                  [org.clojure/tools.reader "1.3.2"]
+                 [org.coursera/metrics-datadog "1.1.14"
+                  :exclusions [com.fasterxml.jackson.core/jackson-annotations
+                               com.fasterxml.jackson.core/jackson-databind
+                               org.apache.httpcomponents/httpclient]]
                  [org.slf4j/slf4j-log4j12 "1.7.30"
                   :exclusions [log4j]]
                  [potemkin "0.4.5"]
