@@ -1586,8 +1586,10 @@
     (.start)))
 
 (defn- global-state-query
-  [scheduler {:keys [api-request-fn]} objects-url]
-  (let [{:keys [items] :as response} (api-request-fn objects-url scheduler)
+  [{:keys [scheduler-name] :as  scheduler} {:keys [api-request-fn]} operation-name objects-url]
+  (let [{:keys [items] :as response} (timers/start-stop-time!
+                                       (metrics/waiter-timer "scheduler" scheduler-name operation-name)
+                                       (api-request-fn objects-url scheduler))
         resource-version (k8s-object->resource-version response)]
     {:items items
      :version resource-version}))
@@ -1595,7 +1597,7 @@
 (defn global-pods-state-query
   "Query K8s for all Waiter-managed Pods"
   [scheduler options pods-url]
-  (let [{:keys [items version]} (global-state-query scheduler options pods-url)
+  (let [{:keys [items version]} (global-state-query scheduler options "get-pod-state" pods-url)
         service-id->pod-id->pod (->> items
                                   (group-by k8s-object->service-id)
                                   (pc/map-vals (partial pc/map-from-vals k8s-object->id)))]
@@ -1642,7 +1644,7 @@
 (defn global-rs-state-query
   "Query K8s for all Waiter-managed ReplicaSets"
   [scheduler options rs-url]
-  (let [{:keys [items version]} (global-state-query scheduler options rs-url)
+  (let [{:keys [items version]} (global-state-query scheduler options "get-rs-state" rs-url)
         service-id->service (->> items
                               (map replicaset->Service)
                               (filter some?)
