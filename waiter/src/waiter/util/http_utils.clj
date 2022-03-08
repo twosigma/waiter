@@ -18,7 +18,6 @@
             [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
-            [clojure.walk :as walk]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [slingshot.slingshot :as ss]
@@ -104,7 +103,7 @@
               parsed-body (try
                             (cond-> response-body
                               (not-empty response-body)
-                              (-> json/read-str walk/keywordize-keys))
+                              (json/read-str :key-fn keyword))
                             (catch Exception _
                               response-body))
               response (assoc response :body parsed-body)]
