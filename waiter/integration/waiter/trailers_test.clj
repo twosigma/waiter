@@ -164,6 +164,6 @@
               (is (= response-trailers (some-> response :trailers))
                   (-> response :headers str)))))))))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-trailers-support-http-proto-kitchen
+(deftest ^:parallel ^:integration-fast ^:resource-heavy test-trailers-support-http-proto-kitchen
   (testing-using-waiter-url
     (run-kitchen-trailers-support-test waiter-url "http")))

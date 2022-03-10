@@ -199,7 +199,7 @@
           (is (str/blank? (:instance-id response))))
         (.await long-request-ended-latch)))))
 
-(deftest ^:parallel ^:integration-fast ^:resource-heavy test-grace-period-with-tokens
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-grace-period-with-tokens
   (testing-using-waiter-url
     (let [grace-period (t/minutes 2)
           startup-delay-ms (-> grace-period t/in-millis (* 0.75) long)

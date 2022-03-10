@@ -1414,7 +1414,7 @@
           (doseq [service-id service-ids]
             (delete-service waiter-url service-id)))))))
 
-(deftest ^:parallel ^:integration-slow test-image-field-validation
+(deftest ^:parallel ^:integration-fast test-image-field-validation
   (testing-using-waiter-url
     (let [make-kitchen-request-fn
           (fn [image-name expected-status]
@@ -1602,7 +1602,7 @@
                 response (make-request waiter-url-for-port "/")]
             (assert-response-status response http-200-ok)))))))
 
-(deftest ^:parallel ^:integration-slow test-grace-period-disabled
+(deftest ^:parallel ^:integration-fast test-grace-period-disabled
   (testing-using-waiter-url
     (let [{:keys [cookies request-headers service-id] :as response}
           (make-request-with-debug-info

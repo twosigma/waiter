@@ -99,14 +99,14 @@
     (delete-service waiter-url service-id)))
 
 ; test that we can provide a custom docker image that contains /tmp/index.html with "Integration Test Image" in it
-(deftest ^:parallel ^:integration-slow test-kubernetes-custom-image
+(deftest ^:parallel ^:integration-fast test-kubernetes-custom-image
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (let [custom-image (System/getenv "INTEGRATION_TEST_CUSTOM_IMAGE")
             _ (is (not (str/blank? custom-image)) "You must provide a custom image in the INTEGRATION_TEST_CUSTOM_IMAGE environment variable")]
         (validate-kubernetes-custom-image waiter-url custom-image)))))
 
-(deftest ^:parallel ^:integration-slow test-kubernetes-image-alias
+(deftest ^:parallel ^:integration-fast test-kubernetes-image-alias
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (let [custom-image (System/getenv "INTEGRATION_TEST_CUSTOM_IMAGE_ALIAS")
@@ -325,7 +325,7 @@
             (is (= current-user pod-namespace))
             (is (= current-user service-account))))))))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-kubernetes-pod-expiry-failing-instance
+(deftest ^:parallel ^:integration-fast ^:resource-heavy test-kubernetes-pod-expiry-failing-instance
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (let [{:keys [request-headers service-id] :as response}
