@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.websocket-integration-test
-  (:require [clj-time.core :as t]
+  (:require [clj-time.coerce :as tc]
+            [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.string :as str]
@@ -458,6 +459,7 @@
           inter-request-interval-ms (+ metrics-sync-interval-ms 1000)
           auth-cookie-value (auth-cookie waiter-url)
           waiter-headers (assoc (kitchen-request-headers)
+                           :x-waiter-debug "true"
                            :x-waiter-metric-group "waiter_ws_test"
                            :x-waiter-name (rand-name))
           _ (make-kitchen-request waiter-url waiter-headers :method :get)
@@ -475,6 +477,7 @@
         (let [response-promise (promise)
               connect-start-time-ms (System/currentTimeMillis)
               connect-end-time-ms-atom (atom connect-start-time-ms)
+              request-headers (assoc waiter-headers "x-cid" (utils/unique-identifier))
               connection (ws-client/connect!
                            (websocket-client-factory)
                            (ws-url waiter-url "/websocket-auth")
@@ -491,22 +494,30 @@
                                (async/close! out)
                                (deliver response-promise :done)))
                            {:middleware (fn [_ ^UpgradeRequest request]
-                                          (websocket/add-headers-to-upgrade-request! request waiter-headers)
+                                          (websocket/add-headers-to-upgrade-request! request request-headers)
                                           (add-auth-cookie request auth-cookie-value))})
               [close-code error] (connection->ctrl-data connection)]
           (is (= :qbits.jet.websocket/close close-code))
           (is (= websocket-1000-normal error))
           (is (= :done (deref response-promise (* 2 num-iterations inter-request-interval-ms) :timed-out)))
-          (Thread/sleep (* 3 metrics-sync-interval-ms))
+          (let [min-metrics-sync-interval-ms 1000] ;; avoid sleeping for toon short a duration
+            (-> metrics-sync-interval-ms (* 3) (max min-metrics-sync-interval-ms) (Thread/sleep)))
           (let [connection-duration-ms (- @connect-end-time-ms-atom connect-start-time-ms)
                 websocket-duration-ms (* num-iterations inter-request-interval-ms)
                 minimum-last-request-time-duration-ms (+ connection-duration-ms websocket-duration-ms)
                 minimum-last-request-time (t/plus first-request-time-header (t/millis minimum-last-request-time-duration-ms))
-                service-last-request-time (service-id->last-request-time waiter-url service-id)]
-            (is (pos? (.getMillis service-last-request-time)))
-            (is (or (t/before? minimum-last-request-time service-last-request-time)
-                    (t/equal? minimum-last-request-time service-last-request-time))
-                (str [minimum-last-request-time service-last-request-time]))))))))
+                service-last-request-time (service-id->last-request-time waiter-url service-id)
+                assertion-message (str {:durations {:connection-duration-ms connection-duration-ms
+                                                    :websocket-duration-ms websocket-duration-ms}
+                                        :request-headers request-headers
+                                        :service-id service-id
+                                        :times {:minimum-last-request-time minimum-last-request-time
+                                                :service-last-request-time service-last-request-time
+                                                :ws-connect-end-time-ms (tc/from-long @connect-end-time-ms-atom)
+                                                :ws-connect-start-time (tc/from-long connect-start-time-ms)}})]
+            (is (some? service-last-request-time) assertion-message)
+            (is (pos? (.getMillis service-last-request-time)) assertion-message)
+            (is (t/after? service-last-request-time minimum-last-request-time) assertion-message)))))))
 
 (deftest ^:parallel ^:integration-fast ^:explicit test-request-socket-timeout
   (testing-using-waiter-url
