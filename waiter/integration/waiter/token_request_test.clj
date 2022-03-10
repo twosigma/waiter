@@ -140,7 +140,7 @@
                (and ~deleted ~include-metadata) (assoc :deleted ~deleted))
              (dissoc token-description# :last-update-time :previous))))))
 
-(deftest ^:parallel ^:integration-fast test-token-create-delete
+(deftest ^:parallel ^:integration-slow test-token-create-delete
   (testing-using-waiter-url
     (let [service-id-prefix (rand-name)
           token-prefix (create-token-name waiter-url ".")
@@ -359,7 +359,7 @@
             (assert-response-status response http-404-not-found)
             (is (str/includes? (str body) "Couldn't find token") (str body))))))))
 
-(deftest ^:parallel ^:integration-fast ^:resource-heavy test-service-list-filtering
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-service-list-filtering
   (testing-using-waiter-url
     (let [service-name (rand-name)
           current-user (retrieve-username)
@@ -1232,7 +1232,7 @@
      (delete-service ~waiter-url service-id#)
      service-id#))
 
-(deftest ^:parallel ^:integration-fast test-token-param-support
+(deftest ^:parallel ^:integration-slow test-token-param-support
   (testing-using-waiter-url
     (let [token (rand-name)
           binary (kitchen-cmd)

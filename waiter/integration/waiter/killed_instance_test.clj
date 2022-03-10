@@ -22,7 +22,7 @@
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-scale-down-via-delegated-kill
+(deftest ^:parallel ^:integration-fast ^:resource-heavy test-scale-down-via-delegated-kill
   ;; relies on simple distribution spreading instances across routers, in particular
   ;; to a router that is not triggering the kills (i.e. the leader performing scaling logic)
   (testing-using-waiter-url

@@ -598,7 +598,7 @@
         (finally
           (delete-service waiter-url waiter-headers))))))
 
-(deftest ^:parallel ^:integration-slow test-message-size-received-from-backend-exceeds-supported-max
+(deftest ^:parallel ^:integration-fast test-message-size-received-from-backend-exceeds-supported-max
   (testing-using-waiter-url
     (let [^WebSocketClient websocket-client (websocket-client-factory)
           waiter-settings (waiter-settings waiter-url)

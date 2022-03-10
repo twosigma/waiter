@@ -540,7 +540,7 @@
             (assert-grpc-server-exit-status status assertion-message)
             (is (nil? reply) assertion-message)))))))
 
-(deftest ^:parallel ^:integration-fast test-grpc-bidi-streaming-successful
+(deftest ^:parallel ^:integration-slow test-grpc-bidi-streaming-successful
   (testing-using-waiter-url
     (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
           correlation-id-prefix (rand-name)]
@@ -967,7 +967,7 @@
                   (is (= (reduce + (map count messages)) (.getTotalLength summary)) assertion-message))
                 (assert-request-state grpc-client request-headers service-id correlation-id true ::success)))))))))
 
-(deftest ^:parallel ^:integration-fast test-grpc-client-streaming-client-cancellation
+(deftest ^:parallel ^:integration-slow test-grpc-client-streaming-client-cancellation
   (testing-using-waiter-url
     (when (grpc-cancellations-supported? waiter-url)
       (let [{:keys [h2c-port host request-headers service-id]} (start-courier-instance waiter-url)
@@ -1187,7 +1187,7 @@
               ;; response payload ends with the 8 bytes "received" (ascii/utf8)
               (is (= received-msg-bytes (take-last 8 response-body-bytes))))))))))
 
-(deftest ^:parallel ^:integration-slow test-grpc-health-check-authentication
+(deftest ^:parallel ^:integration-fast test-grpc-health-check-authentication
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
       (let [courier-command (courier-server-command "${PORT0} ${PORT1} true")
