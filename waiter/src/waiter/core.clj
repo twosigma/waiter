@@ -48,6 +48,7 @@
             [waiter.interstitial :as interstitial]
             [waiter.kv :as kv]
             [waiter.metrics :as metrics]
+            [waiter.metrics-consumer :as metrics-consumer]
             [waiter.metrics-sync :as metrics-sync]
             [waiter.password-store :as password-store]
             [waiter.process-request :as pr]
@@ -133,6 +134,7 @@
                               ["/launch-metrics" :state-launch-metrics-handler-fn]
                               ["/leader" :state-leader-handler-fn]
                               ["/local-usage" :state-local-usage-handler-fn]
+                              ["/metrics-consumer" :state-metrics-consumer-handler-fn]
                               ["/maintainer" :state-maintainer-handler-fn]
                               ["/router-metrics" :state-router-metrics-handler-fn]
                               ["/scheduler" :state-scheduler-handler-fn]
@@ -1110,6 +1112,13 @@
    :retrieve-descriptor-fn (pc/fnk [request->descriptor-fn]
                              (fn retrieve-descriptor-fn [run-as-user token]
                                (descriptor/retrieve-descriptor request->descriptor-fn run-as-user token)))
+   :retrieve-latest-descriptor-fn (pc/fnk [[:state kv-store service-description-builder
+                                            service-id-prefix waiter-hostnames]
+                                           assoc-run-as-user-approved? attach-service-defaults-fn attach-token-defaults-fn]
+                                    (fn retrieve-latest-descriptor-fn [run-as-user token]
+                                      (descriptor/retrieve-latest-descriptor
+                                        attach-service-defaults-fn attach-token-defaults-fn service-id-prefix kv-store waiter-hostnames service-description-builder
+                                        assoc-run-as-user-approved? run-as-user token)))
    :retrieve-token-based-fallback-fn (pc/fnk [retrieve-descriptor-fn service-id->service-description-fn]
                                        (fn retrieve-token-based-fallback-fn [service-id current-for-tokens]
                                          (descriptor/retrieve-token-based-fallback
@@ -1324,6 +1333,22 @@
    :messages (pc/fnk [[:settings {messages nil}]]
                (when messages
                  (utils/load-messages messages)))
+   :metrics-consumer-maintainer (pc/fnk
+                                  [[:routines retrieve-descriptor-fn router-metrics-helpers]
+                                   [:settings
+                                    [:metrics-consumer connection-timeout-ms metrics-service-urls idle-timeout-ms retry-delay-ms
+                                     token-metric-chan-buffer-size]]
+                                   [:state clock kv-store local-usage-agent router-id user-agent-version
+                                    token-cluster-calculator]]
+                                  (let [{:keys [service-id->metrics-fn]} router-metrics-helpers
+                                        http-client (hu/http-client-factory {:client-name (str "waiter-metrics-consumer-" user-agent-version)
+                                                                             :conn-timeout connection-timeout-ms
+                                                                             :socket-timeout idle-timeout-ms
+                                                                             :user-agent (str "waiter-metrics-consumer/" user-agent-version)})]
+                                    (metrics-consumer/start-metrics-consumer-maintainer
+                                      http-client clock kv-store token-cluster-calculator retrieve-descriptor-fn service-id->metrics-fn
+                                      metrics-consumer/make-metrics-watch-request local-usage-agent router-id metrics-service-urls
+                                      token-metric-chan-buffer-size retry-delay-ms)))
    ;; This function is defined as a convenience to avoid repeated extraction from daemons/service-chan-maintainer.
    :populate-maintainer-chan! (pc/fnk [service-chan-maintainer]
                                 (let [{:keys [populate-maintainer-chan!]} service-chan-maintainer]
@@ -1420,6 +1445,14 @@
                                 (async/tap router-state-push-mult state-chan)
                                 (maintainer/start-service-chan-maintainer
                                   {} state-chan query-service-maintainer-chan start-service remove-service retrieve-channel)))
+   :start-new-services-handler (pc/fnk
+                                 [[:routines retrieve-latest-descriptor-fn start-new-service-fn]
+                                  [:state kv-store fallback-state-atom leader?-fn]
+                                  metrics-consumer-maintainer]
+                                 (let [{:keys [token-metric-chan-mult]} metrics-consumer-maintainer]
+                                   (scheduler/start-new-services-handler
+                                     retrieve-latest-descriptor-fn kv-store token-metric-chan-mult start-new-service-fn
+                                     leader?-fn fallback-state-atom)))
    :state-sources (pc/fnk [[:scheduler scheduler]
                            [:state query-service-maintainer-chan]
                            autoscaler autoscaling-multiplexer gc-for-transient-metrics interstitial-maintainer
@@ -1843,6 +1876,13 @@
                                     (wrap-secure-request-fn
                                       (fn maintainer-state-handler-fn [request]
                                         (handler/get-chan-latest-state-handler router-id query-state-fn request)))))
+   :state-metrics-consumer-handler-fn (pc/fnk [[:daemons metrics-consumer-maintainer]
+                                               [:state router-id]
+                                               wrap-secure-request-fn]
+                                        (let [{:keys [query-state-fn]} metrics-consumer-maintainer]
+                                          (wrap-secure-request-fn
+                                            (fn maintainer-state-handler-fn [request]
+                                              (handler/get-daemon-state router-id query-state-fn request)))))
    :state-router-metrics-handler-fn (pc/fnk [[:routines router-metrics-helpers]
                                              [:state router-id]
                                              wrap-secure-request-fn]

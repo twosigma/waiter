@@ -22,6 +22,7 @@
 
 (def formatter-iso8601 (:date-time f/formatters))
 (def formatter-rfc822 (:rfc822 f/formatters))
+(def formatter-year-month-day (:year-month-day f/formatters))
 
 (defn date-to-str
   ([^DateTime date-time]

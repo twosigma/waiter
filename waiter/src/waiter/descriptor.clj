@@ -502,3 +502,16 @@
                         :headers {"x-waiter-token" token}
                         :request-time (t/now)}]
     (request->descriptor-fn pseudo-request)))
+
+(defn retrieve-latest-descriptor
+  "Retrieves the latest descriptor for run-as-user and token."
+  [attach-service-defaults-fn attach-token-defaults-fn service-id-prefix kv-store waiter-hostnames service-description-builder
+   assoc-run-as-user-approved? run-as-user token]
+  (let [pseudo-request {:authorization/user run-as-user
+                        ;; we do not know env from request headers and cannot support parameterized services
+                        :headers {"x-waiter-token" token}
+                        :request-time (t/now)}
+        service-approved? (fn service-approved? [service-id] (assoc-run-as-user-approved? pseudo-request service-id))]
+    (compute-descriptor
+      attach-service-defaults-fn attach-token-defaults-fn service-id-prefix kv-store
+      waiter-hostnames pseudo-request service-description-builder service-approved?)))

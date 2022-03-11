@@ -94,13 +94,7 @@
   (let [{:keys [body error headers] :as response}
         (make-request router-url "/apps/instances" :async? true :cookies cookies :query-params query-params)
         _ (assert-response-status response 200)
-        json-objects (->> body
-                          utils/chan-to-seq!!
-                          (map (fn [chunk] (-> chunk .getBytes ByteArrayInputStream.)))
-                          Collections/enumeration
-                          SequenceInputStream.
-                          InputStreamReader.
-                          cheshire/parsed-seq)
+        json-objects (utils/chan-to-json-seq!! body)
         id->healthy-instance-atom (atom {})
         initial-event-time-epoch-ms-atom (atom nil)
         query-state-fn (fn []

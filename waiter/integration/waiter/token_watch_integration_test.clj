@@ -1,14 +1,11 @@
 (ns waiter.token-watch-integration-test
-  (:require [cheshire.core :as cheshire]
-            [clojure.core.async :as async]
+  (:require [clojure.core.async :as async]
             [clojure.set :as set]
             [clojure.test :refer :all]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.utils :as utils]
-            [clojure.tools.logging :as log])
-  (:import (java.io SequenceInputStream InputStreamReader ByteArrayInputStream)
-           (java.util Collections)))
+            [clojure.tools.logging :as log]))
 
 (defn- await-goal-response-for-all-routers
   "Returns true if the goal-response-fn was satisfied with the response from request-fn for all routers before
@@ -118,13 +115,7 @@
   (let [{:keys [body error headers] :as response}
         (make-request router-url "/tokens" :async? true :cookies cookies :query-params query-params)
         _ (assert-response-status response 200)
-        json-objects (->> body
-                          utils/chan-to-seq!!
-                          (map (fn [chunk] (-> chunk .getBytes ByteArrayInputStream.)))
-                          Collections/enumeration
-                          SequenceInputStream.
-                          InputStreamReader.
-                          cheshire/parsed-seq)
+        json-objects (utils/chan-to-json-seq!! body)
         token->index-atom (atom {})
         initial-event-time-epoch-ms-atom (atom nil)
         query-state-fn (fn []

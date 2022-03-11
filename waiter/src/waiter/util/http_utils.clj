@@ -73,6 +73,41 @@
   (and (integer? status)
        (<= http-200-ok status 299)))
 
+(defn http-streaming-request-async
+  "This wraps the qbits.jet.client.http/request function and makes a streaming request. An abort-ch can be provided to
+  abort the streaming response when a message is pushed to it.
+  Returns a chan that contains either an Exception that occurred while making the request a map with keys:
+  :body-chan a channel that has strings pushed to the channel as the response
+  :error-chan a channel that has an error pushed to it if an error occurs while a response is being streamed"
+  [http-client request-url & {:keys [abort-ch accept body content-type form-params headers query-string request-method
+                                     spnego-auth throw-exceptions]
+                              :or {request-method :get spnego-auth false throw-exceptions true}}]
+  (async/go
+    (try
+      (let [request-map (cond-> {:as :string
+                                 :fold-chunked-response? false
+                                 :method request-method
+                                 :url request-url}
+                          abort-ch (assoc :abort-ch abort-ch)
+                          spnego-auth (assoc :auth (spnego-authentication (URI. request-url)))
+                          accept (assoc :accept accept)
+                          form-params (assoc :form-params form-params)
+                          body (assoc :body body)
+                          (not (str/blank? content-type)) (assoc :content-type content-type)
+                          (seq headers) (assoc :headers headers)
+                          query-string (assoc :query-string query-string))
+            {:keys [body error error-chan headers status]} (async/<! (http/request http-client request-map))]
+        (when error
+          (throw error))
+        (when (and throw-exceptions (not (status-2XX? status)))
+          (throw (ex-info "Bad response" {:error-chan-result (async/<! error-chan)
+                                          :response-headers headers
+                                          :status status})))
+        {:body-chan body
+         :error-chan error-chan})
+      (catch Throwable throwable
+        throwable))))
+
 (defn http-request-async
   "Returns a go-block that contains either the body of the response or an exception.
    Wrapper over the qbits.jet.client.http/request function.

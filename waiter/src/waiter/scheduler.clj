@@ -27,6 +27,7 @@
             [slingshot.slingshot :as ss]
             [waiter.config :as config]
             [waiter.correlation-id :as cid]
+            [waiter.descriptor :as descriptor]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.request-log :as rlog]
@@ -664,6 +665,40 @@
           (recur rest (assoc service->service-instances'
                         service
                         (assoc instances :active-instances active-instances))))))))
+
+(defn start-new-services-handler
+  "Listens on token-metric-chan-mult and determines whether to trigger start new services for a token. Only the leader
+  router starts new services. Tokens with new last-request-time pointing to a service descriptor that does not exist will
+  have the latest service started.
+
+  Returns a map with keys:
+  :process-token-event-ch is a channel where messages are pushed to it when a service was started for a token event."
+  [retrieve-latest-descriptor-fn kv-store token-metric-chan-mult start-new-service-fn leader?-fn fallback-state-atom]
+  (cid/with-correlation-id
+    "start-new-services-goroutine"
+    (let [correlation-id (cid/get-correlation-id)
+          process-token-event-ch-buffer (async/sliding-buffer 1000)
+          process-token-event-ch
+          (async/chan
+            process-token-event-ch-buffer
+            (comp
+              (filter (fn latest-service-does-not-exist?
+                        [{:keys [token]}]
+                        (when (leader?-fn)
+                          (let [{:strs [run-as-user]}
+                                (sd/token->service-parameter-template kv-store token :error-on-missing false)
+                                {:keys [service-id] :as latest-descriptor}
+                                (retrieve-latest-descriptor-fn run-as-user token)
+                                service-does-not-exist? (not (descriptor/service-exists? @fallback-state-atom service-id))]
+                            (when service-does-not-exist?
+                              (cid/cinfo correlation-id "starting" {:service-id (get latest-descriptor :service-id)})
+                              (start-new-service-fn latest-descriptor))
+                            service-does-not-exist?)))))
+            (fn process-token-event-ch-ex-handler
+              [e]
+              (cid/cerror correlation-id e "unexpected error when processing new token metric")))]
+      (async/tap token-metric-chan-mult process-token-event-ch)
+      {:process-token-event-ch process-token-event-ch})))
 
 ;;
 ;; Support for tracking killed instance candidates
