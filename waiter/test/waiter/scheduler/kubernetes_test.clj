@@ -328,6 +328,10 @@
                               (get-in replicaset-spec [:spec :template :spec :containers]))
           sidecar-env (get-container-env-map sidecar-container)]
 
+      (testing "replicaset name in env"
+        (is (contains? app-env "WAITER_K8S_REPLICASET_NAME") (str app-env))
+        (is (contains? sidecar-env "WAITER_K8S_REPLICASET_NAME") (str sidecar-env)))
+
       (testing "raven opt-in flag recognized in service env"
         (is (has-raven-config-in-env? app-env (:raven-sidecar scheduler))))
 

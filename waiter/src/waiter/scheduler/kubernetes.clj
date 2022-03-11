@@ -1254,8 +1254,9 @@
   (let [rs-namespace (determine-replicaset-namespace-fn scheduler service-id service-description context)
         work-path (str "/home/" run-as-user)
         home-path (str work-path "/latest")
-        base-env (scheduler/environment service-id service-description
-                                        service-id->password-fn home-path)
+        k8s-name (service-id->k8s-app-name scheduler service-id)
+        base-env (-> (scheduler/environment service-id service-description service-id->password-fn home-path)
+                   (assoc "WAITER_K8S_REPLICASET_NAME" k8s-name))
         ;; We include the default log-bucket-sync-secs value in the total-sigkill-delay-secs
         ;; delay iff the S3 bucket-url setting is configured for the service.
         base-bucket-url (retrieve-service-log-bucket-url service-description log-bucket-url)
@@ -1311,7 +1312,6 @@
                     [{:name "PORT" :value (str port0)}]
                     (for [i (range ports)]
                       {:name (str "PORT" i) :value (str (+ port0 i))})))
-        k8s-name (service-id->k8s-app-name scheduler service-id)
         revision-timestamp (du/date-to-str (t/now)) ;; we use a monotonically increasing version string
         revision-version "0"
         authenticate-health-check? (retrieve-use-authenticated-health-checks? scheduler service-id)
