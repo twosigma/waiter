@@ -648,6 +648,10 @@
                           :failed-instances [{:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}
                                              {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded}}],
                           :expected :not-enough-memory}
+                         {:name "not-enough-memory-with-exit-code", :healthy-instances [], :unhealthy-instances [],
+                          :failed-instances [{:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded} :exit-code 137}
+                                             {:message "Memory limit exceeded:" :flags #{:memory-limit-exceeded} :exit-code 137}],
+                          :expected :not-enough-memory}
                          {:name "invalid-health-check-response", :healthy-instances [], :unhealthy-instances [],
                           :failed-instances [{:message "Task was killed" :flags #{:has-connected :has-responded :never-passed-health-checks}}
                                              {:message nil :flags #{:has-connected :has-responded :never-passed-health-checks}}],
