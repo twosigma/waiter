@@ -1415,12 +1415,12 @@
                        oidc-authenticator (assoc ::oidc-authenticator :oidc-authenticator))
                      (request-handler {:headers {"cookie" "test-cookie"}}))))))))))
 
-(deftest test-waiter-request?-fn
+(deftest test-waiter-request?-fn*
   (testing "string hostname config"
-    (let [config {:state {:waiter-hostnames #{"waiter-host"}}}
-          waiter-request?-fn ((:waiter-request?-fn routines) config)]
-      (is (waiter-request?-fn {:headers {"host" "waiter-host"}}))
-      (is (not (waiter-request?-fn {:headers {"host" "waiter-host-1"}}))))))
+    (let [config {:waiter-hostnames #{"waiter-host"}}
+          waiter-request?-fn* ((:waiter-request?-fn* state) config)]
+      (is (waiter-request?-fn* {:headers {"host" "waiter-host"}}))
+      (is (not (waiter-request?-fn* {:headers {"host" "waiter-host-1"}}))))))
 
 (deftest test-wrap-error-handling
   (let [handler-sync (fn [_] {:status http-200-ok})
