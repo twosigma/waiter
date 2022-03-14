@@ -356,7 +356,7 @@
     :else :service-state-running))
 
 (defn retrieve-service-status-and-deployment-error
-  "Returns the deployment-error message of the specified service."
+  "Returns the status label and the deployment error message of the specified service."
   [service-id {:keys [service-id->deployment-error service-id->instance-counts]}]
   (let [deployment-error (get service-id->deployment-error service-id)
         instance-counts (get service-id->instance-counts service-id)
@@ -364,4 +364,8 @@
     (cond-> {:service-status-label (utils/message service-status)}
       (and deployment-error (not= :service-state-running service-status))
       (assoc :deployment-error-message
-             (str deployment-error-prefix (or (utils/message deployment-error) deployment-error))))))
+             (str deployment-error-prefix
+                  (or (when (map? deployment-error)
+                        (get deployment-error :service-deployment-error-msg))
+                      (utils/message deployment-error)
+                      deployment-error))))))
