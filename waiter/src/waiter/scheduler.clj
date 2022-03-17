@@ -860,20 +860,22 @@
 
 (defn environment
   "Returns a new environment variable map with some basic variables added in"
-  [service-id {:strs [concurrency-level cpus env mem run-as-user]} service-id->password-fn home-path]
-  (merge (dissoc env "WAITER_CONFIG_TOKEN")
-         {"HOME" home-path
-          "LOGNAME" run-as-user
-          "USER" run-as-user
-          "WAITER_CLUSTER" (str (config/retrieve-cluster-name))
-          "WAITER_CONCURRENCY_LEVEL" (str concurrency-level)
-          "WAITER_CPUS" (str cpus)
-          "WAITER_MEM_MB" (str mem)
-          "WAITER_PASSWORD" (service-id->password-fn service-id)
-          "WAITER_SERVICE_ID" service-id
-          "WAITER_USERNAME" "waiter"}
-         (when-let [waiter-token (get env "WAITER_CONFIG_TOKEN")]
-           {"WAITER_TOKEN" waiter-token})))
+  [service-id {:strs [concurrency-level cpus env mem metric-group run-as-user]} service-id->password-fn home-path]
+  (let [waiter-token (get env "WAITER_CONFIG_TOKEN")]
+    (cond-> (-> env
+              (dissoc "WAITER_CONFIG_TOKEN")
+              (assoc "HOME" home-path
+                     "LOGNAME" run-as-user
+                     "USER" run-as-user
+                     "WAITER_CLUSTER" (str (config/retrieve-cluster-name))
+                     "WAITER_CONCURRENCY_LEVEL" (str concurrency-level)
+                     "WAITER_CPUS" (str cpus)
+                     "WAITER_MEM_MB" (str mem)
+                     "WAITER_PASSWORD" (service-id->password-fn service-id)
+                     "WAITER_SERVICE_ID" service-id
+                     "WAITER_USERNAME" "waiter"))
+      metric-group (assoc "WAITER_METRIC_GROUP" (str metric-group))
+      waiter-token (assoc "WAITER_TOKEN" waiter-token))))
 
 ;; Support for tracking service instance launching time stats
 
