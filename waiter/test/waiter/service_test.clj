@@ -21,7 +21,8 @@
             [waiter.mocks :refer :all]
             [waiter.service :refer :all]
             [waiter.test-helpers :refer :all]
-            [waiter.util.cache-utils :as cu])
+            [waiter.util.cache-utils :as cu]
+            [waiter.util.utils :as utils])
   (:import (java.util.concurrent Executors Future)))
 
 (defn- mock-ejecting-instance
@@ -274,3 +275,19 @@
   (is (= :service-state-running (resolve-service-status nil {:healthy 2 :requested 2 :scheduled 1})))
   (is (= :service-state-running (resolve-service-status nil {:healthy 2 :requested 1 :scheduled 2})))
   (is (= :service-state-running (resolve-service-status nil {:healthy 2 :requested 2 :scheduled 2}))))
+
+(deftest test-retrieve-service-status-and-deployment-error
+  (let [service-id->deployment-error {"s1" :memory-limit-exceeded
+                                      "s2" {:service-deployment-error-msg "Service failed to launch"}}
+        service-id->instance-counts {}
+        service-details {:service-id->deployment-error service-id->deployment-error
+                         :service-id->instance-counts service-id->instance-counts}]
+    (with-redefs [utils/message (fn [k] (name k))]
+      (is (= {:service-status-label "service-state-failing"
+              :deployment-error-message "Deployment error: memory-limit-exceeded"}
+             (retrieve-service-status-and-deployment-error "s1" service-details)))
+      (is (= {:service-status-label "service-state-failing"
+              :deployment-error-message "Deployment error: Service failed to launch"}
+             (retrieve-service-status-and-deployment-error "s2" service-details)))
+      (is (= {:service-status-label "service-state-inactive"}
+             (retrieve-service-status-and-deployment-error "s3" service-details))))))
