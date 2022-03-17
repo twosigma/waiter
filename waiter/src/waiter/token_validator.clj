@@ -144,6 +144,15 @@
               (throw (ex-info (str "Cannot modify " parameter-name " token metadata")
                               {:status http-400-bad-request
                                :token-metadata new-token-metadata
+                               :log-level :warn}))))
+          ;; owner must be able to run as run-as-user
+          (when (and run-as-user (not= "*" run-as-user))
+            (when-not (authz/own? entitlement-manager owner run-as-user)
+              (throw (ex-info (str "Owner: " owner " cannot run as user: " run-as-user)
+                              {:authenticated-user authenticated-user
+                               :owner owner
+                               :run-as-user run-as-user
+                               :status http-403-forbidden
                                :log-level :warn})))))
 
         (throw (ex-info (str "Invalid update-mode: " update-mode)

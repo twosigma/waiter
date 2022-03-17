@@ -1323,7 +1323,7 @@
         (let [token (str token "-editor-test")
               entitlement-manager (reify authz/EntitlementManager
                                     (authorized? [_ subject verb {:keys [user]}]
-                                      (and (or (= :manage verb) (= :run-as verb))
+                                      (and (contains? #{:manage :own :run-as} verb)
                                            (or (str/includes? subject user) (str/includes? user subject)))))
               cur-service-description (walk/stringify-keys
                                         {:cmd "cmd1" :mem 100 :permitted-user "tp1" :run-as-user "to1A" :version "v1"
@@ -1638,6 +1638,29 @@
                  :request-method :post})]
           (is (= http-400-bad-request status))
           (is (str/includes? body "Cannot modify last-update-time token metadata"))))
+
+      (testing "post:new-service-description:owner-and-run-as-user"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu-rau"
+                                     :permitted-user "tu-pu" :token "abcdefgh"
+                                     :min-instances 2 :max-instances 10 :owner "tu-onr"})
+              entitlement-manager (reify authz/EntitlementManager
+                                    (authorized? [_ subject action {:keys [user]}]
+                                      (when (= :run-as action)
+                                        (is (and (= auth-user subject) (contains? #{"tu-onr" "tu-rau"} user))))
+                                      (when (= :own action)
+                                        (is (and (= "tu-onr" subject) (contains? #{"tu-rau"} user))))
+                                      ;; fail the ownership check
+                                      (= :run-as action)))
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn (constantly true) attach-service-defaults-fn
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :request-method :post})]
+          (is (= http-403-forbidden status))
+          (is (str/includes? body "Owner: tu-onr cannot run as user: tu-rau"))))
 
       (testing "post:new-service-description:cannot-modify-root"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
