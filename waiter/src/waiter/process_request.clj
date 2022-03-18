@@ -332,10 +332,11 @@
                         (min max-buffer-size))
           buffer-bytes (byte-array buffer-size)
           bytes-read (.read input-stream buffer-bytes)]
-      (log/debug "processed bytes from the request input stream" {:available bytes-available :read bytes-read})
+      (log/info "processed bytes from the request input stream" {:available bytes-available :read bytes-read})
       (when (pos? bytes-read)
         (let [byte-buffer (ByteBuffer/wrap buffer-bytes 0 bytes-read)]
-          (when-not (au/timed-offer!! body-ch byte-buffer streaming-timeout-ms)
+          (if (au/timed-offer!! body-ch byte-buffer streaming-timeout-ms)
+            (log/info bytes-read "request bytes propagated to backend")
             (let [description-map {:bytes-pending bytes-read
                                    :error-class error-class-stream-timeout
                                    :status http-503-service-unavailable
@@ -566,6 +567,7 @@
                           (confirm-live-connection)
                           (let [buffer (timers/start-stop-time! stream-read-body (async/<! body))
                                 bytes-read (if buffer (count buffer) -1)]
+                            (log/info "received bytes on the response channel" {:read bytes-read :streamed bytes-streamed})
                             (if-not (= -1 bytes-read)
                               (do
                                 (meters/mark! throughput-meter bytes-read)
@@ -577,7 +579,9 @@
                                           stream-onto-resp-chan
                                           ;; don't wait forever to write to server
                                           (au/timed-offer! resp-body buffer streaming-timeout-ms)))
-                                  [(+ bytes-streamed bytes-read) true]
+                                  (do
+                                    (log/info bytes-read "response bytes propagated to frontend")
+                                    [(+ bytes-streamed bytes-read) true])
                                   (let [timeout-ch (async/timeout 5000)
                                         [{:keys [error]} source-ch] (async/alts! [error-chan timeout-ch] :priority true)
                                         _ (when (= timeout-ch source-ch)
