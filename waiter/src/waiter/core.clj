@@ -626,8 +626,10 @@
                                                         :hostname hostname
                                                         :password (first passwords)})))
    :clock (pc/fnk [] t/now)
-   :cors-validator (pc/fnk [[:settings cors-config]]
-                     (utils/create-component cors-config))
+   :cors-validator (pc/fnk [[:settings cors-config]
+                            waiter-request?-fn*]
+                     (utils/create-component cors-config
+                                             :context {:waiter-request?-fn waiter-request?-fn*}))
    :custom-components (pc/fnk [[:curator synchronize-fn]
                                [:settings custom-components]
                                kv-store-factory leader?-fn]
@@ -802,6 +804,12 @@
                        (set (if (sequential? hostname)
                               hostname
                               [hostname])))
+   :waiter-request?-fn* (pc/fnk [waiter-hostnames]
+                          (let [local-router (InetAddress/getLocalHost)
+                                waiter-router-hostname (.getCanonicalHostName local-router)
+                                waiter-router-ip (.getHostAddress local-router)
+                                hostnames (conj waiter-hostnames waiter-router-hostname waiter-router-ip)]
+                            (waiter-request?-factory hostnames)))
    :websocket-client (pc/fnk [[:settings [:websocket-config ws-max-binary-message-size ws-max-text-message-size]]
                               http-client-properties]
                        ;; do not share HttpClient instance as WebSocketClient modifies HttpClient properties
@@ -1201,12 +1209,8 @@
                                                                :error-class error-class-unsupported-auth
                                                                :status http-400-bad-request}))))
                                           (sd/validate service-description-builder service-description {}))))
-   :waiter-request?-fn (pc/fnk [[:state waiter-hostnames]]
-                         (let [local-router (InetAddress/getLocalHost)
-                               waiter-router-hostname (.getCanonicalHostName local-router)
-                               waiter-router-ip (.getHostAddress local-router)
-                               hostnames (conj waiter-hostnames waiter-router-hostname waiter-router-ip)]
-                           (waiter-request?-factory hostnames)))
+   :waiter-request?-fn (pc/fnk [[:state waiter-request?-fn*]]
+                         waiter-request?-fn*)
    :websocket-request-auth-cookie-attacher (pc/fnk [[:state passwords router-id]]
                                              (fn websocket-request-auth-cookie-attacher [request]
                                                (ws/inter-router-request-middleware router-id (first passwords) request)))
