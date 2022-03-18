@@ -3117,6 +3117,10 @@
          (accumulate-stale-info {:stale? true :update-epoch-time 200} {:stale? true :update-epoch-time 400}))))
 
 (deftest test-references->stale-info
+  (let [reference-type->stale-info-fn (fn [& _] (throw (ex-info "Error from test-references->stale-info" {})))
+        run-references->stale-info (partial references->stale-info reference-type->stale-info-fn)]
+    (is (= {:stale? false :update-epoch-time nil}
+           (run-references->stale-info [{"type1" {:stale-info {:stale? true :update-epoch-time 100}}}]))))
   (let [reference-type->stale-info-fn (constantly :stale-info)
         run-references->stale-info (partial references->stale-info reference-type->stale-info-fn)]
     (is (= {:stale? false :update-epoch-time nil}

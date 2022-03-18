@@ -1558,19 +1558,24 @@
 (defn references->stale-info
   "Returns the stale info for the provided references.
    The result map has the following keys:
-   - :stale? true if all of references have gone stale;
+   - :stale? true if all references have gone stale;
    - :update-epoch-time
       nil if none of the references are stale or none of the stale references have a known stale time
       else contains the max edit epoch time of the stale references."
   [reference-type->stale-info-fn references]
-  (let [stale-info-seq (map #(reference->stale-info reference-type->stale-info-fn %) references)
-        stale? (and (not (empty? references))
-                    (every? true? (map :stale? stale-info-seq)))]
-    {:stale? stale?
-     :update-epoch-time (when stale?
-                          (->> stale-info-seq
-                            (map :update-epoch-time stale-info-seq)
-                            (reduce utils/nil-safe-max nil)))}))
+  (try
+    (let [stale-info-seq (map #(reference->stale-info reference-type->stale-info-fn %) references)
+          stale? (and (not (empty? references))
+                      (every? true? (map :stale? stale-info-seq)))]
+      {:stale? stale?
+       :update-epoch-time (when stale?
+                            (->> stale-info-seq
+                              (map :update-epoch-time stale-info-seq)
+                              (reduce utils/nil-safe-max nil)))})
+    (catch Exception ex
+      (log/error ex (str "error in computing staleness of references"))
+      {:stale? false
+       :update-epoch-time nil})))
 
 (defn service->gc-time
   "Computes the time when a given service should be GC-ed.
