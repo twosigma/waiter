@@ -1164,7 +1164,7 @@
 (defn attach-raven-sidecar
   "Attaches raven sidecar to replicaset"
   [replicaset raven-sidecar
-   {:strs [backend-proto health-check-port-index health-check-proto] :as service-description}
+   {:strs [backend-proto health-check-port-index health-check-proto ports] :as service-description}
    base-env service-port port0 force-tls?]
   (update-in replicaset
              [:spec :template :spec :containers]
@@ -1172,14 +1172,15 @@
              (let [{:keys [cmd resources image]} raven-sidecar
                    raven-base-env (get-in raven-sidecar [:env-vars :defaults])
                    user-env (:env service-description)
+                   env-ports (for [i (range ports)] [(str "PORT" i) (str (+ port0 i))])
                    env-map (-> raven-base-env
                                (merge user-env base-env)
                                (assoc "FORCE_TLS_TERMINATION" (str force-tls?)
                                       "HEALTH_CHECK_PORT_INDEX" (str health-check-port-index)
                                       "HEALTH_CHECK_PROTOCOL" health-check-proto
-                                      "PORT0" (str port0)
                                       "SERVICE_PORT" (str service-port)
-                                      "SERVICE_PROTOCOL" backend-proto))
+                                      "SERVICE_PROTOCOL" backend-proto)
+                               (into env-ports))
                    env (vec (for [[k v] env-map]
                               {:name k :value v}))
                    raven-container {:command cmd
