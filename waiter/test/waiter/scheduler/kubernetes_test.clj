@@ -496,8 +496,8 @@
               port5 (+ 5 port0)
               env-service-port (get sidecar-env "SERVICE_PORT")
               env-health-check-port-index (get sidecar-env "HEALTH_CHECK_PORT_INDEX")
-              env-port0 (get sidecar-env "PORT0")
               readiness-probe-port (get-in app-container [:readinessProbe :httpGet :port])
+              get-env-port (fn get-env-port [n] (->> n (str "PORT") (get sidecar-env) (Integer/parseInt)))
               liveness-probe-port (get-in app-container [:livenessProbe :httpGet :port])]
           (is (= service-port (Integer/parseInt (get-in replicaset-spec [:spec :template :metadata :annotations :waiter/service-port]))))
           (is (= service-port (get-in sidecar-container [:ports 0 :containerPort])))
@@ -505,7 +505,12 @@
           (is (= "5" env-health-check-port-index))
           (is (= readiness-probe-port health-check-port))
           (is (= port0 (get-in app-container [:ports 0 :containerPort])))
-          (is (= (str port0) env-port0))
+          (is (= port0 (get-env-port 0)))
+          (is (= (+ port0 1) (get-env-port 1)))
+          (is (= (+ port0 2) (get-env-port 2)))
+          (is (= (+ port0 3) (get-env-port 3)))
+          (is (= (+ port0 4) (get-env-port 4)))
+          (is (= (+ port0 5) (get-env-port 5)))
           (is (= liveness-probe-port port5))))
 
       (testing "waiter/port-count annotation is correct"
