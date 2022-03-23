@@ -67,6 +67,12 @@
   (and auth-user run-as-user
        (authorized? entitlement-manager auth-user :run-as {:resource-type :credential, :user run-as-user})))
 
+(defn own?
+  "Helper function that checks the whether the owner has privileges to own something running as the run-as-user."
+  [entitlement-manager owner run-as-user]
+  (and owner run-as-user
+       (authorized? entitlement-manager owner :own {:resource-type :credential, :user run-as-user})))
+
 (defn admin-user?
   "Helper function that checks the whether the auth-user has admin privileges."
   [entitlement-manager auth-user]
