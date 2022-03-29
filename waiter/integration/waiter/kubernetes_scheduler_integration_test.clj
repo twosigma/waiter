@@ -118,9 +118,7 @@
     (when (using-k8s? waiter-url)
       (when-let [log-bucket-url (-> waiter-url get-kubernetes-scheduler-settings :log-bucket-url)]
         (let [router-url (-> waiter-url routers first val)
-              headers {:x-waiter-concurrency-level 1
-                       :x-waiter-distribution-scheme "simple"
-                       :x-waiter-max-instances 2
+              headers {:x-waiter-max-instances 2
                        :x-waiter-min-instances 1
                        :x-waiter-name (rand-name)
                        :x-waiter-scale-down-factor 0.99
@@ -153,29 +151,36 @@
                   (assert-response-status (make-request-fn file-link) http-200-ok)
                   (log/warn "test-s3-logs did not verify file link:" file-link))))
 
-            ;; Get a service with at least one killed instance.
-            (log/info "starting parallel requests")
-            ;; expect that second instance should be healthy inside 10 minutes
-            (let [async-create-headers (merge headers {:x-kitchen-delay-ms 600000
-                                                       :x-waiter-async-request-timeout 615000})
-                  async-request-fn (fn [] (->> #(make-kitchen-request waiter-url % :method :get :path "/async/request")
-                                               (make-request-with-debug-info async-create-headers)))
-                  async-responses (->> async-request-fn (repeatedly 2) vec)
-                  instance-ids (->> async-responses (map :instance-id) set)]
-              (assert-response-status (first async-responses) http-202-accepted)
-              (assert-response-status (second async-responses) http-202-accepted)
-              (is (> (count instance-ids) 1)
-                  (str "async requests not handled by separate instances, instance id: " instance-ids))
-              ;; Canceling both of the async requests should scale down to 1 by killing 1 instance.
-              (doseq [async-response async-responses]
-                (let [status-endpoint (response->location async-response)
-                      cancel-response (make-kitchen-request waiter-url headers :method :delete :path status-endpoint)]
-                  (assert-response-status cancel-response http-204-no-content))))
+            ;; get a killed instance by scaling up to 2 and back down to 1
+            (log/info "creating min-instances=2 override")
+            (let [override-path (str "/apps/" service-id "/override")
+                  post-override-response (make-request waiter-url override-path
+                                                       :body (utils/clj->json {:min-instances 2})
+                                                       :cookies cookies
+                                                       :method :post
+                                                       :verbose true)]
+              (assert-response-status post-override-response http-200-ok)
 
-            (log/info "waiting for at least one killed instance on target router")
-            (is (wait-for #(seq (killed-instances router-url service-id :cookies cookies))
-                          :interval 2 :timeout 45)
-                (str "no killed instances found for " service-id))
+              ;; wait for scale up
+              (is (wait-for #(let [healthy-instance-count (->> (active-instances router-url service-id :cookies cookies)
+                                                               (filter :healthy?)
+                                                               (count))]
+                               (>= healthy-instance-count 2))
+                            :interval 2 :timeout 300)
+                  (str service-id " never scaled to at least 2 healthy instances"))
+
+              (log/info "deleting min-instances=2 override")
+              (let [delete-override-response (make-request waiter-url override-path
+                                                           :cookies cookies
+                                                           :method :delete
+                                                           :verbose true)]
+                (assert-response-status delete-override-response http-200-ok))
+
+              ;; wait for scale down
+              (log/info "waiting for at least one killed instance on target router")
+              (is (wait-for #(seq (killed-instances router-url service-id :cookies cookies))
+                            :interval 2 :timeout 45)
+                  (str "no killed instances found for " service-id)))
 
             ;; Test that the killed instance's logs were persisted to S3.
             ;; This portion of the test logic was modified from the active-instances tests above.
