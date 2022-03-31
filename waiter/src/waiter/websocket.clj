@@ -337,27 +337,34 @@
   "Helper function to stream data between two channels with support for timeout that recognizes backpressure."
   [src-name src-chan dest-name dest-chan streaming-timeout-ms reservation-status-promise stream-error-type
    request-close-chan stream-onto-upload-chan-timer stream-back-pressure-meter notify-bytes-read-fn]
-  (let [upload-chan (async/chan 5)] ;; use same magic 5 as resp-chan in stream-http-response
+  (let [upload-chan (async/chan 5) ;; use same magic 5 as resp-chan in stream-http-response
+        frame-counter (atom 0)
+        byte-streamed-counter (atom 0)
+        stream-info-fn (fn stream-info-fn []
+                         {:bytes @byte-streamed-counter
+                          :frames @frame-counter})]
     (async/pipe upload-chan dest-chan)
     (async/go
       (try
-        (loop [bytes-streamed 0]
+        (loop []
           (if-let [in-data (async/<! src-chan)]
             (let [[bytes-read send-data] (process-incoming-data in-data)]
-              (log/info "received" bytes-read "bytes from" src-name)
+              (log/info "frame" @frame-counter "received" bytes-read "bytes from" src-name)
+              (swap! frame-counter inc)
+              (swap! byte-streamed-counter + bytes-read)
               (notify-bytes-read-fn bytes-read)
               (if (timers/start-stop-time!
                     stream-onto-upload-chan-timer
                     (au/timed-offer! upload-chan send-data streaming-timeout-ms))
-                (recur (+ bytes-streamed bytes-read))
+                (recur)
                 (do
-                  (log/error "unable to stream to" dest-name {:cid (cid/get-correlation-id), :bytes-streamed bytes-streamed})
+                  (log/error "unable to stream to" dest-name (stream-info-fn))
                   (meters/mark! stream-back-pressure-meter)
                   (deliver reservation-status-promise stream-error-type)
                   (async/>! request-close-chan stream-error-type))))
-            (log/info src-name "input channel has been closed, bytes streamed:" bytes-streamed)))
+            (log/info src-name "input channel has been closed" (stream-info-fn))))
         (catch Exception e
-          (log/error e "error in streaming data from" src-name "to" dest-name)
+          (log/error e "error in streaming data from" src-name "to" dest-name (stream-info-fn))
           (deliver reservation-status-promise :generic-error)
           (async/>! request-close-chan :generic-error))))))
 
