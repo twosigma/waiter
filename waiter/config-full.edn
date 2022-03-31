@@ -575,7 +575,11 @@
 
                                  ;; Defines, in milliseconds, the maximum period of inactivity between two consecutive data packets on watch connections.
                                  ;; Defaults to 15 minutes.
-                                 :watch-socket-timeout-ms 900000}
+                                 :watch-socket-timeout-ms 900000
+
+                                 ;; Whether to validate the SSL certificate of the API server on the k8s watch connections.
+                                 ;; Defaults to false (same as our the http client used for all other k8s api calls).
+                                 :watch-validate-ssl false}
 
                     ;; :kind :marathon uses Marathon (https://mesosphere.github.io/marathon/) for scheduling instances:
                     ;:kind :marathon
