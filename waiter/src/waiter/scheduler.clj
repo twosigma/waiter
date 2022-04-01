@@ -625,6 +625,9 @@
                                                         (= error :ssl-exception)
                                                         (conj :ssl-exception)
 
+                                                        (= error :timeout-exception)
+                                                        (conj :timeout-exception)
+
                                                         (and (not= error :unknown-authority)
                                                              (not= error :ssl-exception)
                                                              (not= error :connect-exception))
