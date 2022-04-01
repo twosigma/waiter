@@ -1536,7 +1536,7 @@
 (defn- start-k8s-watch!
   "Start a thread to continuously update the watch-state atom based on watched K8s events."
   [{:keys [api-server-url scheduler-name watch-state] :as scheduler}
-   {:keys [connect-timeout-ms exit-on-error? resource-name resource-url socket-timeout-ms
+   {:keys [connect-timeout-ms exit-on-error? insecure? resource-name resource-url socket-timeout-ms
            streaming-api-request-fn update-fn watch-retries watch-trigger-chan] :as options}]
   (doto
     (Thread.
@@ -1557,7 +1557,7 @@
                         (metrics/waiter-timer "scheduler" scheduler-name "state-watch")
                         (timers/start-stop-time!
                           (metrics/waiter-timer "scheduler" scheduler-name "state-watch" resource-name-lower)
-                          (let [request-options (cond-> {}
+                          (let [request-options (cond-> {:insecure? insecure?}
                                                   connect-timeout-ms (assoc :conn-timeout connect-timeout-ms)
                                                   socket-timeout-ms (assoc :socket-timeout socket-timeout-ms))
                                 watch-url (str resource-url "&watch=true&resourceVersion=" version)]
@@ -1719,7 +1719,8 @@
            log-bucket-url max-patch-retries max-name-length namespace pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
            pod-suffix-length replicaset-api-version response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold
            raven-sidecar scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
-           service-id->password-fn start-scheduler-syncer-fn url watch-chan-throttle-interval-ms watch-connect-timeout-ms watch-init-timeout-ms watch-retries watch-socket-timeout-ms]
+           service-id->password-fn start-scheduler-syncer-fn url watch-chan-throttle-interval-ms watch-connect-timeout-ms watch-init-timeout-ms
+           watch-retries watch-socket-timeout-ms watch-validate-ssl]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver
     {:keys [default-namespace] :as replicaset-spec-builder} :replicaset-spec-builder
     {service-id->deployment-error-cache-threshold :threshold service-id->deployment-error-cache-ttl-sec :ttl} :service-id->deployment-error-cache
@@ -1772,7 +1773,8 @@
          (or (nil? watch-connect-timeout-ms) (integer? watch-connect-timeout-ms))
          (or (nil? watch-init-timeout-ms) (integer? watch-init-timeout-ms))
          (or (nil? watch-retries) (integer? watch-retries))
-         (or (nil? watch-socket-timeout-ms) (integer? watch-socket-timeout-ms))]}
+         (or (nil? watch-socket-timeout-ms) (integer? watch-socket-timeout-ms))
+         (or (nil? watch-validate-ssl) (boolean? watch-validate-ssl))]}
   (let [authorizer (utils/create-component authorizer)
         authenticate-health-checks? (if (some? authenticate-health-checks?) authenticate-health-checks? false)
         http-client (-> http-options
@@ -1804,7 +1806,9 @@
         response->deployment-error-msg-fn (-> response->deployment-error-msg-fn utils/resolve-symbol!)
         restart-kill-threshold (or restart-kill-threshold (+ 2 restart-expiry-threshold))
         watch-trigger-chan (au/latest-chan)
-        watch-options (cond-> (assoc default-watch-options :watch-trigger-chan watch-trigger-chan)
+        watch-options (cond-> (assoc default-watch-options
+                                     :insecure? (not watch-validate-ssl)
+                                     :watch-trigger-chan watch-trigger-chan)
                         (some? watch-retries) (assoc :watch-retries watch-retries)
                         watch-connect-timeout-ms (assoc :connect-timeout-ms watch-connect-timeout-ms)
                         watch-init-timeout-ms (assoc :init-timeout-ms watch-init-timeout-ms)
