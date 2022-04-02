@@ -656,9 +656,13 @@
                           :failed-instances [{:message "Task was killed" :flags #{:has-connected :has-responded :never-passed-health-checks}}
                                              {:message nil :flags #{:has-connected :has-responded :never-passed-health-checks}}],
                           :expected :invalid-health-check-response}
-                         {:name "health-check-timed-out", :healthy-instances [], :unhealthy-instances [],
+                         {:name "bad-socket", :healthy-instances [], :unhealthy-instances [],
                           :failed-instances [{:message "Task was killed" :flags #{:has-connected :never-passed-health-checks}}
                                              {:message nil :flags #{:has-connected :never-passed-health-checks}}],
+                          :expected :bad-socket}
+                         {:name "health-check-timed-out", :healthy-instances [], :unhealthy-instances [],
+                          :failed-instances [{:message "Task was killed" :flags #{:has-connected :timeout-exception}}
+                                             {:message nil :flags #{:has-connected :never-passed-health-checks :timeout-exception}}],
                           :expected :health-check-timed-out}
                          {:name "cannot-connect", :healthy-instances [], :unhealthy-instances [],
                           :failed-instances [{:message "Task was killed" :flags #{:never-passed-health-checks}}
