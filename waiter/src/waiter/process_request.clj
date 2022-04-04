@@ -1042,7 +1042,9 @@
                                  ;; override the protocol and port used while talking to the backend
                                  :instance-request-overrides {:port-index health-check-port-index}
                                  :request-method :get
-                                 :uri health-check-url))
+                                 :uri health-check-url
+                                 ;; skip any CORS checks
+                                 :waiter/skip-cors-check? true))
             pr-response (process-request-handler-fn new-request)
             timeout-ch (async/timeout idle-timeout-ms)
             [response source-ch] (if (au/chan? pr-response)

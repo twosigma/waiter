@@ -154,20 +154,41 @@
 
 (deftest test-wrap-cors-request
   (let [waiter-request? (constantly false)
-        exposed-headers []]
+        exposed-headers []
+        handler-200-response {:status http-200-ok}]
     (testing "cors request denied"
       (let [deny-all (deny-all-validator {})
             request {:headers {"origin" "doesnt.matter"}}
-            handler (-> (fn [_] {:status http-200-ok})
+            handler (-> (fn [_] handler-200-response)
                       (wrap-cors-request deny-all waiter-request? exposed-headers)
                       (core/wrap-error-handling))
             {:keys [status]} (handler request)]
         (is (= http-403-forbidden status))))
 
     (testing "cors request allowed"
+      (testing "skip CORS check enabled"
+        (let [deny-all (deny-all-validator {})
+              request {:headers {"origin" "doesnt.matter"}
+                       :waiter/skip-cors-check? true}
+              handler (-> (fn [_] handler-200-response)
+                        (wrap-cors-request deny-all waiter-request? exposed-headers)
+                        (core/wrap-error-handling))
+              response (handler request)]
+          (is (= handler-200-response response))))
+
+      (testing "no origin header"
+        (let [deny-all (deny-all-validator {})
+              request {:headers {}
+                       :waiter/skip-cors-check? true}
+              handler (-> (fn [_] handler-200-response)
+                        (wrap-cors-request deny-all waiter-request? exposed-headers)
+                        (core/wrap-error-handling))
+              response (handler request)]
+          (is (= handler-200-response response))))
+
       (let [allow-all (allow-all-validator {})
             request {:headers {"origin" "doesnt.matter"}}
-            handler (wrap-cors-request (fn [_] {:status http-200-ok}) allow-all waiter-request? exposed-headers)
+            handler (wrap-cors-request (fn [_] handler-200-response) allow-all waiter-request? exposed-headers)
             {:keys [headers status]} (handler request)]
         (is (= http-200-ok status))
         (is (= "doesnt.matter" (get headers "access-control-allow-origin")))
@@ -179,7 +200,7 @@
             exposed-headers ["foo" "bar"]
             allow-all (allow-all-validator {})
             request {:headers {"origin" "doesnt.matter"}}
-            handler (wrap-cors-request (fn [_] {:status http-200-ok}) allow-all waiter-request? exposed-headers)
+            handler (wrap-cors-request (fn [_] handler-200-response) allow-all waiter-request? exposed-headers)
             {:keys [headers status]} (handler request)]
         (is (= http-200-ok status))
         (is (= "doesnt.matter" (get headers "access-control-allow-origin")))
@@ -193,7 +214,7 @@
             request {:headers {"host" "does.matter"
                                "origin" "http://does.matter"}
                      :scheme "http"}
-            handler (wrap-cors-request (fn [_] {:status http-200-ok}) allow-all waiter-request? exposed-headers)
+            handler (wrap-cors-request (fn [_] handler-200-response) allow-all waiter-request? exposed-headers)
             {:keys [headers status]} (handler request)]
         (is (= http-200-ok status))
         (is (= "http://does.matter" (get headers "access-control-allow-origin")))
@@ -205,7 +226,7 @@
             exposed-headers []
             allow-all (allow-all-validator {})
             request {:headers {"origin" "doesnt.matter"}}
-            handler (wrap-cors-request (fn [_] {:status http-200-ok}) allow-all waiter-request? exposed-headers)
+            handler (wrap-cors-request (fn [_] handler-200-response) allow-all waiter-request? exposed-headers)
             {:keys [headers status]} (handler request)]
         (is (= http-200-ok status))
         (is (= "doesnt.matter" (get headers "access-control-allow-origin")))
