@@ -110,12 +110,12 @@
   (let [exposed-headers-str (when (seq exposed-headers)
                               (str/join ", " exposed-headers))]
     (fn wrap-cors-fn [request]
-      (let [{:keys [headers request-method]} request
+      (let [{:keys [headers request-method waiter/skip-cors-check?]} request
             {:strs [origin]} headers
             {:keys [allowed? summary]} (if origin
                                          (request-check cors-validator request)
                                          {:allowed? false :summary {:wrap-cors-request [:origin-absent]}})]
-        (if (not origin)
+        (if (or (true? skip-cors-check?) (not origin))
           (handler request)
           (do
             (when-not allowed?
