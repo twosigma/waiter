@@ -2475,7 +2475,7 @@
         pods-watch-stream (make-watch-stream pods-watch-updates watch-update-signals)
         pods-watch-query-fn (fn pods-watch-query-fn [scheduler resource-name watch-url request-options]
                               (is (= "Pods" resource-name))
-                              (is (empty? request-options))
+                              (is (= {:insecure? nil} request-options))
                               (swap! pods-watch-query-count inc)
                               (let [last-resource-version (->> watch-url
                                                                (re-find #"(?<=[&?]resourceVersion=)\d+")
