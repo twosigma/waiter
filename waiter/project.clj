@@ -83,11 +83,11 @@
                  [org.clojure/clojure "1.10.3"]
                  [org.clojure/core.async "1.5.648"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
-                 [org.clojure/core.memoize "1.0.236"
+                 [org.clojure/core.memoize "1.0.253"
                   :exclusions [org.clojure/clojure]]
                  [org.clojure/data.codec "0.1.1"]
                  [org.clojure/data.json "1.0.0"]
-                 [org.clojure/data.priority-map "1.0.0"]
+                 [org.clojure/data.priority-map "1.1.0"]
                  [org.clojure/data.zip "1.0.0"]
                  [org.clojure/tools.cli "1.0.194"]
                  [org.clojure/tools.logging "1.1.0"]
