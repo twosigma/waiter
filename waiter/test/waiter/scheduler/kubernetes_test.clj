@@ -2796,6 +2796,13 @@
             instance (pod->ServiceInstance dummy-scheduler pod')]
         (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
+    (testing "pod from scheduler with kube context to instance"
+      (let [kube-context-name "kube-ctx-1"
+            dummy-scheduler (assoc base-scheduler :kube-context kube-context-name)
+            instance (pod->ServiceInstance dummy-scheduler pod)
+            instance-map' (assoc instance-map :k8s/context kube-context-name)]
+        (is (= (scheduler/make-ServiceInstance instance-map') instance))))
+
     (testing "pod with expired annotation"
       (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
             pod' (assoc-in pod [:metadata :annotations :waiter/pod-expired] "true")

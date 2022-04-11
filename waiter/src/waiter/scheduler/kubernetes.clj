@@ -373,7 +373,7 @@
 
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
-  [{:keys [api-server-url leader?-fn restart-kill-threshold] :as scheduler} pod]
+  [{:keys [api-server-url kube-context leader?-fn restart-kill-threshold] :as scheduler} pod]
   (try
     (let [;; waiter-app is the first container we register
           primary-container-status (retrieve-container-status pod waiter-primary-container-name)
@@ -453,6 +453,7 @@
                               :service-id service-id
                               :started-at pod-started-at
                               :status status-message}
+                       kube-context (assoc :k8s/context kube-context)
                        node-name (assoc :k8s/node-name node-name)
                        phase (assoc :k8s/pod-phase phase)
                        revision-timestamp (assoc :k8s/revision-timestamp revision-timestamp)
@@ -841,6 +842,7 @@
                                 determine-replicaset-namespace-fn
                                 fileserver
                                 http-client
+                                kube-context
                                 leader?-fn
                                 log-bucket-url
                                 namespace
