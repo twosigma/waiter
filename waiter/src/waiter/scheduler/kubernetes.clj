@@ -1693,20 +1693,22 @@
   (let [sleep-ms 10]
     (when (pos? init-timeout-ms)
       (loop [total-ms-slept 0]
-        (cond
-          ;; base case: both watches initialized
-          (let [current-watch-state @watch-state]
+        (let [current-watch-state @watch-state]
+          (cond
+            ;; base case: both watches initialized
             (and (get-in current-watch-state [:rs-metadata :timestamp :snapshot])
-                 (get-in current-watch-state [:pods-metadata :timestamp :snapshot])))
-          (log/info "scheduler watches ready after" total-ms-slept "milliseconds")
-          ;; recursive case: still waiting for one or both watches
-          (<= total-ms-slept init-timeout-ms)
-          (do
-            (utils/sleep sleep-ms)
-            (recur (+ total-ms-slept sleep-ms)))
-          ;; base case: init-timeout expired, but the watches still aren't ready
-          :else
-          (log/error "scheduler watches still not ready after" init-timeout-ms "milliseconds"))))))
+                 (get-in current-watch-state [:pods-metadata :timestamp :snapshot]))
+            (log/info "scheduler watches ready after" total-ms-slept "milliseconds")
+            ;; recursive case: still waiting for one or both watches
+            (<= total-ms-slept init-timeout-ms)
+            (do
+              (utils/sleep sleep-ms)
+              (recur (+ total-ms-slept sleep-ms)))
+            ;; base case: init-timeout expired, but the watches still aren't ready
+            :else
+            (let [error-msg "scheduler watches still not ready after" init-timeout-ms "milliseconds"]
+              (log/error error-msg)
+              (throw (ex-info error-msg current-watch-state)))))))))
 
 (defn fileserver-container-enabled?
   "Returns true when the port is configured on the fileserver configuration."
