@@ -842,8 +842,54 @@
                                  ([service-id] (retrieve-syncer-state @syncer-state-atom service-id)))}))
 
 ;;
-;; Support for tracking killed instances
+;; Support for tracking killed instance candidates
 ;;
+(defn- cleanup-kill-candidate
+  "Cleans up state for a kill candidate.
+   If candidate was not killed but still failed, we trigger the failed instance callback."
+  [kill-candidates-state instance-id]
+  (let [{:keys [track-failed-instance tracked-states]} (get kill-candidates-state instance-id)]
+    (when (and track-failed-instance
+               (contains? tracked-states :failed)
+               (not (contains? tracked-states :killed)))
+      (log/info "tracking kill candidate as failed instance" {:id instance-id})
+      (track-failed-instance))
+    (dissoc kill-candidates-state instance-id)))
+
+(let [kill-candidates-state-atom (atom {})]
+
+  (defn track-kill-candidate!
+    "Tracks which instances are being used as kill candidates for the provided duration."
+    [instance-id reason duration-ms]
+    (log/info "tracking instance as kill candidate" {:duration-sm duration-ms :id instance-id :reason reason})
+    (swap! kill-candidates-state-atom update instance-id update :tracked-states set/union #{reason})
+    (when (= :prepare-to-kill reason)
+      (when (pos? duration-ms)
+        (async/go
+          (async/<! (async/timeout duration-ms))
+          (log/info "end tracking instance as kill candidate" {:id instance-id})
+          (swap! kill-candidates-state-atom cleanup-kill-candidate instance-id)))))
+
+  (defn track-failed-kill-candidate!
+    "Tags a kill candidate as a failed instance for processing during cleanup."
+    [instance-id track-failed-instance-callback]
+    (let [kill-candidate?-atom (atom false)]
+      (swap! kill-candidates-state-atom
+             (fn update-failed-kill-candidate-state-1 [kill-candidates-state]
+               (cond-> kill-candidates-state
+                 (contains? kill-candidates-state instance-id)
+                 (update instance-id (fn update-failed-kill-candidate-state-2 [state]
+                                       (reset! kill-candidate?-atom true)
+                                       (-> state
+                                         (update :tracked-states set/union #{:failed})
+                                         (assoc :track-failed-instance track-failed-instance-callback)))))))
+      (when @kill-candidate?-atom
+        (log/info "kill candidate marked as follow-up for failed instance" {:id instance-id}))))
+
+  (defn is-kill-candidate?
+    "Returns true if the queried instance is currently being tracked as a kill candidate."
+    [instance-id]
+    (contains? @kill-candidates-state-atom instance-id)))
 
 (defn add-instance-to-buffered-collection!
   "Helper function to add/remove entries into the transient store"
@@ -856,10 +902,16 @@
                          true (conj instance-entry))))))
 
 (defn add-to-store-and-track-failed-instance!
-  [transient-store max-instances-to-keep service-id instance]
-  (log-service-instance instance :fail :info)
-  (add-instance-to-buffered-collection! transient-store max-instances-to-keep service-id instance
-                                        (fn [] #{}) (fn [instances] (-> (sort-instances instances) (rest) (set)))))
+  [transient-store max-instances-to-keep service-id {:keys [id] :as instance}]
+  (let [track-failed-instance-helper
+        (fn track-failed-instance-helper []
+          (do
+            (log-service-instance instance :fail :info)
+            (add-instance-to-buffered-collection! transient-store max-instances-to-keep service-id instance
+                                                  (fn [] #{}) (fn [instances] (-> (sort-instances instances) (rest) (set))))))]
+    (if (is-kill-candidate? id)
+      (track-failed-kill-candidate! id track-failed-instance-helper)
+      (track-failed-instance-helper))))
 
 (defn environment
   "Returns a new environment variable map with some basic variables added in"

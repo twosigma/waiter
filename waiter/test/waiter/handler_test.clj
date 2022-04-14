@@ -1953,21 +1953,24 @@
     (let [{:keys [status]} (async/<!! response-chan)]
       (is (= http-400-bad-request status)))))
 
-(deftest test-eject-killed-instance
-  (let [notify-instance-chan (async/promise-chan)
-        notify-instance-killed-fn (fn [instance] (async/>!! notify-instance-chan instance))
+(deftest test-eject-prepare-to-kill-instance
+  (let [notify-instance-killed-fn (fn [instance] (throw (ex-info "Unexpected call" {:instance instance})))
         instance-rpc-chan (async/chan)
         populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
         test-service-id "test-service-id"
-        instance {:id "test-instance-id"
+        test-instance-id "test-instance-id"
+        instance {:id test-instance-id
                   :service-id test-service-id
                   :started-at nil}
         request {:body (StringBufferInputStream.
                          (utils/clj->json
                            {"instance" instance
                             "period-in-ms" 1000
-                            "reason" "killed"}))}]
-    (with-redefs []
+                            "reason" "prepare-to-kill"}))}
+        track-kill-candidates-atom! (atom #{})]
+    (with-redefs [scheduler/track-kill-candidate! (fn [instance-id reason duration-ms]
+                                                    (swap! track-kill-candidates-atom! conj
+                                                           {:duration-ms duration-ms :instance-id instance-id :reason reason}))]
       (let [response-chan (eject-instance notify-instance-killed-fn populate-maintainer-chan! request)
             eject-chan (async/promise-chan)]
         (async/thread
@@ -1978,13 +1981,53 @@
             (is (instance? ManyToManyChannel response-chan))
             (async/>!! response-chan eject-chan)))
         (async/thread
-          (let [[{:keys [eject-period-ms instance-id]} repsonse-chan] (async/<!! eject-chan)]
+          (let [[{:keys [eject-period-ms instance-id]} response-chan] (async/<!! eject-chan)]
             (is (= 1000 eject-period-ms))
             (is (= (:id instance) instance-id))
-            (async/>!! repsonse-chan :ejected)))
+            (async/>!! response-chan :ejected)))
+        (let [{:keys [status]} (async/<!! response-chan)]
+          (is (= http-200-ok status)))
+        (is (= #{{:duration-ms 1000 :instance-id test-instance-id :reason :prepare-to-kill}}
+               @track-kill-candidates-atom!))))))
+
+(deftest test-eject-killed-instance
+  (let [notify-instance-chan (async/promise-chan)
+        notify-instance-killed-fn (fn [instance] (async/>!! notify-instance-chan instance))
+        instance-rpc-chan (async/chan)
+        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
+        test-service-id "test-service-id"
+        test-instance-id "test-instance-id"
+        instance {:id test-instance-id
+                  :service-id test-service-id
+                  :started-at nil}
+        request {:body (StringBufferInputStream.
+                         (utils/clj->json
+                           {"instance" instance
+                            "period-in-ms" 1000
+                            "reason" "killed"}))}
+        track-kill-candidates-atom! (atom #{})]
+    (with-redefs [scheduler/track-kill-candidate! (fn [instance-id reason duration-ms]
+                                                    (swap! track-kill-candidates-atom! conj
+                                                           {:duration-ms duration-ms :instance-id instance-id :reason reason}))]
+      (let [response-chan (eject-instance notify-instance-killed-fn populate-maintainer-chan! request)
+            eject-chan (async/promise-chan)]
+        (async/thread
+          (let [{:keys [cid method response-chan service-id]} (async/<!! instance-rpc-chan)]
+            (is (= :eject method))
+            (is (= test-service-id service-id))
+            (is cid)
+            (is (instance? ManyToManyChannel response-chan))
+            (async/>!! response-chan eject-chan)))
+        (async/thread
+          (let [[{:keys [eject-period-ms instance-id]} response-chan] (async/<!! eject-chan)]
+            (is (= 1000 eject-period-ms))
+            (is (= (:id instance) instance-id))
+            (async/>!! response-chan :ejected)))
         (let [{:keys [status]} (async/<!! response-chan)]
           (is (= http-200-ok status))
-          (is (= instance (async/<!! notify-instance-chan))))))))
+          (is (= instance (async/<!! notify-instance-chan))))
+        (is (= #{{:duration-ms 1000 :instance-id test-instance-id :reason :killed}}
+               @track-kill-candidates-atom!))))))
 
 (deftest test-get-ejected-instances-cannot-find-channel
   (let [instance-rpc-chan (async/chan)

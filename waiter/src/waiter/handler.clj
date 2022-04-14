@@ -214,12 +214,15 @@
               "eject" instance-id "of" service-id "response:" (name response-code))
             (if successful?
               (do
+                (when (= "prepare-to-kill" reason)
+                  (scheduler/track-kill-candidate! instance-id :prepare-to-kill period-in-ms))
                 (when (= "killed" reason)
                   (let [instance (-> instance
                                      walk/keywordize-keys
                                      (update :started-at (fn [started-at]
                                                            (when started-at
                                                              (du/str-to-date started-at)))))]
+                    (scheduler/track-kill-candidate! instance-id :killed period-in-ms)
                     (notify-instance-killed-fn instance)))
                 (utils/clj->json-response {:instance-id instance-id
                                            :eject-period period-in-ms}))

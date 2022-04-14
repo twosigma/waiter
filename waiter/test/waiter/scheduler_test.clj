@@ -976,3 +976,70 @@
           (is (= expected-state-1 actual-state-1')))
         (testing "applied router state update"
           (is (= expected-state-2 actual-state-2)))))))
+
+(deftest test-track-kill-candidate!
+  (testing "basic cleanup"
+    (let [instance-id-1 (str "id-1-" (System/nanoTime))
+          instance-id-2 (str "id-1-" (System/nanoTime))
+          instance-id-3 (str "id-1-" (System/nanoTime))]
+      (track-kill-candidate! instance-id-1 :prepare-to-kill 200)
+      (track-kill-candidate! instance-id-2 :prepare-to-kill 400)
+      (is (is-kill-candidate? instance-id-1))
+      (is (is-kill-candidate? instance-id-2))
+      (is (not (is-kill-candidate? instance-id-3)))
+      (Thread/sleep 300)
+      (track-kill-candidate! instance-id-2 :killed 1000)
+      (is (not (is-kill-candidate? instance-id-1)))
+      (is (is-kill-candidate? instance-id-2))
+      (is (not (is-kill-candidate? instance-id-3)))
+      (Thread/sleep 200)
+      (is (not (is-kill-candidate? instance-id-1)))
+      (is (not (is-kill-candidate? instance-id-2)))
+      (is (not (is-kill-candidate? instance-id-3)))))
+
+  (testing "cleanup of failed but not killed instance"
+    (let [instance-id-1 (str "id-1-" (System/nanoTime))
+          instance-id-2 (str "id-1-" (System/nanoTime))
+          instance-id-3 (str "id-1-" (System/nanoTime))
+          failed-instance-tracker (atom #{})
+          failed-instance-callback-wrapper (fn [instance-id]
+                                             (fn []
+                                               (swap! failed-instance-tracker conj instance-id))) ]
+      (track-kill-candidate! instance-id-1 :prepare-to-kill 200)
+      (track-kill-candidate! instance-id-2 :prepare-to-kill 200)
+      (track-kill-candidate! instance-id-3 :prepare-to-kill 200)
+      (track-kill-candidate! instance-id-2 :killed 1000)
+      (track-failed-kill-candidate! instance-id-2 (failed-instance-callback-wrapper instance-id-2))
+      (track-failed-kill-candidate! instance-id-3 (failed-instance-callback-wrapper instance-id-3))
+      (Thread/sleep 300)
+      (is (not (is-kill-candidate? instance-id-1)))
+      (is (not (is-kill-candidate? instance-id-2)))
+      (is (not (is-kill-candidate? instance-id-3)))
+      (is (not (contains? @failed-instance-tracker instance-id-1)))
+      (is (not (contains? @failed-instance-tracker instance-id-2)))
+      (is (contains? @failed-instance-tracker instance-id-3)))))
+
+(deftest test-add-to-store-and-track-failed-instance!
+  (let [max-instances-to-keep 2
+        callback-atom (atom nil)]
+    (with-redefs [is-kill-candidate? (fn [instance-id] (= instance-id "i3"))
+                  track-failed-kill-candidate! (fn [instance-id callback]
+                                                 (is (= instance-id "i3"))
+                                                 (reset! callback-atom callback))]
+      (let [transient-store (atom {})
+            service-id "s1"
+            instance-1 {:id "i1" :service-id service-id :started-at "202204190010"}
+            instance-2 {:id "i2" :service-id service-id :started-at "202204190020"}
+            instance-3 {:id "i3" :service-id service-id :started-at "202204190030"}
+            instance-4 {:id "i4" :service-id service-id :started-at "202204190040"}]
+        (add-to-store-and-track-failed-instance! transient-store max-instances-to-keep service-id instance-1)
+        (is (= #{instance-1} (set (get @transient-store service-id))))
+        (add-to-store-and-track-failed-instance! transient-store max-instances-to-keep service-id instance-2)
+        (is (= #{instance-1 instance-2} (set (get @transient-store service-id))))
+        (add-to-store-and-track-failed-instance! transient-store max-instances-to-keep service-id instance-3)
+        (is (= #{instance-1 instance-2} (set (get @transient-store service-id))))
+        (add-to-store-and-track-failed-instance! transient-store max-instances-to-keep service-id instance-4)
+        (is (= #{instance-2 instance-4} (set (get @transient-store service-id))))
+        (is @callback-atom)
+        (@callback-atom)
+        (is (= #{instance-3 instance-4} (set (get @transient-store service-id))))))))

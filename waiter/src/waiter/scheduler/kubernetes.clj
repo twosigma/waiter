@@ -585,7 +585,7 @@
 
 (defn- get-service-instances!
   "Get all active Waiter Service Instances associated with the given Waiter Service.
-   Also updates the service-id->failed-instances-transient-store as a side-effect.
+   Also updates the service-id->failed-instances-transient-store as a side effect.
    Pods reporting Failed phase status are treated as failed instances and are excluded from the return value."
   [{:keys [service-id->failed-instances-transient-store] :as scheduler} basic-service-info]
   (let [all-instances (for [pod (get-replicaset-pods scheduler basic-service-info)
