@@ -1657,7 +1657,8 @@
 
 (defn start-replicasets-watch!
   "Start a thread to continuously update the watch-state atom based on watched ReplicaSet events."
-  [{:keys [api-server-url cluster-name namespace replicaset-api-version watch-state] :as scheduler} options]
+  [{:keys [api-server-url cluster-name namespace replicaset-api-version
+           service-id->failed-instances-transient-store watch-state] :as scheduler} options]
   (start-k8s-watch!
     scheduler
     (->
@@ -1675,6 +1676,9 @@
                           version (k8s-object->resource-version rs)]
                       (when service
                         (scheduler/log "rs state update:" update-type version service)
+                        (when (= "DELETED" update-type)
+                          (log/info "clearing failed instances of" service-id)
+                          (swap! service-id->failed-instances-transient-store dissoc service-id))
                         (swap! watch-state
                                #(as-> % state
                                   (case update-type
