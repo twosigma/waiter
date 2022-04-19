@@ -232,17 +232,17 @@
                                                            :service-id->service-description-fn
                                                            (constantly {"image" "twosigma/waiter-test-apps"}))) nil)))))))
 
-(deftest test-reserve-port!
-  (testing "Reserving a port"
+(deftest test-reserve-port
+  (testing "Reserving a single port"
 
     (testing "should return the lowest available port in range"
       (with-redefs [utils/port-available? #(= 12345 %)]
-        (is (= 12345 (reserve-port! (atom {}) [10000 13000])))))
+        (is (= [12345] (reserve-ports! 1 (atom {}) [10000 13000])))))
 
     (testing "should use :state :in-use to signify a port that is in use"
       (let [port->reservation-atom (atom {})]
         (with-redefs [utils/port-available? (constantly true)]
-          (reserve-port! port->reservation-atom [10000 10000]))
+          (reserve-ports! 1 port->reservation-atom [10000 10000]))
         (is (= {10000 {:state :in-use
                        :expiry-time nil}}
                @port->reservation-atom))))))
@@ -531,7 +531,7 @@
       (with-redefs [pid (constantly fake-pid)
                     utils/unique-identifier (constantly instance-id)
                     t/now (constantly started-at)
-                    reserve-port! (constantly port)]
+                    reserve-ports! (constantly [port])]
         (is (= {:success true, :result :created, :message "Created foo"}
                (create-test-service scheduler "foo"))))
       (ensure-agent-finished scheduler)
@@ -550,30 +550,35 @@
         port-grace-period-ms -1000]
     (is (false? (port-reserved? port->reservation-atom port)))
     (with-redefs [utils/port-available? (constantly true)]
-      (reserve-port! port->reservation-atom [port port]))
+      (reserve-ports! 1 port->reservation-atom [port port]))
     (is (port-reserved? port->reservation-atom port))
-    (release-port! port->reservation-atom port port-grace-period-ms)
+    (release-ports! port->reservation-atom [port] port-grace-period-ms)
     (is (false? (port-reserved? port->reservation-atom port)))))
 
 (deftest test-reserve-ports!
-  (let [start-port (-> (rand-int 4) (+ 6) (* 1000))
-        num-ports-to-reserve 20]
-    (testing "successfully reserve all ports"
-      (let [port->reservation-atom (atom {})
-            port-range [start-port (+ start-port 900)]
-            reserved-ports (reserve-ports! num-ports-to-reserve port->reservation-atom port-range)]
-        (is (= (range start-port (+ start-port num-ports-to-reserve)) reserved-ports))))
+  (let [num-ports-to-reserve 20
+        start-port 50000]
+    (with-redefs [utils/port-available? (constantly true)]
+      (testing "successfully reserve all ports"
+        (let [port->reservation-atom (atom {})
+              port-range-size (* 10 num-ports-to-reserve)
+              end-port (+ port-range-size start-port)
+              port-range [start-port end-port]
+              reserved-ports (reserve-ports! num-ports-to-reserve port->reservation-atom port-range)]
+          (is (= (range start-port (+ start-port num-ports-to-reserve)) reserved-ports))))
 
-    (testing "unable to reserve all ports"
-      (let [port->reservation-atom (atom {})
-            port-range [start-port (-> num-ports-to-reserve (/ 2) (+ start-port))]]
-        (try
-          (reserve-ports! num-ports-to-reserve port->reservation-atom port-range)
-          (is false "reserve-ports! did not throw an exception!")
-          (catch Exception ex
-            (let [ex-data (ex-data ex)]
-              (is (= {:num-reserved-ports 11} ex-data))
-              (is (= "Unable to reserve 20 ports" (.getMessage ex))))))))))
+      (testing "unable to reserve all ports"
+        (let [port->reservation-atom (atom {})
+              port-range-size (quot num-ports-to-reserve 2)
+              end-port (+ port-range-size start-port)
+              port-range [start-port end-port]]
+          (try
+            (reserve-ports! num-ports-to-reserve port->reservation-atom port-range)
+            (is false "reserve-ports! did not throw an exception!")
+            (catch Exception ex
+              (let [ex-data (ex-data ex)]
+                (is (= {:num-reserved-ports 11} ex-data))
+                (is (= "Unable to reserve 20 ports" (.getMessage ex)))))))))))
 
 (deftest test-retry-failed-instances
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")]
