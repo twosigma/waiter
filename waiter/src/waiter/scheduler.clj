@@ -862,7 +862,7 @@
     "Tracks which instances are being used as kill candidates for the provided duration."
     [instance-id reason duration-ms]
     (log/info "tracking instance as kill candidate" {:duration-sm duration-ms :id instance-id :reason reason})
-    (swap! kill-candidates-state-atom update instance-id update :tracked-states set/union #{reason})
+    (swap! kill-candidates-state-atom update-in [instance-id :tracked-states] set/union #{reason})
     (when (= :prepare-to-kill reason)
       (when (pos? duration-ms)
         (async/go
