@@ -89,12 +89,17 @@
      :started-at (t/now)
      :working-directory (.getAbsolutePath working-dir)}))
 
-(defn release-port!
-  "Marks the given port as released (i.e. not reserved) after the given grace period"
-  [port->reservation-atom port port-grace-period-ms]
-  (let [port-expiry-time (t/plus (t/now) (t/millis port-grace-period-ms))]
-    (swap! port->reservation-atom assoc port {:state :in-grace-period-until-expiry
-                                              :expiry-time port-expiry-time})))
+(defn release-ports!
+  "Marks the given ports as released (i.e. not reserved) after the given grace period"
+  [port->reservation-atom ports port-grace-period-ms]
+  ;; NOTE: it isn't necessary to lock here as in `reserve-ports!`
+  ;; because there is no danger of two threads racing to *release* the same port.
+  (let [port-expiry-time (t/plus (t/now) (t/millis port-grace-period-ms))
+        reservation-status {:state :in-grace-period-until-expiry
+                            :expiry-time port-expiry-time}
+        reservation-entries (for [p ports] [p reservation-status])]
+    (swap! port->reservation-atom into reservation-entries))
+  (comment "no return value"))
 
 (defn- kill-process-group!
   "Kills the process group with group iod pgid."
@@ -111,9 +116,8 @@
     (when process
       (.destroyForcibly process))
     (kill-process-group! pid)
-    (release-port! port->reservation-atom port port-grace-period-ms)
-    (doseq [port extra-ports]
-      (release-port! port->reservation-atom port port-grace-period-ms))
+    (let [reserved-ports (cons port extra-ports)]
+      (release-ports! port->reservation-atom reserved-ports port-grace-period-ms))
     (catch Throwable e
       (log/error e "error attempting to kill process:" instance))))
 
@@ -126,36 +130,36 @@
              (and (= state :in-grace-period-until-expiry)
                   (t/before? (t/now) expiry-time))))))
 
+(defn- lazy-port-range
+  "Returns a strictly lazy (unchunked) sequence of port numbers for the given port range.
+   The port range is inclusive on both ends."
+  [[port-range-start port-range-end]]
+  ;; NOTE: We don't use `range` because it produces semi-lazy seqs
+  ;; that return 32 elements at a time in eager chunks,
+  ;; and the chunked-seq eagerness infects later map and filter results.
+  ;; See https://stackoverflow.com/q/12412038/1427124 for more info.
+  (->> port-range-start (iterate inc) (take-while #(<= % port-range-end))))
+
 (defn port-can-be-used?
   "Returns true if port is not reserved and not reported as in use by the OS"
   [port->reservation-atom port]
   (and (not (port-reserved? port->reservation-atom port)) (utils/port-available? port)))
 
-(defn reserve-port!
-  "Returns an available port on the host, from the provided range.
-   If no port is available, returns nil."
-  [port->reservation-atom port-range]
-  (let [pool (range (first port-range) (inc (second port-range)))
-        port (first (filter #(port-can-be-used? port->reservation-atom %) pool))]
-    (when port
-      (swap! port->reservation-atom assoc port {:state :in-use, :expiry-time nil})
-      port)))
-
 (defn reserve-ports!
   "Reserves num-ports available ports on the host, from the provided range.
    Throws an exception if num-ports ports are not available."
   [num-ports port->reservation-atom port-range]
-  (let [reserved-ports (reduce (fn inner-reserve-ports! [ports _]
-                                 (if-let [port (reserve-port! port->reservation-atom port-range)]
-                                   (conj ports port)
-                                   (reduced ports)))
-                               []
-                               (range num-ports))]
-    (if-not (= num-ports (count reserved-ports))
-      (do
-        (doall (map #(release-port! port->reservation-atom % 0) reserved-ports))
+  (locking port-range
+    ;; lock prevents other services from concurrently grabbing the same ports
+    (let [available? #(port-can-be-used? port->reservation-atom %)
+          pool (lazy-port-range port-range)
+          reserved-ports (->> pool (filter available?) (take num-ports) vec)
+          reservation-status {:state :in-use, :expiry-time nil}
+          reservation-entries (for [p reserved-ports] [p reservation-status])]
+      (when (not= (count reserved-ports) num-ports)
         (throw (ex-info (str "Unable to reserve " num-ports " ports")
                         {:num-reserved-ports (count reserved-ports)})))
+      (swap! port->reservation-atom into reservation-entries)
       reserved-ports)))
 
 (defn launch-instance
@@ -351,11 +355,12 @@
 
 (defn- associate-exit-codes
   "Associates exit codes with exited instances"
-  [{:keys [port] :as instance} port->reservation-atom port-grace-period-ms]
+  [{:keys [extra-ports port] :as instance} port->reservation-atom port-grace-period-ms]
   (if (and (active? instance) (not (alive? instance)))
     (let [{:keys [exit-value message]} (instance->exit-details instance)]
       (log/info "instance exited with value" {:instance instance :exit-value exit-value :message message})
-      (release-port! port->reservation-atom port port-grace-period-ms)
+      (let [reserved-ports (cons port extra-ports)]
+        (release-ports! port->reservation-atom reserved-ports port-grace-period-ms))
       (let [failed (if (zero? exit-value) false true)
             newly-constructed-instance (assoc instance
                                          :exit-code exit-value

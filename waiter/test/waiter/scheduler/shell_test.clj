@@ -232,17 +232,17 @@
                                                            :service-id->service-description-fn
                                                            (constantly {"image" "twosigma/waiter-test-apps"}))) nil)))))))
 
-(deftest test-reserve-port!
-  (testing "Reserving a port"
+(deftest test-reserve-port
+  (testing "Reserving a single port"
 
     (testing "should return the lowest available port in range"
       (with-redefs [utils/port-available? #(= 12345 %)]
-        (is (= 12345 (reserve-port! (atom {}) [10000 13000])))))
+        (is (= [12345] (reserve-ports! 1 (atom {}) [10000 13000])))))
 
     (testing "should use :state :in-use to signify a port that is in use"
       (let [port->reservation-atom (atom {})]
         (with-redefs [utils/port-available? (constantly true)]
-          (reserve-port! port->reservation-atom [10000 10000]))
+          (reserve-ports! 1 port->reservation-atom [10000 10000]))
         (is (= {10000 {:state :in-use
                        :expiry-time nil}}
                @port->reservation-atom))))))
@@ -531,7 +531,7 @@
       (with-redefs [pid (constantly fake-pid)
                     utils/unique-identifier (constantly instance-id)
                     t/now (constantly started-at)
-                    reserve-port! (constantly port)]
+                    reserve-ports! (constantly [port])]
         (is (= {:success true, :result :created, :message "Created foo"}
                (create-test-service scheduler "foo"))))
       (ensure-agent-finished scheduler)
@@ -550,9 +550,9 @@
         port-grace-period-ms -1000]
     (is (false? (port-reserved? port->reservation-atom port)))
     (with-redefs [utils/port-available? (constantly true)]
-      (reserve-port! port->reservation-atom [port port]))
+      (reserve-ports! 1 port->reservation-atom [port port]))
     (is (port-reserved? port->reservation-atom port))
-    (release-port! port->reservation-atom port port-grace-period-ms)
+    (release-ports! port->reservation-atom [port] port-grace-period-ms)
     (is (false? (port-reserved? port->reservation-atom port)))))
 
 (deftest test-reserve-ports!
