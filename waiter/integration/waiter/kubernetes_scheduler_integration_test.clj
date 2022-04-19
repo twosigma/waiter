@@ -333,7 +333,7 @@
 (deftest ^:parallel ^:integration-fast ^:resource-heavy test-kubernetes-pod-expiry-failing-instance
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
-      (let [{:keys [request-headers service-id] :as response}
+      (let [{:keys [cookies request-headers service-id] :as response}
             (make-request-with-debug-info
               {:x-waiter-distribution-scheme "simple"
                :x-waiter-name (rand-name)}
@@ -353,7 +353,11 @@
                                   (map :k8s/pod-name)
                                   (into #{}))]
                     (log/info pod-ids)
-                    (< 1 (count pod-ids)))))))))))
+                    (< 1 (count pod-ids)))))))
+        (assert-service-not-on-any-routers waiter-url service-id cookies)
+        (let [{:keys [active-instances failed-instances]} (get (service-settings waiter-url service-id) :instances)]
+          (is (empty? active-instances))
+          (is (empty? failed-instances)))))))
 
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-kubernetes-pod-expiry-grace-period
   (testing-using-waiter-url
