@@ -107,7 +107,7 @@
 
 (defn- execute-scale-down-request
   "Helper function to scale-down instances of a service.
-   Instances needs to be approved for killing by peers before an actual kill attempt is made.
+   An instance needs to be approved for killing by peers before an actual kill attempt is made.
    When an instance receives a veto or is not killed, we will iteratively search for another instance to successfully kill.
    The function stops and returns true when a successful kill is made.
    Else, it terminates after we have exhausted all candidate instances to kill or when a kill attempt returns a non-truthy value."
@@ -132,6 +132,7 @@
                       (do
                         (log/info "scaling down instance candidate" instance)
                         (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "attempt"))
+                        (scheduler/track-kill-candidate! instance-id :prepare-to-kill eject-backoff-base-time-ms)
                         (let [{:keys [killed?] :as kill-result}
                               (-> (au/execute
                                     (fn kill-instance-for-scale-down-task []
@@ -144,6 +145,7 @@
                               (log/info "marking instance" instance-id "as killed")
                               (counters/inc! (metrics/service-counter service-id "instance-counts" "killed"))
                               (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "success"))
+                              (scheduler/track-kill-candidate! instance-id :killed eject-backoff-base-time-ms)
                               (service/release-instance! populate-maintainer-chan! instance (result-map-fn :killed))
                               (notify-instance-killed-fn instance)
                               (peers-acknowledged-eject-requests-fn instance false max-eject-time-ms :killed))

@@ -281,8 +281,8 @@
 
 (deftest test-scheduler-syncer
   (let [clock t/now
-        scheduler-state-chan (async/chan 1)
-        timeout-chan (async/chan 1)
+        scheduler-state-chan (au/latest-chan)
+        trigger-chan (async/chan 1)
         service-id->service-description-fn (fn [id] {"backend-proto" "http"
                                                      "health-check-authentication" "standard"
                                                      "health-check-proto" "https"
@@ -292,9 +292,15 @@
         instance1 (->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test" "Unhealthy")
         instance2 (->ServiceInstance "s1.i2" "s1" started-at true nil #{} nil "host" 123 [] "/log" "test" "Healthy")
         instance3 (->ServiceInstance "s1.i3" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test" "Unhealthy")
-        get-service->instances (constantly
-                                 {(->Service "s1" {} {} {}) {:active-instances [instance1 instance2 instance3]
-                                                             :failed-instances []}
+        instance4 (->ServiceInstance "s1.i4" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test" "Unhealthy")
+        instance5 (->ServiceInstance "s1.i5" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test" "Unhealthy")
+        instance6 (->ServiceInstance "s1.i6" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test" "Unhealthy")
+        get-service->instances-invocation-count (atom 0)
+        get-service->instances (fn []
+                                 (swap! get-service->instances-invocation-count inc)
+                                 {(->Service "s1" {} {} {}) {:active-instances (cond-> [instance1 instance2 instance3]
+                                                                                 (= 1 @get-service->instances-invocation-count) (conj instance4 instance6))
+                                                             :failed-instances [instance5]}
                                   (->Service "s2" {} {} {}) {:active-instances []
                                                              :failed-instances []}})
         available? (fn [_ {:keys [id]} {:strs [backend-proto health-check-authentication health-check-proto
@@ -309,64 +315,109 @@
                                  :else
                                  {:healthy? false, :status http-400-bad-request})))
         start-time-ms (.getMillis (clock))
-        failed-check-threshold 5
-        scheduler-name "test-scheduler"
-        {:keys [exit-chan query-chan retrieve-syncer-state-fn]}
-        (start-scheduler-syncer clock timeout-chan service-id->service-description-fn available?
-                                failed-check-threshold scheduler-name get-service->instances scheduler-state-chan)
-        instance3-unhealthy (assoc instance3
-                              :flags #{:has-connected :has-responded}
-                              :healthy? false
-                              :health-check-status http-400-bad-request)]
-    (let [response-chan (async/promise-chan)]
-      (async/>!! query-chan {:response-chan response-chan :service-id "s0"})
-      (is (= {:last-update-time nil} (async/<!! response-chan)))
-      (is (= {} (retrieve-syncer-state-fn))))
-    (async/>!! timeout-chan :timeout)
-    (let [[[update-apps-msg update-apps] [update-instances-msg update-instances]] (async/<!! scheduler-state-chan)]
-      (is (= :update-available-services update-apps-msg))
-      (is (= #{"s1" "s2"} (:available-service-ids update-apps)))
-      (is (= #{"s1"} (:healthy-service-ids update-apps)))
-      (is (= :update-service-instances update-instances-msg))
-      (is (= [(assoc instance1 :healthy? true) instance2] (:healthy-instances update-instances)))
-      (is (= [instance3-unhealthy] (:unhealthy-instances update-instances)))
-      (is (= "s1" (:service-id update-instances))))
-    ;; Retrieves scheduler state without service-id
-    (let [response-chan (async/promise-chan)
-          _ (async/>!! query-chan {:response-chan response-chan})
-          response (async/alt!!
-                     response-chan ([state] state)
-                     (async/timeout 10000) ([_] {:message "Request timed out!"}))]
-      (is (contains? response :service-id->health-check-context))
-      (is (= {"s1" {:instance-id->unhealthy-instance {"s1.i3" instance3-unhealthy},
-                    :instance-id->tracked-failed-instance {},
-                    :instance-id->failed-health-check-count {"s1.i3" 1}}
-              "s2" {:instance-id->failed-health-check-count {}
-                    :instance-id->tracked-failed-instance {}
-                    :instance-id->unhealthy-instance {}}}
-             (:service-id->health-check-context response)))
-      (is (= {"s1" {:instance-id->unhealthy-instance {"s1.i3" instance3-unhealthy},
-                    :instance-id->tracked-failed-instance {},
-                    :instance-id->failed-health-check-count {"s1.i3" 1}}
-              "s2" {:instance-id->failed-health-check-count {}
-                    :instance-id->tracked-failed-instance {}
-                    :instance-id->unhealthy-instance {}}}
-             (:service-id->health-check-context (retrieve-syncer-state-fn)))))
-    ;; Retrieves scheduler state with service-id
-    (let [response-chan (async/promise-chan)
-          _ (async/>!! query-chan {:response-chan response-chan :service-id "s1"})
-          response (async/alt!!
-                     response-chan ([state] state)
-                     (async/timeout 10000) ([_] {:message "Request timed out!"}))
-          end-time-ms (.getMillis (clock))]
-      (doseq [required-key [:instance-id->failed-health-check-count
-                            :instance-id->tracked-failed-instance
-                            :instance-id->unhealthy-instance
-                            :last-update-time]]
-        (is (contains? response required-key)))
-      (is (nil? (:service-id->health-check-context response)))
-      (is (<= start-time-ms (-> response :last-update-time .getMillis) end-time-ms)))
-    (async/>!! exit-chan :exit)))
+        failed-check-threshold 1
+        scheduler-name "test-scheduler"]
+    (with-redefs [is-kill-candidate? (fn [instance-id] (= instance-id (get instance6 :id)))]
+      (let [{:keys [exit-chan query-chan retrieve-syncer-state-fn]}
+            (start-scheduler-syncer clock trigger-chan service-id->service-description-fn available?
+                                    failed-check-threshold scheduler-name get-service->instances scheduler-state-chan)
+            make-unhealthy-instance (fn [instance]
+                                      (assoc instance
+                                        :flags #{:has-connected :has-responded}
+                                        :healthy? false
+                                        :health-check-status http-400-bad-request))
+            instance3-unhealthy (make-unhealthy-instance instance3)
+            instance4-unhealthy (make-unhealthy-instance instance4)
+            instance6-unhealthy (make-unhealthy-instance instance6)]
+        (let [response-chan (async/promise-chan)]
+          (async/>!! query-chan {:response-chan response-chan :service-id "s0"})
+          (is (= {:last-update-time nil} (async/<!! response-chan)))
+          (is (= {} (retrieve-syncer-state-fn))))
+        (async/>!! trigger-chan :trigger)
+        (let [[[update-apps-msg update-apps] [update-instances-msg update-instances]] (async/<!! scheduler-state-chan)]
+          (is (= :update-available-services update-apps-msg))
+          (is (= #{"s1" "s2"} (:available-service-ids update-apps)))
+          (is (= #{"s1"} (:healthy-service-ids update-apps)))
+          (is (= :update-service-instances update-instances-msg))
+          (is (= [(assoc instance1 :healthy? true) instance2] (:healthy-instances update-instances)))
+          (is (= [instance3-unhealthy instance4-unhealthy instance6-unhealthy] (:unhealthy-instances update-instances)))
+          (is (= "s1" (:service-id update-instances))))
+        ;; Retrieves scheduler state without service-id
+        (let [response-chan (async/promise-chan)
+              _ (async/>!! query-chan {:response-chan response-chan})
+              response (async/alt!!
+                         response-chan ([state] state)
+                         (async/timeout 10000) ([_] {:message "Request timed out!"}))]
+          (is (contains? response :service-id->health-check-context))
+          (is (= {"s1" {:instance-id->unhealthy-instance {"s1.i3" instance3-unhealthy
+                                                          "s1.i4" instance4-unhealthy
+                                                          "s1.i6" instance6-unhealthy},
+                        :instance-id->tracked-failed-instance {},
+                        :instance-id->failed-health-check-count {"s1.i3" 1
+                                                                 "s1.i4" 1
+                                                                 "s1.i6" 1}}
+                  "s2" {:instance-id->failed-health-check-count {}
+                        :instance-id->tracked-failed-instance {}
+                        :instance-id->unhealthy-instance {}}}
+                 (:service-id->health-check-context response)))
+          (is (= {"s1" {:instance-id->unhealthy-instance {"s1.i3" instance3-unhealthy
+                                                          "s1.i4" instance4-unhealthy
+                                                          "s1.i6" instance6-unhealthy},
+                        :instance-id->tracked-failed-instance {},
+                        :instance-id->failed-health-check-count {"s1.i3" 1
+                                                                 "s1.i4" 1
+                                                                 "s1.i6" 1}}
+                  "s2" {:instance-id->failed-health-check-count {}
+                        :instance-id->tracked-failed-instance {}
+                        :instance-id->unhealthy-instance {}}}
+                 (:service-id->health-check-context (retrieve-syncer-state-fn)))))
+        ;; Retrieves scheduler state with service-id
+        (let [response-chan (async/promise-chan)
+              _ (async/>!! query-chan {:response-chan response-chan :service-id "s1"})
+              response (async/alt!!
+                         response-chan ([state] state)
+                         (async/timeout 10000) ([_] {:message "Request timed out!"}))
+              end-time-ms (.getMillis (clock))]
+          (doseq [required-key [:instance-id->failed-health-check-count
+                                :instance-id->tracked-failed-instance
+                                :instance-id->unhealthy-instance
+                                :last-update-time]]
+            (is (contains? response required-key)))
+          (is (nil? (:service-id->health-check-context response)))
+          (is (<= start-time-ms (-> response :last-update-time .getMillis) end-time-ms)))
+        ;; instance4 and instance6 go missing, instance4 will be tracked as failed, instance6 skipped as a kill candidate
+        (async/>!! trigger-chan :trigger)
+        (let [[[update-apps-msg update-apps] [update-instances-msg update-instances]] (async/<!! scheduler-state-chan)]
+          (is (= :update-available-services update-apps-msg))
+          (is (= #{"s1" "s2"} (:available-service-ids update-apps)))
+          (is (= #{"s1"} (:healthy-service-ids update-apps)))
+          (is (= :update-service-instances update-instances-msg))
+          (is (= [(assoc instance1 :healthy? true) instance2] (:healthy-instances update-instances)))
+          (is (= [instance3-unhealthy] (:unhealthy-instances update-instances)))
+          (is (= "s1" (:service-id update-instances))))
+        ;; Retrieves scheduler state without service-id
+        (let [response-chan (async/promise-chan)
+              _ (async/>!! query-chan {:response-chan response-chan})
+              response (async/alt!!
+                         response-chan ([state] state)
+                         (async/timeout 10000) ([_] {:message "Request timed out!"}))
+              instance4-unhealthy (update instance4-unhealthy :flags conj :never-passed-health-checks)]
+          (is (contains? response :service-id->health-check-context))
+          (is (= {"s1" {:instance-id->unhealthy-instance {"s1.i3" instance3-unhealthy},
+                        :instance-id->tracked-failed-instance {"s1.i4" instance4-unhealthy},
+                        :instance-id->failed-health-check-count {"s1.i3" 2}}
+                  "s2" {:instance-id->failed-health-check-count {}
+                        :instance-id->tracked-failed-instance {}
+                        :instance-id->unhealthy-instance {}}}
+                 (:service-id->health-check-context response)))
+          (is (= {"s1" {:instance-id->unhealthy-instance {"s1.i3" instance3-unhealthy},
+                        :instance-id->tracked-failed-instance {"s1.i4" instance4-unhealthy},
+                        :instance-id->failed-health-check-count {"s1.i3" 2}}
+                  "s2" {:instance-id->failed-health-check-count {}
+                        :instance-id->tracked-failed-instance {}
+                        :instance-id->unhealthy-instance {}}}
+                 (:service-id->health-check-context (retrieve-syncer-state-fn)))))
+        (async/>!! exit-chan :exit)))))
 
 (deftest test-start-health-checks
   (let [available-instance "id1"
@@ -976,3 +1027,43 @@
           (is (= expected-state-1 actual-state-1')))
         (testing "applied router state update"
           (is (= expected-state-2 actual-state-2)))))))
+
+(deftest test-track-kill-candidate!
+  (let [instance-id-1 (str "id-1-" (System/nanoTime))
+        instance-id-2 (str "id-2-" (System/nanoTime))
+        instance-id-3 (str "id-3-" (System/nanoTime))]
+    (track-kill-candidate! instance-id-1 :prepare-to-kill 200)
+    (track-kill-candidate! instance-id-2 :prepare-to-kill 200)
+    (track-kill-candidate! instance-id-3 :prepare-to-kill 200)
+    (track-kill-candidate! instance-id-1 :killed 1000)
+    (track-kill-candidate! instance-id-2 :killed 1000)
+    (Thread/sleep 100)
+    (is (is-kill-candidate? instance-id-1))
+    (is (is-kill-candidate? instance-id-2))
+    (is (is-kill-candidate? instance-id-3))
+    (track-kill-candidate! instance-id-2 :prepare-to-kill 200)
+    (Thread/sleep 150)
+    (is (not (is-kill-candidate? instance-id-1)))
+    (is (is-kill-candidate? instance-id-2))
+    (is (not (is-kill-candidate? instance-id-3)))
+    (Thread/sleep 100)
+    (is (not (is-kill-candidate? instance-id-1)))
+    (is (not (is-kill-candidate? instance-id-2)))
+    (is (not (is-kill-candidate? instance-id-3)))))
+
+(deftest test-add-to-store-and-track-failed-instance!
+  (let [max-instances-to-keep 2
+        transient-store (atom {})
+        service-id "s1"
+        instance-1 {:id "i1" :service-id service-id :started-at "202204190010"}
+        instance-2 {:id "i2" :service-id service-id :started-at "202204190020"}
+        instance-3 {:id "i3" :service-id service-id :started-at "202204190030"}
+        instance-4 {:id "i4" :service-id service-id :started-at "202204190040"}]
+    (add-to-store-and-track-failed-instance! transient-store max-instances-to-keep service-id instance-1)
+    (is (= #{instance-1} (set (get @transient-store service-id))))
+    (add-to-store-and-track-failed-instance! transient-store max-instances-to-keep service-id instance-2)
+    (is (= #{instance-1 instance-2} (set (get @transient-store service-id))))
+    (add-to-store-and-track-failed-instance! transient-store max-instances-to-keep service-id instance-3)
+    (is (= #{instance-2 instance-3} (set (get @transient-store service-id))))
+    (add-to-store-and-track-failed-instance! transient-store max-instances-to-keep service-id instance-4)
+    (is (= #{instance-3 instance-4} (set (get @transient-store service-id))))))

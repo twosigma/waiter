@@ -665,6 +665,51 @@
                         service
                         (assoc instances :active-instances active-instances))))))))
 
+;;
+;; Support for tracking killed instance candidates
+;;
+(let [kill-candidate-id->state-atom (atom {})]
+
+  (defn- cleanup-kill-candidate
+    "Cleans up entries for instance-id from the state atom."
+    [instance-id kill-identifier]
+    (swap! kill-candidate-id->state-atom
+           (fn cleanup-kill-candidate-helper [kill-candidate-id->state]
+             (let [{:keys [identifier reasons]} (get kill-candidate-id->state instance-id)]
+               (if (= kill-identifier identifier)
+                 (do
+                   (log/info "end tracking instance as kill candidate"
+                             {:id instance-id :kill-identifier identifier :reasons reasons})
+                   (dissoc kill-candidate-id->state instance-id))
+                 (do
+                   (log/info "ignoring kill candidate cleanup as identifier has changed"
+                             {:id instance-id :cleanup-identifier kill-identifier :current-identifier identifier})
+                   kill-candidate-id->state))))))
+
+  (defn track-kill-candidate!
+    "Tracks which instances are being used as kill candidates for the provided duration.
+     When reason is :prepare-to-kill, attaches a unique identifier to the state.
+     This allows multiple invocations with the same instance-id where only the last call triggers state cleanup."
+    [instance-id reason duration-ms]
+    (let [kill-identifier (utils/unique-identifier)]
+      (log/info "tracking instance as kill candidate"
+                (cond-> {:id instance-id :reason reason}
+                  (= :prepare-to-kill reason) (assoc :identifier kill-identifier)))
+      (swap! kill-candidate-id->state-atom update instance-id
+             (fn update-kill-candidate-state [candidate-state]
+               (cond-> (update candidate-state :reasons (fnil conj #{}) reason)
+                 (= :prepare-to-kill reason) (assoc :identifier kill-identifier))))
+      (when (and (= :prepare-to-kill reason)
+                 (pos? duration-ms))
+        (async/go
+          (async/<! (async/timeout duration-ms))
+          (cleanup-kill-candidate instance-id kill-identifier)))))
+
+  (defn is-kill-candidate?
+    "Returns true if the queried instance is currently being tracked as a kill candidate."
+    [instance-id]
+    (contains? @kill-candidate-id->state-atom instance-id)))
+
 (defn- update-scheduler-state
   "Queries given scheduler, sends data on service and instance statuses to router state maintainer, and returns scheduler state"
   [scheduler-name get-service->instances-fn service-id->service-description-fn available? failed-check-threshold service-id->health-check-context]
@@ -701,13 +746,21 @@
                   (get service-id->health-check-context service-id)
                   {:keys [healthy-instances unhealthy-instances] :as service-instance-info}
                   (retrieve-instances-for-service service-id active-instances)
+                  ;; track instances that have gone missing with state updates as failed instances
                   instance-id->tracked-failed-instance'
                   ((fnil into {}) instance-id->tracked-failed-instance
-                    (keep (fn [[instance-id unhealthy-instance]]
-                            (when (and (not (contains? active-instance-ids instance-id))
-                                       (>= (or (get instance-id->failed-health-check-count instance-id) 0) failed-check-threshold))
-                              [instance-id (update-in unhealthy-instance [:flags] conj :never-passed-health-checks)]))
-                          instance-id->unhealthy-instance))
+                   (keep (fn [[instance-id unhealthy-instance]]
+                           (when (and (not (contains? active-instance-ids instance-id))
+                                      (>= (or (get instance-id->failed-health-check-count instance-id) 0) failed-check-threshold))
+                             ;; treat any pod that went missing and was a kill candidate as not a failed instance
+                             (if-not (is-kill-candidate? instance-id)
+                               (do
+                                 (log/info "tracking missing instance as a failed instance" {:instance-id instance-id})
+                                 [instance-id (update-in unhealthy-instance [:flags] conj :never-passed-health-checks)])
+                               (do
+                                 (log/info "not tracking missing instance as a failed instance" {:instance-id instance-id})
+                                 nil))))
+                         instance-id->unhealthy-instance))
                   all-failed-instances
                   (-> (fn [failed-instance tracked-instance]
                         (-> failed-instance
@@ -842,7 +895,7 @@
                                  ([service-id] (retrieve-syncer-state @syncer-state-atom service-id)))}))
 
 ;;
-;; Support for tracking killed instances
+;; Support for tracking killed and failed instances
 ;;
 
 (defn add-instance-to-buffered-collection!
