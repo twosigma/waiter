@@ -234,7 +234,6 @@
                               ;; When not configured, the value is assumed to be true.
                               :allow-bearer-auth-api? true
                               ;; Whether JWT authentication is the allowed for service (proxy) requests.
-                              ;; The value of USE_BEARER_AUTH environment variable of the service overrides this value.
                               ;; When not configured, the value is assumed to be false.
                               :allow-bearer-auth-services? false
                               ;; Whether OIDC+PKCE authentication is allowed for Waiter API requests.

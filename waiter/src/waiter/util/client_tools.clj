@@ -1323,6 +1323,14 @@
   [waiter-url]
   (not= "disabled" (setting waiter-url [:authenticator-config :jwt])))
 
+(defn jwt-auth-enabled-services?
+  "Returns true if JWT authentication is enabled for proxied requests."
+  [waiter-url]
+  (let [{:keys [jwt]} (setting waiter-url [:authenticator-config])]
+    (and (not= "disabled" jwt)
+         (map? jwt)
+         (get jwt :allow-bearer-auth-services?))))
+
 (defn oidc-auth-enabled?
   "Returns true if OIDC+PKCE authentication is enabled."
   [waiter-url]
