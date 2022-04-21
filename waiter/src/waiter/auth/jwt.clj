@@ -518,8 +518,7 @@
   (fn jwt-auth-handler [{:keys [waiter-api-call?] :as request}]
     (let [use-jwt-auth? (or
                           ;; service requests will enable JWT auth based on allow-bearer-auth-services?
-                          (and (not waiter-api-call?)
-                               (= "true" (str allow-bearer-auth-services?)))
+                          (and (not waiter-api-call?) (true? allow-bearer-auth-services?))
                           ;; waiter api requests will enable JWT auth based on allow-bearer-auth-api?
                           (and waiter-api-call? allow-bearer-auth-api?))]
       (cond
