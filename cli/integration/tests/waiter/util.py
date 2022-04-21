@@ -373,10 +373,13 @@ def get_ssh_command(instance, is_kubernetes_enabled, container_name=None, comman
     if is_kubernetes_enabled:
         container_name = container_name or 'waiter-app'
         command_to_run = command_to_run or 'exec /bin/bash'
+        context = instance.get('k8s/context')
+        context_flag = f'--context {context}'
         api_server = instance['k8s/api-server-url']
+        api_server_flag = f'--server {api_server}'
         namespace = instance['k8s/namespace']
         pod_name = instance['k8s/pod-name']
-        return f'--server {api_server} --namespace {namespace} exec -it {pod_name} -c '\
+        return f'{context_flag if context is not None else api_server_flag} --namespace {namespace} exec -it {pod_name} -c '\
                f"{container_name} -- /bin/bash -c cd {log_directory}; "\
                f"{command_to_run}"
     else:
