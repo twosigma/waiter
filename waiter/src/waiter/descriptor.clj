@@ -69,7 +69,7 @@
 (defn wrap-descriptor
   "Adds the descriptor to the request/response.
   Redirects users in the case of missing user/run-as-requestor."
-  [handler request->descriptor-fn service-invocation-authorized?  start-new-service-fn fallback-state-atom]
+  [handler request->descriptor-fn service-invocation-authorized? start-new-service-fn fallback-state-atom exception->response-fn]
   (fn [request]
     (tl/try-let [request-descriptor (request->descriptor-fn request)]
       (let [{:keys [descriptor latest-descriptor]} request-descriptor
@@ -98,7 +98,7 @@
           (do
             ; For consistency with historical data, count errors looking up the descriptor as a "process error"
             (meters/mark! (metrics/waiter-meter "core" "process-errors"))
-            (utils/exception->response e request)))))))
+            (exception->response-fn e request)))))))
 
 (defn- log-service-changes
   "Logs changes to the tracker service ids."

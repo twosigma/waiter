@@ -33,10 +33,10 @@ def ping_on_cluster(cluster, timeout, wait_for_request, token_name, service_exis
             logging.debug(f'Response status code: {resp.status_code}')
             resp_json = resp.json()
             if resp.status_code == 200:
-                status = resp_json['service-state']['status']
+                status = resp_json.get('service-state', {}).get('status')
                 ping_response = resp_json['ping-response']
                 ping_response_result = ping_response['result']
-                if ping_response_result == 'received-response':
+                if ping_response_result in ['descriptor-error', 'received-response']:
                     ping_response_status = ping_response['status']
                     if ping_response_status == 200:
                         print(terminal.success('Ping successful.'))

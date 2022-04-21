@@ -1216,9 +1216,14 @@
               (let [token-response (post-token waiter-url (dissoc token-description :cpus))]
                 (assert-response-status token-response http-200-ok))
 
-              (let [response (make-request waiter-url ping-endpoint :headers request-headers :method request-method)]
-                (assert-response-status response http-400-bad-request)
-                (assert-waiter-response response))))))
+              (let [response (make-request waiter-url ping-endpoint :headers request-headers :method request-method)
+                    {:keys [ping-response]} (some-> response :body json/read-str walk/keywordize-keys)
+                    {:keys [result]} ping-response]
+                (assert-response-status response http-200-ok)
+                (assert-waiter-response response)
+                (assert-response-status ping-response http-400-bad-request)
+                (is (= "descriptor-error" result))
+                (is (str/includes? (str ping-response) "Service description using waiter headers/token improperly configured")))))))
 
       (delete-token-and-assert waiter-url token))))
 
