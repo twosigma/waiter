@@ -596,7 +596,7 @@
       (log/info "OIDC+PKCE authentication is disabled"))))
 
 (deftest ^:parallel ^:integration-fast test-spnego-authentication-disabled
-  (if (and use-spnego)
+  (if use-spnego
     (testing-using-waiter-url
       (if (jwt-auth-enabled-services? waiter-url)
         (let [{:keys [cookies] :as auth-response} (make-request waiter-url "/waiter-auth")
