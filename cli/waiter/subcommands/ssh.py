@@ -40,9 +40,9 @@ def get_instances_from_service_id(clusters, service_id, include_active_instances
     return instances
 
 
-def kubectl_exec_to_instance(kubectl_cmd, api_server, namespace, pod_name, container_name, log_directory,
+def kubectl_exec_to_instance(kubectl_cmd, context, namespace, pod_name, container_name, log_directory,
                              command_to_run=None):
-    args = ['--server', api_server,
+    args = ['--context', context,
             '--namespace', namespace,
             'exec',
             '-it', pod_name,
@@ -57,13 +57,13 @@ def ssh_instance(instance, container_name, command_to_run=None):
     log_directory = instance['log-directory']
     k8s_pod_name = instance.get('k8s/pod-name', False)
     if k8s_pod_name:
-        k8s_api_server = instance['k8s/api-server-url']
+        context = instance['k8s/context']
         kubectl_cmd = os.getenv('WAITER_KUBECTL', plugins.get_fn('get-kubectl-cmd', lambda: 'kubectl')())
         k8s_namespace = instance['k8s/namespace']
         print_info(f'Executing ssh to k8s pod {terminal.bold(k8s_pod_name)}')
         logging.debug(f'Executing ssh to k8s pod {terminal.bold(k8s_pod_name)} '
-                      f'using namespace={k8s_namespace} api_server={k8s_api_server}')
-        kubectl_exec_to_instance(kubectl_cmd, k8s_api_server, k8s_namespace, k8s_pod_name, container_name,
+                      f'using namespace={k8s_namespace} context={context}')
+        kubectl_exec_to_instance(kubectl_cmd, context, k8s_namespace, k8s_pod_name, container_name,
                                  log_directory, command_to_run)
     else:
         hostname = instance['host']
