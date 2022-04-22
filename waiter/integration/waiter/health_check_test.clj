@@ -75,6 +75,19 @@
           health-check-port-index nil]
       (run-ping-service-test waiter-url idle-timeout command backend-proto health-check-proto num-ports health-check-port-index))))
 
+(deftest ^:parallel ^:integration-fast test-basic-ping-token-does-not-exist
+  (testing-using-waiter-url
+    (let [token (rand-name "test-token-")
+          request-headers {"x-waiter-token" token}
+          response (make-request waiter-url "/waiter-ping" :headers request-headers)
+          {:keys [ping-response]} (some-> response :body json/read-str walk/keywordize-keys)
+          {:keys [result]} ping-response]
+      (assert-response-status response http-200-ok)
+      (assert-waiter-response response)
+      (assert-response-status ping-response http-400-bad-request)
+      (is (= "descriptor-error" result))
+      (is (str/includes? (str ping-response) "Token not found")))))
+
 (deftest ^:parallel ^:integration-fast test-basic-ping-service-exclude-service-state
   (testing-using-waiter-url
     (let [idle-timeout nil

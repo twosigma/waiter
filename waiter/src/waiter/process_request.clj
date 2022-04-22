@@ -1114,3 +1114,12 @@
               :status (if redirect-ping? (:status redirect-response) http-200-ok)))))
       (catch Exception ex
         (utils/exception->response ex request)))))
+
+(defn exception->ping-response
+  "Renders a ping response when there is an error in determining the descriptor for the request."
+  [^Exception ex request]
+  (utils/clj->json-response
+    {:ping-response (-> (utils/exception->response ex request)
+                      (select-keys [:body :headers :status])
+                      (assoc :result :descriptor-error))}
+    :status http-200-ok))

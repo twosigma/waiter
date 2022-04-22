@@ -27,7 +27,8 @@
             [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
             [waiter.token :as token]
-            [waiter.util.async-utils :as au])
+            [waiter.util.async-utils :as au]
+            [waiter.util.utils :as utils])
   (:import (clojure.lang ExceptionInfo)
            (org.joda.time DateTime)))
 
@@ -56,7 +57,8 @@
                                    (throw (UnsupportedOperationException. "Not expecting call in test")))
             service-invocation-authorized? (make-service-invocation-authorized? true)
             fallback-state-atom (atom {:available-service-ids #{} :healthy-service-ids #{}})
-            handler (wrap-descriptor default-handler request->descriptor-fn service-invocation-authorized? start-new-service-fn fallback-state-atom)
+            handler (wrap-descriptor default-handler request->descriptor-fn service-invocation-authorized?
+                                     start-new-service-fn fallback-state-atom utils/exception->response)
             response (handler request)]
         (is (= {:descriptor descriptor :latest-service-id latest-service-id :status http-200-ok} response))
         (is (= :no-service (deref started-service-id-promise 0 :no-service)))))
@@ -75,7 +77,8 @@
                                    (throw (UnsupportedOperationException. "Not expecting call in test")))
             service-invocation-authorized? (make-service-invocation-authorized? true)
             fallback-state-atom (atom {:available-service-ids #{latest-service-id} :healthy-service-ids #{}})
-            handler (wrap-descriptor default-handler request->descriptor-fn service-invocation-authorized? start-new-service-fn fallback-state-atom)
+            handler (wrap-descriptor default-handler request->descriptor-fn service-invocation-authorized?
+                                     start-new-service-fn fallback-state-atom utils/exception->response)
             response (handler request)]
         (is (= {:descriptor descriptor :latest-service-id latest-service-id :status http-200-ok} response))
         (is (= :no-service (deref started-service-id-promise 0 :no-service)))))
@@ -95,7 +98,8 @@
                                        (deliver started-service-id-promise (:service-id in-descriptor)))
                 service-invocation-authorized? (make-service-invocation-authorized? true)
                 fallback-state-atom (atom {:available-service-ids #{} :healthy-service-ids #{}})
-                handler (wrap-descriptor default-handler request->descriptor-fn service-invocation-authorized? start-new-service-fn fallback-state-atom)
+                handler (wrap-descriptor default-handler request->descriptor-fn service-invocation-authorized?
+                                         start-new-service-fn fallback-state-atom utils/exception->response)
                 response (handler request)]
             (is (= {:descriptor descriptor :latest-service-id latest-service-id :status http-200-ok} response))
             (is (= latest-service-id (deref started-service-id-promise 0 :no-service)))))
@@ -107,7 +111,8 @@
                                        (deliver started-service-id-promise (:service-id in-descriptor)))
                 service-invocation-authorized? (make-service-invocation-authorized? false)
                 fallback-state-atom (atom {:available-service-ids #{} :healthy-service-ids #{}})
-                handler (wrap-descriptor default-handler request->descriptor-fn service-invocation-authorized? start-new-service-fn fallback-state-atom)
+                handler (wrap-descriptor default-handler request->descriptor-fn service-invocation-authorized?
+                                         start-new-service-fn fallback-state-atom utils/exception->response)
                 response (handler request)]
             (is (= {:descriptor descriptor :latest-service-id latest-service-id :status http-200-ok} response))
             (is (= :no-service (deref started-service-id-promise 0 :no-service)))))))))

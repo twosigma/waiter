@@ -1577,10 +1577,10 @@
                                   [:routines make-inter-router-requests-async-fn]
                                   [:settings health-check-config]
                                   [:state fallback-state-atom router-id user-agent-version]
-                                  process-request-fn wrap-descriptor-fn wrap-secure-request-fn]
+                                  process-request-fn wrap-descriptor-for-ping-fn wrap-secure-request-fn]
                            (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                  user-agent (str "waiter-ping/" user-agent-version)
-                                 handler (wrap-descriptor-fn
+                                 handler (wrap-descriptor-for-ping-fn
                                            (fn inner-ping-service-handler [request]
                                              (let [retrieve-service-status-label-fn #(:service-status-label (service/retrieve-service-status-and-deployment-error % (query-state-fn)))
                                                    service-state-fn (partial descriptor/extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn)]
@@ -2019,7 +2019,12 @@
                                 [:state fallback-state-atom]]
                          (fn wrap-descriptor-fn [handler]
                            (descriptor/wrap-descriptor handler request->descriptor-fn service-invocation-authorized?-fn
-                                                       start-new-service-fn fallback-state-atom)))
+                                                       start-new-service-fn fallback-state-atom utils/exception->response)))
+   :wrap-descriptor-for-ping-fn (pc/fnk [[:routines request->descriptor-fn service-invocation-authorized?-fn start-new-service-fn]
+                                         [:state fallback-state-atom]]
+                                  (fn wrap-descriptor-for-ping-fn [handler]
+                                    (descriptor/wrap-descriptor handler request->descriptor-fn service-invocation-authorized?-fn
+                                                                start-new-service-fn fallback-state-atom pr/exception->ping-response)))
    :wrap-router-auth-fn (pc/fnk [[:state passwords router-id]]
                           (fn wrap-router-auth-fn [handler]
                             (fn [request]

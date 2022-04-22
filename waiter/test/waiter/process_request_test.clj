@@ -28,7 +28,8 @@
             [waiter.process-request :refer :all]
             [waiter.statsd :as statsd]
             [waiter.status-codes :refer :all]
-            [waiter.test-helpers :refer :all])
+            [waiter.test-helpers :refer :all]
+            [waiter.util.utils :as utils])
   (:import (java.io ByteArrayOutputStream IOException)
            (java.util.concurrent TimeoutException)
            (org.eclipse.jetty.client HttpClient)
@@ -523,8 +524,8 @@
         service-invocation-authorized? (constantly true)
         start-new-service-fn (constantly nil)
         fallback-state-atom (atom {})
-        handler (descriptor/wrap-descriptor (fn [_] {:status http-200-ok}) request->descriptor-fn
-                                            service-invocation-authorized? start-new-service-fn fallback-state-atom)]
+        handler (descriptor/wrap-descriptor (fn [_] {:status http-200-ok}) request->descriptor-fn service-invocation-authorized?
+                                            start-new-service-fn fallback-state-atom utils/exception->response)]
     (testing "with-query-params"
       (let [request {:headers {"host" "www.example.com:1234"}, :query-string "a=b&c=d", :uri "/path"}
             {:keys [headers status]} (handler request)]
@@ -548,8 +549,8 @@
         service-invocation-authorized? (constantly true)
         start-new-service-fn (constantly nil)
         fallback-state-atom (atom {})
-        handler (descriptor/wrap-descriptor (fn [_] {:status http-200-ok}) request->descriptor-fn
-                                            service-invocation-authorized? start-new-service-fn fallback-state-atom)
+        handler (descriptor/wrap-descriptor (fn [_] {:status http-200-ok}) request->descriptor-fn service-invocation-authorized?
+                                            start-new-service-fn fallback-state-atom utils/exception->response)
         request {}
         {:keys [body headers status]} (handler request)]
     (is (= http-500-internal-server-error status))
@@ -562,8 +563,8 @@
         service-invocation-authorized? (constantly true)
         start-new-service-fn (constantly nil)
         fallback-state-atom (atom {})
-        handler (descriptor/wrap-descriptor (fn [_] {:status http-200-ok}) request->descriptor-fn
-                                            service-invocation-authorized? start-new-service-fn fallback-state-atom)
+        handler (descriptor/wrap-descriptor (fn [_] {:status http-200-ok}) request->descriptor-fn service-invocation-authorized?
+                                            start-new-service-fn fallback-state-atom utils/exception->response)
         request {}
         {:keys [body headers status]} (handler request)]
     (is (= http-404-not-found status))
