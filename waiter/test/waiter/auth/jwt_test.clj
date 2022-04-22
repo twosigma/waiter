@@ -764,9 +764,6 @@
           (is (= {:body ::standard-request}
                  (jwt-handler {:headers {"authorization" "Bearer abcdef"}
                                :source ::standard-request})))
-          (is (= {:body ::standard-request}
-                 (jwt-handler {:headers {"authorization" "Bearer abcdef"}
-                               :source ::standard-request})))
           (is (= {:body ::jwt-auth}
                  (jwt-handler {:headers {"authorization" "Bearer ab.cd.ef"}
                                :source ::standard-request})))
