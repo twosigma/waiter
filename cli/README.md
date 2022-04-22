@@ -38,6 +38,26 @@ There is a sample `.waiter.json` file included in this directory, which looks so
 Each entry in the `clusters` array conforms to a cluster specification ("spec"). 
 A cluster spec requires a name and a url pointing to a Waiter cluster.
 
+Your local configuration file is automatically merged with the configuration found in the `waiter` install directory
+(if one is found there). However, since the `clusters` property contains a list of clusters, if it is set in the local
+configuration file, then it _replaces_ the value from the central configuration.
+
+If you would like to _add_ clusters rather than _replace_ them, you can instead set the `additional-clusters` property.
+The list of additional clusters will be prepended to the centralized list, allowing your local custom clusters
+to take precedence over any centrally-configured clusters.
+
+```json
+{
+  "additional-clusters": [
+    {
+      "name": "dev2",
+      "url": "http://127.0.0.1:22322/",
+      "disabled": false
+    }
+  ]
+}
+```
+
 ### Commands
 
 The fastest way to learn more about `waiter` is with the `-h` (or `--help`) option.

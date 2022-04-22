@@ -56,6 +56,15 @@ def __load_local_config(config_path):
     return config_path, config
 
 
+def __prepend_additional_clusters(config):
+    """Prepend user's local additional-clusters to the base config clusters."""
+    if 'additional-clusters' in config:
+        clusters = config.get('clusters', [])
+        additional_clusters = config.get('additional-clusters', [])
+        config['clusters'] = additional_clusters + clusters
+        del config['additional-clusters']
+
+
 def load_config_with_defaults(config_path=None):
     """Loads the configuration map to use, merging in the defaults"""
     base_config = __load_base_config()
@@ -64,5 +73,6 @@ def load_config_with_defaults(config_path=None):
     config_path, config = __load_local_config(config_path)
     config = config or {}
     config = deep_merge(base_config, config)
+    __prepend_additional_clusters(config)
     logging.debug(f'using configuration: {config}')
     return config
