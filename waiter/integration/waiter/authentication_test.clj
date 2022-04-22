@@ -244,11 +244,10 @@
 
 (deftest ^:parallel ^:integration-fast test-jwt-authentication-token-realm
   (testing-using-waiter-url
-    (if (jwt-auth-enabled? waiter-url)
+    (if (jwt-auth-enabled-services? waiter-url)
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
             host (create-token-name waiter-url ":")
             service-parameters (assoc (kitchen-params)
-                                 :env {"USE_BEARER_AUTH" "true"}
                                  :name (rand-name))
             token-response (post-token waiter-url (assoc service-parameters
                                                     :run-as-user (retrieve-username)
@@ -280,7 +279,7 @@
                   (validate-response service-id access-token "jwt")))))
           (finally
             (delete-token-and-assert waiter-url host))))
-      (log/info "JWT authentication is disabled"))))
+      (log/info "JWT authentication is disabled for services"))))
 
 (deftest ^:parallel ^:integration-fast test-fallback-to-alternate-auth-on-invalid-jwt-token-token-realm
   (testing-using-waiter-url
@@ -288,7 +287,6 @@
       (let [waiter-host (-> waiter-url sanitize-waiter-url utils/authority->host)
             host (create-token-name waiter-url ":")
             service-parameters (assoc (kitchen-params)
-                                 :env {"USE_BEARER_AUTH" "true"}
                                  :name (rand-name))
             token-response (post-token waiter-url (assoc service-parameters
                                                     :run-as-user (retrieve-username)
@@ -600,37 +598,38 @@
 (deftest ^:parallel ^:integration-fast test-spnego-authentication-disabled
   (if use-spnego
     (testing-using-waiter-url
-      (let [{:keys [cookies] :as auth-response} (make-request waiter-url "/waiter-auth")
-            token-name (create-token-name waiter-url ":")]
-        (is (seq cookies) (str auth-response))
-        (try
-          (let [service-parameters (assoc (kitchen-params)
-                                     :authentication "standard"
-                                     :env {"USE_BEARER_AUTH" "true"
-                                           "USE_SPNEGO_AUTH" "false"}
-                                     :name (rand-name)
-                                     :run-as-user (retrieve-username))
-                token-response (post-token waiter-url (assoc service-parameters "token" token-name))
-                _ (assert-response-status token-response http-200-ok)
-                {:keys [service-id] :as canary-response}
-                (make-request-with-debug-info
-                  {:x-waiter-token token-name}
-                  #(make-kitchen-request waiter-url % :cookies cookies :path "/request-info"))]
-            (with-service-cleanup
-              service-id
-              (assert-response-status canary-response http-200-ok)
-              (assert-backend-response canary-response)
-              (is (= "cookie" (get-in canary-response [:headers "x-waiter-auth-method"])) (str canary-response))
-              (is (= (retrieve-username) (get-in canary-response [:headers "x-waiter-auth-user"])) (str canary-response))
-              (let [response (make-request-with-debug-info
-                               {:x-waiter-token token-name}
-                               #(make-kitchen-request waiter-url % :path "/request-info"))]
-                (assert-response-status response http-401-unauthorized)
-                (assert-waiter-response response)
-                (let [www-authenticate-header (get-in response [:headers "www-authenticate"])]
-                  (is www-authenticate-header (str response))
-                  (is (not (str/includes? (str www-authenticate-header) "Negotiate")) (str response))
-                  (is (str/includes? (str www-authenticate-header) "Bearer") (str response))))))
-          (finally
-            (delete-token-and-assert waiter-url token-name)))))
+      (if (jwt-auth-enabled-services? waiter-url)
+        (let [{:keys [cookies] :as auth-response} (make-request waiter-url "/waiter-auth")
+              token-name (create-token-name waiter-url ":")]
+          (is (seq cookies) (str auth-response))
+          (try
+            (let [service-parameters (assoc (kitchen-params)
+                                       :authentication "standard"
+                                       :env {"USE_SPNEGO_AUTH" "false"}
+                                       :name (rand-name)
+                                       :run-as-user (retrieve-username))
+                  token-response (post-token waiter-url (assoc service-parameters "token" token-name))
+                  _ (assert-response-status token-response http-200-ok)
+                  {:keys [service-id] :as canary-response}
+                  (make-request-with-debug-info
+                    {:x-waiter-token token-name}
+                    #(make-kitchen-request waiter-url % :cookies cookies :path "/request-info"))]
+              (with-service-cleanup
+                service-id
+                (assert-response-status canary-response http-200-ok)
+                (assert-backend-response canary-response)
+                (is (= "cookie" (get-in canary-response [:headers "x-waiter-auth-method"])) (str canary-response))
+                (is (= (retrieve-username) (get-in canary-response [:headers "x-waiter-auth-user"])) (str canary-response))
+                (let [response (make-request-with-debug-info
+                                 {:x-waiter-token token-name}
+                                 #(make-kitchen-request waiter-url % :path "/request-info"))]
+                  (assert-response-status response http-401-unauthorized)
+                  (assert-waiter-response response)
+                  (let [www-authenticate-header (get-in response [:headers "www-authenticate"])]
+                    (is www-authenticate-header (str response))
+                    (is (not (str/includes? (str www-authenticate-header) "Negotiate")) (str response))
+                    (is (str/includes? (str www-authenticate-header) "Bearer") (str response))))))
+            (finally
+              (delete-token-and-assert waiter-url token-name))))
+        (log/info "Skipping test as Bearer authentication is disabled for services")))
     (log/info "Skipping test as spnego authentication is not available")))
