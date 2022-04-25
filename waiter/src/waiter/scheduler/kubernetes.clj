@@ -1710,9 +1710,10 @@
               (recur (+ total-ms-slept sleep-ms)))
             ;; base case: init-timeout expired, but the watches still aren't ready
             :else
-            (let [error-msg "scheduler watches still not ready after" init-timeout-ms "milliseconds"]
+            (let [error-msg (str "scheduler watches still not ready after " init-timeout-ms " milliseconds")
+                  error-map (or current-watch-state {})]
               (log/error error-msg)
-              (throw (ex-info error-msg current-watch-state)))))))))
+              (throw (ex-info error-msg error-map)))))))))
 
 (defn fileserver-container-enabled?
   "Returns true when the port is configured on the fileserver configuration."
