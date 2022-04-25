@@ -424,3 +424,11 @@
       (setAcceptedSubProtocol [subprotocol] (reset! response-subprotocol-atom subprotocol))
       (setHeader [field value] (reset! headers (assoc @headers field value)))
       (getHeader [field] (get @headers field)))))
+
+(defn chan->response
+  "Returns the result available in the response chan inside the timeout duration.
+   If timeout is triggered, then timeout-result is returned."
+  [response-chan timeout-ms timeout-result]
+  (let [timeout-chan (async/timeout timeout-ms)
+        [chan-data chan] (async/alts!! [response-chan timeout-chan])]
+    (if (= timeout-chan chan) timeout-result chan-data)))
