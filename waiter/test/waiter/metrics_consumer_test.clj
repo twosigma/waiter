@@ -102,11 +102,13 @@
             event-chan (async/chan 100)
             error-chan (async/promise-chan)
             expected-metrics-service-url "http://metrics-service-url.com"
+            metrics-service-conf {:cluster "c1"
+                                  :url expected-metrics-service-url}
             expected-endpoint (str expected-metrics-service-url "/token-stats")
             http-streaming-request-async-fn (constantly (async/go {:body-chan body-chan :error-chan error-chan}))
             {:keys [exit-chan go-chan query-state-fn]}
             (make-metrics-watch-request
-              http-client http-streaming-request-async-fn "router-id" "cur-cid" expected-metrics-service-url event-chan clock
+              http-client http-streaming-request-async-fn "router-id" "cur-cid" metrics-service-conf event-chan clock
               retry-delay-ms)]
 
         (assert-expected-blobs-from-event-chan-and-cleanup
@@ -118,6 +120,8 @@
             event-chan (async/chan 100)
             error-chan (async/promise-chan)
             expected-metrics-service-url "http://metrics-service-url.com"
+            metrics-service-conf {:cluster "c1"
+                                  :url expected-metrics-service-url}
             expected-endpoint (str expected-metrics-service-url "/token-stats")
             call-count (atom 0)
             http-streaming-request-async-fn
@@ -130,7 +134,7 @@
 
             {:keys [exit-chan go-chan query-state-fn]}
             (make-metrics-watch-request
-              http-client http-streaming-request-async-fn "router-id" "cur-cid" expected-metrics-service-url event-chan clock
+              http-client http-streaming-request-async-fn "router-id" "cur-cid" metrics-service-conf event-chan clock
               retry-delay-ms)]
 
         (assert-expected-blobs-from-event-chan-and-cleanup
@@ -143,6 +147,8 @@
             event-chan (async/chan 100)
             error-chan (async/promise-chan)
             expected-metrics-service-url "http://metrics-service-url.com"
+            metrics-service-conf {:cluster "c1"
+                                  :url expected-metrics-service-url}
             expected-endpoint (str expected-metrics-service-url "/token-stats")
             call-count (atom 0)
             http-streaming-request-async-fn
@@ -154,7 +160,7 @@
 
             {:keys [exit-chan go-chan query-state-fn]}
             (make-metrics-watch-request
-              http-client http-streaming-request-async-fn "router-id" "cur-cid" expected-metrics-service-url event-chan clock
+              http-client http-streaming-request-async-fn "router-id" "cur-cid" metrics-service-conf event-chan clock
               retry-delay-ms)]
 
         ; push unfinished fragment to json string and close the body chan
@@ -214,7 +220,8 @@
                                         (await local-agent)
                                         @local-agent))
         router-id "router-id-1"
-        metrics-service-urls ["https://metrics-service1.com" "https://metrics-service2.com"]
+        metrics-services [{:cluster "c1" :url "https://metrics-service1.com"}
+                          {:cluster "c2" :url "https://metrics-service2.com"}]
         retry-delay-ms 1003
         new-last-request-time (t/plus (clock) (t/seconds 1))
         make-metrics-watch-request-factory-fn
@@ -223,9 +230,8 @@
           (let [trigger-ch (async/promise-chan)]
             {:make-metrics-watch-request-fn
              (fn make-metrics-watch-request-fn
-               [http-client http-fn actual-router-id _ actual-metrics-service-url token-metric-chan _ actual-retry-delay-ms]
+               [http-client http-fn actual-router-id _ _ token-metric-chan _ actual-retry-delay-ms]
                (is (= router-id actual-router-id))
-               (is (contains? (set metrics-service-urls) actual-metrics-service-url))
                (is (= hu/http-streaming-request-async http-fn))
                (is (= connection-timeout-ms (.getConnectTimeout http-client)))
                (is (= idle-timeout-ms (.getIdleTimeout http-client)))
@@ -254,7 +260,7 @@
             {:keys [exit-chan query-state-fn token-metric-chan-mult]}
             (start-metrics-consumer-maintainer
               http-client clock kv-store token-cluster-calculator retrieve-descriptor-fn (make-service-id->metrics-fn local-usage-agent)
-              make-metrics-watch-request-fn local-usage-agent router-id metrics-service-urls token-metric-chan-buffer-size
+              make-metrics-watch-request-fn local-usage-agent router-id metrics-services token-metric-chan-buffer-size
               retry-delay-ms)
             listener-ch (async/chan 1)]
         (async/tap token-metric-chan-mult listener-ch)
@@ -267,7 +273,9 @@
         (is (= {:buffer-state {:token-metric-chan-count 0}
                 :last-token-event-time (clock)
                 :supported-include-params ["watches-state"]
-                :watches-state (pc/map-from-keys (constantly {}) metrics-service-urls)}
+                :watches-state (->> metrics-services
+                                    (map :url)
+                                    (pc/map-from-keys (constantly {})))}
                (query-state-fn #{"watches-state"})))
         (await local-usage-agent)
         (is (= new-last-request-time
@@ -286,7 +294,7 @@
             {:keys [exit-chan query-state-fn token-metric-chan-mult]}
             (start-metrics-consumer-maintainer
               http-client clock kv-store token-cluster-calculator retrieve-descriptor-fn (make-service-id->metrics-fn local-usage-agent)
-              make-metrics-watch-request-fn local-usage-agent router-id metrics-service-urls token-metric-chan-buffer-size
+              make-metrics-watch-request-fn local-usage-agent router-id metrics-services token-metric-chan-buffer-size
               retry-delay-ms)
             listener-ch (async/chan 1000)]
         (async/tap token-metric-chan-mult listener-ch)
@@ -296,7 +304,9 @@
         (is (= {:buffer-state {:token-metric-chan-count 0}
                 :last-token-event-time nil
                 :supported-include-params ["watches-state"]
-                :watches-state (pc/map-from-keys (constantly {}) metrics-service-urls)}
+                :watches-state (->> metrics-services
+                                    (map :url)
+                                    (pc/map-from-keys (constantly {})))}
                (query-state-fn #{"watches-state"})))
         (await local-usage-agent)
         (is (= (clock)

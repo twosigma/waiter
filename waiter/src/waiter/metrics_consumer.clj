@@ -43,14 +43,16 @@
   :exit-chan is a channel that when a message is pushed to, terminates the watch immediately and go-chan
   :go-chan channel closed when watch is terminated (used primarily for cleaning up tests)
   :query-state-fn function called with include flags for introspecting the state of the watch (e.g. last-event-time)"
-  [http-client http-streaming-request-async-fn router-id cur-cid metrics-service-url event-chan clock retry-delay-ms]
+  [http-client http-streaming-request-async-fn router-id cur-cid {:keys [cluster url] :as metrics-service-conf}
+   event-chan clock retry-delay-ms]
   (cid/with-correlation-id
-    (str cur-cid ".metrics-watch." metrics-service-url)
-    (let [exit-chan (async/promise-chan)
+    (str cur-cid ".metrics-watch." cluster)
+    (let [_ (log/info "starting metrics-service-watch" {:metrics-service-conf metrics-service-conf})
+          exit-chan (async/promise-chan)
           exit-chan-mult (async/mult exit-chan)
           state-atom (atom {:last-event-time nil
                             :last-watch-time nil})
-          metrics-endpoint (str metrics-service-url "/token-stats")
+          metrics-endpoint (str url "/token-stats")
           query-string (str "watch=true&watcher=" router-id)
           query-state-fn
           (fn query-metrics-watch-fn
@@ -75,7 +77,7 @@
                   (throw res))
                 (swap! state-atom assoc :last-watch-time (clock))
                 (doseq [{:strs [object type]} (utils/chan-to-json-seq!! body-chan)]
-                  (meters/mark! (metrics/waiter-meter "core" "metrics-consumer" metrics-service-url "event-rate"))
+                  (meters/mark! (metrics/waiter-meter "core" "metrics-consumer" cluster "event-rate"))
                   (if (contains? #{"initial" "update"} type)
                     (do
                       (log/info "received event payload" {:count (count object) :type type})
@@ -87,7 +89,7 @@
                                                                    :metrics-endpoint metrics-endpoint}))
               (catch Exception e
                 (log/error e "watch request to external request metrics service failed. Going to start retrying"
-                           {:metrics-service-url metrics-service-url})))
+                           {:url url})))
             ; unnecessary to do exponential backoff because there is a static number of clients (waiter routers) making watch requests
             (log/info (str "waiting " retry-delay-ms " ms before attempting to make the watch connection"))
             (let [timeout-ch (async/timeout retry-delay-ms)
@@ -109,7 +111,7 @@
   :query-state-fn is a query function for introspecting the state of the metrics events channels and watches
   :token-metric-chan-mult is a mult for other components to listen in on when last-request-time was updated for a token"
   [http-client clock kv-store token-cluster-calculator retrieve-descriptor-fn service-id->metrics-fn
-   make-metrics-watch-request-fn local-usage-agent router-id metrics-service-urls token-metric-chan-buffer-size
+   make-metrics-watch-request-fn local-usage-agent router-id metrics-services token-metric-chan-buffer-size
    retry-delay-ms]
   (cid/with-correlation-id
     "metrics-consumer-maintainer"
@@ -160,16 +162,17 @@
             (fn metric-chan-ex-handler
               [e]
               (cid/cerror correlation-id e "unexpected error when transforming token metric event")))
+          metrics-service-url->conf (pc/map-from-vals :url metrics-services)
           metrics-service-url->watch
-          (pc/map-from-keys
-            (fn [metrics-service-url]
+          (pc/map-vals
+            (fn [metrics-service-conf]
               (let [{:keys [exit-chan] :as watch}
                     (make-metrics-watch-request-fn
-                      http-client hu/http-streaming-request-async router-id correlation-id metrics-service-url
+                      http-client hu/http-streaming-request-async router-id correlation-id metrics-service-conf
                       token-metric-chan clock retry-delay-ms)]
                 (async/tap exit-mult exit-chan)
                 watch))
-            metrics-service-urls)
+            metrics-service-url->conf)
           query-state-fn
           (fn query-metrics-consumer-maintainer-fn
             [include-flags]

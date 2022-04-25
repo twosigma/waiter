@@ -1013,7 +1013,7 @@
                     :idle-timeout-ms 10000
 
                     ; metrics services to aggregate metrics from
-                    :metrics-service-urls []
+                    :metrics-services []
 
                     ; time before retrying a new watch connection to the metrics service
                     :retry-delay-ms 1000

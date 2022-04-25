@@ -1336,7 +1336,7 @@
    :metrics-consumer-maintainer (pc/fnk
                                   [[:routines retrieve-descriptor-fn router-metrics-helpers]
                                    [:settings
-                                    [:metrics-consumer connection-timeout-ms metrics-service-urls idle-timeout-ms retry-delay-ms
+                                    [:metrics-consumer connection-timeout-ms metrics-services idle-timeout-ms retry-delay-ms
                                      token-metric-chan-buffer-size]]
                                    [:state clock kv-store local-usage-agent router-id user-agent-version
                                     token-cluster-calculator]]
@@ -1347,7 +1347,7 @@
                                                                              :user-agent (str "waiter-metrics-consumer/" user-agent-version)})]
                                     (metrics-consumer/start-metrics-consumer-maintainer
                                       http-client clock kv-store token-cluster-calculator retrieve-descriptor-fn service-id->metrics-fn
-                                      metrics-consumer/make-metrics-watch-request local-usage-agent router-id metrics-service-urls
+                                      metrics-consumer/make-metrics-watch-request local-usage-agent router-id metrics-services
                                       token-metric-chan-buffer-size retry-delay-ms)))
    ;; This function is defined as a convenience to avoid repeated extraction from daemons/service-chan-maintainer.
    :populate-maintainer-chan! (pc/fnk [service-chan-maintainer]
