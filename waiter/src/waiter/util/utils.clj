@@ -31,7 +31,7 @@
             [waiter.util.http-utils :as hu])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
            (clojure.lang ExceptionInfo)
-           (java.io OutputStreamWriter ByteArrayInputStream SequenceInputStream InputStreamReader)
+           (java.io ByteArrayInputStream InputStreamReader OutputStreamWriter SequenceInputStream)
            (java.lang Process)
            (java.net ServerSocket URI)
            (java.nio ByteBuffer)

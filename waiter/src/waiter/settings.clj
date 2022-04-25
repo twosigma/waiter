@@ -91,8 +91,8 @@
                                      (s/required-key :transient-metrics-timeout-ms) schema/positive-int}
    (s/required-key :metrics-consumer) {(s/required-key :connection-timeout-ms) schema/non-negative-num
                                        (s/required-key :idle-timeout-ms) schema/non-negative-num
-                                       (s/required-key :metrics-services) [{(s/required-key :url) schema/non-empty-string
-                                                                            (s/required-key :cluster) schema/non-empty-string}]
+                                       (s/required-key :metrics-services) [{(s/required-key :cluster) schema/non-empty-string
+                                                                            (s/required-key :url) schema/non-empty-string}]
                                        (s/required-key :retry-delay-ms) schema/non-negative-num
                                        (s/required-key :token-metric-chan-buffer-size) schema/positive-int}
    (s/required-key :password-store-config) (s/constrained
