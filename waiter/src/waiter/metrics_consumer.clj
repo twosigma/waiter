@@ -126,10 +126,9 @@
             token-metric-chan-buffer
             (comp
               (map (fn format-event
-                     [raw-event]
-                     (let [event (walk/keywordize-keys raw-event)
-                           kabob-event (set/rename-keys event {:lastRequestTime :last-request-time})]
-                       (update kabob-event :last-request-time f/parse))))
+                     [{:strs [lastRequestTime token]}]
+                     {:last-request-time (f/parse lastRequestTime)
+                      :token token}))
               (filter (fn token-in-same-cluster?
                         [{:keys [token]}]
                         (let [token-parameters (sd/token->token-parameters kv-store token :error-on-missing false)
