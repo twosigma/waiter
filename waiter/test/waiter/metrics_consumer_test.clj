@@ -62,8 +62,7 @@
          expected-endpoint# ~expected-endpoint
          query-state-fn# ~query-state-fn]
      ; push all the json string fragments to the body-chan
-     (doseq [json-str# body-chan-messages#]
-       (async/>!! body-chan# json-str#))
+     (async/onto-chan!! body-chan# body-chan-messages# false)
 
      ; expect each blob to be in event-chan and properly mapped
      (doseq [expected-blob# expected-blobs#]
@@ -90,12 +89,12 @@
                             "{\"type\":\"unknown\",\"object\":[{\"token\":\"t6\",\"lastRequestTime\":\"1\"},{\"token\":\"t5\",\"lastRequestTime\":\"1\"}]}"
                             "{\"type\":\"update\",\"object\":[{\"token\":\"t2\",\"lastRequestTime\":\"1\"},{\"token\":\"t3\",\"lastRequestTime\":\"1\"}]}"]
         ; t5 and t6 are filtered out because the event type was "unknown"
-        expected-blobs [{"token" "t1"
-                         "lastRequestTime" "1"}
-                        {"token" "t2"
-                         "lastRequestTime" "1"}
-                        {"token" "t3"
-                         "lastRequestTime" "1"}]]
+        expected-blobs [[{"token" "t1"
+                          "lastRequestTime" "1"}]
+                        [{"token" "t2"
+                          "lastRequestTime" "1"}
+                         {"token" "t3"
+                          "lastRequestTime" "1"}]]]
 
     (testing "json fragments are parsed and immediately pushed to the event-chan if valid"
       (let [body-chan (async/chan 100)
@@ -239,8 +238,7 @@
                {:exit-chan (async/promise-chan)
                 :go-chan (async/go
                            (async/<! trigger-ch)
-                           (doseq [event raw-events]
-                             (async/put! token-metric-chan event)))
+                           (async/put! token-metric-chan raw-events))
                 :query-state-fn (constantly {})})
              :trigger-ch trigger-ch}))]
 
@@ -267,8 +265,8 @@
         (async/>!! trigger-ch :start)
         (async/<!! (async/timeout 500))
         ; shows up once with multiple metrics service because "service-id->metrics-fn" got updated and remove duplicate event
-        (is (= [{:token valid-bypass-token
-                 :last-request-time new-last-request-time}]
+        (is (= [[{:token valid-bypass-token
+                  :last-request-time new-last-request-time}]]
                (drain-channel! listener-ch)))
         (is (= {:buffer-state {:token-metric-chan-count 0}
                 :last-token-event-time (clock)

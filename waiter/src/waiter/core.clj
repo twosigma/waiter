@@ -1445,14 +1445,14 @@
                                 (async/tap router-state-push-mult state-chan)
                                 (maintainer/start-service-chan-maintainer
                                   {} state-chan query-service-maintainer-chan start-service remove-service retrieve-channel)))
-   :start-new-services-handler (pc/fnk
-                                 [[:routines retrieve-latest-descriptor-fn start-new-service-fn]
-                                  [:state kv-store fallback-state-atom leader?-fn]
-                                  metrics-consumer-maintainer]
-                                 (let [{:keys [token-metric-chan-mult]} metrics-consumer-maintainer]
-                                   (scheduler/start-new-services-handler
-                                     retrieve-latest-descriptor-fn kv-store token-metric-chan-mult start-new-service-fn
-                                     leader?-fn fallback-state-atom)))
+   :start-new-services-daemon (pc/fnk
+                                [[:routines retrieve-latest-descriptor-fn start-new-service-fn]
+                                 [:state kv-store fallback-state-atom leader?-fn]
+                                 metrics-consumer-maintainer]
+                                (let [{:keys [token-metric-chan-mult]} metrics-consumer-maintainer]
+                                  (scheduler/start-new-services-daemon
+                                    retrieve-latest-descriptor-fn kv-store token-metric-chan-mult start-new-service-fn
+                                    leader?-fn fallback-state-atom)))
    :state-sources (pc/fnk [[:scheduler scheduler]
                            [:state query-service-maintainer-chan]
                            autoscaler autoscaling-multiplexer gc-for-transient-metrics interstitial-maintainer

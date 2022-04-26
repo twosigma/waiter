@@ -689,6 +689,81 @@
                     (is (instance? TimeoutException abort-ex))
                     (is abort-cb)))))))))))
 
+(defmacro assert-expected-events-new-services-daemon
+  [token-metric-chan process-token-event-ch start-new-service-fn-calls token-metric-chan-events expected-result-events
+   expected-start-new-service-calls]
+  `(let [token-metric-chan# ~token-metric-chan
+         process-token-event-ch# ~process-token-event-ch
+         start-new-service-fn-calls# ~start-new-service-fn-calls
+         token-metric-chan-events# ~token-metric-chan-events
+         expected-result-events# ~expected-result-events
+         expected-start-new-service-calls# ~expected-start-new-service-calls]
+     ; push fake events in token-metric-chan-mult
+     (async/onto-chan!! token-metric-chan# token-metric-chan-events# false)
+
+     ; do assertions on process-token-event-ch
+     (doseq [event# expected-result-events#]
+       (is (= event# (async/<!! process-token-event-ch#))))
+
+     ; no other messages should be in process-token-event-ch
+     (let [timeout-ch# (async/timeout 500)
+           [msg# res-ch#] (async/alts!! [process-token-event-ch# timeout-ch#])]
+       (is (= timeout-ch# res-ch#) msg#))
+
+     (is (= expected-start-new-service-calls#
+            @start-new-service-fn-calls#))))
+
+(deftest test-start-new-services-daemon
+  (let [token->latest-service-id {"t1" "s1"
+                                  "t2" "s2"
+                                  "t3" "s3"
+                                  "t4" "s4"}
+        retrieve-latest-descriptor-fn (fn [_ token]
+                                        {:service-id (get token->latest-service-id token)})
+        token-metric-chan-events [[{:token "t1" :last-request-time "1"}
+                                   {:token "t2" :last-request-time "1"}
+                                   {:token "t3" :last-request-time "1"}]
+                                  [{:token "t4" :last-request-time "1"}]]]
+    (testing "listening to token-metric-chan-mult triggers new services for tokens that do not exist"
+      (let [token-metric-chan (async/chan 100)
+            token-metric-chan-mult (async/mult token-metric-chan)
+            start-new-service-fn-calls (atom [])
+            start-new-service-fn (fn [& args] (swap! start-new-service-fn-calls conj args))
+            fallback-state-atom (atom {:available-service-ids #{"s2" "s4"}})
+            leader?-fn (constantly true)
+            {:keys [process-token-event-ch]}
+            (start-new-services-daemon
+              retrieve-latest-descriptor-fn nil token-metric-chan-mult start-new-service-fn leader?-fn
+              fallback-state-atom)
+
+            expected-result-events [[{:token "t1" :last-request-time "1"}
+                                     {:token "t3" :last-request-time "1"}]]
+            expected-start-new-service-calls [[{:service-id "s1"}]
+                                              [{:service-id "s3"}]]]
+        (assert-expected-events-new-services-daemon
+          token-metric-chan process-token-event-ch start-new-service-fn-calls token-metric-chan-events
+          expected-result-events expected-start-new-service-calls)))
+
+    (testing "listening to token-metric-chan-mult does not process events if not leader router"
+      (let [token-metric-chan (async/chan 100)
+            token-metric-chan-mult (async/mult token-metric-chan)
+            start-new-service-fn-calls (atom [])
+            start-new-service-fn (fn [& args] (swap! start-new-service-fn-calls conj args))
+            fallback-state-atom (atom {:available-service-ids #{"s2" "s4"}})
+            leader?-fn (constantly false)
+            {:keys [process-token-event-ch]}
+            (start-new-services-daemon
+              retrieve-latest-descriptor-fn nil token-metric-chan-mult start-new-service-fn leader?-fn
+              fallback-state-atom)
+
+            ; expect no events or new service calls on non leader router
+            expected-result-events []
+            expected-start-new-service-calls []]
+
+        (assert-expected-events-new-services-daemon
+          token-metric-chan process-token-event-ch start-new-service-fn-calls token-metric-chan-events
+          expected-result-events expected-start-new-service-calls)))))
+
 (defmacro check-trackers
   [all-trackers assertion-maps]
   `(let [assertion-maps# ~assertion-maps

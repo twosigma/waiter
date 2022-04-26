@@ -17,9 +17,7 @@
   (:require [clj-time.core :as t]
             [clj-time.format :as f]
             [clojure.core.async :as async]
-            [clojure.set :as set]
             [clojure.tools.logging :as log]
-            [clojure.walk :as walk]
             [metrics.meters :as meters]
             [plumbing.core :as pc]
             [waiter.correlation-id :as cid]
@@ -82,8 +80,7 @@
                     (do
                       (log/info "received event payload" {:count (count object) :type type})
                       (swap! state-atom assoc :last-event-time (clock))
-                      (doseq [event object]
-                        (async/put! event-chan event)))
+                      (async/put! event-chan object))
                     (log/warn "received unknown metrics event" {:type type})))
                 (log/warn "watch request was closed unexpectedly" {:error-chan (when error-chan (async/<! error-chan))
                                                                    :metrics-endpoint metrics-endpoint}))
@@ -109,7 +106,8 @@
   Returns a map with keys:
   :exit-chan is as channel that when message is pushed to it, causes all watch connections to be terminated
   :query-state-fn is a query function for introspecting the state of the metrics events channels and watches
-  :token-metric-chan-mult is a mult for other components to listen in on when last-request-time was updated for a token"
+  :token-metric-chan-mult is a mult for other components to listen in on when last-request-time was updated for a token.
+  each message in the token-metric-chan is a non-empty list of token events"
   [http-client clock kv-store token-cluster-calculator retrieve-descriptor-fn service-id->metrics-fn
    make-metrics-watch-request-fn local-usage-agent router-id metrics-services token-metric-chan-buffer-size
    retry-delay-ms]
@@ -120,44 +118,50 @@
           correlation-id (cid/get-correlation-id)
           default-cluster (token/get-default-cluster token-cluster-calculator)
           state-atom (atom {:last-token-event-time nil})
+          map-events-fn
+          (fn map-events
+            [events]
+            (->> events
+                 (map (fn format-event
+                        [{:strs [lastRequestTime token]}]
+                        {:last-request-time (f/parse lastRequestTime)
+                         :token token}))
+                 (filter (fn token-in-same-cluster?
+                           [{:keys [token]}]
+                           (let [token-parameters (sd/token->token-parameters kv-store token :error-on-missing false)
+                                 token-cluster (get token-parameters "cluster")]
+                             (and (some? token-parameters)
+                                  (= token-cluster default-cluster)))))
+                 ; TODO: bypass only supports non run-as-requester and parameterized services
+                 (filter (fn token-bypass-eligible-service-description?
+                           [{:keys [token]}]
+                           (when-let [{:strs [run-as-user] :as service-description-template}
+                                      (sd/token->service-parameter-template kv-store token :error-on-missing false)]
+                             (and run-as-user
+                                  (not (sd/run-as-requester? service-description-template))
+                                  (not (sd/requires-parameters? service-description-template))))))
+                 (filter (fn is-new-last-request-time?
+                           [{:keys [token last-request-time]}]
+                           (let [{:strs [run-as-user]}
+                                 (sd/token->service-parameter-template kv-store token :error-on-missing false)
+                                 {:keys [descriptor]} (retrieve-descriptor-fn run-as-user token)
+                                 {fallback-service-id :service-id} descriptor
+                                 stored-last-request-time (get-in (service-id->metrics-fn) [fallback-service-id "last-request-time"])
+                                 new-last-request-time? (or (nil? stored-last-request-time)
+                                                            (t/before? stored-last-request-time last-request-time))]
+                             (when new-last-request-time?
+                               (cid/cinfo correlation-id "updating last request time for service" {:service-id fallback-service-id
+                                                                                                   :last-request-time last-request-time})
+                               (send local-usage-agent metrics/update-last-request-time-usage-metric fallback-service-id last-request-time)
+                               (swap! state-atom assoc :last-token-event-time (clock)))
+                             new-last-request-time?)))))
           token-metric-chan-buffer (async/buffer token-metric-chan-buffer-size)
           token-metric-chan
           (async/chan
             token-metric-chan-buffer
             (comp
-              (map (fn format-event
-                     [{:strs [lastRequestTime token]}]
-                     {:last-request-time (f/parse lastRequestTime)
-                      :token token}))
-              (filter (fn token-in-same-cluster?
-                        [{:keys [token]}]
-                        (let [token-parameters (sd/token->token-parameters kv-store token :error-on-missing false)
-                              token-cluster (get token-parameters "cluster")]
-                          (and (some? token-parameters)
-                               (= token-cluster default-cluster)))))
-              ; TODO: bypass only supports non run-as-requester and parameterized services
-              (filter (fn token-bypass-eligible-service-description?
-                        [{:keys [token]}]
-                        (when-let [{:strs [run-as-user] :as service-description-template}
-                                   (sd/token->service-parameter-template kv-store token :error-on-missing false)]
-                          (and run-as-user
-                               (not (sd/run-as-requester? service-description-template))
-                               (not (sd/requires-parameters? service-description-template))))))
-              (filter (fn is-new-last-request-time?
-                        [{:keys [token last-request-time]}]
-                        (let [{:strs [run-as-user]}
-                              (sd/token->service-parameter-template kv-store token :error-on-missing false)
-                              {:keys [descriptor]} (retrieve-descriptor-fn run-as-user token)
-                              {fallback-service-id :service-id} descriptor
-                              stored-last-request-time (get-in (service-id->metrics-fn) [fallback-service-id "last-request-time"])
-                              new-last-request-time? (or (nil? stored-last-request-time)
-                                                         (t/before? stored-last-request-time last-request-time))]
-                          (when new-last-request-time?
-                            (cid/cinfo correlation-id "updating last request time for service" {:service-id fallback-service-id
-                                                                                                :last-request-time last-request-time})
-                            (send local-usage-agent metrics/update-last-request-time-usage-metric fallback-service-id last-request-time)
-                            (swap! state-atom assoc :last-token-event-time (clock)))
-                          new-last-request-time?))))
+              (map map-events-fn)
+              (filter seq))
             (fn metric-chan-ex-handler
               [e]
               (cid/cerror correlation-id e "unexpected error when transforming token metric event")))
