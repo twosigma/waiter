@@ -366,7 +366,7 @@
     (timers/start-stop-time!
       request->descriptor-timer
       (let [auth-user (:authorization/user request)
-            service-approved? (fn service-approved? [service-id] (assoc-run-as-user-approved? request service-id))
+            service-approved? (fn req-service-approved [service-id] (assoc-run-as-user-approved? request service-id))
             latest-descriptor (compute-descriptor
                                 attach-service-defaults-fn attach-token-defaults-fn service-id-prefix kv-store
                                 waiter-hostnames request service-description-builder service-approved?)
@@ -511,7 +511,8 @@
                         ;; we do not know env from request headers and cannot support parameterized services
                         :headers {"x-waiter-token" token}
                         :request-time (t/now)}
-        service-approved? (fn service-approved? [service-id] (assoc-run-as-user-approved? pseudo-request service-id))]
+        service-approved? (fn latest-service-approved? [service-id]
+                            (assoc-run-as-user-approved? pseudo-request service-id))]
     (compute-descriptor
       attach-service-defaults-fn attach-token-defaults-fn service-id-prefix kv-store
       waiter-hostnames pseudo-request service-description-builder service-approved?)))
