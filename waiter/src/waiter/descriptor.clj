@@ -508,11 +508,14 @@
   [attach-service-defaults-fn attach-token-defaults-fn service-id-prefix kv-store waiter-hostnames service-description-builder
    assoc-run-as-user-approved? run-as-user token]
   (let [pseudo-request {:authorization/user run-as-user
-                        ;; we do not know env from request headers and cannot support parameterized services
                         :headers {"x-waiter-token" token}
                         :request-time (t/now)}
         service-approved? (fn latest-service-approved? [service-id]
-                            (assoc-run-as-user-approved? pseudo-request service-id))]
+                            (assoc-run-as-user-approved? pseudo-request service-id))
+        service-description-template (sd/token->service-parameter-template kv-store token :error-on-missing false)]
+    (when (sd/requires-parameters? service-description-template)
+      (throw (ex-info "Does not support parameterized service because env variables are provided at request time"
+                      {:token token :service-description-template service-description-template})))
     (compute-descriptor
       attach-service-defaults-fn attach-token-defaults-fn service-id-prefix kv-store
       waiter-hostnames pseudo-request service-description-builder service-approved?)))
