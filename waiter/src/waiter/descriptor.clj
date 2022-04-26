@@ -366,7 +366,7 @@
     (timers/start-stop-time!
       request->descriptor-timer
       (let [auth-user (:authorization/user request)
-            service-approved? (fn service-approved? [service-id] (assoc-run-as-user-approved? request service-id))
+            service-approved? (fn req-service-approved [service-id] (assoc-run-as-user-approved? request service-id))
             latest-descriptor (compute-descriptor
                                 attach-service-defaults-fn attach-token-defaults-fn service-id-prefix kv-store
                                 waiter-hostnames request service-description-builder service-approved?)
@@ -502,3 +502,20 @@
                         :headers {"x-waiter-token" token}
                         :request-time (t/now)}]
     (request->descriptor-fn pseudo-request)))
+
+(defn retrieve-latest-descriptor
+  "Retrieves the latest descriptor for run-as-user and token."
+  [attach-service-defaults-fn attach-token-defaults-fn service-id-prefix kv-store waiter-hostnames service-description-builder
+   assoc-run-as-user-approved? run-as-user token]
+  (let [pseudo-request {:authorization/user run-as-user
+                        :headers {"x-waiter-token" token}
+                        :request-time (t/now)}
+        service-approved? (fn latest-service-approved? [service-id]
+                            (assoc-run-as-user-approved? pseudo-request service-id))
+        service-description-template (sd/token->service-parameter-template kv-store token :error-on-missing false)]
+    (when (sd/requires-parameters? service-description-template)
+      (throw (ex-info "Does not support parameterized service because env variables are provided at request time"
+                      {:token token :service-description-template service-description-template})))
+    (compute-descriptor
+      attach-service-defaults-fn attach-token-defaults-fn service-id-prefix kv-store
+      waiter-hostnames pseudo-request service-description-builder service-approved?)))

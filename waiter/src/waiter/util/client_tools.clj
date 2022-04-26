@@ -591,6 +591,24 @@
     :protocol protocol
     :query-params query-params))
 
+(defn retrieve-access-token
+  "Make request to WAITER_TEST_JWT_ACCESS_TOKEN_URL for the access token using the provided realm as the host. Return
+  the access token."
+  [realm]
+  (if-let [access-token-url-env (System/getenv "WAITER_TEST_JWT_ACCESS_TOKEN_URL")]
+    (let [access-token-url (str/replace access-token-url-env "{HOST}" realm)
+          access-token-uri (URI. access-token-url)
+          protocol (.getScheme access-token-uri)
+          authority (.getAuthority access-token-uri)
+          path (str (.getPath access-token-uri) "?" (.getQuery access-token-uri))
+          access-token-response (make-request authority path :headers {"x-iam" "waiter"} :protocol protocol)
+          _ (assert-response-status access-token-response http-200-ok)
+          access-token-response-json (-> access-token-response :body str json/read-str)
+          access-token (get access-token-response-json "access_token")]
+      (log/info "retrieved access token" {:access-token access-token :realm realm})
+      access-token)
+    (throw (ex-info "WAITER_TEST_JWT_ACCESS_TOKEN_URL environment variable has not been provided" {}))))
+
 (defn retrieve-service-id [waiter-url waiter-headers &
                            {:keys [cookies verbose] :or {cookies [] verbose false}}]
   (let [service-id-result (make-request waiter-url "/service-id" :cookies cookies :headers waiter-headers)
@@ -1115,6 +1133,11 @@
   [waiter-url]
   (and (using-k8s? waiter-url)
        (contains? (get-kubernetes-scheduler-settings waiter-url) :raven-sidecar)))
+
+(defn using-metrics-service?
+  "Returns true if Waiter is configured to use external metrics services"
+  [waiter-url]
+  (< 0 (count (setting waiter-url [:metrics-consumer :metrics-services]))))
 
 (defn get-raven-sidecar-flag
   "Fetches (from the k8s scheduler config) the env var name for enabling the raven sidecar."

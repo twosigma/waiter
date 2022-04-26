@@ -859,3 +859,56 @@
   (is (= {:b 2 :c 3} (remove-keys {:b 2 :c 3} [:a])))
   (is (= {:b 2 :c 3} (remove-keys {:b 2 :c 3} [:a :d :e :f :g])))
   (is (= {:c 3} (remove-keys {:b 2 :c 3} [:a :b]))))
+
+(deftest test-chan-to-json-seq!!
+  (testing "json fragments can be split in any way"
+    (let [chan (async/chan 100)
+          result-ch (async/chan 100)
+          json-blobs [{"a" 1
+                       "b" {"c" 100}
+                       "d" [{"e" "testing"
+                             "f" true}
+                            {"h" 10}]}
+                      {"temp" 1
+                       "blob" ["test" true 100]}]
+          json-strs (map
+                      json/write-str
+                      json-blobs)
+          first-blob-ind (count (first json-strs))
+          json-str (reduce str json-strs)
+          json-str-len (count json-str)
+
+          ; push result of lazy sequence to result chan
+          go-ch (async/go
+                  (let [actual-json-blobs (chan-to-json-seq!! chan)]
+                    (doseq [actual-json-blob actual-json-blobs]
+                      (async/put! result-ch actual-json-blob))))]
+      (dotimes [ind (inc json-str-len)]
+        (let [frag1 (subs json-str 0 ind)
+              frag2 (subs json-str ind json-str-len)]
+
+          ; provide the first json fragment
+          (async/>!! chan frag1)
+          (let [timeout-ch (async/timeout 100)
+                [actual-blob1 alts-chan] (async/alts!! [result-ch timeout-ch])]
+            (if (<= first-blob-ind ind)
+              ; first json-blob should be immediately available because frag1 includes the first json blob
+              (do
+                (is (= result-ch alts-chan))
+                (is (= (first json-blobs) actual-blob1)))
+
+              ; timeout is reached because only incomplete json blob received
+              (is (= timeout-ch alts-chan))))
+
+          ; provide the second json fragment
+          (async/>!! chan frag2)
+          (when (> first-blob-ind ind)
+            ; because first fragment was not complete, the resulting channel should have all json blobs
+            (is (= (first json-blobs) (async/<!! result-ch))))
+
+          ; both cases should also have the second json blob as the frag2 includes the rest of json-str
+          (is (= (second json-blobs) (async/<!! result-ch)))))
+
+      (async/close! chan)
+      (async/close! result-ch)
+      (async/<!! go-ch))))

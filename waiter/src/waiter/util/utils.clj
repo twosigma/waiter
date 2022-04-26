@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.util.utils
-  (:require [clojure.core.async :as async]
+  (:require [cheshire.core :as cheshire]
+            [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.pprint :as pprint]
@@ -30,13 +31,13 @@
             [waiter.util.http-utils :as hu])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
            (clojure.lang ExceptionInfo)
-           (java.io OutputStreamWriter)
+           (java.io ByteArrayInputStream InputStreamReader OutputStreamWriter SequenceInputStream)
            (java.lang Process)
            (java.net ServerSocket URI)
            (java.nio ByteBuffer)
            (java.nio.charset StandardCharsets)
            (java.security MessageDigest)
-           (java.util Base64 UUID)
+           (java.util Base64 Collections UUID)
            (java.util.concurrent ThreadLocalRandom)
            (java.util.regex Pattern)
            (javax.servlet ServletResponse)
@@ -878,6 +879,18 @@
   (lazy-seq
     (when-some [v (async/<!! c)]
       (cons v (chan-to-seq!! c)))))
+
+(defn chan-to-json-seq!!
+  "Takes a channel of string fragments and returns a lazy sequence of parsed json blobs"
+  [c]
+  (->> c
+       chan-to-seq!!
+       (map (fn [chunk] (-> chunk .getBytes ByteArrayInputStream.)))
+       Collections/enumeration
+       SequenceInputStream.
+       ; need to convert channel to an InputStreamReader to use underlying stream json parsing library
+       InputStreamReader.
+       cheshire/parsed-seq))
 
 (defn send-event-to-channels!
   "Given a list of watch channels and the event to send to each channel, send the event in a non blocking fashion and

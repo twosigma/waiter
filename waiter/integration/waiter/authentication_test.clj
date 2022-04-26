@@ -62,22 +62,6 @@
           (assert-response-status response http-400-bad-request)
           (is (str/includes? body error-message)))))))
 
-(defn- retrieve-access-token
-  [realm]
-  (if-let [access-token-url-env (System/getenv "WAITER_TEST_JWT_ACCESS_TOKEN_URL")]
-    (let [access-token-url (str/replace access-token-url-env "{HOST}" realm)
-          access-token-uri (URI. access-token-url)
-          protocol (.getScheme access-token-uri)
-          authority (.getAuthority access-token-uri)
-          path (str (.getPath access-token-uri) "?" (.getQuery access-token-uri))
-          access-token-response (make-request authority path :headers {"x-iam" "waiter"} :protocol protocol)
-          _ (assert-response-status access-token-response http-200-ok)
-          access-token-response-json (-> access-token-response :body str json/read-str)
-          access-token (get access-token-response-json "access_token")]
-      (log/info "retrieved access token" {:access-token access-token :realm realm})
-      access-token)
-    (throw (ex-info "WAITER_TEST_JWT_ACCESS_TOKEN_URL environment variable has not been provided" {}))))
-
 (defmacro assert-auth-cookie
   "Helper macro to assert the value of the set-cookie header."
   [set-cookie assertion-message]
