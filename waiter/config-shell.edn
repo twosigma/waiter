@@ -2,9 +2,9 @@
  ; ---------- Cluster ----------
 
  :cluster-config {:name #config/env "WAITER_CLUSTER_NAME"}
-
+ :metrics-consumer {:metrics-services [{:url "http://localhost:9001"
+                                        :cluster "c1"}]}
  :waiter-principal "waiter@example.com"
-
  :zookeeper {
              ;; Use an in-process ZK (not for production use):
              :connect-string :in-process}

@@ -675,13 +675,17 @@
   [retrieve-latest-descriptor-fn service-exists? kv-store token-metric-chan-mult start-new-service-fn leader?-fn]
   (cid/with-correlation-id
     "start-new-services-goroutine"
-    (let [correlation-id (cid/get-correlation-id)
+    (let [start-service-history-length 20
+          state-atom (atom {:start-new-service-history []})
+          query-state-fn (fn query-state [_]
+                           @state-atom)
+          correlation-id (cid/get-correlation-id)
           process-token-event-ch-buffer (async/sliding-buffer 1000)
           process-events!-fn
           (fn process-events! [events]
             (filter
               (fn latest-service-does-not-exist?
-                [{:keys [token]}]
+                [{:keys [token] :as event}]
                 (when (leader?-fn)
                   (let [{:strs [run-as-user]}
                         (sd/token->service-parameter-template kv-store token :error-on-missing false)
@@ -690,7 +694,12 @@
                         service-does-not-exist? (not (service-exists? service-id))]
                     (when service-does-not-exist?
                       (cid/cinfo correlation-id "starting" {:service-id (get latest-descriptor :service-id)})
-                      (start-new-service-fn latest-descriptor))
+                      (start-new-service-fn latest-descriptor)
+                      (swap! state-atom update :start-new-service-history
+                             (fn [history]
+                               (->> (assoc event :service-id service-id)
+                                    (conj history)
+                                    (drop start-service-history-length)))))
                     service-does-not-exist?)))
               events))
           process-token-event-ch
@@ -703,7 +712,8 @@
               [e]
               (cid/cerror correlation-id e "unexpected error when processing new token metric")))]
       (async/tap token-metric-chan-mult process-token-event-ch)
-      {:process-token-event-ch process-token-event-ch})))
+      {:process-token-event-ch process-token-event-ch
+       :query-state-fn query-state-fn})))
 
 ;;
 ;; Support for tracking killed instance candidates

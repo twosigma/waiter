@@ -1,0 +1,10 @@
+{
+  "cmd": "/home/kevin/GitHub/twosigma/waiter/containers/test-apps/kitchen/bin/kitchen -p $PORT0",
+  "cpus": 1.0,
+  "mem": 256,
+  "metric-group": "waiter_test",
+  "name": "kitchen",
+  "version": "3ba8125f-72b7-49fd-9127-46702f59e8ab",
+  "cmd-type": "shell",
+  "run-as-user": "kevin"
+}

@@ -690,11 +690,12 @@
                     (is abort-cb)))))))))))
 
 (defmacro assert-expected-events-new-services-daemon
-  [token-metric-chan process-token-event-ch start-new-service-fn-calls token-metric-chan-events expected-result-events
-   expected-start-new-service-calls]
+  [token-metric-chan process-token-event-ch start-new-service-fn-calls query-state-fn token-metric-chan-events
+   expected-result-events expected-start-new-service-calls]
   `(let [token-metric-chan# ~token-metric-chan
          process-token-event-ch# ~process-token-event-ch
          start-new-service-fn-calls# ~start-new-service-fn-calls
+         query-state-fn# ~query-state-fn
          token-metric-chan-events# ~token-metric-chan-events
          expected-result-events# ~expected-result-events
          expected-start-new-service-calls# ~expected-start-new-service-calls]
@@ -732,7 +733,7 @@
             start-new-service-fn (fn [& args] (swap! start-new-service-fn-calls conj args))
             service-exists? (fn [service-id] (contains? #{"s2" "s4"} service-id))
             leader?-fn (constantly true)
-            {:keys [process-token-event-ch]}
+            {:keys [process-token-event-ch query-state-fn]}
             (start-new-services-daemon
               retrieve-latest-descriptor-fn service-exists? nil token-metric-chan-mult start-new-service-fn leader?-fn)
 
@@ -740,9 +741,10 @@
             expected-result-events [[{:token "t1" :last-request-time "1"}
                                      {:token "t3" :last-request-time "1"}]]
             expected-start-new-service-calls [[{:service-id "s1"}]
-                                              [{:service-id "s3"}]]]
+                                              [{:service-id "s3"}]]
+            expected-state {:start-new-service-history []}] ;TODO: do this stuff
         (assert-expected-events-new-services-daemon
-          token-metric-chan process-token-event-ch start-new-service-fn-calls token-metric-chan-events
+          token-metric-chan process-token-event-ch start-new-service-fn-calls query-state-fn token-metric-chan-events
           expected-result-events expected-start-new-service-calls)))
 
     (testing "listening to token-metric-chan-mult does not process events if not leader router"
@@ -751,7 +753,7 @@
             start-new-service-fn-calls (atom [])
             start-new-service-fn (fn [& args] (swap! start-new-service-fn-calls conj args))
             leader?-fn (constantly false)
-            {:keys [process-token-event-ch]}
+            {:keys [process-token-event-ch query-state-fn]}
             (start-new-services-daemon
               retrieve-latest-descriptor-fn service-exists? nil token-metric-chan-mult start-new-service-fn leader?-fn)
 
@@ -760,7 +762,7 @@
             expected-start-new-service-calls []]
 
         (assert-expected-events-new-services-daemon
-          token-metric-chan process-token-event-ch start-new-service-fn-calls token-metric-chan-events
+          token-metric-chan process-token-event-ch start-new-service-fn-calls query-state-fn token-metric-chan-events
           expected-result-events expected-start-new-service-calls)))))
 
 (defmacro check-trackers
