@@ -27,7 +27,6 @@
             [slingshot.slingshot :as ss]
             [waiter.config :as config]
             [waiter.correlation-id :as cid]
-            [waiter.descriptor :as descriptor]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.request-log :as rlog]
@@ -678,8 +677,8 @@
     "start-new-services-goroutine"
     (let [correlation-id (cid/get-correlation-id)
           process-token-event-ch-buffer (async/sliding-buffer 1000)
-          process-events-fn
-          (fn process-events [events]
+          process-events!-fn
+          (fn process-events! [events]
             (filter
               (fn latest-service-does-not-exist?
                 [{:keys [token]}]
@@ -698,7 +697,7 @@
           (async/chan
             process-token-event-ch-buffer
             (comp
-              (map process-events-fn)
+              (map process-events!-fn)
               (filter seq))
             (fn process-token-event-ch-ex-handler
               [e]

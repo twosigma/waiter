@@ -180,8 +180,8 @@
           (fn query-metrics-consumer-maintainer-fn
             [include-flags]
             (let [{:keys [last-token-event-time]} @state-atom]
-              (cond-> {:last-token-event-time last-token-event-time
-                       :buffer-state {:token-metric-chan-count (.count token-metric-chan-buffer)}
+              (cond-> {:buffer-state {:token-metric-chan-count (.count token-metric-chan-buffer)}
+                       :last-token-event-time last-token-event-time
                        :supported-include-params ["watches-state"]}
                 (contains? include-flags "watches-state")
                 (assoc :watches-state
