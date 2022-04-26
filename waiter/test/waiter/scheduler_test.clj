@@ -720,6 +720,7 @@
                                   "t4" "s4"}
         retrieve-latest-descriptor-fn (fn [_ token]
                                         {:service-id (get token->latest-service-id token)})
+        service-exists? (fn [service-id] (contains? #{"s2" "s4"} service-id))
         token-metric-chan-events [[{:token "t1" :last-request-time "1"}
                                    {:token "t2" :last-request-time "1"}
                                    {:token "t3" :last-request-time "1"}]
@@ -729,13 +730,13 @@
             token-metric-chan-mult (async/mult token-metric-chan)
             start-new-service-fn-calls (atom [])
             start-new-service-fn (fn [& args] (swap! start-new-service-fn-calls conj args))
-            fallback-state-atom (atom {:available-service-ids #{"s2" "s4"}})
+            service-exists? (fn [service-id] (contains? #{"s2" "s4"} service-id))
             leader?-fn (constantly true)
             {:keys [process-token-event-ch]}
             (start-new-services-daemon
-              retrieve-latest-descriptor-fn nil token-metric-chan-mult start-new-service-fn leader?-fn
-              fallback-state-atom)
+              retrieve-latest-descriptor-fn service-exists? nil token-metric-chan-mult start-new-service-fn leader?-fn)
 
+            ; t1 and t3 are the only tokens with services that don't already exist
             expected-result-events [[{:token "t1" :last-request-time "1"}
                                      {:token "t3" :last-request-time "1"}]]
             expected-start-new-service-calls [[{:service-id "s1"}]
@@ -749,12 +750,10 @@
             token-metric-chan-mult (async/mult token-metric-chan)
             start-new-service-fn-calls (atom [])
             start-new-service-fn (fn [& args] (swap! start-new-service-fn-calls conj args))
-            fallback-state-atom (atom {:available-service-ids #{"s2" "s4"}})
             leader?-fn (constantly false)
             {:keys [process-token-event-ch]}
             (start-new-services-daemon
-              retrieve-latest-descriptor-fn nil token-metric-chan-mult start-new-service-fn leader?-fn
-              fallback-state-atom)
+              retrieve-latest-descriptor-fn service-exists? nil token-metric-chan-mult start-new-service-fn leader?-fn)
 
             ; expect no events or new service calls on non leader router
             expected-result-events []

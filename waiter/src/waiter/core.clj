@@ -1449,10 +1449,13 @@
                                 [[:routines retrieve-latest-descriptor-fn start-new-service-fn]
                                  [:state kv-store fallback-state-atom leader?-fn]
                                  metrics-consumer-maintainer]
-                                (let [{:keys [token-metric-chan-mult]} metrics-consumer-maintainer]
+                                (let [{:keys [token-metric-chan-mult]} metrics-consumer-maintainer
+                                      service-exists? (fn service-exists?
+                                                        [service-id]
+                                                        (descriptor/service-exists? @fallback-state-atom service-id))]
                                   (scheduler/start-new-services-daemon
-                                    retrieve-latest-descriptor-fn kv-store token-metric-chan-mult start-new-service-fn
-                                    leader?-fn fallback-state-atom)))
+                                    retrieve-latest-descriptor-fn service-exists? kv-store token-metric-chan-mult
+                                    start-new-service-fn leader?-fn)))
    :state-sources (pc/fnk [[:scheduler scheduler]
                            [:state query-service-maintainer-chan]
                            autoscaler autoscaling-multiplexer gc-for-transient-metrics interstitial-maintainer

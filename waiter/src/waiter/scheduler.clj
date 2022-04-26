@@ -673,7 +673,7 @@
 
   Returns a map with keys:
   :process-token-event-ch is a channel where messages are pushed to it when a service was started for a token event."
-  [retrieve-latest-descriptor-fn kv-store token-metric-chan-mult start-new-service-fn leader?-fn fallback-state-atom]
+  [retrieve-latest-descriptor-fn service-exists? kv-store token-metric-chan-mult start-new-service-fn leader?-fn]
   (cid/with-correlation-id
     "start-new-services-goroutine"
     (let [correlation-id (cid/get-correlation-id)
@@ -688,7 +688,7 @@
                         (sd/token->service-parameter-template kv-store token :error-on-missing false)
                         {:keys [service-id] :as latest-descriptor}
                         (retrieve-latest-descriptor-fn run-as-user token)
-                        service-does-not-exist? (not (descriptor/service-exists? @fallback-state-atom service-id))]
+                        service-does-not-exist? (not (service-exists? service-id))]
                     (when service-does-not-exist?
                       (cid/cinfo correlation-id "starting" {:service-id (get latest-descriptor :service-id)})
                       (start-new-service-fn latest-descriptor))
