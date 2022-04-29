@@ -23,6 +23,7 @@
             [waiter.metrics :as metrics]
             [waiter.state.ejection-expiry :as ejection-expiry]
             [waiter.state.responder :refer :all]
+            [waiter.test-helpers :refer :all]
             [waiter.util.utils :as utils])
   (:import (clojure.lang PersistentQueue)
            (org.joda.time DateTime)))
@@ -380,7 +381,6 @@
             (str "Mismatch in " counter-name " counter value. Expected: " expected-counter-value " Actual: " actual-counter-value)))))
 
   (defn- check-state-fn [query-state-chan expected-state]
-    (Thread/sleep 1) ; allow previous channel messages to get processed
     (let [query-state-response-chan (async/promise-chan)]
       (async/>!! query-state-chan {:cid "cid" :response-chan query-state-response-chan :service-id service-id})
       (let [actual-state (async/<!! query-state-response-chan)
@@ -2298,8 +2298,7 @@
                           (utils/dissoc-in [:instance-id->consecutive-failures "s1.h3"])
                           (assoc :work-stealing-queue (make-queue []))))
         ; no writes on response channel
-        (is (async/>!! response-chan-1 :dummy-data))
-        (is (= :dummy-data (async/<!! response-chan-1)))
+        (is (= :no-response (chan->response response-chan-1 100 :no-response)))
         ; now-release the async-request work-stealing instance
         (release-instance-fn release-instance-chan "s1.h3" 4 :success)
         (check-state-fn query-state-chan
@@ -2401,8 +2400,7 @@
                           (-> initial-state
                             (assoc-in [:instance-id->request-id->use-reason-map "s1.h3" "req-4" :variant] :async-request)
                             (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h3" 0 0 #{}))))
-          (async/>!! response-chan-1 :not-response)
-          (is (= :not-response (async/<!! response-chan-1))))
+          (is (= :no-response (chan->response response-chan-1 100 :no-response))))
 
         (testing "check releasing instance with :success after :success-async"
           (release-instance-fn release-instance-chan "s1.h3" 4 :success)
@@ -2411,8 +2409,7 @@
                             (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h3" "req-4"])
                             (utils/dissoc-in [:request-id->work-stealer "req-4"])
                             (update-in [:instance-id->state] #(update-slot-state-fn %1 "s1.h3" 0 0 #{}))))
-          (async/>!! response-chan-1 :not-response)
-          (is (= :success (async/<!! response-chan-1))))
+          (is (= :success (chan->response response-chan-1 100 :no-response))))
 
         (exit-service-chan-responder responder-chans)))
 
@@ -2540,8 +2537,7 @@
                                                                           (update-slot-state-fn "s1.h1" 1 0 #{:healthy}))
                                                     :work-stealing-queue (make-queue [(make-work-stealing-data "cid-18" "s1.h5" response-chan-2 "test-router-2")]))))
 
-          (async/>!! response-chan-1 :from-test)
-          (is (= :rejected (async/<!! response-chan-1))))
+          (is (= :rejected (chan->response response-chan-1 100 :no-response))))
 
         (testing "trigger cleanup of work-stealing queue when attempting to kill instance"
           (check-kill-request-instance-fn kill-instance-chan :no-matching-instance-found)
@@ -2551,8 +2547,7 @@
                                                                           (update-slot-state-fn "s1.h1" 1 0 #{:healthy}))
                                                     :work-stealing-queue (make-queue []))))
 
-          (async/>!! response-chan-2 :from-test)
-          (is (= :rejected (async/<!! response-chan-2))))
+          (is (= :rejected (chan->response response-chan-2 100 :no-response))))
 
         (exit-service-chan-responder responder-chans)))
 
