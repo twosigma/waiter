@@ -273,7 +273,7 @@
 
 (defn create-composite-scheduler
   "Creates and starts composite scheduler with components using their respective factory functions."
-  [{:keys [default-scheduler scheduler-state-chan selector-context service-id->service-description-fn]
+  [{:keys [custom-components default-scheduler scheduler-state-chan selector-context service-id->service-description-fn]
     :or {selector-context {}}
     :as config}]
   (let [scheduler-id->component (initialize-component-schedulers config)
@@ -283,7 +283,8 @@
                                 'waiter.scheduler.composite/create-scheduler-parameter-based-selector)
         create-selector-fn (utils/resolve-symbol! create-selector-sym)
         service-id->scheduler-fn (create-selector-fn
-                                   (merge {:default-scheduler default-scheduler
+                                   (merge {:custom-components custom-components
+                                           :default-scheduler default-scheduler
                                            :scheduler-id->scheduler scheduler-id->scheduler
                                            :service-id->service-description-fn service-id->service-description-fn}
                                           (dissoc selector-context :factory-fn)))

@@ -292,6 +292,7 @@
                                        :ipsum {:factory-fn 'waiter.scheduler.composite-test/create-test-scheduler
                                                :scheduler-name "ipsum"
                                                :service-ids ["ipsum-fee" "ipsum-foo" "ipsum-fuu"]}}
+                          :custom-components {:foo {:bar :baz}}
                           :default-scheduler default-scheduler
                           :scheduler-state-chan scheduler-state-chan
                           :service-id->password-fn service-id->password-fn
@@ -301,6 +302,19 @@
       (let [composite-scheduler (create-composite-scheduler scheduler-config)]
         (is composite-scheduler)
         (is (fn? (:query-aggregator-state-fn composite-scheduler)))))
+
+    (testing "provides custom-components to service-id->scheduler-fn"
+      (let [provided-context-atom (atom nil)]
+        (with-redefs [create-some-image-parameter-based-selector
+                      (fn [context] (reset! provided-context-atom context))]
+          (let [scheduler-config (assoc scheduler-config
+                                   :selector-context {:factory-fn 'waiter.scheduler.composite/create-some-image-parameter-based-selector
+                                                      :image-scheduler :ipsum})
+                composite-scheduler (create-composite-scheduler scheduler-config)]
+            (is (some? composite-scheduler))
+            (is (some? @provided-context-atom))
+            (is (= (:custom-components scheduler-config)
+                   (:custom-components @provided-context-atom)))))))
 
     (testing "using scheduler-parameter selector context"
       (let [old-create-scheduler-parameter-based-selector create-scheduler-parameter-based-selector
