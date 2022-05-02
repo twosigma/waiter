@@ -27,12 +27,15 @@
 
 (defn process-invalid-services
   "Deletes the provided services on the specified scheduler."
-  [scheduler service-ids]
-  (log/info "found" (count service-ids) "misplaced services in" scheduler)
-  (doseq [service-id service-ids]
-    (log/info "deleting misplaced service" service-id "in" scheduler)
-    (scheduler/delete-service scheduler service-id))
-  (log/info "deleted" (count service-ids) "misplaced services in" scheduler))
+  [{:keys [custom-options scheduler-name] :as scheduler} service-ids]
+  (if (:ignore-misplaced-services custom-options)
+    (log/info "ignoring" (count service-ids) "misplaced services in scheduler" scheduler-name)
+    (do
+      (log/info "found" (count service-ids) "misplaced services in scheduler" scheduler-name)
+      (doseq [service-id service-ids]
+        (log/info "deleting misplaced service" service-id "in scheduler" scheduler-name)
+        (scheduler/delete-service scheduler service-id))
+      (log/info "deleted" (count service-ids) "misplaced services in scheduler" scheduler-name))))
 
 (defn- retrieve-services
   "Retrieves the services for services that are configured to be running on the specified scheduler.
@@ -40,7 +43,7 @@
    specified scheduler, it is promptly deleted."
   [scheduler service-id->scheduler]
   (let [services (scheduler/get-services scheduler)
-        valid-service? #(-> % :id service-id->scheduler (= scheduler))
+        valid-service? #(-> % :id service-id->scheduler (identical? scheduler))
         {valid-services true invalid-services false} (group-by valid-service? services)]
     (when (seq invalid-services)
       (->> invalid-services

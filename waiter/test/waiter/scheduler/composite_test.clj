@@ -25,14 +25,22 @@
             [waiter.test-helpers :as test-helpers])
   (:import (clojure.lang ExceptionInfo)))
 
+(defrecord TestInvalidServicesScheduler
+  [custom-options delete-service-atom scheduler-name]
+  scheduler/ServiceScheduler
+  (delete-service [_ service-id] (swap! delete-service-atom conj service-id)))
+
 (deftest test-process-invalid-services
   (let [delete-service-atom (atom [])
-        scheduler (reify scheduler/ServiceScheduler
-                    (delete-service [_ service-id] (swap! delete-service-atom conj service-id)))]
-
+        scheduler (->TestInvalidServicesScheduler {} delete-service-atom "test-scheduler")]
+    ;; deletion enabled
     (process-invalid-services scheduler ["foobar-service1" "feefie-service2"])
-
-    (is (= ["foobar-service1" "feefie-service2"] @delete-service-atom))))
+    (is (= ["foobar-service1" "feefie-service2"] @delete-service-atom))
+    ;; deletion disabled
+    (reset! delete-service-atom [])
+    (let [scheduler' (assoc-in scheduler [:custom-options :ignore-misplaced-services] true)]
+      (process-invalid-services scheduler' ["foobar-service1" "feefie-service2"])
+      (is (empty? @delete-service-atom)))))
 
 (defn- compute-service
   [service-id]
