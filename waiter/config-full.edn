@@ -407,8 +407,7 @@
 
                     ;; :kind :kubernetes uses Kubernetes (https://kubernetes.io/) for scheduling Waiter services and instances:
                     ;:kind :kubernetes
-                    :kubernetes {
-                                 ;; Custom implementations should specify a :factory-fn
+                    :kubernetes {;; Custom implementations should specify a :factory-fn
                                  ;; that returns an instance of waiter.scheduler.ServiceScheduler:
                                  :factory-fn waiter.scheduler.kubernetes/kubernetes-scheduler
 
@@ -548,8 +547,7 @@
 
                                  ;; Cache configuration for service-id->deployment-error-cache
                                  ;; This cache represents deployment errors at the service level (e.g. k8s api errors)
-                                 :service-id->deployment-error-cache {
-                                                                      ;; max number of services with a deployment-error
+                                 :service-id->deployment-error-cache {;; max number of services with a deployment-error
                                                                       :threshold 5000
                                                                       ;; time (seconds) to live for a service with deployment-error
                                                                       :ttl 120}
@@ -578,7 +576,14 @@
 
                                  ;; Whether to validate the SSL certificate of the API server on the k8s watch connections.
                                  ;; Defaults to false (same as our the http client used for all other k8s api calls).
-                                 :watch-validate-ssl false}
+                                 :watch-validate-ssl false
+
+                                 ;; Cache configuration for workload->event-cache
+                                 ;; This cache represents Kubernetes Events for ReplicaSets and Pods
+                                 :workload->event-cache {;; max number of cached workloads with events
+                                                         :threshold 5000
+                                                         ;; time (seconds) to live for a workload with events
+                                                         :ttl 120}}
 
                     ;; :kind :marathon uses Marathon (https://mesosphere.github.io/marathon/) for scheduling instances:
                     ;:kind :marathon

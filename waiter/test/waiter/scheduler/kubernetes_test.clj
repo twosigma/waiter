@@ -105,7 +105,8 @@
       :scheduler-name "dummy-scheduler"
       :watch-chan-throttle-interval-ms 1
       :watch-init-timeout-ms 0
-      :watch-state (atom nil)}
+      :watch-state (atom nil)
+      :workload->event-cache (cu/cache-factory {:threshold 50 :ttl (-> 2 t/seconds t/in-millis)})}
      (merge args)
      (update-in [:authorizer] utils/create-component)
      map->KubernetesScheduler)))
@@ -1873,7 +1874,9 @@
                     :service-id->deployment-error-cache {:threshold 5000
                                                          :ttl 60}
                     :url "http://127.0.0.1:8001"
-                    :watch-init-timeout-ms 0}
+                    :watch-init-timeout-ms 0
+                    :workload->event-cache {:threshold 5000
+                                            :ttl 60}}
         base-config (merge context k8s-config)]
     (with-redefs [start-pods-watch! (constantly nil)
                   start-replicasets-watch! (constantly nil)]
@@ -1939,8 +1942,8 @@
 
           (testing "bad (non-matching) scheduler namespace and default-namespace"
             (let [config (-> base-config
-                           (assoc :namespace "y")
-                           (assoc-in [:replicaset-spec-builder :default-namespace] "x"))]
+                             (assoc :namespace "y")
+                             (assoc-in [:replicaset-spec-builder :default-namespace] "x"))]
               (is (thrown? Throwable (kubernetes-scheduler config)))))
 
           (testing "star default-namespace"
@@ -1949,8 +1952,8 @@
 
             (testing "with bad (non-matching) scheduler namespace"
               (let [config (-> base-config
-                             (assoc :namespace "y")
-                             (assoc-in [:replicaset-spec-builder :default-namespace] "*"))]
+                               (assoc :namespace "y")
+                               (assoc-in [:replicaset-spec-builder :default-namespace] "*"))]
                 (is (thrown? Throwable (kubernetes-scheduler config))))))
 
           (testing "good (non-conflicting) scheduler namespace and default-namespace"
@@ -1973,7 +1976,15 @@
 
           (testing "good restart-kill-threshold"
             (is (instance? KubernetesScheduler (kubernetes-scheduler (dissoc base-config :restart-kill-threshold))))
-            (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :restart-kill-threshold 2))))))
+            (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :restart-kill-threshold 2)))))
+
+          (testing "bad workload->event-cache-threshold"
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :workload->event-cache {:threshold 1}))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :workload->event-cache {:ttl 1}))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :workload->event-cache {:threshold 1
+                                                                                                    :ttl -1}))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :workload->event-cache {:threshold -1
+                                                                                                    :ttl 1}))))))
 
         (testing "should work with valid configuration"
           (is (instance? KubernetesScheduler (kubernetes-scheduler base-config))))
@@ -3075,3 +3086,109 @@
             {:cpus 0.2 :mem 100.0 :name waiter-raven-sidecar-name}])
     (is (= {:cpus 0.8 :mem 1680.0 :k8s/num-containers 3}
            (scheduler/compute-instance-usage scheduler service-id)))))
+
+(deftest test-k8s-event->simple-event
+  (let [message "Error: cannot find volume"
+        reason "Failed"
+        timestamp-str "2014-09-13T00:24:56Z"
+        type "Warning"]
+    (is (= {:creation-timestamp (du/str-to-date timestamp-str k8s-timestamp-format)
+            :message message
+            :reason reason
+            :type type}
+           (k8s-event->simple-event {:metadata {:creationTimestamp timestamp-str :name "w8r-myreplicaset-mypod.12345"}
+                                     :message message :name "w8r-myreplicaset-mypod" :reason reason :type type})))
+    (is (thrown-with-msg? IllegalArgumentException #"Invalid format: \"nope\"" 
+                          (k8s-event->simple-event {:metadata {:creationTimestamp "nope" :name "w8r-myreplicaset-mypod.12345"}
+                                                    :message message :name "w8r-myreplicaset-mypod" :reason reason :type type})))
+    (is (= {:creation-timestamp nil :message nil :reason nil :type nil}
+           (k8s-event->simple-event {:metadata {:name "w8r-myreplicaset-mypod.12345"} :name "w8r-myreplicaset-mypod"})))))
+
+(deftest test-events-by-namespace-and-workload-query
+  (let [message "Created pod: w8r-abcd-efg"
+        namespace "namespace"
+        reason "SuccessfulCreate"
+        timestamp-str "2014-09-13T00:24:56Z"
+        type "Normal"
+        version 123
+        workload-name "w8r-realwork"
+        metadata {:resourceVersion (str version)}
+        response {:items [{:metadata {:creationTimestamp timestamp-str :name (str workload-name ".123")}
+                           :involvedObject {:kind "ReplicaSet" :namespace namespace :name workload-name}
+                           :message message :reason reason :type type}]
+                  :metadata metadata}
+        request-fn (constantly response)
+        no-hits-request-fn (constantly {:items [] :metadata metadata})]
+    (is (= {:events [{:creation-timestamp (du/str-to-date timestamp-str k8s-timestamp-format)
+                      :message message
+                      :reason reason
+                      :type type}]
+            :version version}
+           (events-by-namespace-and-workload-query {:api-server-url "https://fake.com" :scheduler-name "test-scheduler"}
+                                                   {:api-request-fn request-fn} namespace workload-name)))
+    (is (= {:events [] :version version}
+           (events-by-namespace-and-workload-query {:api-server-url "https://fake.com" :scheduler-name "test-scheduler"}
+                                                   {:api-request-fn no-hits-request-fn} namespace workload-name)))))
+
+(deftest test-get-events-by-namespace-and-workload
+  (let [cache (cu/cache-factory {})
+        fetched-value "fetched-value"
+        fetch-fn (constantly fetched-value)
+        known-namespace "known-namespace"
+        known-value "known-value"
+        known-workload "known-workload"
+        unknown-namespace "unknown-namespace"
+        unknown-workload "unknown-workload"]
+    (cu/cache-put! cache {:namespace known-namespace :workload-name known-workload} known-value)
+    (is (= known-value (get-events-by-namespace-and-workload cache known-namespace known-workload fetch-fn {} {})))
+    (is (= fetched-value (get-events-by-namespace-and-workload cache known-namespace unknown-workload fetch-fn {} {})))
+    (is (= fetched-value (get-events-by-namespace-and-workload cache unknown-namespace known-workload fetch-fn {} {})))
+    (is (= fetched-value (get-events-by-namespace-and-workload cache unknown-namespace unknown-workload fetch-fn {} {})))))
+
+(deftest test-service-unhealthy?
+  (is (true? (service-unhealthy? [nil {:instances 1 :task-count 0 :task-stats {:healthy 0}}])))
+  (is (false? (service-unhealthy? [nil {:instances 0 :task-count 0 :task-stats {:healthy 0}}])))
+  (is (false? (service-unhealthy? [nil {:instances 1 :task-count 2 :task-stats {:healthy 2}}])))
+  (is (true? (service-unhealthy? [nil {:instances 1 :task-count 1 :task-stats {:healthy 0}}])))
+  (is (false? (service-unhealthy? [nil {:instances 1 :task-count 1 :task-stats {:healthy 1}}])))
+  (is (false? (service-unhealthy? [nil {:instances 1 :task-count 1 :task-stats {:healthy 2}}]))))
+
+(deftest test-start-event-fetcher!
+  (let [fetch-events-chan (au/latest-chan)
+        namespace "myself"
+        service-a-name "service-a"
+        service-a-id (str service-a-name "-id")
+        service-b-name "service-b"
+        service-b-id (str service-b-name "-id")
+        service-a (scheduler/make-Service {:id service-a-id :instances 1 :k8s/app-name service-a-name :k8s/namespace namespace})
+        service-b (scheduler/make-Service {:id service-b-id :instances 1 :k8s/app-name service-b-name :k8s/namespace namespace})
+        timestamp-str "2014-09-13T00:24:56Z"
+        workload-name "w8r-realwork"
+        initial-state {:service-id->service {service-a-id service-a service-b-id service-b}}
+        simple-event {:creation-timestamp (du/str-to-date timestamp-str k8s-timestamp-format)
+                      :message "quota probs"
+                      :reason "FailedCreate"
+                      :type "Warning"}
+        k8s-response {:items [{:metadata {:creationTimestamp timestamp-str :name (str workload-name ".123")}
+                               :involvedObject {:kind "ReplicaSet" :namespace namespace :name workload-name}
+                               :message (:message simple-event) :reason (:reason simple-event) :type (:type simple-event)}]
+                      :metadata {:resourceVersion (str 123)}}
+        options {:api-request-fn (constantly k8s-response)
+                 :fetch-events-chan fetch-events-chan}
+        {:keys [watch-state] :as dummy-scheduler} (make-dummy-scheduler ["test-app-1234"])]
+    ;; Set an initial state
+    (swap! watch-state (constantly initial-state))
+    (is (nil? (-> @watch-state :service-id->service (get service-a-id) :k8s/events )))
+    (is (false? (cu/cache-contains? (:workload->event-cache dummy-scheduler) {:namespace namespace :workload-name workload-name})))
+    (with-redefs [service-unhealthy? #(= service-a-id (:id (get % 1)))]
+      ;; Start fetcher thread
+      (let [fetcher-thread (start-event-fetcher! dummy-scheduler options)]
+        ;; Wait for an update, check it
+        (let [{:keys [updated-service]} (async/<!! fetch-events-chan)
+              rs-events (:k8s/events updated-service)]
+          (is (= service-a-id (:id updated-service)))
+          (is (= 1 (count rs-events)))
+          (is (= simple-event (first rs-events)))
+          (is (true? (cu/cache-contains? (:workload->event-cache dummy-scheduler) {:namespace namespace :workload-name service-a-name}))))
+        ;; Kill the event fetcher thread
+        (.stop fetcher-thread)))))

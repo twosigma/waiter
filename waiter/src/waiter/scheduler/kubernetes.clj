@@ -211,6 +211,19 @@
   [k8s-obj]
   (get-in k8s-obj [:metadata :annotations :waiter/service-id]))
 
+(defn k8s-event->timestamp
+  "Get the creation timestamp from a k8s Event"
+  [k8s-event]
+  (timestamp-str->datetime (get-in k8s-event [:metadata :creationTimestamp])))
+
+(defn k8s-event->simple-event
+  "Distill a k8s Event into a simplified event containing minimal necessary attributes"
+  [{:keys [message reason type] :as k8s-event}]
+  {:creation-timestamp (k8s-event->timestamp k8s-event)
+   :message message
+   :reason reason
+   :type type})
+
 (defn- pod->instance-id
   "Construct the Waiter instance-id for the given Kubernetes pod incarnation.
    Note that a new Waiter Service Instance is created each time a pod restarts,
@@ -544,7 +557,8 @@
                        (= "ReplicaSet" result-type))
                    (drop-managed-fields result)
                    (or (= "PodList" result-type)
-                       (= "ReplicaSetList" result-type))
+                       (= "ReplicaSetList" result-type)
+                       (= "EventList" result-type))
                    (update result :items #(mapv drop-managed-fields %))
                    :else result)]
       (scheduler/log "response from K8s API server:" result)
@@ -1704,6 +1718,77 @@
                                   (assoc-in state [:rs-metadata :version :watch] version))))))}
       (merge options))))
 
+(defn events-by-namespace-and-workload-query
+  "Query K8s for all namespace-scoped events with matching workload names"
+  [{:keys [api-server-url] :as scheduler} options namespace workload-name]
+  (let [events-url (str api-server-url "/api/v1/namespaces/" namespace "/events?fieldSelector=involvedObject.name%3D" workload-name)
+        {:keys [items version]} (global-state-query scheduler options "get-events" events-url)
+        events (map k8s-event->simple-event items)]
+    {:events events
+     :version version}))
+
+(defn get-events-by-namespace-and-workload
+  "Load events from cache or query K8s"
+  [workload->event-cache namespace workload-name k8s-query-fn scheduler options]
+  (let [workload {:namespace namespace :workload-name workload-name}]
+    (cu/cache-get-or-load workload->event-cache workload
+                          (fn load-event-from-k8s [] (k8s-query-fn scheduler options namespace workload-name)))))
+
+(defn service-unhealthy?
+  "Return true if the given service appears unhealthy"
+  [[_ {:keys [instances task-count task-stats]}]]
+  (let [healthy-count (:healthy task-stats)]
+    (or (< task-count instances)
+        (< healthy-count task-count))))
+
+(defn add-events-to-service
+  "Add K8s Events to the given service (may acquire events from local cache or from K8s API)"
+  [service event-loader]
+  (let [namespace (:k8s/namespace service)
+        name (:k8s/app-name service)
+        events (event-loader namespace name)]
+    (assoc service :k8s/events (:events events))))
+
+(defn add-events-to-pod
+  "Add K8s Events to the given pod (may acquire events from local cache or from K8s API)"
+  [{:keys [metadata] :as pod} event-loader]
+  (let [namespace (:namespace metadata)
+        name (:name metadata)
+        events (event-loader namespace name)]
+    (assoc pod :k8s/events (:events events))))
+
+(defn start-event-fetcher!
+  "Start a thread to continuously check for problematic services and load related K8s Events for them."
+  [{:keys [watch-state workload->event-cache] :as scheduler}
+   {:keys [exit-on-error? fetch-events-chan] :as options}]
+  (doto
+   (Thread.
+    (fn fetch-k8s-events []
+      (try
+        (log/info "starting K8s event fetcher")
+        (let [event-getter (fn [namespace name] (get-events-by-namespace-and-workload workload->event-cache namespace name events-by-namespace-and-workload-query scheduler options))]
+          ;; retry forever
+          (while true
+            (log/info "K8s event fetcher checking for targets")
+            (let [{:keys [service-id->service service-id->pod-id->pod]} @watch-state]
+              (doseq [[service-id service] (filter service-unhealthy? service-id->service)]
+                (let [pod-id->pod (get service-id->pod-id->pod service-id)
+                      updated-service (add-events-to-service service event-getter)
+                      pod-id->updated-pod (pc/map-vals #(add-events-to-pod % event-getter) pod-id->pod)]
+                  (swap! watch-state
+                         #(as-> % state
+                            (assoc-in state [:service-id->service service-id] updated-service)
+                            (doseq [[pod-id updated-pod] pod-id->updated-pod]
+                              (assoc-in state [:service-id->pod-id->pod service-id pod-id] updated-pod))))
+                  (async/>!! fetch-events-chan {:pod-id->updated-pod pod-id->updated-pod :time (t/now) :updated-service updated-service}))))
+            (utils/sleep 500)))
+        (catch Throwable t
+          (when exit-on-error?
+            (log/error t "unrecoverable error in K8s event fetcher thread, terminating waiter.")
+            (System/exit 1))))))
+    (.setDaemon true)
+    (.start)))
+
 (defn wait-for-watches
   "Waits until both the Pod and ReplicaSet scheduler watch states are populated.
    Logs and error and returns if this takes longer than watch-init-timeout-ms.
@@ -1748,6 +1833,7 @@
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver
     {:keys [default-namespace] :as replicaset-spec-builder} :replicaset-spec-builder
     {service-id->deployment-error-cache-threshold :threshold service-id->deployment-error-cache-ttl-sec :ttl} :service-id->deployment-error-cache
+    {workload->event-cache-threshold :threshold workload->event-cache-ttl-sec :ttl} :workload->event-cache
     :as context}]
   {:pre [(or (nil? authenticate-health-checks?) (boolean? authenticate-health-checks?))
          (schema/contains-kind-sub-map? authorizer)
@@ -1798,31 +1884,33 @@
          (or (nil? watch-init-timeout-ms) (integer? watch-init-timeout-ms))
          (or (nil? watch-retries) (integer? watch-retries))
          (or (nil? watch-socket-timeout-ms) (integer? watch-socket-timeout-ms))
-         (or (nil? watch-validate-ssl) (boolean? watch-validate-ssl))]}
+         (or (nil? watch-validate-ssl) (boolean? watch-validate-ssl))
+         (pos-int? workload->event-cache-threshold)
+         (pos-int? workload->event-cache-ttl-sec)]}
   (let [authorizer (utils/create-component authorizer)
         authenticate-health-checks? (if (some? authenticate-health-checks?) authenticate-health-checks? false)
         http-client (-> http-options
-                      (utils/assoc-if-absent :client-name "waiter-k8s")
-                      (utils/assoc-if-absent :user-agent "waiter-k8s")
-                      hu/http-client-factory)
+                        (utils/assoc-if-absent :client-name "waiter-k8s")
+                        (utils/assoc-if-absent :user-agent "waiter-k8s")
+                        hu/http-client-factory)
         service-id->deployment-error-cache (cu/cache-factory {:threshold service-id->deployment-error-cache-threshold
                                                               :ttl (-> service-id->deployment-error-cache-ttl-sec t/seconds t/in-millis)})
         service-id->failed-instances-transient-store (atom {})
         replicaset-spec-builder-ctx (assoc replicaset-spec-builder
-                                      :log-bucket-sync-secs log-bucket-sync-secs
-                                      :log-bucket-url log-bucket-url)
+                                           :log-bucket-sync-secs log-bucket-sync-secs
+                                           :log-bucket-url log-bucket-url)
         pdb-api-version (or pdb-api-version "policy/v1beta1")
         pdb-spec-builder-factory-fn (:factory-fn pdb-spec-builder)
         pdb-spec-builder-fn (when pdb-spec-builder-factory-fn
                               (let [f (-> pdb-spec-builder-factory-fn
-                                        utils/resolve-symbol
-                                        deref)]
+                                          utils/resolve-symbol
+                                          deref)]
                                 (assert (fn? f) "PodDisruptionBudget spec function must be a Clojure fn")
                                 f))
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
-                                             :factory-fn
-                                             utils/resolve-symbol
-                                             deref)]
+                                               :factory-fn
+                                               utils/resolve-symbol
+                                               deref)]
                                      (assert (fn? f) "ReplicaSet spec function must be a Clojure fn")
                                      (fn [scheduler service-id service-description in-context]
                                        (let [context (merge replicaset-spec-builder-ctx in-context)]
@@ -1849,10 +1937,10 @@
         watch-chan-throttle-interval-ms (or watch-chan-throttle-interval-ms 1000)
         syncer-trigger-chan (au/throttle-chan watch-chan-throttle-interval-ms [syncer-timer-chan watch-trigger-chan])
         {:keys [retrieve-syncer-state-fn]} (start-scheduler-syncer-fn
-                                             scheduler-name
-                                             get-service->instances-fn
-                                             scheduler-state-chan
-                                             syncer-trigger-chan)
+                                            scheduler-name
+                                            get-service->instances-fn
+                                            scheduler-state-chan
+                                            syncer-trigger-chan)
         fileserver (update fileserver :predicate-fn (fn [predicate-fn]
                                                       (if (nil? predicate-fn)
                                                         fileserver-container-enabled?
@@ -1864,7 +1952,13 @@
                                             :tls-flags [default-raven-tls-env-flag]})))
         determine-replicaset-namespace-fn (if determine-replicaset-namespace-fn
                                             (utils/resolve-symbol! determine-replicaset-namespace-fn)
-                                            determine-replicaset-namespace)]
+                                            determine-replicaset-namespace)
+        fetch-events-chan (au/latest-chan)
+        fetch-events-options (-> watch-options
+                                 (dissoc :watch-retries :watch-trigger-chan)
+                                 (assoc :fetch-events-chan fetch-events-chan))
+        workload->event-cache (cu/cache-factory {:threshold workload->event-cache-threshold
+                                                 :ttl (-> workload->event-cache-ttl-sec t/seconds t/in-millis)})]
 
     (let [daemon-state (atom nil)
           auth-str-atom (atom nil)
@@ -1905,7 +1999,8 @@
                             :service-id->failed-instances-transient-store service-id->failed-instances-transient-store
                             :service-id->password-fn service-id->password-fn
                             :service-id->service-description-fn service-id->service-description-fn
-                            :watch-state watch-state}
+                            :watch-state watch-state
+                            :workload->event-cache workload->event-cache}
           scheduler (map->KubernetesScheduler scheduler-config)
           _ (deliver scheduler-promise scheduler)
           pod-watch-thread (start-pods-watch! scheduler watch-options)
@@ -1915,4 +2010,5 @@
       (assert (every? #(contains? scheduler %) (keys scheduler-config))
               "ensure all fields in scheduler-config are present in KubernetesScheduler")
       (wait-for-watches scheduler watch-options)
+      (start-event-fetcher! scheduler fetch-events-options)
       scheduler)))
