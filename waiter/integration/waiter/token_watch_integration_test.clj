@@ -5,7 +5,8 @@
             [clojure.tools.logging :as log]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
-            [waiter.util.utils :as utils]))
+            [waiter.util.utils :as utils]
+            [clojure.data :as data]))
 
 (defn- await-goal-response-for-all-routers
   "Returns true if the goal-response-fn was satisfied with the response from request-fn for all routers before
@@ -115,6 +116,7 @@
   (let [{:keys [body error headers] :as response}
         (make-request router-url "/tokens" :async? true :cookies cookies :query-params query-params)
         _ (assert-response-status response 200)
+        {:strs [x-cid]} headers
         json-objects (utils/chan-to-json-seq!! body)
         token->index-atom (atom {})
         initial-event-time-epoch-ms-atom (atom nil)
@@ -128,32 +130,39 @@
           (try
             (doseq [msg json-objects
                     :when (some? msg)]
+              (log/info "received msg from token watch" {:msg msg
+                                                         :watch-cid x-cid
+                                                         :current-token->index @token->index-atom})
               (reset!
                 token->index-atom
                 (let [{:strs [object type]} msg
-                      token->index @token->index-atom]
-                  (case type
-                    "INITIAL"
-                    (do
-                      (reset! initial-event-time-epoch-ms-atom (System/currentTimeMillis))
-                      (reduce
-                        (fn [token->index index]
-                          (assoc token->index (get index "token") index))
-                        {}
-                        object))
+                      token->index @token->index-atom
+                      new-token->index
+                      (case type
+                        "INITIAL"
+                        (do
+                          (reset! initial-event-time-epoch-ms-atom (System/currentTimeMillis))
+                          (reduce
+                            (fn [token->index index]
+                              (assoc token->index (get index "token") index))
+                            {}
+                            object))
 
-                    "EVENTS"
-                    (reduce
-                      (fn [token->index {:strs [object type]}]
-                        (case type
-                          "UPDATE"
-                          (assoc token->index (get object "token") object)
-                          "DELETE"
-                          (dissoc token->index (get object "token") object)
-                          (throw (ex-info "Unknown event type received in EVENTS object" {:event object}))))
-                      token->index
-                      object)
-                    (throw (ex-info "Unknown event type received from watch" {:event msg}))))))
+                        "EVENTS"
+                        (reduce
+                          (fn [token->index {:strs [object type]}]
+                            (case type
+                              "UPDATE"
+                              (assoc token->index (get object "token") object)
+                              "DELETE"
+                              (dissoc token->index (get object "token") object)
+                              (throw (ex-info "Unknown event type received in EVENTS object" {:event object}))))
+                          token->index
+                          object)
+                        (throw (ex-info "Unknown event type received from watch" {:event msg})))]
+                  (log/info "diff token->index" {:diff-token->index (data/diff token->index new-token->index)
+                                                 :watch-cid x-cid})
+                  new-token->index)))
             (catch Exception e
               (exit-fn)
               (log/error e "Error in test watch-chan" {:router-url router-url}))))]
