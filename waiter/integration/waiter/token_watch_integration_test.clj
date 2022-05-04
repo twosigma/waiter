@@ -1,12 +1,12 @@
 (ns waiter.token-watch-integration-test
   (:require [clojure.core.async :as async]
+            [clojure.data :as data]
             [clojure.set :as set]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
-            [waiter.util.utils :as utils]
-            [clojure.data :as data]))
+            [waiter.util.utils :as utils]))
 
 (defn- await-goal-response-for-all-routers
   "Returns true if the goal-response-fn was satisfied with the response from request-fn for all routers before
