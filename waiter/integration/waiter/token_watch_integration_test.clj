@@ -130,9 +130,9 @@
           (try
             (doseq [msg json-objects
                     :when (some? msg)]
-              (log/info "received msg from token watch" {:msg msg
-                                                         :watch-cid x-cid
-                                                         :current-token->index @token->index-atom})
+              (log/info "received msg from token watch" {:current-token->index @token->index-atom
+                                                         :msg msg
+                                                         :watch-cid x-cid})
               (reset!
                 token->index-atom
                 (let [{:strs [object type]} msg
