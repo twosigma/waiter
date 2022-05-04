@@ -1,5 +1,6 @@
 (ns waiter.token-watch-integration-test
   (:require [clojure.core.async :as async]
+            [clojure.data :as data]
             [clojure.set :as set]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
@@ -115,6 +116,7 @@
   (let [{:keys [body error headers] :as response}
         (make-request router-url "/tokens" :async? true :cookies cookies :query-params query-params)
         _ (assert-response-status response 200)
+        {:strs [x-cid]} headers
         json-objects (utils/chan-to-json-seq!! body)
         token->index-atom (atom {})
         initial-event-time-epoch-ms-atom (atom nil)
@@ -128,32 +130,39 @@
           (try
             (doseq [msg json-objects
                     :when (some? msg)]
+              (log/info "received msg from token watch" {:current-token->index @token->index-atom
+                                                         :msg msg
+                                                         :watch-cid x-cid})
               (reset!
                 token->index-atom
                 (let [{:strs [object type]} msg
-                      token->index @token->index-atom]
-                  (case type
-                    "INITIAL"
-                    (do
-                      (reset! initial-event-time-epoch-ms-atom (System/currentTimeMillis))
-                      (reduce
-                        (fn [token->index index]
-                          (assoc token->index (get index "token") index))
-                        {}
-                        object))
+                      token->index @token->index-atom
+                      new-token->index
+                      (case type
+                        "INITIAL"
+                        (do
+                          (reset! initial-event-time-epoch-ms-atom (System/currentTimeMillis))
+                          (reduce
+                            (fn [token->index index]
+                              (assoc token->index (get index "token") index))
+                            {}
+                            object))
 
-                    "EVENTS"
-                    (reduce
-                      (fn [token->index {:strs [object type]}]
-                        (case type
-                          "UPDATE"
-                          (assoc token->index (get object "token") object)
-                          "DELETE"
-                          (dissoc token->index (get object "token") object)
-                          (throw (ex-info "Unknown event type received in EVENTS object" {:event object}))))
-                      token->index
-                      object)
-                    (throw (ex-info "Unknown event type received from watch" {:event msg}))))))
+                        "EVENTS"
+                        (reduce
+                          (fn [token->index {:strs [object type]}]
+                            (case type
+                              "UPDATE"
+                              (assoc token->index (get object "token") object)
+                              "DELETE"
+                              (dissoc token->index (get object "token") object)
+                              (throw (ex-info "Unknown event type received in EVENTS object" {:event object}))))
+                          token->index
+                          object)
+                        (throw (ex-info "Unknown event type received from watch" {:event msg})))]
+                  (log/info "diff token->index" {:diff-token->index (data/diff token->index new-token->index)
+                                                 :watch-cid x-cid})
+                  new-token->index)))
             (catch Exception e
               (exit-fn)
               (log/error e "Error in test watch-chan" {:router-url router-url}))))]
@@ -371,9 +380,9 @@
                                                              "maintenance" true})
               (post-token waiter-url (assoc (kitchen-params) :token token-1 :maintenance {:message "maintenance message"}))
               (post-token waiter-url (assoc (kitchen-params) :token token-2))
-              (assert-watch-token-index-entry-does-not-change watch token-1 {"token" token-1
-                                                                             "owner" (retrieve-username)
-                                                                             "maintenance" true})
+              (assert-watch-token-index-entry watch token-1 {"token" token-1
+                                                             "owner" (retrieve-username)
+                                                             "maintenance" true})
               (assert-watch-token-index-entry-does-not-change watch token-2 {"token" token-2
                                                                              "owner" (retrieve-username)
                                                                              "maintenance" true})
