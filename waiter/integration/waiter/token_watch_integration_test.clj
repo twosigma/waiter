@@ -380,9 +380,9 @@
                                                              "maintenance" true})
               (post-token waiter-url (assoc (kitchen-params) :token token-1 :maintenance {:message "maintenance message"}))
               (post-token waiter-url (assoc (kitchen-params) :token token-2))
-              (assert-watch-token-index-entry-does-not-change watch token-1 {"token" token-1
-                                                                             "owner" (retrieve-username)
-                                                                             "maintenance" true})
+              (assert-watch-token-index-entry watch token-1 {"token" token-1
+                                                             "owner" (retrieve-username)
+                                                             "maintenance" true})
               (assert-watch-token-index-entry-does-not-change watch token-2 {"token" token-2
                                                                              "owner" (retrieve-username)
                                                                              "maintenance" true})
