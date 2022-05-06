@@ -32,6 +32,7 @@
             [schema.core :as s]
             [slingshot.slingshot :as ss]
             [waiter.authorization :as authz]
+            [waiter.config :as config]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.schema :as schema]
@@ -1163,37 +1164,48 @@
   [{raven-sidecar-config :raven-sidecar} _ {:strs [env]} _]
   (raven-mode-helper env raven-sidecar-config {:match "yes" :tls-match "yes"}))
 
+(defn- header-names->log-entry-value
+  "Merges a non-empty seq of header names into a non-empty string, else returns nil if the header names are empty."
+  [header-names]
+  (when (seq header-names)
+    (str/join "," (sort header-names))))
+
 (defn attach-raven-sidecar
   "Attaches raven sidecar to replicaset"
   [replicaset raven-sidecar
    {:strs [backend-proto health-check-port-index health-check-proto ports] :as service-description}
    base-env service-port port0 force-tls?]
-  (update-in replicaset
-             [:spec :template :spec :containers]
-             conj
-             (let [{:keys [cmd resources image]} raven-sidecar
-                   raven-base-env (get-in raven-sidecar [:env-vars :defaults])
-                   user-env (:env service-description)
-                   env-ports (for [i (range ports)] [(str "PORT" i) (str (+ port0 i))])
-                   env-map (-> raven-base-env
-                               (merge user-env base-env)
-                               (assoc "FORCE_TLS_TERMINATION" (str force-tls?)
-                                      "HEALTH_CHECK_PORT_INDEX" (str health-check-port-index)
-                                      "HEALTH_CHECK_PROTOCOL" health-check-proto
-                                      "SERVICE_PORT" (str service-port)
-                                      "SERVICE_PROTOCOL" backend-proto)
-                               (into env-ports))
-                   env (vec (for [[k v] env-map]
-                              {:name k :value v}))
-                   raven-container {:command cmd
-                                    :env env
-                                    :image image
-                                    :imagePullPolicy "IfNotPresent"
-                                    :name waiter-raven-sidecar-name
-                                    :ports [{:containerPort service-port}]
-                                    :resources {:limits {:memory (str (:mem resources) "Mi")}
-                                                :requests {:cpu (str (:cpu resources)) :memory (str (:mem resources) "Mi")}}}]
-               raven-container)))
+  (let [raven-log-request-header-names (header-names->log-entry-value (config/retrieve-request-log-request-headers))
+        raven-log-response-header-names (header-names->log-entry-value (config/retrieve-request-log-response-headers))]
+    (update-in replicaset
+      [:spec :template :spec :containers]
+      conj
+      (let [{:keys [cmd resources image]} raven-sidecar
+            raven-base-env (get-in raven-sidecar [:env-vars :defaults])
+            user-env (:env service-description)
+            env-ports (for [i (range ports)] [(str "PORT" i) (str (+ port0 i))])
+            env-map (-> raven-base-env
+                      (merge user-env base-env)
+                      (assoc "FORCE_TLS_TERMINATION" (str force-tls?)
+                             "HEALTH_CHECK_PORT_INDEX" (str health-check-port-index)
+                             "HEALTH_CHECK_PROTOCOL" health-check-proto
+                             "SERVICE_PORT" (str service-port)
+                             "SERVICE_PROTOCOL" backend-proto)
+                      (cond->
+                        raven-log-request-header-names (assoc "RAVEN_LOG_REQUEST_HEADER_NAMES" raven-log-request-header-names)
+                        raven-log-response-header-names (assoc "RAVEN_LOG_RESPONSE_HEADER_NAMES" raven-log-response-header-names))
+                      (into env-ports))
+            env (vec (for [[k v] env-map]
+                       {:name k :value v}))
+            raven-container {:command cmd
+                             :env env
+                             :image image
+                             :imagePullPolicy "IfNotPresent"
+                             :name waiter-raven-sidecar-name
+                             :ports [{:containerPort service-port}]
+                             :resources {:limits {:memory (str (:mem resources) "Mi")}
+                                         :requests {:cpu (str (:cpu resources)) :memory (str (:mem resources) "Mi")}}}]
+        raven-container))))
 
 (defn- proto->tls-proto
   "Return equivalent TLS protocol for given protocol"

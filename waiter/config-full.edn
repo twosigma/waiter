@@ -1082,6 +1082,13 @@
                                                                          :recent-failed-instance-cache {:threshold 5000
                                                                                                         :ttl 900000}}}}}
 
+ ;; Configure request log properties
+ :request-log {
+               ;; request headers to include in the request log prefixed by 'request-header-'
+               :request-headers #{"accept-encoding" "transfer-encoding"}
+               ;; response headers to include in the request log prefixed by 'response-header-'
+               :response-headers #{"content-encoding" "transfer-encoding"}}
+
  :token-config {
                 ;; Define the calculator that compute the root assigned to a token when they are created.
                 :cluster-calculator {;; :kind :configured create a calculator that looks up the cluster name using a configured map.

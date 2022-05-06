@@ -17,6 +17,8 @@
   (:require [clojure.string :as str]
             [clojure.tools.logging :as log]
             [metrics.timers :as timers]
+            [plumbing.core :as pc]
+            [waiter.config :as config]
             [waiter.metrics :as metrics]
             [waiter.util.date-utils :as du]
             [waiter.util.ring-utils :as ru]
@@ -27,10 +29,17 @@
   [log-data]
   (log/log "RequestLog" :info nil (utils/clj->json log-data)))
 
+(defn- headers->entries
+  "Extracts the request log entries attaching the provided entry prefix in the keys from the provided headers."
+  [headers header-names entry-prefix]
+  (->> (select-keys headers header-names)
+       (pc/map-keys (fn [k] (->> k (str entry-prefix) (keyword))))))
+
 (defn request->context
   "Convert a request into a context suitable for logging."
   [{:keys [client-protocol headers internal-protocol query-string remote-addr request-id
-           request-method request-time server-port uri] :as request}]
+           request-method request-time server-port uri] :as request}
+   header-names]
   (let [{:strs [content-length content-type cookie host origin referer user-agent x-cid x-forwarded-for]} headers
         remote-address (or x-forwarded-for remote-addr)]
     (cond-> {:cid x-cid
@@ -39,6 +48,7 @@
              :request-header-count (count headers)
              :request-id request-id
              :scheme (-> request utils/request->scheme name)}
+      (seq header-names) (merge (headers->entries headers header-names "request-header-"))
       origin (assoc :origin origin)
       request-method (assoc :method (-> request-method name str/upper-case))
       client-protocol (assoc :client-protocol client-protocol)
@@ -58,7 +68,8 @@
   [{:keys [authorization/method authorization/principal backend-response-latency-ns descriptor error-class
            get-instance-latency-ns handle-request-latency-ns headers instance instance-proto latest-service-id
            protocol request-type status waiter-api-call? waiter/oidc-identifier waiter/oidc-mode waiter/oidc-redirect-uri]
-    :as response}]
+    :as response}
+   header-names]
   (let [{:keys [service-id service-description source-tokens]} descriptor
         token (or (some->> source-tokens (map #(get % "token")) seq (str/join ","))
                   ;; allow non-proxy requests to provide tokens for use in the request log
@@ -67,6 +78,7 @@
         {:strs [content-length content-type grpc-status location server x-raven-response-flags x-waiter-operation-result]} headers
         {:keys [k8s/node-name k8s/pod-name]} instance]
     (cond-> {:response-header-count (count headers)}
+      (seq header-names) (merge (headers->entries headers header-names "response-header-"))
       status (assoc :status status)
       method (assoc :authentication-method (name method))
       backend-response-latency-ns (assoc :backend-response-latency-ns backend-response-latency-ns)
@@ -107,10 +119,13 @@
 (defn log-request!
   "Log a request"
   [request response]
-  (let [redacted-request-fields-string (get-in response [:descriptor :service-description "env" "WAITER_CONFIG_REDACTED_REQUEST_FIELDS"])
+  (let [request-header-names (config/retrieve-request-log-request-headers)
+        response-header-names (config/retrieve-request-log-response-headers)
+        redacted-request-fields-string (get-in response [:descriptor :service-description "env" "WAITER_CONFIG_REDACTED_REQUEST_FIELDS"])
         redacted-request-fields (when-not (str/blank? redacted-request-fields-string)
                                   (map keyword (str/split redacted-request-fields-string #",")))]
-    (-> (merge (request->context request) (response->context response))
+    (-> (merge (request->context request request-header-names)
+               (response->context response response-header-names))
       (utils/remove-keys redacted-request-fields)
       (log))))
 

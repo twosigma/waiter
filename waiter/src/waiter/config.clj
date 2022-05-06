@@ -46,3 +46,15 @@
   (let [default-exclusive-promotion-start-time "2050-06-01T00:00:00.000Z"
         exclusive-promotion-start-time (get-in @config-promise [:token-config :exclusive-promotion-start-time] default-exclusive-promotion-start-time)]
     (-> exclusive-promotion-start-time (du/str-to-date) (tc/to-long))))
+
+(defn retrieve-request-log-request-headers
+  "Retrieves the configured request-log request headers."
+  []
+  {:pre [(realized? config-promise)]}
+  (get-in @config-promise [:request-log :request-headers]))
+
+(defn retrieve-request-log-response-headers
+  "Retrieves the configured request-log response headers."
+  []
+  {:pre [(realized? config-promise)]}
+  (get-in @config-promise [:request-log :response-headers]))

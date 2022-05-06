@@ -103,6 +103,8 @@
    (s/required-key :port) (s/either schema/positive-int
                                     [schema/positive-int])
    (s/required-key :profile-config) {schema/non-empty-string schema/profile-definition}
+   (s/optional-key :request-log) {(s/optional-key :request-headers) #{schema/non-empty-string}
+                                  (s/optional-key :response-headers) #{schema/non-empty-string}}
    (s/required-key :router-id-prefix) s/Str
    (s/required-key :router-syncer) {(s/required-key :delay-ms) schema/positive-int
                                     (s/required-key :interval-ms) schema/positive-int}
@@ -375,6 +377,8 @@
                                         :passwords ["open-sesame"]}}
    :port 9091
    :profile-config {}
+   :request-log {:request-headers #{}
+                 :response-headers #{}}
    :router-id-prefix ""
    :router-syncer {:delay-ms 750
                    :interval-ms 1500}
