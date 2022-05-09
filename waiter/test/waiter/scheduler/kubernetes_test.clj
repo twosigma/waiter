@@ -306,6 +306,8 @@
 
 (deftest test-replicaset-spec-with-raven
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                config/retrieve-request-log-request-headers (constantly  #{})
+                config/retrieve-request-log-response-headers (constantly #{"content-type" "server"})
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [service-id "proxy-test-service-id"
           custom-raven-flag "MY_RAVEN_FLAG"
@@ -347,6 +349,10 @@
         (is (not-any? #(and (contains? #{"PORT0" "SERVICE_PORT"} (:name %))
                             (= "to-be-overwritten" (:value %)))
                       (:env sidecar-container))))
+
+      (testing "request log entries in environment variables"
+        (is (not (contains? sidecar-env "RAVEN_LOG_REQUEST_HEADER_NAMES")))
+        (is (= "content-type,server" (get sidecar-env "RAVEN_LOG_RESPONSE_HEADER_NAMES"))))
 
       (testing "waiter/raven label is set"
           (is (= "enabled" (get-in replicaset-spec [:metadata :labels :waiter/raven]))))
@@ -393,6 +399,8 @@
 
 (deftest test-raven-env-flags
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                config/retrieve-request-log-request-headers (constantly  #{"content-type" "host"})
+                config/retrieve-request-log-response-headers (constantly #{"content-type" "server"})
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [service-id "raven-test-service-id"
           custom-raven-flag "MY_RAVEN_FLAG"
@@ -430,7 +438,13 @@
                 :else (is (= "strict-tls" raven-mode)))))
 
           (testing "raven container present iff raven is enabled"
-            (is (= raven? (some? raven-container))))
+            (is (= raven? (some? raven-container)))
+
+            (when raven?
+              (testing "request log entries"
+                (let [raven-env (get-container-env-map raven-container)]
+                  (is (= "content-type,host" (get raven-env "RAVEN_LOG_REQUEST_HEADER_NAMES")))
+                  (is (= "content-type,server" (get raven-env "RAVEN_LOG_RESPONSE_HEADER_NAMES")))))))
 
           (testing "liveness probe protocol is correct (always unproxied)"
             (is (= "HTTP" liveness-probe-scheme)))
@@ -442,6 +456,8 @@
 
 (deftest test-replicaset-spec-with-raven-health-check
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                config/retrieve-request-log-request-headers (constantly  #{"content-type" "host"})
+                config/retrieve-request-log-response-headers (constantly #{})
                 config/retrieve-waiter-principal (constantly "waiter@test.com")]
     (let [service-id "proxy-health-test-service-id"
           scheduler (make-dummy-scheduler [service-id] {:raven-sidecar {:cmd ["/opt/waiter/raven/bin/raven-start"]
@@ -486,6 +502,10 @@
                                  (= (:name %) "PORT0")
                                  (= (:name %) "SERVICE_PORT"))
                            (= "to-be-overwritten" (:value %))) (:env sidecar-container)))))
+
+      (testing "request log entries in environment variables"
+        (is (= "content-type,host" (get sidecar-env "RAVEN_LOG_REQUEST_HEADER_NAMES")))
+        (is (not (contains? sidecar-env "RAVEN_LOG_RESPONSE_HEADER_NAMES"))))
 
       (testing "ports and corresponding and env variables are correct"
         (let [{:keys [pod-base-port]} scheduler

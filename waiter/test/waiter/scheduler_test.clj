@@ -631,7 +631,9 @@
     (.setIdleTimeout http-client 200)
     (.setUserAgentField http-client (HttpField. "user-agent" "waiter-test"))
 
-    (with-redefs [config/retrieve-waiter-principal (constantly waiter-principal)]
+    (with-redefs [config/retrieve-request-log-request-headers (constantly  #{"content-type" "host"})
+                  config/retrieve-request-log-response-headers (constantly #{"content-type" "server"})
+                  config/retrieve-waiter-principal (constantly waiter-principal)]
 
       (testing "unknown host"
         (let [service-instance {:host "www.example.com"}

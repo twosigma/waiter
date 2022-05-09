@@ -16,11 +16,13 @@
 (ns waiter.request-log-test
   (:require [clj-time.core :as t]
             [clojure.test :refer :all]
+            [waiter.config :as config]
             [waiter.request-log :refer :all]
             [waiter.status-codes :refer :all]))
 
 (deftest test-request->context
-  (let [request {:client-protocol "HTTP/2.0"
+  (let [header-names #{"content-type" "host"}
+        request {:client-protocol "HTTP/2.0"
                  :headers {"content-length" "20"
                            "content-type" "application/json"
                            "cookie" "a=b; c=d; e=f; g=h"
@@ -51,16 +53,19 @@
             :remote-addr "127.0.0.1"
             :request-content-length "20"
             :request-content-type "application/json"
+            :request-header-content-type "application/json"
             :request-header-count 8
+            :request-header-host "host"
             :request-id "abc"
             :request-time "2018-04-11T00:00:00.000Z"
             :scheme "http"
             :server-port 9090
             :user-agent "test-user-agent"}
-           (request->context request)))))
+           (request->context request header-names)))))
 
 (deftest test-response->context
-  (let [response {:authorization/method :cookie
+  (let [header-names #{"content-type" "server"}
+        response {:authorization/method :cookie
                   :authorization/principal "principal@DOMAIN.COM"
                   :backend-response-latency-ns 1000
                   :descriptor {:service-id "service-id"
@@ -121,7 +126,9 @@
             :request-type "test-request"
             :response-content-length "40"
             :response-content-type "application/xml"
+            :response-header-content-type "application/xml"
             :response-header-count 7
+            :response-header-server "foo-bar"
             :response-location "/foo/bar"
             :run-as-user "john.doe"
             :server "foo-bar"
@@ -134,7 +141,7 @@
             :token "test-token1,test-token2"
             :waiter-api false
             :waiter-error-class "java.lang.Exception"}
-           (response->context response)))))
+           (response->context response header-names)))))
 
 (deftest test-log-request!-with-redactions
   (let [request {:client-protocol "HTTP/2.0"
@@ -184,7 +191,9 @@
                   :status http-200-ok
                   :waiter-api-call? false}
         log-entries (atom [])]
-    (with-redefs [log (fn [log-data]
+    (with-redefs [config/retrieve-request-log-request-headers (constantly  #{"content-type" "host"})
+                  config/retrieve-request-log-response-headers (constantly #{"content-type" "server"})
+                  log (fn [log-data]
                         (swap! log-entries conj log-data))]
       (let [_ (log-request! request response)
             log-entry (first @log-entries)]
@@ -222,7 +231,11 @@
                 :request-type "test-request"
                 :response-content-length "40"
                 :response-content-type "application/xml"
+                :request-header-content-type "application/json"
+                :request-header-host "host"
+                :response-header-content-type "application/xml"
                 :response-header-count 5
+                :response-header-server "foo-bar"
                 :response-location "/foo/bar"
                 :run-as-user "john.doe"
                 :server "foo-bar"
@@ -236,8 +249,12 @@
                log-entry))))))
 
 (deftest test-wrap-log
-  (let [log-entries (atom [])]
-    (with-redefs [log (fn [log-data]
+  (let [request-header-names #{"content-type" "host"}
+        response-header-names #{"content-type" "server"}
+        log-entries (atom [])]
+    (with-redefs [config/retrieve-request-log-request-headers (constantly request-header-names)
+                  config/retrieve-request-log-response-headers (constantly response-header-names)
+                  log (fn [log-data]
                         (swap! log-entries conj log-data))]
       (let [handler (wrap-log (fn [_] {:status http-200-ok}))
             request {:headers {"content-type" "text/plain"
@@ -256,7 +273,9 @@
                 :path "/path"
                 :remote-addr "127.0.0.1"
                 :request-content-type "text/plain"
+                :request-header-content-type "text/plain"
                 :request-header-count 3
+                :request-header-host "host"
                 :request-id "abc"
                 :response-header-count 0
                 :scheme "http"
