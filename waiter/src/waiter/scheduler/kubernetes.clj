@@ -33,6 +33,7 @@
             [slingshot.slingshot :as ss]
             [waiter.authorization :as authz]
             [waiter.config :as config]
+            [waiter.correlation-id :as cid]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
@@ -1720,12 +1721,14 @@
 
 (defn events-by-namespace-and-workload-query
   "Query K8s for all namespace-scoped events with matching workload names"
-  [{:keys [api-server-url] :as scheduler} options namespace workload-name]
-  (let [events-url (str api-server-url "/api/v1/namespaces/" namespace "/events?fieldSelector=involvedObject.name%3D" workload-name)
-        {:keys [items version]} (global-state-query scheduler options "get-events" events-url)
-        events (map k8s-event->simple-event items)]
-    {:events events
-     :version version}))
+  [{:keys [api-server-url scheduler-name] :as scheduler} options namespace workload-name]
+  (timers/start-stop-time!
+   (metrics/waiter-timer "scheduler" scheduler-name "events-query")
+   (let [events-url (str api-server-url "/api/v1/namespaces/" namespace "/events?fieldSelector=involvedObject.name%3D" workload-name)
+         {:keys [items version]} (global-state-query scheduler options "get-events" events-url)
+         events (map k8s-event->simple-event items)]
+     {:events events
+      :version version})))
 
 (defn get-events-by-namespace-and-workload
   "Load events from cache or query K8s"
@@ -1736,26 +1739,35 @@
 
 (defn service-unhealthy?
   "Return true if the given service appears unhealthy"
-  [[_ {:keys [instances task-count task-stats]}]]
-  (let [healthy-count (:healthy task-stats)]
+  [{:keys [instances task-count task-stats] :as s}]
+  (let [healthy-count (:healthy task-stats 0)]
     (or (< task-count instances)
         (< healthy-count task-count))))
 
+(defn pod-unhealthy?
+  [{:keys [status]}]
+  (let [{:keys [conditions]} status
+        condition-statuses (map (comp #(Boolean/valueOf %) :status) conditions)]
+    (or (nil? condition-statuses)
+        (empty? condition-statuses)
+        (not-every? true? condition-statuses))))
+
 (defn add-events-to-service
   "Add K8s Events to the given service (may acquire events from local cache or from K8s API)"
-  [service event-loader]
+  [service load-events]
+  (log/info "Adding events")
   (let [namespace (:k8s/namespace service)
         name (:k8s/app-name service)
-        events (event-loader namespace name)]
-    (assoc service :k8s/events (:events events))))
+        {:keys [events]} (load-events namespace name)]
+    (assoc service :k8s/events events)))
 
 (defn add-events-to-pod
   "Add K8s Events to the given pod (may acquire events from local cache or from K8s API)"
-  [{:keys [metadata] :as pod} event-loader]
+  [{:keys [metadata] :as pod} load-events]
   (let [namespace (:namespace metadata)
         name (:name metadata)
-        events (event-loader namespace name)]
-    (assoc pod :k8s/events (:events events))))
+        {:keys [events]} (load-events namespace name)]
+    (assoc pod :k8s/events events)))
 
 (defn start-event-fetcher!
   "Start a thread to continuously check for problematic services and load related K8s Events for them."
@@ -1768,20 +1780,24 @@
         (log/info "starting K8s event fetcher")
         (let [event-getter (fn [namespace name] (get-events-by-namespace-and-workload workload->event-cache namespace name events-by-namespace-and-workload-query scheduler options))]
           ;; retry forever
-          (while true
-            (log/info "K8s event fetcher checking for targets")
-            (let [{:keys [service-id->service service-id->pod-id->pod]} @watch-state]
-              (doseq [[service-id service] (filter service-unhealthy? service-id->service)]
-                (let [pod-id->pod (get service-id->pod-id->pod service-id)
-                      updated-service (add-events-to-service service event-getter)
-                      pod-id->updated-pod (pc/map-vals #(add-events-to-pod % event-getter) pod-id->pod)]
-                  (swap! watch-state
-                         #(as-> % state
-                            (assoc-in state [:service-id->service service-id] updated-service)
-                            (doseq [[pod-id updated-pod] pod-id->updated-pod]
-                              (assoc-in state [:service-id->pod-id->pod service-id pod-id] updated-pod))))
-                  (async/>!! fetch-events-chan {:pod-id->updated-pod pod-id->updated-pod :time (t/now) :updated-service updated-service}))))
-            (utils/sleep 500)))
+          (loop [iter 0]
+            (cid/with-correlation-id
+              (str "k8s-event-fetcher-iter" iter)
+              (do
+                (log/info "K8s event fetcher checking for targets")
+                (let [{:keys [service-id->service service-id->pod-id->pod]} @watch-state]
+                  (doseq [[unhealthy-service-id unhealthy-service] (filter (comp service-unhealthy? val) service-id->service)]
+                    (let [pod-id->unhealthy-pod (filter (comp pod-unhealthy? val) (get service-id->pod-id->pod unhealthy-service-id))
+                          updated-service (add-events-to-service unhealthy-service event-getter)
+                          pod-id->updated-pod (pc/map-vals #(add-events-to-pod % event-getter) pod-id->unhealthy-pod)]
+                      (swap! watch-state
+                             #(as-> % state
+                                (assoc-in state [:service-id->service unhealthy-service-id] updated-service)
+                                (doseq [[pod-id updated-pod] pod-id->updated-pod]
+                                  (assoc-in state [:service-id->pod-id->pod unhealthy-service-id pod-id] updated-pod))))
+                      (async/put! fetch-events-chan {:pod-id->updated-pod pod-id->updated-pod :time (t/now) :updated-service updated-service}))))))
+            (utils/sleep 500)
+            (recur (inc iter))))
         (catch Throwable t
           (when exit-on-error?
             (log/error t "unrecoverable error in K8s event fetcher thread, terminating waiter.")

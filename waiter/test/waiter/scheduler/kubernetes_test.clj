@@ -3146,12 +3146,35 @@
     (is (= fetched-value (get-events-by-namespace-and-workload cache unknown-namespace unknown-workload fetch-fn {} {})))))
 
 (deftest test-service-unhealthy?
-  (is (true? (service-unhealthy? [nil {:instances 1 :task-count 0 :task-stats {:healthy 0}}])))
-  (is (false? (service-unhealthy? [nil {:instances 0 :task-count 0 :task-stats {:healthy 0}}])))
-  (is (false? (service-unhealthy? [nil {:instances 1 :task-count 2 :task-stats {:healthy 2}}])))
-  (is (true? (service-unhealthy? [nil {:instances 1 :task-count 1 :task-stats {:healthy 0}}])))
-  (is (false? (service-unhealthy? [nil {:instances 1 :task-count 1 :task-stats {:healthy 1}}])))
-  (is (false? (service-unhealthy? [nil {:instances 1 :task-count 1 :task-stats {:healthy 2}}]))))
+  (is (true? (service-unhealthy? {:instances 1 :task-count 0 :task-stats {:healthy 0}})))
+  (is (false? (service-unhealthy? {:instances 0 :task-count 0 :task-stats {:healthy 0}})))
+  (is (false? (service-unhealthy? {:instances 1 :task-count 2 :task-stats {:healthy 2}})))
+  (is (true? (service-unhealthy? {:instances 1 :task-count 1 :task-stats {:healthy 0}})))
+  (is (false? (service-unhealthy? {:instances 1 :task-count 1 :task-stats {:healthy 1}})))
+  (is (false? (service-unhealthy? {:instances 1 :task-count 1 :task-stats {:healthy 2}}))))
+
+(defn- make-pod-with-statuses
+  [statuses]
+  (let [condition-statuses (if (nil? statuses)
+                             nil
+                             (vec (map (fn [v] {:status v}) statuses)))]
+    {:status {:conditions condition-statuses}}))
+
+(deftest test-pod-unhealthy?
+  (is (true? (pod-unhealthy? (make-pod-with-statuses nil))))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses []))))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses [nil]))))
+  (is (false? (pod-unhealthy? (make-pod-with-statuses ["True"]))))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False"]))))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["Unknown"]))))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False" "False"]))))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False" "Unknown"]))))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["True" "False"]))))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False" "True"]))))
+  (is (false? (pod-unhealthy? (make-pod-with-statuses ["True" "True"]))))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["True" "False" "Unknown"]))))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["True" "Unknown" "True"]))))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False" "True" "True"])))))
 
 (deftest test-start-event-fetcher!
   (let [fetch-events-chan (au/latest-chan)
@@ -3160,8 +3183,8 @@
         service-a-id (str service-a-name "-id")
         service-b-name "service-b"
         service-b-id (str service-b-name "-id")
-        service-a (scheduler/make-Service {:id service-a-id :instances 1 :k8s/app-name service-a-name :k8s/namespace namespace})
-        service-b (scheduler/make-Service {:id service-b-id :instances 1 :k8s/app-name service-b-name :k8s/namespace namespace})
+        service-a (scheduler/make-Service {:id service-a-id :instances 1 :task-count 0 :k8s/app-name service-a-name :k8s/namespace namespace})
+        service-b (scheduler/make-Service {:id service-b-id :instances 1 :task-count 0 :k8s/app-name service-b-name :k8s/namespace namespace})
         timestamp-str "2014-09-13T00:24:56Z"
         workload-name "w8r-realwork"
         initial-state {:service-id->service {service-a-id service-a service-b-id service-b}}
@@ -3180,7 +3203,8 @@
     (swap! watch-state (constantly initial-state))
     (is (nil? (-> @watch-state :service-id->service (get service-a-id) :k8s/events )))
     (is (false? (cu/cache-contains? (:workload->event-cache dummy-scheduler) {:namespace namespace :workload-name workload-name})))
-    (with-redefs [service-unhealthy? #(= service-a-id (:id (get % 1)))]
+    (with-redefs [service-unhealthy? #(= service-a-id (:id %))
+                  pod-unhealthy? (constantly false)]
       ;; Start fetcher thread
       (let [fetcher-thread (start-event-fetcher! dummy-scheduler options)]
         ;; Wait for an update, check it
