@@ -2300,17 +2300,15 @@
             service-id "test-service-1"
             service-description {"cmd" "tc" "cpus" 1 "mem" 200 "version" "a1b2c3"}
             time-0 (t/now)
-            time-0-epoch (tc/to-long time-0)]
+            time-0-epoch (tc/to-long time-0)
+            service-id-key (str "^SERVICE-ID#" service-id)]
         (is (nil? (fetch-service-description cache-kv-store)))
         (with-redefs [t/now (constantly time-0)]
           (kv/store kv-store service-key service-description))
-        (is (nil? (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))
-        (is (nil? (fetch-service-description cache-kv-store)))
-        (is (nil? (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))
-        (is (= service-description (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id) :refresh true)))
+        (is (nil? (kv/fetch cache-kv-store service-id-key)))
         (is (= service-description (fetch-service-description cache-kv-store)))
-        (is (= service-description (kv/fetch cache-kv-store (str "^SERVICE-ID#" service-id))))
-        (is (= {:creation-time time-0-epoch :modified-time time-0-epoch} (kv/stats cache-kv-store (str "^SERVICE-ID#" service-id))))
+        (is (= service-description (kv/fetch cache-kv-store service-id-key)))
+        (is (= {:creation-time time-0-epoch :modified-time time-0-epoch} (kv/stats cache-kv-store service-id-key)))
         (is (= time-0 (fetch-service-creation-time kv-store)))))))
 
 (deftest test-service-suspend-resume
