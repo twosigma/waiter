@@ -1156,8 +1156,9 @@
     (let [service-description (kv/fetch kv-store (service-id->key service-id) :refresh refresh)]
       (if (map? service-description)
         service-description
-        (when-not nil-on-missing?
-          (throw (ex-info "No description found!" {:service-id service-id}))))))
+        (if nil-on-missing?
+          (log/warn "No description found!" {:refresh refresh :service-id service-id})
+          (throw (ex-info "No description found!" {:refresh refresh :service-id service-id}))))))
 
   (defn fetch-stats
     "Loads the stats for the specified service-id from the key-value store."
@@ -1456,7 +1457,9 @@
 (defn service-id->service-description
   "Loads the service description for the specified service-id including any overrides."
   [service-description-builder kv-store service-id & {:keys [effective?] :or {effective? true}}]
-  (let [core-service-description (fetch-core kv-store service-id :refresh false)]
+  (let [core-service-description (or (fetch-core kv-store service-id :refresh false)
+                                     ;; make best-effort to retrieve the service description from kv store
+                                     (fetch-core kv-store service-id :refresh true))]
     (if effective?
       (compute-effective service-description-builder service-id core-service-description)
       core-service-description)))
