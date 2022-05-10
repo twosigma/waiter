@@ -442,3 +442,47 @@
               (testing "Reverse proxy flag environment variable is present"
                 (is (contains? response-body raven-sidecar-flag))
                 (is (= "true" (get response-body raven-sidecar-flag)))))))))))
+
+(deftest ^:parallel ^:integration-slow test-kubernetes-event-fetching
+  (testing-using-waiter-url
+   (when (using-k8s? waiter-url)
+     (let [router-url (-> waiter-url routers first val)]
+       (testing "service that yields bad pod config will result in k8s events fetching"
+         (let [{:keys [cookies service-id] :as response}
+               (make-request-with-debug-info
+                {:x-waiter-name (rand-name)
+                 :x-waiter-env-K8S_CONFIGMAP_NAMES (str (System/nanoTime) "-configmap")
+                 :x-waiter-queue-timeout 5000}
+                #(make-kitchen-request waiter-url % :method :get :path "/"))]
+           (with-service-cleanup
+             service-id
+             ;; bad configmap causes service not to start promptly, 5s queue timout yields 503 response
+             (assert-response-status response http-503-service-unavailable)
+             ;; after 30 seconds, scheduler should fetch k8s events
+             (is (wait-for
+                  (fn []
+                    (let [watch-state-json (get-k8s-watch-state router-url cookies)
+                          rs-spec (-> watch-state-json (get-in ["service-id->service" service-id]))
+                          pod-spec (-> watch-state-json (get-in ["service-id->pod-id->pod" service-id]) vals first)
+                          pod-events (get pod-spec "k8s/events")
+                          failed-mount-events (filter #(= "FailedMount" (get % "reason")) pod-events)]
+                      (and (contains? rs-spec "k8s/events")
+                           (pos? (count failed-mount-events))))))))))
+       (testing "a healthy service will not result in k8s event fetching"
+         (let [request-headers {:x-waiter-name (rand-name)}
+               {:keys [cookies service-id] :as response}
+               (make-request-with-debug-info request-headers #(make-kitchen-request waiter-url % :method :get :path "/"))]
+           (with-service-cleanup
+             service-id
+             (assert-response-status response http-200-ok)
+             ;; service is healthy and responding to requests
+             (let [response (make-kitchen-request waiter-url request-headers :method :get :path "/hello")]
+               (assert-response-status response http-200-ok))
+             ;; since srevice is healthy, do not expect k8s/events to be present in scheduler state
+             (is (nil? (wait-for
+                        (fn []
+                          (let [watch-state-json (get-k8s-watch-state router-url cookies)
+                                rs-spec (-> watch-state-json (get-in ["service-id->service" service-id]))
+                                pod-spec (-> watch-state-json (get-in ["service-id->pod-id->pod" service-id]) vals first)]
+                            (and (contains? rs-spec "k8s/events")
+                                 (contains? pod-spec "k8s/events"))))))))))))))

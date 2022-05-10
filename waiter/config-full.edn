@@ -490,6 +490,13 @@
                                  :http-options {:conn-timeout 10000
                                                 :socket-timeout 10000}
 
+                                 ;; Cache configuration for k8s-object-key->event-cache
+                                 ;; This cache represents Kubernetes Events for ReplicaSets and Pods
+                                 :k8s-object-key->event-cache {;; max number of cached objects with events
+                                                               :threshold 5000
+                                                               ;; time (seconds) to live for an object with events
+                                                               :ttl 120}
+
                                  ;; Number of retry attempts to make when a PATCH request fails with a 409 Conflict:
                                  :max-patch-retries 5
 
@@ -576,14 +583,7 @@
 
                                  ;; Whether to validate the SSL certificate of the API server on the k8s watch connections.
                                  ;; Defaults to false (same as our the http client used for all other k8s api calls).
-                                 :watch-validate-ssl false
-
-                                 ;; Cache configuration for workload->event-cache
-                                 ;; This cache represents Kubernetes Events for ReplicaSets and Pods
-                                 :workload->event-cache {;; max number of cached workloads with events
-                                                         :threshold 5000
-                                                         ;; time (seconds) to live for a workload with events
-                                                         :ttl 120}}
+                                 :watch-validate-ssl false}
 
                     ;; :kind :marathon uses Marathon (https://mesosphere.github.io/marathon/) for scheduling instances:
                     ;:kind :marathon

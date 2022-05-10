@@ -402,6 +402,8 @@
                                                 :scheme "http"}
                                    :http-options {:conn-timeout 10000
                                                   :socket-timeout 10000}
+                                   :k8s-object-key->event-cache {:threshold 5000
+                                                                 :ttl 60}
                                    :log-bucket-sync-secs 180
                                    :max-patch-retries 5
                                    :max-name-length 63
@@ -418,9 +420,7 @@
                                    :restart-expiry-threshold 2
                                    :restart-kill-threshold 8
                                    :service-id->deployment-error-cache {:threshold 5000
-                                                                        :ttl 60}
-                                   :workload->event-cache {:threshold 5000
-                                                           :ttl 60}}
+                                                                        :ttl 60}}
                       :marathon {:factory-fn 'waiter.scheduler.marathon/marathon-scheduler
                                  :authorizer {:kind :default
                                               :default {:factory-fn 'waiter.authorization/noop-authorizer}}
