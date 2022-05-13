@@ -1103,7 +1103,7 @@
               (assoc :httpHeaders
                      (->> (scheduler/retrieve-auth-headers service-id->password-fn service-id)
                        (map (fn [[k v]] {:name k :value v}))
-                       (conj {:name "x-waiter-request-type" :value "health-check"}))))
+                       (concat [{:name "x-waiter-request-type" :value "health-check"}]))))
    :periodSeconds health-check-interval-secs
    :timeoutSeconds 1})
 
