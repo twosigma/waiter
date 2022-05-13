@@ -597,7 +597,8 @@
          waiter-principal# ~waiter-principal
          request-headers# ~request-headers
          expected-headers# (cond-> {"host" "www.example.com"
-                                    "user-agent" (some-> http-client# .getUserAgentField .getValue)}
+                                    "user-agent" (some-> http-client# .getUserAgentField .getValue)
+                                    "x-waiter-request-type" "health-check"}
                              (= "standard" health-check-authentication#)
                              (merge (headers/retrieve-basic-auth-headers "waiter" service-password# waiter-principal#)))]
      (is (contains? request-headers# "x-cid"))

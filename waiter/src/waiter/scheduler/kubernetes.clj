@@ -33,6 +33,7 @@
             [slingshot.slingshot :as ss]
             [waiter.authorization :as authz]
             [waiter.config :as config]
+            [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.schema :as schema]
@@ -1096,13 +1097,15 @@
   "Returns the configuration for a basic health check probe."
   [service-id->password-fn service-id authenticate-health-check?
    health-check-scheme health-check-url health-check-port health-check-interval-secs]
-  {:httpGet (cond-> {:path health-check-url
-                     :port health-check-port
-                     :scheme health-check-scheme}
-              authenticate-health-check?
-              (assoc :httpHeaders
-                     (->> (scheduler/retrieve-auth-headers service-id->password-fn service-id)
-                       (map (fn [[k v]] {:name k :value v})))))
+  {:httpGet
+   {:httpHeaders (cond->> headers/waiter-health-check-headers
+                          authenticate-health-check?
+                          (merge (scheduler/retrieve-auth-headers service-id->password-fn service-id))
+                          true
+                          (map (fn [[k v]] {:name k :value v})))
+    :path health-check-url
+    :port health-check-port
+    :scheme health-check-scheme}
    :periodSeconds health-check-interval-secs
    :timeoutSeconds 1})
 

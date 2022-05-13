@@ -371,9 +371,10 @@
               request-time-ns (System/nanoTime)
               correlation-id (str "waiter-health-check-" (utils/unique-identifier))
               authenticate-health-check? (use-authenticated-health-checks? scheduler service-id)
-              request-headers (cond-> {"host" host
-                                       "user-agent" (some-> http-client .getUserAgentField .getValue)
-                                       "x-cid" correlation-id}
+              request-headers (cond-> (merge headers/waiter-health-check-headers
+                                             {"host" host
+                                              "user-agent" (some-> http-client .getUserAgentField .getValue)
+                                              "x-cid" correlation-id})
                                 authenticate-health-check?
                                 (merge-auth-headers service-id->password-fn service-id))
               health-check-response-chan (http/get http-client instance-health-check-url
