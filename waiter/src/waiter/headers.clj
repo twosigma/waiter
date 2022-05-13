@@ -32,6 +32,11 @@
 
 (def ^:const waiter-headers-with-str-value (set (map #(str waiter-header-prefix %) params-with-str-value)))
 
+; These headers should only be used for health checks that originate from Waiter or another system that would not
+; want the request to be counted by an external metrics provider, where last-request-time will not account for these
+; health check requests (used for GC).
+(def ^:const waiter-health-check-headers {"x-waiter-request-type" "health-check"})
+
 (defn get-waiter-header
   "Retrieves the waiter header value."
   ([waiter-headers name] (get waiter-headers (str waiter-header-prefix name)))

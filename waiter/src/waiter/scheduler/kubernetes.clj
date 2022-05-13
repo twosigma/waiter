@@ -42,7 +42,8 @@
             [waiter.util.cache-utils :as cu]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
-            [waiter.util.utils :as utils])
+            [waiter.util.utils :as utils]
+            [waiter.headers :as headers])
   (:import (java.io InputStreamReader)
            (java.util.concurrent Executors)
            (org.joda.time.format DateTimeFormat)))
@@ -1097,10 +1098,11 @@
   [service-id->password-fn service-id authenticate-health-check?
    health-check-scheme health-check-url health-check-port health-check-interval-secs]
   {:httpGet
-   {:httpHeaders (cond-> [{:name "x-waiter-request-type" :value "health-check"}]
-                   authenticate-health-check?
-                   (concat (->> (scheduler/retrieve-auth-headers service-id->password-fn service-id)
-                                (map (fn [[k v]] {:name k :value v})))))
+   {:httpHeaders (cond->> headers/waiter-health-check-headers
+                          authenticate-health-check?
+                          (merge (scheduler/retrieve-auth-headers service-id->password-fn service-id))
+                          true
+                          (map (fn [[k v]] {:name k :value v})))
     :path health-check-url
     :port health-check-port
     :scheme health-check-scheme}
