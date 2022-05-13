@@ -1102,7 +1102,8 @@
               authenticate-health-check?
               (assoc :httpHeaders
                      (->> (scheduler/retrieve-auth-headers service-id->password-fn service-id)
-                       (map (fn [[k v]] {:name k :value v})))))
+                       (map (fn [[k v]] {:name k :value v}))
+                       (conj {:name "x-waiter-request-type" :value "health-check"}))))
    :periodSeconds health-check-interval-secs
    :timeoutSeconds 1})
 
@@ -1393,7 +1394,8 @@
                                                                     readiness-scheme health-check-url
                                                                     (+ service-port health-check-port-index)
                                                                     health-check-interval-secs)
-                                                                (assoc :failureThreshold 1))
+                                                                (assoc
+                                                                  :failureThreshold 1))
                                               :resources {:limits {:memory memory}
                                                           :requests {:cpu cpus
                                                                      :memory memory}}
