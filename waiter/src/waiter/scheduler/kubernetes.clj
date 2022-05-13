@@ -33,6 +33,7 @@
             [slingshot.slingshot :as ss]
             [waiter.authorization :as authz]
             [waiter.config :as config]
+            [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.schema :as schema]
@@ -42,8 +43,7 @@
             [waiter.util.cache-utils :as cu]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
-            [waiter.util.utils :as utils]
-            [waiter.headers :as headers])
+            [waiter.util.utils :as utils])
   (:import (java.io InputStreamReader)
            (java.util.concurrent Executors)
            (org.joda.time.format DateTimeFormat)))
@@ -1396,8 +1396,7 @@
                                                                     readiness-scheme health-check-url
                                                                     (+ service-port health-check-port-index)
                                                                     health-check-interval-secs)
-                                                                (assoc
-                                                                  :failureThreshold 1))
+                                                                (assoc :failureThreshold 1))
                                               :resources {:limits {:memory memory}
                                                           :requests {:cpu cpus
                                                                      :memory memory}}

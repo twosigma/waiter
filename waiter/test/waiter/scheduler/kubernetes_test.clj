@@ -705,8 +705,8 @@
           health-check-url "/status"
           health-check-port 80
           health-check-interval-secs 10]
-      (is (= {:httpGet {:httpHeaders [{:name "x-waiter-request-type" :value "health-check"}
-                                      {:name "Authorization", :value "Basic foo:bar"}]
+      (is (= {:httpGet {:httpHeaders [{:name "Authorization", :value "Basic foo:bar"}
+                                      {:name "x-waiter-request-type" :value "health-check"}]
                         :path health-check-url
                         :port health-check-port
                         :scheme health-check-scheme}
