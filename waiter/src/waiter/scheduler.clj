@@ -373,7 +373,8 @@
               authenticate-health-check? (use-authenticated-health-checks? scheduler service-id)
               request-headers (cond-> {"host" host
                                        "user-agent" (some-> http-client .getUserAgentField .getValue)
-                                       "x-cid" correlation-id}
+                                       "x-cid" correlation-id
+                                       "x-waiter-request-type" "health-check"}
                                 authenticate-health-check?
                                 (merge-auth-headers service-id->password-fn service-id))
               health-check-response-chan (http/get http-client instance-health-check-url
