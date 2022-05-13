@@ -556,7 +556,10 @@
 
 (deftest test-replicaset-spec-liveness-and-readiness
   (let [basic-probe {:failureThreshold 1
-               :httpGet {:path "/status" :port 8330 :scheme "HTTP"}
+               :httpGet {:httpHeaders [{:name "x-waiter-request-type" :value "health-check"}]
+                         :path "/status"
+                         :port 8330
+                         :scheme "HTTP"}
                :periodSeconds 10
                :timeoutSeconds 1}]
     (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
@@ -712,7 +715,8 @@
              (prepare-health-check-probe
                service-id->password-fn service-id true
                health-check-scheme health-check-url health-check-port health-check-interval-secs)))
-      (is (= {:httpGet {:path health-check-url
+      (is (= {:httpGet {:httpHeaders [{:name "x-waiter-request-type" :value "health-check"}]
+                        :path health-check-url
                         :port health-check-port
                         :scheme health-check-scheme}
               :periodSeconds health-check-interval-secs

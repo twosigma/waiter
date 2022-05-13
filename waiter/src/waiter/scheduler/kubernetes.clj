@@ -1096,14 +1096,14 @@
   "Returns the configuration for a basic health check probe."
   [service-id->password-fn service-id authenticate-health-check?
    health-check-scheme health-check-url health-check-port health-check-interval-secs]
-  {:httpGet (cond-> {:path health-check-url
-                     :port health-check-port
-                     :scheme health-check-scheme}
-              authenticate-health-check?
-              (assoc :httpHeaders
-                     (->> (scheduler/retrieve-auth-headers service-id->password-fn service-id)
-                       (map (fn [[k v]] {:name k :value v}))
-                       (concat [{:name "x-waiter-request-type" :value "health-check"}]))))
+  {:httpGet
+   {:httpHeaders (cond-> [{:name "x-waiter-request-type" :value "health-check"}]
+                   authenticate-health-check?
+                   (concat (->> (scheduler/retrieve-auth-headers service-id->password-fn service-id)
+                                (map (fn [[k v]] {:name k :value v})))))
+    :path health-check-url
+    :port health-check-port
+    :scheme health-check-scheme}
    :periodSeconds health-check-interval-secs
    :timeoutSeconds 1})
 
