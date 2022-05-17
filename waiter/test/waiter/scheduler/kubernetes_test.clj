@@ -69,6 +69,7 @@
      :determine-replicaset-namespace-fn determine-replicaset-namespace
      :cluster-name "waiter"
      :container-running-grace-secs 120
+     :event-fetcher-state (atom nil)
      :fileserver {:port 9090
                   :predicate-fn fileserver-container-enabled?
                   :scheme "http"}
@@ -2997,15 +2998,17 @@
               (is (= (scheduler/make-ServiceInstance (version-expired-instance-map "1")) instance)))))))))
 
 (deftest test-service-id->state
-  (let [service-id "service-id"
+  (let [fetcher-state {:last-successful-iteration (du/date-to-str (t/now))}
+        service-id "service-id"
         syncer-state-atom (atom {:last-update-time :time
                                  :service-id->health-check-context {}})
         retrieve-syncer-state-fn (partial scheduler/retrieve-syncer-state @syncer-state-atom)
         kubernetes-scheduler (make-dummy-scheduler
                               [service-id]
-                              {:retrieve-syncer-state-fn retrieve-syncer-state-fn
+                              {:event-fetcher-state (atom fetcher-state)
+                               :retrieve-syncer-state-fn retrieve-syncer-state-fn
                                :service-id->failed-instances-transient-store (atom {service-id [:failed-instances]})})
-        supported-include-params ["auth-token-renewer" "authorizer" "service-id->failed-instances"
+        supported-include-params ["auth-token-renewer" "authorizer" "event-fetcher-state" "service-id->failed-instances"
                                   "syncer" "syncer-details" "watch-state" "watch-state-details"]]
     (is (= {:failed-instances [:failed-instances]
             :syncer {:last-update-time :time}}
@@ -3104,39 +3107,43 @@
     (is (= {:creation-timestamp nil :message nil :reason nil :type nil}
            (k8s-event->simple-event {:metadata {:name "w8r-myreplicaset-mypod.12345"} :name "w8r-myreplicaset-mypod"})))))
 
-(deftest test-get-cached-events
+(deftest test-get-cached-events-chan
   (let [cache (cu/cache-factory {})
-        fetched-value "fetched-value"
-        fetch-fn (constantly fetched-value)
+        fetched-value {:v "fetched-value"}
+        fetched-promise (async/promise-chan)
+        fetch-fn (constantly fetched-promise)
         known-namespace "known-namespace"
-        known-value "known-value"
+        known-value {:v "known-value"}
         known-object "known-object"
         unknown-namespace "unknown-namespace"
         unknown-object "unknown-object"]
+    (async/>!! fetched-promise fetched-value)
     (cu/cache-put! cache {:namespace known-namespace :k8s-object-name known-object} known-value)
     (let [create-key (fn [namespace object-name] {:namespace namespace :k8s-object-name object-name})]
-      (is (= known-value (get-cached-events cache (create-key known-namespace known-object) fetch-fn {} {})))
-      (is (= fetched-value (get-cached-events cache (create-key known-namespace unknown-object) fetch-fn {} {})))
-      (is (= fetched-value (get-cached-events cache (create-key unknown-namespace known-object) fetch-fn {} {})))
-      (is (= fetched-value (get-cached-events cache (create-key unknown-namespace unknown-object) fetch-fn {} {}))))))
+      (let [actual-value (async/<!! (get-cached-events-chan cache (create-key known-namespace known-object) fetch-fn {} {}))]
+        (is (true? (:w8r-cached actual-value)))
+        (is (= known-value (dissoc actual-value :w8r-cached))))
+      (is (= fetched-value (async/<!! (get-cached-events-chan cache (create-key known-namespace unknown-object) fetch-fn {} {}))))
+      (is (= fetched-value (async/<!! (get-cached-events-chan cache (create-key unknown-namespace known-object) fetch-fn {} {}))))
+      (is (= fetched-value (async/<!! (get-cached-events-chan cache (create-key unknown-namespace unknown-object) fetch-fn {} {})))))))
 
 (deftest test-service-unhealthy?
-  (is (true? (service-unhealthy? {:instances 1 :task-count 0 :task-stats {:healthy 0}})))
+  (is (true? (service-unhealthy? {:instances 1 :task-count 0 :task-stats {:healthy 0}} 30)))
   (is (true? (service-unhealthy? {:k8s/replicaset-creation-timestamp (du/date-to-str (t/minus (t/now) (t/seconds 60)))
-                                  :instances 1 :task-count 0 :task-stats {:healthy 0}})))
+                                  :instances 1 :task-count 0 :task-stats {:healthy 0}} 30)))
   (is (false? (service-unhealthy? {:k8s/replicaset-creation-timestamp (du/date-to-str (t/now))
-                                   :instances 1 :task-count 0 :task-stats {:healthy 0}})))
-  (is (false? (service-unhealthy? {:instances 0 :task-count 0 :task-stats {:healthy 0}})))
-  (is (false? (service-unhealthy? {:instances 1 :task-count 2 :task-stats {:healthy 2}})))
-  (is (true? (service-unhealthy? {:instances 1 :task-count 1 :task-stats {:healthy 0}})))
+                                   :instances 1 :task-count 0 :task-stats {:healthy 0}} 30)))
+  (is (false? (service-unhealthy? {:instances 0 :task-count 0 :task-stats {:healthy 0}} 30)))
+  (is (false? (service-unhealthy? {:instances 1 :task-count 2 :task-stats {:healthy 2}} 30)))
+  (is (true? (service-unhealthy? {:instances 1 :task-count 1 :task-stats {:healthy 0}} 30)))
   (is (true? (service-unhealthy? {:k8s/replicaset-creation-timestamp "1978-06-22T11:00:00.000Z"
-                                  :instances 1 :task-count 1 :task-stats {:healthy 0}})))
+                                  :instances 1 :task-count 1 :task-stats {:healthy 0}} 30)))
   (is (false? (service-unhealthy? {:k8s/replicaset-creation-timestamp (du/date-to-str (t/now))
-                                   :instances 1 :task-count 1 :task-stats {:healthy 0}})))
-  (is (false? (service-unhealthy? {:instances 1 :task-count 1 :task-stats {:healthy 1}})))
-  (is (false? (service-unhealthy? {:instances 1 :task-count 1 :task-stats {:healthy 2}})))
+                                   :instances 1 :task-count 1 :task-stats {:healthy 0}} 30)))
+  (is (false? (service-unhealthy? {:instances 1 :task-count 1 :task-stats {:healthy 1}} 30)))
+  (is (false? (service-unhealthy? {:instances 1 :task-count 1 :task-stats {:healthy 2}} 30)))
   (is (false? (service-unhealthy? {:k8s/replicaset-creation-timestamp (du/date-to-str (t/now))
-                                   :instances 1 :task-count 1 :task-stats {:healthy 2}}))))
+                                   :instances 1 :task-count 1 :task-stats {:healthy 2}} 30))))
 
 (defn- make-pod-with-statuses
   ([statuses]
@@ -3148,25 +3155,26 @@
      {:metadata {:creationTimestamp creation-timestamp-str} :status {:conditions condition-statuses}})))
 
 (deftest test-pod-unhealthy?
-  (is (true? (pod-unhealthy? (make-pod-with-statuses nil))))
-  (is (false? (pod-unhealthy? (make-pod-with-statuses nil (du/date-to-str (t/now) k8s-timestamp-format)))))
-  (is (true? (pod-unhealthy? (make-pod-with-statuses []))))
-  (is (true? (pod-unhealthy? (make-pod-with-statuses [nil]))))
-  (is (false? (pod-unhealthy? (make-pod-with-statuses ["True"]))))
-  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False"]))))
-  (is (false? (pod-unhealthy? (make-pod-with-statuses ["False"] (du/date-to-str (t/now) k8s-timestamp-format)))))
-  (is (true? (pod-unhealthy? (make-pod-with-statuses ["Unknown"]))))
-  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False" "False"]))))
-  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False" "Unknown"]))))
-  (is (true? (pod-unhealthy? (make-pod-with-statuses ["True" "False"]))))
-  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False" "True"]))))
-  (is (false? (pod-unhealthy? (make-pod-with-statuses ["True" "True"]))))
-  (is (true? (pod-unhealthy? (make-pod-with-statuses ["True" "False" "Unknown"]))))
-  (is (true? (pod-unhealthy? (make-pod-with-statuses ["True" "Unknown" "True"]))))
-  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False" "True" "True"])))))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses nil) 30)))
+  (is (false? (pod-unhealthy? (make-pod-with-statuses nil (du/date-to-str (t/now) k8s-timestamp-format)) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses []) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses [nil]) 30)))
+  (is (false? (pod-unhealthy? (make-pod-with-statuses ["True"]) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False"]) 30)))
+  (is (false? (pod-unhealthy? (make-pod-with-statuses ["False"] (du/date-to-str (t/now) k8s-timestamp-format)) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["Unknown"]) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False" "False"]) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False" "Unknown"]) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["True" "False"]) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False" "True"]) 30)))
+  (is (false? (pod-unhealthy? (make-pod-with-statuses ["True" "True"]) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["True" "False" "Unknown"]) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["True" "Unknown" "True"]) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False" "True" "True"]) 30))))
 
 (deftest test-start-event-fetcher!
-  (let [fetch-events-chan (au/latest-chan)
+  (let [event-fetcher-state (atom {})
+        fetch-events-chan (au/latest-chan)
         namespace "myself"
         service-a-name "service-a"
         service-a-id (str service-a-name "-id")
@@ -3194,7 +3202,7 @@
     (swap! watch-state (constantly initial-state))
     (is (nil? (-> @watch-state :service-id->service (get service-a-id) :k8s/events)))
     (is (false? (cu/cache-contains? (:k8s-object-key->event-cache dummy-scheduler) {:namespace namespace :k8s-object-name object-name})))
-    (with-redefs [service-unhealthy? #(= service-a-id (:id %))
+    (with-redefs [service-unhealthy? (fn [{:keys [id]} _] (= service-a-id id))
                   pod-unhealthy? (constantly false)]
       ;; Start fetcher go block
       (start-event-fetcher! dummy-scheduler options)

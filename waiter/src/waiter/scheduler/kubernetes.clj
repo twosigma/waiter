@@ -21,7 +21,7 @@
             [clojure.data :as data]
             [clojure.data.zip.xml :as zx]
             [clojure.java.io :as io]
-            [clojure.set :as cljset]
+            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [clojure.xml :as xml]
@@ -543,9 +543,9 @@
     (or (= "Pod" kind)
         (= "ReplicaSet" kind))
     (drop-managed-fields response)
-    (or (= "PodList" kind)
-        (= "ReplicaSetList" kind)
-        (= "EventList" kind))
+    (or (= "EventList" kind)
+        (= "PodList" kind)
+        (= "ReplicaSetList" kind))
     (update response :items #(mapv drop-managed-fields %))
     :else response))
 
@@ -876,6 +876,7 @@
                                 custom-options
                                 daemon-state
                                 determine-replicaset-namespace-fn
+                                event-fetcher-state
                                 fileserver
                                 http-client
                                 kube-context
@@ -1079,13 +1080,15 @@
      :syncer (retrieve-syncer-state-fn service-id)})
 
   (state [_ include-flags]
-    (cond-> {:supported-include-params ["auth-token-renewer" "authorizer" "service-id->failed-instances"
+    (cond-> {:supported-include-params ["auth-token-renewer" "authorizer" "event-fetcher-state" "service-id->failed-instances"
                                         "syncer" "syncer-details" "watch-state" "watch-state-details"]
              :type "KubernetesScheduler"}
       (contains? include-flags "auth-token-renewer")
       (assoc :auth-token-renewer (retrieve-auth-token-state-fn))
       (and authorizer (contains? include-flags "authorizer"))
       (assoc :authorizer (authz/state authorizer))
+      (contains? include-flags "event-fetcher-state")
+      (assoc :event-fetcher-state @event-fetcher-state)
       (contains? include-flags "service-id->failed-instances")
       (assoc :service-id->failed-instances @service-id->failed-instances-transient-store)
       (or (contains? include-flags "syncer")
@@ -1747,28 +1750,35 @@
         events-chan (api-request-fn events-url scheduler)]
     events-chan))
 
-(defn get-cached-events
-  "Load events from cache or query K8s and store the channel that will contain the response."
+(defn get-cached-events-chan
+  "Load events from cache or query K8s. The returned value will be a channel that contains either
+   the cached value or (eventually) the response."
   [k8s-object-key->event-cache k8s-object-key k8s-query-fn scheduler options]
-  (cu/cache-get-or-load k8s-object-key->event-cache k8s-object-key
-                        (fn load-event-from-k8s [] (k8s-query-fn scheduler options k8s-object-key))))
+  (let [cache-value (cu/cache-get-or-load k8s-object-key->event-cache k8s-object-key
+                                          (fn load-event-from-k8s [] (k8s-query-fn scheduler options k8s-object-key)))]
+    (if (au/chan? cache-value)
+      cache-value
+      (let [promise (async/promise-chan)
+            cache-value-with-marker (assoc cache-value :w8r-cached true)]
+        (async/>!! promise cache-value-with-marker)
+        promise))))
 
 (defn service-unhealthy?
-  "Return true if the given service appears unhealthy"
-  [{:keys [instances k8s/replicaset-creation-timestamp task-count task-stats]}]
+  "Return true if the given service was created long enough ago and it appears unhealthy"
+  [{:keys [instances k8s/replicaset-creation-timestamp task-count task-stats]} k8s-object-minimum-age-secs]
   (let [creation-timestamp (du/str-to-date-safe replicaset-creation-timestamp)
         healthy-count (:healthy task-stats 0)
-        thirty-seconds-ago (t/ago (t/seconds 30))]
+        thirty-seconds-ago (t/ago (t/seconds k8s-object-minimum-age-secs))]
     (and (or (nil? creation-timestamp)
              (t/before? creation-timestamp thirty-seconds-ago))
          (or (< task-count instances)
              (< healthy-count task-count)))))
 
 (defn pod-unhealthy?
-  "Return true if the given pod was created more than 30 seconds ago and it appears unhealthy"
-  [{:keys [metadata status]}]
+  "Return true if the given pod was created long enough ago and it appears unhealthy"
+  [{:keys [metadata status]} k8s-object-minimum-age-secs]
   (let [creation-timestamp (timestamp-str->datetime (:creationTimestamp metadata))
-        thirty-seconds-ago (t/ago (t/seconds 30))
+        thirty-seconds-ago (t/ago (t/seconds k8s-object-minimum-age-secs))
         {:keys [conditions]} status
         condition-statuses (map (comp #(Boolean/valueOf %) :status) conditions)]
     (and (or (nil? creation-timestamp)
@@ -1791,116 +1801,129 @@
         name (:name metadata)]
     {:namespace namespace :k8s-object-name name}))
 
-(defn- get-events-for-k8s-object
-  "Get K8s Events for the given object. If Events are cached, they will be returned,
-   otherwise a channel will be returned. This channel will contain the fetched events
-   or an exception."
+(defn- get-events-chan-for-k8s-object
+  "Get a channel containing K8s Events for the given object. The channel will contain the
+   cached/fetched events or an exception."
   [k8s-object get-object-key load-events]
   (let [k8s-object-key (get-object-key k8s-object)
-        events-or-chan (load-events k8s-object-key)]
-    events-or-chan))
+        events-chan (load-events k8s-object-key)]
+    events-chan))
 
 (defn add-events-to-k8s-object
   "Add K8s Events to the given k8s object"
-  [k8s-object events]
-  (let [{:keys [events]} events]
+  [k8s-object events-object]
+  (let [{:keys [events]} events-object]
     (assoc k8s-object :k8s/events events)))
 
 (defn update-service-in-state-fn
   "Creates a function that will update state by adding events to the service with service-id.
    If state does not contain service-id, no change is applied."
-  [service-id]
-  (fn [state events]
+  [scheduler-name service-id]
+  (fn update-service-in-state [state events-object]
     (let [service (get-in state [:service-id->service service-id])]
-      (log/info "updating state for service" service-id "with" events)
+      (log/debug "updating state for service" service-id "with" events-object)
       (if service
-        (assoc-in state [:service-id->service service-id] (add-events-to-k8s-object service events))
+        (do
+          (counters/inc! (metrics/waiter-counter "scheduler" scheduler-name "event-fetcher" "service" "update-count"))
+          (assoc-in state [:service-id->service service-id] (add-events-to-k8s-object service events-object)))
         state))))
 
 (defn update-pod-in-state-fn
   "Creates a function that will update state by adding events to the pod with pod-id (that belongs
    to service with service-id). If state does not contain service-id / pod-id, no change is applied."
-  [service-id pod-id]
-  (fn [state events]
+  [scheduler-name service-id pod-id]
+  (fn update-pod-in-state [state events-object]
     (let [pod (get-in state [:service-id->pod-id->pod service-id pod-id])]
-      (log/info "updating state for pod" pod-id "with" events)
+      (log/debug "updating state for pod" pod-id "with" events-object)
       (if pod
-        (assoc-in state [:service-id->pod-id->pod service-id pod-id] (add-events-to-k8s-object pod events))
+        (do
+          (counters/inc! (metrics/waiter-counter "scheduler" scheduler-name "event-fetcher" "pod" "update-count"))
+          (assoc-in state [:service-id->pod-id->pod service-id pod-id] (add-events-to-k8s-object pod events-object)))
         state))))
 
-(defn extract-events-from-k8s-response
-  "Given a response body to a k8s event request, extract events."
-  [response]
-  (let [{:keys [items] :as clean-response} (drop-managed-fields-from-k8s-response response)
-        version (k8s-object->resource-version clean-response)
-        events (map k8s-event->simple-event items)]
-    {:events events
-     :version version}))
+(defn extract-events-from-channel-value
+  "Given a channel value containing cached data or a response body to a k8s event request, extract events."
+  [channel-value]
+  (if (contains? channel-value :w8r-cached)
+    (dissoc channel-value :w8r-cached)
+    (let [{:keys [items] :as clean-response} (drop-managed-fields-from-k8s-response channel-value)
+          version (k8s-object->resource-version clean-response)
+          events (map k8s-event->simple-event items)]
+      {:events events
+       :version version})))
+
+(defn- update-event-fetcher-state-with
+  "Update the event fecther state atom with the given content."
+  [state-atom content]
+  (swap! state-atom
+         #(as-> % state
+            (merge state content))))
+
+(def retry-event-fetcher
+  "Configure run-with-retries helper for use in long-running event fetcher go-block."
+  (utils/retry-strategy {:delay-multiplier 1.5
+                         :initial-delay-ms 2000
+                         :max-delay-ms 300000
+                         :max-retries Long/MAX_VALUE}))
 
 (defn start-event-fetcher!
   "Continuously check for problematic services/pods and load related K8s Events for them."
-  [{:keys [scheduler-name watch-state k8s-object-key->event-cache] :as scheduler}
-   {:keys [exit-on-error? fetch-events-chan] :as options}]
-  (async/go
-    (try
-      (log/info "starting K8s event fetcher")
-      (let [load-events (fn [k8s-object-key] (get-cached-events k8s-object-key->event-cache k8s-object-key query-events scheduler options))]
-        (loop [iter 0]
-          (cid/with-correlation-id
-            (str "k8s-event-fetcher-iter-" iter)
-            (do
-              (log/info "K8s event fetcher checking for targets")
-              (let [{:keys [service-id->service service-id->pod-id->pod]} @watch-state
-                    service-id->unhealthy-service (filter (comp service-unhealthy? val) service-id->service)]
-                (doseq [[unhealthy-service-id unhealthy-service] service-id->unhealthy-service]
-                  (let [pod-id->unhealthy-pod (utils/filterm (comp pod-unhealthy? val) (get service-id->pod-id->pod unhealthy-service-id))
-                        pod-id->update-pod-in-state (pc/map-from-keys #(update-pod-in-state-fn unhealthy-service-id %) (keys pod-id->unhealthy-pod))
-                        update-service-in-state (update-service-in-state-fn unhealthy-service-id)
-                        object-id->update-in-state-fn (merge pod-id->update-pod-in-state {unhealthy-service-id update-service-in-state})
-                        pod-id->events-or-chan (pc/map-vals #(get-events-for-k8s-object % get-pod-key load-events) pod-id->unhealthy-pod)
-                        service-events-or-chan (get-events-for-k8s-object unhealthy-service get-service-key load-events)
-                        object-id->events-or-chan (merge pod-id->events-or-chan {unhealthy-service-id service-events-or-chan})
-                        object-id->events (utils/filterm (comp not au/chan? val) object-id->events-or-chan)
-                        object-id->chan (utils/filterm (comp au/chan? val) object-id->events-or-chan)
-                        object-id->timer (pc/map-vals (fn [_] (timers/start (metrics/waiter-timer "scheduler" scheduler-name "query-events"))) object-id->chan)]
-                    ;; update state for all cached events
-                    (doseq [[object-id events] object-id->events]
-                      (log/info "updating state with cached events for" object-id events)
-                      (swap! watch-state
-                             #(as-> % state
-                                ((object-id->update-in-state-fn object-id) state events)))
-                      (let [events-update (merge events {:object-id object-id :time (t/now)})]
-                        (async/put! fetch-events-chan events-update)))
-                    ;; take all responses from channels, processing them as appropriate
-                    (loop [event-chan->object-id (cljset/map-invert object-id->chan)]
-                      (when (pos? (count event-chan->object-id))
-                        (let [event-chans (keys event-chan->object-id)
-                              [response-or-exc current-chan] (async/alts! event-chans)
-                              object-id (get event-chan->object-id current-chan)
-                              object-key (if (= unhealthy-service-id object-id)
-                                           (get-service-key unhealthy-service)
-                                           (get-pod-key (get pod-id->unhealthy-pod object-id)))]
-                          (timers/stop (get object-id->timer object-id))
-                          (if (instance? Throwable response-or-exc)
-                            (let [{:keys [http-utils/response]} (ex-data response-or-exc)
-                                  exc (or response
-                                          response-or-exc)]
-                              (log/info "Failed to acquire events for object" object-key exc)
-                              (cu/cache-evict k8s-object-key->event-cache object-key))
-                            (let [events (extract-events-from-k8s-response response-or-exc)]
-                              (cu/cache-put! k8s-object-key->event-cache object-key events)
-                              (swap! watch-state
-                                     #(as-> % state
-                                        ((object-id->update-in-state-fn object-id) state events)))
-                              (let [events-update (merge events {:object-id object-id :time (t/now)})]
-                                (async/put! fetch-events-chan events-update))))
-                          (recur (dissoc event-chan->object-id current-chan))))))))))
-          (utils/sleep 10000)
-          (recur (inc iter))))
-      (catch Throwable t
-        (when exit-on-error?
-          (log/error t "unrecoverable error in K8s event fetcher thread, terminating waiter.")
-          (System/exit 1))))))
+  [{:keys [k8s-object-key->event-cache event-fetcher-state scheduler-name watch-state] :as scheduler}
+   {:keys [fetch-events-chan k8s-object-minimum-age-secs] :as options}]
+  (retry-event-fetcher
+   (fn event-fetcher-retried-thunk []
+     (async/go
+       (try
+         (log/info "starting K8s event fetcher")
+         (let [load-events (fn [k8s-object-key] (get-cached-events-chan k8s-object-key->event-cache k8s-object-key query-events scheduler options))]
+           (loop [iter 0]
+             (cid/with-correlation-id
+               (str "k8s-event-fetcher-iter-" iter)
+               (do
+                 (log/info "K8s event fetcher checking for targets")
+                 (let [{:keys [service-id->service service-id->pod-id->pod]} @watch-state
+                       service-id->unhealthy-service (filter (comp #(service-unhealthy? % k8s-object-minimum-age-secs) val) service-id->service)]
+                   (doseq [[unhealthy-service-id unhealthy-service] service-id->unhealthy-service]
+                     (let [pod-id->unhealthy-pod (utils/filterm (comp #(pod-unhealthy? % k8s-object-minimum-age-secs) val) (get service-id->pod-id->pod unhealthy-service-id))
+                           pod-id->update-pod-in-state (pc/map-from-keys #(update-pod-in-state-fn scheduler-name unhealthy-service-id %) (keys pod-id->unhealthy-pod))
+                           update-service-in-state (update-service-in-state-fn scheduler-name unhealthy-service-id)
+                           object-id->update-in-state-fn (merge pod-id->update-pod-in-state {unhealthy-service-id update-service-in-state})
+                           pod-id->events-chan (pc/map-vals #(get-events-chan-for-k8s-object % get-pod-key load-events) pod-id->unhealthy-pod)
+                           service-events-chan (get-events-chan-for-k8s-object unhealthy-service get-service-key load-events)
+                           object-id->events-chan (merge pod-id->events-chan {unhealthy-service-id service-events-chan})
+                           object-id->timer (pc/map-vals (fn [_] (timers/start (metrics/waiter-timer "scheduler" scheduler-name "fetch-events"))) object-id->events-chan)]
+                       (loop [event-chan->object-id (set/map-invert object-id->events-chan)]
+                         (when (pos? (count event-chan->object-id))
+                           (let [event-chans (keys event-chan->object-id)
+                                 [events-or-exc current-chan] (async/alts! event-chans)
+                                 object-id (get event-chan->object-id current-chan)
+                                 object-key (if (= unhealthy-service-id object-id)
+                                              (get-service-key unhealthy-service)
+                                              (get-pod-key (get pod-id->unhealthy-pod object-id)))]
+                             (timers/stop (get object-id->timer object-id))
+                             (if (instance? Throwable events-or-exc)
+                               (let [{:keys [http-utils/response]} (ex-data events-or-exc)
+                                     exc (or response
+                                             events-or-exc)]
+                                 (update-event-fetcher-state-with event-fetcher-state {:last-error-request (du/date-to-str (t/now))})
+                                 (log/info "Failed to acquire events for object" object-key exc)
+                                 (cu/cache-evict k8s-object-key->event-cache object-key))
+                               (let [events (extract-events-from-channel-value events-or-exc)]
+                                 (update-event-fetcher-state-with event-fetcher-state {:last-successful-request (du/date-to-str (t/now))})
+                                 (cu/cache-put! k8s-object-key->event-cache object-key events)
+                                 (swap! watch-state
+                                        #(as-> % state
+                                           ((object-id->update-in-state-fn object-id) state events)))
+                                 (let [events-update (merge events {:object-id object-id :time (t/now)})]
+                                   (async/put! fetch-events-chan events-update))))
+                             (recur (dissoc event-chan->object-id current-chan))))))))))
+             (update-event-fetcher-state-with event-fetcher-state {:last-successful-iteration (du/date-to-str (t/now))})
+             (utils/sleep 10000)
+             (recur (inc iter))))
+         (catch Throwable t
+           (log/error t "unhandled error in K8s event fetcher")
+           (update-event-fetcher-state-with event-fetcher-state {:last-failed-iteration (du/date-to-str (t/now))})))))))
+
 
 (defn wait-for-watches
   "Waits until both the Pod and ReplicaSet scheduler watch states are populated.
@@ -1936,8 +1959,8 @@
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
-  [{:keys [authenticate-health-checks? authentication authorizer cluster-name container-running-grace-secs custom-options http-options
-           determine-replicaset-namespace-fn leader?-fn log-bucket-sync-secs
+  [{:keys [authenticate-health-checks? authentication authorizer cluster-name container-running-grace-secs custom-options 
+           fetch-events-k8s-object-minimum-age-secs http-options determine-replicaset-namespace-fn leader?-fn log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length namespace pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
            pod-suffix-length replicaset-api-version response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold
            raven-sidecar scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
@@ -1954,6 +1977,7 @@
          (or (nil? custom-options) (map? custom-options))
          (or (nil? determine-replicaset-namespace-fn) (symbol? determine-replicaset-namespace-fn))
          (or (nil? raven-sidecar) (nil? (s/check schema/valid-raven-sidecar-config raven-sidecar)))
+         (or (nil? fetch-events-k8s-object-minimum-age-secs) (pos-int? fetch-events-k8s-object-minimum-age-secs))
          (or (nil? fileserver-port)
              (and (integer? fileserver-port)
                   (< 0 fileserver-port 65535)))
@@ -2072,12 +2096,14 @@
         fetch-events-options (-> watch-options
                                  (dissoc :watch-retries :watch-trigger-chan)
                                  (assoc :api-request-fn api-request-async)
-                                 (assoc :fetch-events-chan fetch-events-chan))]
+                                 (assoc :fetch-events-chan fetch-events-chan)
+                                 (assoc :k8s-object-minimum-age-secs fetch-events-k8s-object-minimum-age-secs))]
 
     (let [daemon-state (atom nil)
           auth-str-atom (atom nil)
           auth-renewer (when authentication
                          (start-auth-renewer auth-str-atom authentication))
+          event-fetcher-state (atom nil)
           retrieve-auth-token-state-fn (or (:query-state-fn auth-renewer) (constantly nil))
           scheduler-config {:api-server-url url
                             :auth-str-atom auth-str-atom
@@ -2088,6 +2114,7 @@
                             :custom-options custom-options
                             :daemon-state daemon-state
                             :determine-replicaset-namespace-fn determine-replicaset-namespace-fn
+                            :event-fetcher-state event-fetcher-state
                             :fileserver fileserver
                             :http-client http-client
                             :k8s-object-key->event-cache k8s-object-key->event-cache

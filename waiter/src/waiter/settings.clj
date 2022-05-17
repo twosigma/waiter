@@ -396,6 +396,7 @@
                                                 :default {:factory-fn 'waiter.authorization/noop-authorizer}}
                                    :cluster-name "waiter"
                                    :container-running-grace-secs 90
+                                   :fetch-events-k8s-object-minimum-age-secs 30
                                    :fileserver {:cmd ["/bin/fileserver-start"]
                                                 :image "twosigma/waiter-fileserver"
                                                 :resources {:cpu 0.1 :mem 128}

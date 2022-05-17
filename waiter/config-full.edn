@@ -471,6 +471,9 @@
                                  ;; Configure the value to 0 to disable expiring instances and removing the duration constraint on pods
                                  ;; before they transition to the running state.
                                  :container-running-grace-secs 90
+                                 
+                                 ;; The minimum age in seconds that a k8s object must be before events may be fetched
+                                 :fetch-events-k8s-object-minimum-age-secs 30
 
                                  ;; Configuration for creating and querying a sidecar container in each Waiter Service Instance's Kuberentes pod
                                  ;; running a server for directory listings (in JSON) and serving file contents.
