@@ -407,8 +407,7 @@
 
                     ;; :kind :kubernetes uses Kubernetes (https://kubernetes.io/) for scheduling Waiter services and instances:
                     ;:kind :kubernetes
-                    :kubernetes {
-                                 ;; Custom implementations should specify a :factory-fn
+                    :kubernetes {;; Custom implementations should specify a :factory-fn
                                  ;; that returns an instance of waiter.scheduler.ServiceScheduler:
                                  :factory-fn waiter.scheduler.kubernetes/kubernetes-scheduler
 
@@ -472,6 +471,9 @@
                                  ;; Configure the value to 0 to disable expiring instances and removing the duration constraint on pods
                                  ;; before they transition to the running state.
                                  :container-running-grace-secs 90
+                                 
+                                 ;; The minimum age in seconds that a k8s object must be before events may be fetched
+                                 :fetch-events-k8s-object-minimum-age-secs 30
 
                                  ;; Configuration for creating and querying a sidecar container in each Waiter Service Instance's Kuberentes pod
                                  ;; running a server for directory listings (in JSON) and serving file contents.
@@ -490,6 +492,13 @@
                                  ;; HTTP options that will be used when accessing the Kubernetes API:
                                  :http-options {:conn-timeout 10000
                                                 :socket-timeout 10000}
+
+                                 ;; Cache configuration for k8s-object-key->event-cache
+                                 ;; This cache represents Kubernetes Events for ReplicaSets and Pods
+                                 :k8s-object-key->event-cache {;; max number of cached objects with events
+                                                               :threshold 5000
+                                                               ;; time (seconds) to live for an object with events
+                                                               :ttl 120}
 
                                  ;; Number of retry attempts to make when a PATCH request fails with a 409 Conflict:
                                  :max-patch-retries 5
@@ -548,8 +557,7 @@
 
                                  ;; Cache configuration for service-id->deployment-error-cache
                                  ;; This cache represents deployment errors at the service level (e.g. k8s api errors)
-                                 :service-id->deployment-error-cache {
-                                                                      ;; max number of services with a deployment-error
+                                 :service-id->deployment-error-cache {;; max number of services with a deployment-error
                                                                       :threshold 5000
                                                                       ;; time (seconds) to live for a service with deployment-error
                                                                       :ttl 120}

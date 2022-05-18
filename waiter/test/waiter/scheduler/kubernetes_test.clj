@@ -45,8 +45,8 @@
    Suppressing the stack trace helps keep our test logs cleaner."
   []
   `(throw
-     (doto (RuntimeException.)
-       (.setStackTrace (make-array StackTraceElement 0)))))
+    (doto (RuntimeException.)
+      (.setStackTrace (make-array StackTraceElement 0)))))
 
 (def ^:const default-pod-suffix-length 5)
 
@@ -60,55 +60,57 @@
                       log-bucket-url "http://waiter.example.com:8888/waiter-service-logs"}
                  :as args}]
    (->
-     {:api-server-url "https://k8s-api.example/"
-      :auth-str-atom (atom nil)
-      :authenticate-health-checks? false
-      :authorizer {:kind :default
-                   :default {:factory-fn 'waiter.authorization/noop-authorizer}}
-      :daemon-state (atom nil)
-      :determine-replicaset-namespace-fn determine-replicaset-namespace
-      :cluster-name "waiter"
-      :container-running-grace-secs 120
-      :fileserver {:port 9090
-                   :predicate-fn fileserver-container-enabled?
-                   :scheme "http"}
-      :leader?-fn (constantly true)
-      :log-bucket-sync-secs log-bucket-sync-secs
-      :log-bucket-url log-bucket-url
-      :max-patch-retries 5
-      :max-name-length 63
-      :pdb-api-version "policy/v1beta1"
-      :pdb-spec-builder-fn waiter.scheduler.kubernetes/default-pdb-spec-builder
-      :pod-base-port 8080
-      :pod-sigkill-delay-secs 3
-      :pod-suffix-length default-pod-suffix-length
-      :replicaset-api-version "apps/v1"
-      :replicaset-spec-builder-fn #(waiter.scheduler.kubernetes/default-replicaset-builder
-                                     %1 %2 %3
-                                     (merge {:container-init-commands ["waiter-k8s-init"]
-                                             :default-namespace default-namespace
-                                             :default-container-image "twosigma/waiter-test-apps:latest"
-                                             :log-bucket-sync-secs log-bucket-sync-secs
-                                             :log-bucket-url log-bucket-url}
-                                            %4))
-      :retrieve-auth-token-state-fn (constantly nil)
-      :retrieve-syncer-state-fn (constantly nil)
-      :response->deployment-error-msg-fn waiter.scheduler.kubernetes/default-k8s-message-transform
-      :restart-expiry-threshold 100
-      :restart-kill-threshold 200
-      :service-id->deployment-error-cache (cu/cache-factory {:threshold 50 :ttl (-> 2 t/seconds t/in-millis)})
-      :service-id->failed-instances-transient-store (atom {})
-      :service-id->password-fn #(str "password-" %)
-      :service-id->service-description-fn (pc/map-from-keys (constantly {"health-check-port-index" 0
-                                                                         "run-as-user" "myself"})
-                                                            service-ids)
-      :scheduler-name "dummy-scheduler"
-      :watch-chan-throttle-interval-ms 1
-      :watch-init-timeout-ms 0
-      :watch-state (atom nil)}
-     (merge args)
-     (update-in [:authorizer] utils/create-component)
-     map->KubernetesScheduler)))
+    {:api-server-url "https://k8s-api.example/"
+     :auth-str-atom (atom nil)
+     :authenticate-health-checks? false
+     :authorizer {:kind :default
+                  :default {:factory-fn 'waiter.authorization/noop-authorizer}}
+     :daemon-state (atom nil)
+     :determine-replicaset-namespace-fn determine-replicaset-namespace
+     :cluster-name "waiter"
+     :container-running-grace-secs 120
+     :event-fetcher-state (atom nil)
+     :fileserver {:port 9090
+                  :predicate-fn fileserver-container-enabled?
+                  :scheme "http"}
+     :k8s-object-key->event-cache (cu/cache-factory {:threshold 50 :ttl (-> 2 t/seconds t/in-millis)})
+     :leader?-fn (constantly true)
+     :log-bucket-sync-secs log-bucket-sync-secs
+     :log-bucket-url log-bucket-url
+     :max-patch-retries 5
+     :max-name-length 63
+     :pdb-api-version "policy/v1beta1"
+     :pdb-spec-builder-fn waiter.scheduler.kubernetes/default-pdb-spec-builder
+     :pod-base-port 8080
+     :pod-sigkill-delay-secs 3
+     :pod-suffix-length default-pod-suffix-length
+     :replicaset-api-version "apps/v1"
+     :replicaset-spec-builder-fn #(waiter.scheduler.kubernetes/default-replicaset-builder
+                                   %1 %2 %3
+                                   (merge {:container-init-commands ["waiter-k8s-init"]
+                                           :default-namespace default-namespace
+                                           :default-container-image "twosigma/waiter-test-apps:latest"
+                                           :log-bucket-sync-secs log-bucket-sync-secs
+                                           :log-bucket-url log-bucket-url}
+                                          %4))
+     :retrieve-auth-token-state-fn (constantly nil)
+     :retrieve-syncer-state-fn (constantly nil)
+     :response->deployment-error-msg-fn waiter.scheduler.kubernetes/default-k8s-message-transform
+     :restart-expiry-threshold 100
+     :restart-kill-threshold 200
+     :service-id->deployment-error-cache (cu/cache-factory {:threshold 50 :ttl (-> 2 t/seconds t/in-millis)})
+     :service-id->failed-instances-transient-store (atom {})
+     :service-id->password-fn #(str "password-" %)
+     :service-id->service-description-fn (pc/map-from-keys (constantly {"health-check-port-index" 0
+                                                                        "run-as-user" "myself"})
+                                                           service-ids)
+     :scheduler-name "dummy-scheduler"
+     :watch-chan-throttle-interval-ms 1
+     :watch-init-timeout-ms 0
+     :watch-state (atom nil)}
+    (merge args)
+    (update-in [:authorizer] utils/create-component)
+    map->KubernetesScheduler)))
 
 (def dummy-service-description
   {"backend-proto" "http"
@@ -129,14 +131,14 @@
   "Walks data structure to remove extra fields added by Kubernetes from Service and ServiceInstance records."
   [walkable-collection]
   (walk/postwalk
-    (fn sanitizer [x]
-      (cond
-        (instance? Service x)
-        (dissoc x :k8s/app-name :k8s/namespace :k8s/replicaset-uid)
-        (instance? ServiceInstance x)
-        (dissoc x :k8s/api-server-url :k8s/app-name :k8s/namespace :k8s/pod-name :k8s/port->protocol :k8s/raven :k8s/restart-count :k8s/user)
-        :else x))
-    walkable-collection))
+   (fn sanitizer [x]
+     (cond
+       (instance? Service x)
+       (dissoc x :k8s/app-name :k8s/namespace :k8s/replicaset-uid)
+       (instance? ServiceInstance x)
+       (dissoc x :k8s/api-server-url :k8s/app-name :k8s/namespace :k8s/pod-name :k8s/port->protocol :k8s/raven :k8s/restart-count :k8s/user)
+       :else x))
+   walkable-collection))
 
 (defmacro assert-data-equal
   [expected actual]
@@ -144,7 +146,7 @@
          actual# ~actual]
      (when-not (= expected# actual#)
        (clojure.pprint/pprint
-         (clojure.data/diff expected# actual#)))
+        (clojure.data/diff expected# actual#)))
      (is (= expected# actual#))))
 
 (deftest test-replicaset-spec-fileserver-container-and-metadata
@@ -156,11 +158,11 @@
         (let [{:strs [run-as-user] :as service-description} (assoc dummy-service-description "health-check-port-index" 2 "ports" 3)
               test-service-id "waiter-testservice123456789"
               scheduler (make-dummy-scheduler
-                          [test-service-id]
-                          {:fileserver {:port 9090
-                                        :predicate-fn (constantly fileserver-enabled)
-                                        :scheme "http"}
-                           :service-id->service-description-fn (constantly service-description)})
+                         [test-service-id]
+                         {:fileserver {:port 9090
+                                       :predicate-fn (constantly fileserver-enabled)
+                                       :scheme "http"}
+                          :service-id->service-description-fn (constantly service-description)})
               rs-spec-builder-context {:run-as-user-source "unknown"}
               replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler test-service-id service-description rs-spec-builder-context)]
           (is (= {:waiter/revision-timestamp (du/date-to-str current-time)
@@ -326,8 +328,8 @@
           app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
           app-env (get-container-env-map app-container)
           sidecar-container (some
-                              #(if (= waiter-raven-sidecar-name (:name %)) %)
-                              (get-in replicaset-spec [:spec :template :spec :containers]))
+                             #(if (= waiter-raven-sidecar-name (:name %)) %)
+                             (get-in replicaset-spec [:spec :template :spec :containers]))
           sidecar-env (get-container-env-map sidecar-container)]
 
       (testing "raven opt-in flag recognized in service env"
@@ -355,7 +357,7 @@
         (is (= "content-type,server" (get sidecar-env "RAVEN_LOG_RESPONSE_HEADER_NAMES"))))
 
       (testing "waiter/raven label is set"
-          (is (= "enabled" (get-in replicaset-spec [:metadata :labels :waiter/raven]))))
+        (is (= "enabled" (get-in replicaset-spec [:metadata :labels :waiter/raven]))))
 
       (testing "service-proto, service-port and waiter port0 values and env variables are correct"
         (let [{:keys [pod-base-port]} scheduler
@@ -424,8 +426,8 @@
               readiness-probe-scheme (get-in app-container [:readinessProbe :httpGet :scheme])
               liveness-probe-scheme (get-in app-container [:livenessProbe :httpGet :scheme])
               raven-container (some
-                                #(if (= waiter-raven-sidecar-name (:name %)) %)
-                                (get-in replicaset-spec [:spec :template :spec :containers]))]
+                               #(if (= waiter-raven-sidecar-name (:name %)) %)
+                               (get-in replicaset-spec [:spec :template :spec :containers]))]
 
           (testing "raven opt-in flag recognized in service env"
             (is (has-raven-config-in-env? app-env (:raven-sidecar scheduler))))
@@ -475,8 +477,8 @@
           app-container (get-in replicaset-spec [:spec :template :spec :containers 0])
           app-env (get-container-env-map app-container)
           sidecar-container (some
-                              #(if (= waiter-raven-sidecar-name (:name %)) %)
-                              (get-in replicaset-spec [:spec :template :spec :containers]))
+                             #(if (= waiter-raven-sidecar-name (:name %)) %)
+                             (get-in replicaset-spec [:spec :template :spec :containers]))
           sidecar-env (get-container-env-map sidecar-container)]
 
       (testing "raven-sidecar config has default opt-in env flag"
@@ -499,8 +501,8 @@
 
       (testing "user defined environment variables are correctly overwritten"
         (is (nil? (some #(when (or
-                                 (= (:name %) "PORT0")
-                                 (= (:name %) "SERVICE_PORT"))
+                                (= (:name %) "PORT0")
+                                (= (:name %) "SERVICE_PORT"))
                            (= "to-be-overwritten" (:value %))) (:env sidecar-container)))))
 
       (testing "request log entries in environment variables"
@@ -722,8 +724,8 @@
               :periodSeconds health-check-interval-secs
               :timeoutSeconds 1}
              (prepare-health-check-probe
-               service-id->password-fn service-id false
-               health-check-scheme health-check-url health-check-port health-check-interval-secs))))))
+              service-id->password-fn service-id false
+              health-check-scheme health-check-url health-check-port health-check-interval-secs))))))
 
 (deftest test-service-id->k8s-app-name
   (let [base-scheduler-spec {:pod-suffix-length default-pod-suffix-length}
@@ -774,9 +776,9 @@
   ([{:keys [watch-state] :as scheduler} rs-response pods-response]
    (let [dummy-resource-uri "http://ignored-uri"
          rs-state (global-rs-state-query
-                    scheduler {:api-request-fn (constantly rs-response)} dummy-resource-uri)
+                   scheduler {:api-request-fn (constantly rs-response)} dummy-resource-uri)
          pods-state (global-pods-state-query
-                      scheduler {:api-request-fn (constantly pods-response)} dummy-resource-uri)
+                     scheduler {:api-request-fn (constantly pods-response)} dummy-resource-uri)
          global-state (merge rs-state pods-state)]
      (reset! watch-state global-state))))
 
@@ -1221,170 +1223,170 @@
                                                     :restartCount 200}]}}]}
 
         expected (hash-map
-                   (scheduler/make-Service {:id "test-app-1234"
-                                            :instances 2
-                                            :k8s/container-resources [{:cpus 1.1 :mem 512.0 :name waiter-primary-container-name}
-                                                                      {:cpus 0.1 :mem 256.0 :name waiter-fileserver-sidecar-name}]
-                                            :k8s/containers [waiter-primary-container-name waiter-fileserver-sidecar-name]
-                                            :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
-                                            :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"}
-                                            :k8s/replicaset-pod-annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"}
-                                            :task-count 2
-                                            :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
-                   {:active-instances
-                    [(scheduler/make-ServiceInstance
-                       {:flags #{:expired}
-                        :healthy? false
-                        :host "0.0.0.0"
-                        :id "test-app-1234.test-app-1234-abcd0-0"
-                        :k8s/container-statuses [{:name waiter-primary-container-name
-                                                  :ready false
-                                                  :reason "ContainerCreating"
-                                                  :restart-count 0
-                                                  :state :waiting
-                                                  :type :app}]
-                        :k8s/node-name "node-0.k8s.com"
-                        :k8s/pod-phase "Pending"
-                        :k8s/revision-timestamp "2020-09-22T20:00:00.000Z"
-                        :log-directory "/home/myself/r0"
-                        :port 8080
-                        :service-id "test-app-1234"
-                        :started-at (du/str-to-date "2014-09-13T00:24:46Z" k8s-timestamp-format)
-                        :status "Unhealthy"})
-                     (scheduler/make-ServiceInstance
-                       {:flags #{:expired}
-                        :healthy? true
-                        :host "10.141.141.11"
-                        :id "test-app-1234.test-app-1234-abcd1-0"
-                        :k8s/container-statuses [{:name waiter-primary-container-name
-                                                  :ready true
-                                                  :restart-count 0
-                                                  :state :running
-                                                  :type :app}]
-                        :k8s/pod-phase "Running"
-                        :k8s/revision-timestamp "2020-09-22T20:11:11.000Z"
-                        :k8s/revision-version "0"
-                        :log-directory "/home/myself/r0"
-                        :port 8080
-                        :service-id "test-app-1234"
-                        :started-at (du/str-to-date "2014-09-13T00:24:46Z" k8s-timestamp-format)
-                        :status "Healthy"})
-                     (scheduler/make-ServiceInstance
-                       {:flags #{:expired}
-                        :healthy? true
-                        :host "10.141.141.12"
-                        :id "test-app-1234.test-app-1234-abcd2-0"
-                        :k8s/container-statuses [{:name waiter-primary-container-name
-                                                  :ready true
-                                                  :restart-count 0
-                                                  :type :app}]
-                        :k8s/node-name "node-2.k8s.com"
-                        :k8s/revision-timestamp "2020-09-22T20:22:22.000Z"
-                        :k8s/revision-version "1"
-                        :log-directory "/home/myself/r0"
-                        :port 8080
-                        :service-id "test-app-1234"
-                        :started-at (du/str-to-date "2014-09-13T00:24:47Z" k8s-timestamp-format)
-                        :status "Healthy"})]
-                    :failed-instances
-                    [(scheduler/make-ServiceInstance
-                       {:flags #{:expired}
-                        :healthy? false
-                        :host "10.141.141.13"
-                        :id "test-app-1234.test-app-1234-abcd3-0"
-                        :k8s/container-statuses [{:name waiter-primary-container-name
-                                                  :ready true
-                                                  :restart-count 0
-                                                  :state :running
-                                                  :type :app}]
-                        :k8s/pod-phase "Failed"
-                        :k8s/revision-timestamp "2020-09-22T20:11:11.000Z"
-                        :log-directory "/home/myself/r0"
-                        :port 8080
-                        :service-id "test-app-1234"
-                        :started-at (du/str-to-date "2014-09-13T00:24:13Z" k8s-timestamp-format)
-                        :status "Failed"})]}
+                  (scheduler/make-Service {:id "test-app-1234"
+                                           :instances 2
+                                           :k8s/container-resources [{:cpus 1.1 :mem 512.0 :name waiter-primary-container-name}
+                                                                     {:cpus 0.1 :mem 256.0 :name waiter-fileserver-sidecar-name}]
+                                           :k8s/containers [waiter-primary-container-name waiter-fileserver-sidecar-name]
+                                           :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
+                                           :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"}
+                                           :k8s/replicaset-pod-annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"}
+                                           :task-count 2
+                                           :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
+                  {:active-instances
+                   [(scheduler/make-ServiceInstance
+                     {:flags #{:expired}
+                      :healthy? false
+                      :host "0.0.0.0"
+                      :id "test-app-1234.test-app-1234-abcd0-0"
+                      :k8s/container-statuses [{:name waiter-primary-container-name
+                                                :ready false
+                                                :reason "ContainerCreating"
+                                                :restart-count 0
+                                                :state :waiting
+                                                :type :app}]
+                      :k8s/node-name "node-0.k8s.com"
+                      :k8s/pod-phase "Pending"
+                      :k8s/revision-timestamp "2020-09-22T20:00:00.000Z"
+                      :log-directory "/home/myself/r0"
+                      :port 8080
+                      :service-id "test-app-1234"
+                      :started-at (du/str-to-date "2014-09-13T00:24:46Z" k8s-timestamp-format)
+                      :status "Unhealthy"})
+                    (scheduler/make-ServiceInstance
+                     {:flags #{:expired}
+                      :healthy? true
+                      :host "10.141.141.11"
+                      :id "test-app-1234.test-app-1234-abcd1-0"
+                      :k8s/container-statuses [{:name waiter-primary-container-name
+                                                :ready true
+                                                :restart-count 0
+                                                :state :running
+                                                :type :app}]
+                      :k8s/pod-phase "Running"
+                      :k8s/revision-timestamp "2020-09-22T20:11:11.000Z"
+                      :k8s/revision-version "0"
+                      :log-directory "/home/myself/r0"
+                      :port 8080
+                      :service-id "test-app-1234"
+                      :started-at (du/str-to-date "2014-09-13T00:24:46Z" k8s-timestamp-format)
+                      :status "Healthy"})
+                    (scheduler/make-ServiceInstance
+                     {:flags #{:expired}
+                      :healthy? true
+                      :host "10.141.141.12"
+                      :id "test-app-1234.test-app-1234-abcd2-0"
+                      :k8s/container-statuses [{:name waiter-primary-container-name
+                                                :ready true
+                                                :restart-count 0
+                                                :type :app}]
+                      :k8s/node-name "node-2.k8s.com"
+                      :k8s/revision-timestamp "2020-09-22T20:22:22.000Z"
+                      :k8s/revision-version "1"
+                      :log-directory "/home/myself/r0"
+                      :port 8080
+                      :service-id "test-app-1234"
+                      :started-at (du/str-to-date "2014-09-13T00:24:47Z" k8s-timestamp-format)
+                      :status "Healthy"})]
+                   :failed-instances
+                   [(scheduler/make-ServiceInstance
+                     {:flags #{:expired}
+                      :healthy? false
+                      :host "10.141.141.13"
+                      :id "test-app-1234.test-app-1234-abcd3-0"
+                      :k8s/container-statuses [{:name waiter-primary-container-name
+                                                :ready true
+                                                :restart-count 0
+                                                :state :running
+                                                :type :app}]
+                      :k8s/pod-phase "Failed"
+                      :k8s/revision-timestamp "2020-09-22T20:11:11.000Z"
+                      :log-directory "/home/myself/r0"
+                      :port 8080
+                      :service-id "test-app-1234"
+                      :started-at (du/str-to-date "2014-09-13T00:24:13Z" k8s-timestamp-format)
+                      :status "Failed"})]}
 
-                   (scheduler/make-Service {:id "test-app-6789"
-                                            :instances 3
-                                            :k8s/container-resources [{:cpus 0.6 :mem 400.0 :name waiter-primary-container-name}
-                                                                      {:cpus 0.4 :mem 200.0 :name waiter-fileserver-sidecar-name}
-                                                                      {:cpus 0.2 :mem 100.0 :name waiter-raven-sidecar-name}]
-                                            :k8s/containers [waiter-primary-container-name waiter-fileserver-sidecar-name waiter-raven-sidecar-name]
-                                            :k8s/replicaset-creation-timestamp "2020-09-08T07:06:05.000Z"
-                                            :k8s/replicaset-annotations {}
-                                            :k8s/replicaset-pod-annotations {}
-                                            :task-count 3
-                                            :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})
-                   {:active-instances
-                    [(scheduler/make-ServiceInstance
-                       {:healthy? true
-                        :host "10.141.141.13"
-                        :id "test-app-6789.test-app-6789-abcd1-0"
-                        :k8s/container-statuses [{:name waiter-primary-container-name
-                                                  :ready true
-                                                  :restart-count 0
-                                                  :type :app}]
-                        :log-directory "/home/myself/r0"
-                        :port 8080
-                        :service-id "test-app-6789"
-                        :started-at (du/str-to-date "2014-09-13T00:24:35Z" k8s-timestamp-format)
-                        :status "Healthy"})
-                     (scheduler/make-ServiceInstance
-                       {:healthy? false
-                        :host "10.141.141.14"
-                        :id "test-app-6789.test-app-6789-abcd2-1"
-                        :k8s/container-statuses [{:name waiter-primary-container-name
-                                                  :restart-count 1
-                                                  :type :app}]
-                        :log-directory "/home/myself/r1"
-                        :port 8080
-                        :service-id "test-app-6789"
-                        :started-at (du/str-to-date "2014-09-13T00:24:37Z" k8s-timestamp-format)
-                        :status "Unhealthy"})
-                     (scheduler/make-ServiceInstance
-                       {:healthy? false
-                        :host "10.141.141.15"
-                        :id "test-app-6789.test-app-6789-abcd3-0"
-                        :k8s/container-statuses [{:name waiter-primary-container-name
-                                                  :restart-count 0
-                                                  :type :app}]
-                        :log-directory "/home/myself/r0"
-                        :port 8080
-                        :service-id "test-app-6789"
-                        :started-at (du/str-to-date "2014-09-13T00:24:38Z" k8s-timestamp-format)
-                        :status "Unhealthy"})
-                     (scheduler/make-ServiceInstance
-                       {:flags #{:expired}
-                        :healthy? false
-                        :host "10.141.141.16"
-                        :id "test-app-6789.test-app-6789-abcd4-0"
-                        :k8s/container-statuses [{:name waiter-primary-container-name
-                                                  :restart-count 0
-                                                  :type :app}
-                                                 {:name "waiter-setup"
-                                                  :ready false
-                                                  :restart-count 200
-                                                  :type :init}]
-                        :log-directory "/home/myself/r0"
-                        :port 8080
-                        :service-id "test-app-6789"
-                        :started-at (du/str-to-date "2014-09-13T00:24:48Z" k8s-timestamp-format)
-                        :status "Unhealthy"})]
-                    :failed-instances
-                    [(scheduler/make-ServiceInstance
-                       {:exit-code 255
-                        :healthy? false
-                        :host "10.141.141.14"
-                        :id "test-app-6789.test-app-6789-abcd2-0"
-                        :k8s/container-statuses [{:name waiter-primary-container-name
-                                                  :restart-count 1
-                                                  :type :app}]
-                        :log-directory "/home/myself/r0"
-                        :port 8080
-                        :service-id "test-app-6789"
-                        :started-at (du/str-to-date "2014-09-13T00:24:36Z" k8s-timestamp-format)
-                        :status "Failed"})]})
+                  (scheduler/make-Service {:id "test-app-6789"
+                                           :instances 3
+                                           :k8s/container-resources [{:cpus 0.6 :mem 400.0 :name waiter-primary-container-name}
+                                                                     {:cpus 0.4 :mem 200.0 :name waiter-fileserver-sidecar-name}
+                                                                     {:cpus 0.2 :mem 100.0 :name waiter-raven-sidecar-name}]
+                                           :k8s/containers [waiter-primary-container-name waiter-fileserver-sidecar-name waiter-raven-sidecar-name]
+                                           :k8s/replicaset-creation-timestamp "2020-09-08T07:06:05.000Z"
+                                           :k8s/replicaset-annotations {}
+                                           :k8s/replicaset-pod-annotations {}
+                                           :task-count 3
+                                           :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})
+                  {:active-instances
+                   [(scheduler/make-ServiceInstance
+                     {:healthy? true
+                      :host "10.141.141.13"
+                      :id "test-app-6789.test-app-6789-abcd1-0"
+                      :k8s/container-statuses [{:name waiter-primary-container-name
+                                                :ready true
+                                                :restart-count 0
+                                                :type :app}]
+                      :log-directory "/home/myself/r0"
+                      :port 8080
+                      :service-id "test-app-6789"
+                      :started-at (du/str-to-date "2014-09-13T00:24:35Z" k8s-timestamp-format)
+                      :status "Healthy"})
+                    (scheduler/make-ServiceInstance
+                     {:healthy? false
+                      :host "10.141.141.14"
+                      :id "test-app-6789.test-app-6789-abcd2-1"
+                      :k8s/container-statuses [{:name waiter-primary-container-name
+                                                :restart-count 1
+                                                :type :app}]
+                      :log-directory "/home/myself/r1"
+                      :port 8080
+                      :service-id "test-app-6789"
+                      :started-at (du/str-to-date "2014-09-13T00:24:37Z" k8s-timestamp-format)
+                      :status "Unhealthy"})
+                    (scheduler/make-ServiceInstance
+                     {:healthy? false
+                      :host "10.141.141.15"
+                      :id "test-app-6789.test-app-6789-abcd3-0"
+                      :k8s/container-statuses [{:name waiter-primary-container-name
+                                                :restart-count 0
+                                                :type :app}]
+                      :log-directory "/home/myself/r0"
+                      :port 8080
+                      :service-id "test-app-6789"
+                      :started-at (du/str-to-date "2014-09-13T00:24:38Z" k8s-timestamp-format)
+                      :status "Unhealthy"})
+                    (scheduler/make-ServiceInstance
+                     {:flags #{:expired}
+                      :healthy? false
+                      :host "10.141.141.16"
+                      :id "test-app-6789.test-app-6789-abcd4-0"
+                      :k8s/container-statuses [{:name waiter-primary-container-name
+                                                :restart-count 0
+                                                :type :app}
+                                               {:name "waiter-setup"
+                                                :ready false
+                                                :restart-count 200
+                                                :type :init}]
+                      :log-directory "/home/myself/r0"
+                      :port 8080
+                      :service-id "test-app-6789"
+                      :started-at (du/str-to-date "2014-09-13T00:24:48Z" k8s-timestamp-format)
+                      :status "Unhealthy"})]
+                   :failed-instances
+                   [(scheduler/make-ServiceInstance
+                     {:exit-code 255
+                      :healthy? false
+                      :host "10.141.141.14"
+                      :id "test-app-6789.test-app-6789-abcd2-0"
+                      :k8s/container-statuses [{:name waiter-primary-container-name
+                                                :restart-count 1
+                                                :type :app}]
+                      :log-directory "/home/myself/r0"
+                      :port 8080
+                      :service-id "test-app-6789"
+                      :started-at (du/str-to-date "2014-09-13T00:24:36Z" k8s-timestamp-format)
+                      :status "Failed"})]})
         watch-state-atom (atom {:service-id->service {"test-app-1234" "2020-09-22T20:33:33.000Z"}})
         dummy-scheduler (make-dummy-scheduler ["test-app-1234" "test-app-6789"]
                                               {:container-running-grace-secs 0
@@ -1400,15 +1402,15 @@
         service (scheduler/make-Service {:id service-id :instances 1 :k8s/namespace "myself"})
         instance-id "instance-id"
         instance (scheduler/make-ServiceInstance
-                   {:extra-ports []
-                    :healthy? true
-                    :host "10.141.141.10"
-                    :id instance-id
-                    :log-directory "/home/myself/r0"
-                    :k8s/namespace "myself"
-                    :port 8080
-                    :service-id service-id
-                    :started-at (du/str-to-date "2014-09-13T00:24:56Z" k8s-timestamp-format)})
+                  {:extra-ports []
+                   :healthy? true
+                   :host "10.141.141.10"
+                   :id instance-id
+                   :log-directory "/home/myself/r0"
+                   :k8s/namespace "myself"
+                   :port 8080
+                   :service-id service-id
+                   :started-at (du/str-to-date "2014-09-13T00:24:56Z" k8s-timestamp-format)})
         dummy-scheduler (make-dummy-scheduler [service-id])
         api-server-response {:kind "ReplicaSetList"
                              :apiVersion "apps/v1"
@@ -1430,9 +1432,9 @@
         (let [actual (with-redefs [api-request (constantly {:status "OK"})]
                        (scheduler/kill-instance dummy-scheduler instance))]
           (is (= (assoc partial-expected
-                   :killed? true
-                   :message "Successfully killed instance"
-                   :status http-200-ok)
+                        :killed? true
+                        :message "Successfully killed instance"
+                        :status http-200-ok)
                  actual))))
       (testing "unsuccessful-delete: forbidden"
         (let [actual (with-redefs [api-request (fn mocked-api-request [_ _ & {:keys [request-method]}]
@@ -1440,8 +1442,8 @@
                                                    (ss/throw+ {:status http-403-forbidden})))]
                        (scheduler/kill-instance dummy-scheduler instance))]
           (is (= (assoc partial-expected
-                   :message "Error while killing instance"
-                   :status http-500-internal-server-error)
+                        :message "Error while killing instance"
+                        :status http-500-internal-server-error)
                  actual))))
       (testing "unsuccessful-delete: no such instance"
         (let [error-msg "Instance not found"
@@ -1450,8 +1452,8 @@
                                                    (ss/throw+ {:status http-404-not-found})))]
                        (scheduler/kill-instance dummy-scheduler instance))]
           (is (= (assoc partial-expected
-                   :message error-msg
-                   :status http-404-not-found)
+                        :message error-msg
+                        :status http-404-not-found)
                  actual))))
       (testing "successful-delete: terminated, but had patch conflict"
         (log/info "Expecting 409 patch-conflict error when deleting service instance...")
@@ -1460,16 +1462,16 @@
                                                    (ss/throw+ {:status http-409-conflict})))]
                        (scheduler/kill-instance dummy-scheduler instance))]
           (is (= (assoc partial-expected
-                   :killed? true
-                   :message "Successfully killed instance"
-                   :status http-200-ok)
+                        :killed? true
+                        :message "Successfully killed instance"
+                        :status http-200-ok)
                  actual))))
       (testing "unsuccessful-delete: internal error"
         (let [actual (with-redefs [api-request (fn [& _] (throw-exception))]
                        (scheduler/kill-instance dummy-scheduler instance))]
           (is (= (assoc partial-expected
-                   :message "Error while killing instance"
-                   :status http-500-internal-server-error)
+                        :message "Error while killing instance"
+                        :status http-500-internal-server-error)
                  actual)))))))
 
 (deftest test-scheduler-service-exists?
@@ -1515,12 +1517,12 @@
          search-deployment-error# ~search-deployment-error
          services# (scheduler/get-services scheduler#)]
      (is (some
-           (fn [service#]
-             (let [service-id# (:id service#)
-                   deployment-error# (get-in service# [:deployment-error :service-deployment-error-msg])]
-               (and (= service-id# search-service-id#)
-                    (= deployment-error# search-deployment-error#))))
-           services#))))
+          (fn [service#]
+            (let [service-id# (:id service#)
+                  deployment-error# (get-in service# [:deployment-error :service-deployment-error-msg])]
+              (and (= service-id# search-service-id#)
+                   (= deployment-error# search-deployment-error#))))
+          services#))))
 
 (deftest test-create-app
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
@@ -1543,21 +1545,21 @@
                          (scheduler/create-service-if-new dummy-scheduler descriptor))]
             (is (nil? actual))
             (assert-service-deployment-error
-              dummy-scheduler (:service-id service) (str "Unknown reason - check logs"))))
+             dummy-scheduler (:service-id service) (str "Unknown reason - check logs"))))
         (testing "unsuccessful-create: service creation conflict (already running)"
           (let [actual (with-redefs [api-request (fn mocked-api-request [& _]
                                                    (ss/throw+ {:status http-409-conflict}))]
                          (scheduler/create-service-if-new dummy-scheduler descriptor))]
             (is (nil? actual))
             (assert-service-deployment-error
-              dummy-scheduler (:service-id service) (str "Unknown reason - check logs"))))
+             dummy-scheduler (:service-id service) (str "Unknown reason - check logs"))))
         (testing "unsuccessful-create: internal error"
           (let [actual (with-redefs [api-request (fn mocked-api-request [& _]
                                                    (throw-exception))]
                          (scheduler/create-service-if-new dummy-scheduler descriptor))]
             (is (nil? actual))
             (assert-service-deployment-error
-              dummy-scheduler (:service-id service) (str "Unknown reason - check logs"))))
+             dummy-scheduler (:service-id service) (str "Unknown reason - check logs"))))
         (testing "unsuccessful-create: failing k8s deployment error does not persist passed cache ttl"
           (Thread/sleep 2001)
           (is (= [] (scheduler/get-services dummy-scheduler))))
@@ -1569,7 +1571,7 @@
                          (scheduler/create-service-if-new dummy-scheduler descriptor))]
             (is (nil? actual))
             (assert-service-deployment-error
-              dummy-scheduler (:service-id service) k8s-error-message)))
+             dummy-scheduler (:service-id service) k8s-error-message)))
 
         (testing "successful create"
           (let [apis-url "https://k8s-api.example//apis"
@@ -1773,19 +1775,19 @@
                 expected (get-expected-result (:log-bucket-url dummy-scheduler))]
             (let [actual (with-redefs [hu/http-request (constantly xml-response)]
                            (scheduler/retrieve-directory-content
-                             dummy-scheduler service-id instance-id host path))]
+                            dummy-scheduler service-id instance-id host path))]
               (is (= expected actual)))))
 
         (testing "with custom log bucket url"
           (let [log-bucket-url "http://service.example.com:1234/service-logs"
                 dummy-scheduler (assoc (make-dummy-scheduler [service-id])
-                                  :service-id->service-description-fn {service-id {"env" {"WAITER_CONFIG_LOG_BUCKET_URL" log-bucket-url}
-                                                                                   "health-check-port-index" 0
-                                                                                   "run-as-user" "myself"}})
+                                       :service-id->service-description-fn {service-id {"env" {"WAITER_CONFIG_LOG_BUCKET_URL" log-bucket-url}
+                                                                                        "health-check-port-index" 0
+                                                                                        "run-as-user" "myself"}})
                 expected (get-expected-result log-bucket-url)]
             (let [actual (with-redefs [hu/http-request (constantly xml-response)]
                            (scheduler/retrieve-directory-content
-                             dummy-scheduler service-id instance-id host path))]
+                            dummy-scheduler service-id instance-id host path))]
               (is (= expected actual))))))))
 
   ;; Live pod
@@ -1827,7 +1829,7 @@
       (testing description
         (let [actual (with-redefs [hu/http-request (constantly (strip-links expected))]
                        (scheduler/retrieve-directory-content
-                         dummy-scheduler service-id instance-id host path))]
+                        dummy-scheduler service-id instance-id host path))]
           (is (= expected actual)))))))
 
 (defn test-auth-refresher
@@ -1856,6 +1858,8 @@
                     :watch-state (atom nil)
                     :http-options {:conn-timeout 10000
                                    :socket-timeout 10000}
+                    :k8s-object-key->event-cache {:threshold 5000
+                                                  :ttl 60}
                     :log-bucket-sync-secs 60
                     :log-bucket-url nil
                     :max-patch-retries 5
@@ -1939,8 +1943,8 @@
 
           (testing "bad (non-matching) scheduler namespace and default-namespace"
             (let [config (-> base-config
-                           (assoc :namespace "y")
-                           (assoc-in [:replicaset-spec-builder :default-namespace] "x"))]
+                             (assoc :namespace "y")
+                             (assoc-in [:replicaset-spec-builder :default-namespace] "x"))]
               (is (thrown? Throwable (kubernetes-scheduler config)))))
 
           (testing "star default-namespace"
@@ -1949,8 +1953,8 @@
 
             (testing "with bad (non-matching) scheduler namespace"
               (let [config (-> base-config
-                             (assoc :namespace "y")
-                             (assoc-in [:replicaset-spec-builder :default-namespace] "*"))]
+                               (assoc :namespace "y")
+                               (assoc-in [:replicaset-spec-builder :default-namespace] "*"))]
                 (is (thrown? Throwable (kubernetes-scheduler config))))))
 
           (testing "good (non-conflicting) scheduler namespace and default-namespace"
@@ -1973,7 +1977,15 @@
 
           (testing "good restart-kill-threshold"
             (is (instance? KubernetesScheduler (kubernetes-scheduler (dissoc base-config :restart-kill-threshold))))
-            (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :restart-kill-threshold 2))))))
+            (is (instance? KubernetesScheduler (kubernetes-scheduler (assoc base-config :restart-kill-threshold 2)))))
+
+          (testing "bad k8s-object-key->event-cache-threshold"
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :k8s-object-key->event-cache {:threshold 1}))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :k8s-object-key->event-cache {:ttl 1}))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :k8s-object-key->event-cache {:threshold 1
+                                                                                                          :ttl -1}))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :k8s-object-key->event-cache {:threshold -1
+                                                                                                          :ttl 1}))))))
 
         (testing "should work with valid configuration"
           (is (instance? KubernetesScheduler (kubernetes-scheduler base-config))))
@@ -2016,12 +2028,12 @@
 
         (testing "validate service - normal"
           (scheduler/validate-service
-            (kubernetes-scheduler (assoc base-config :service-id->service-description-fn (constantly {}))) nil))
+           (kubernetes-scheduler (assoc base-config :service-id->service-description-fn (constantly {}))) nil))
         (testing "validate service - test that image can be set"
           (scheduler/validate-service
-            (kubernetes-scheduler (assoc base-config
-                                    :service-id->service-description-fn
-                                    (constantly {"image" "twosigma/waiter-test-apps"}))) nil))))))
+           (kubernetes-scheduler (assoc base-config
+                                        :service-id->service-description-fn
+                                        (constantly {"image" "twosigma/waiter-test-apps"}))) nil))))))
 
 (defn- watch-trigger-chan->resource-version
   [watch-trigger-chan]
@@ -2180,18 +2192,18 @@
         watch-trigger-chan (au/latest-chan)
 
         rs-watch-thread (start-replicasets-watch!
-                          dummy-scheduler
-                          {:api-request-fn (constantly rs-response)
-                           :exit-on-error? false
-                           :streaming-api-request-fn (constantly rs-watch-stream)
-                           :watch-trigger-chan watch-trigger-chan})
+                         dummy-scheduler
+                         {:api-request-fn (constantly rs-response)
+                          :exit-on-error? false
+                          :streaming-api-request-fn (constantly rs-watch-stream)
+                          :watch-trigger-chan watch-trigger-chan})
 
         pods-watch-thread (start-pods-watch!
-                            dummy-scheduler
-                            {:api-request-fn (constantly pods-response)
-                             :exit-on-error? false
-                             :streaming-api-request-fn (constantly pods-watch-stream)
-                             :watch-trigger-chan watch-trigger-chan})
+                           dummy-scheduler
+                           {:api-request-fn (constantly pods-response)
+                            :exit-on-error? false
+                            :streaming-api-request-fn (constantly pods-watch-stream)
+                            :watch-trigger-chan watch-trigger-chan})
 
         get-instance (fn [{:keys [watch-state]} index]
                        (let [pod-id (str "test-app-1234-abcd" index)
@@ -2200,10 +2212,10 @@
                            (pod->ServiceInstance dummy-scheduler pod))))
         wait-for-version (fn [version-tag value]
                            (ct/wait-for
-                             #(= value
-                                 (get-in @watch-state [:rs-metadata :version version-tag])
-                                 (get-in @watch-state [:pods-metadata :version version-tag]))
-                             :interval 500 :timeout 5000 :unit-multiplier 1))]
+                            #(= value
+                                (get-in @watch-state [:rs-metadata :version version-tag])
+                                (get-in @watch-state [:pods-metadata :version version-tag]))
+                            :interval 500 :timeout 5000 :unit-multiplier 1))]
 
     ;; Verify base state
     (is (wait-for-version :snapshot 1000))
@@ -2478,19 +2490,19 @@
         rs-watch-stream (make-watch-stream rs-watch-updates watch-update-signals)
 
         rs-watch-thread (start-replicasets-watch!
-                          dummy-scheduler
-                          {:api-request-fn (constantly rs-response)
-                           :exit-on-error? false
-                           :streaming-api-request-fn (constantly rs-watch-stream)
-                           :watch-trigger-chan watch-trigger-chan})
+                         dummy-scheduler
+                         {:api-request-fn (constantly rs-response)
+                          :exit-on-error? false
+                          :streaming-api-request-fn (constantly rs-watch-stream)
+                          :watch-trigger-chan watch-trigger-chan})
 
         ;; pods global queries are called twice, and return a different value each time
         pods-global-update-signal (promise)
         pods-global-query-results (.iterator
-                                    (cons pods-response
-                                          (lazy-seq
-                                            (list (do @pods-global-update-signal
-                                                      pods-response')))))
+                                   (cons pods-response
+                                         (lazy-seq
+                                          (list (do @pods-global-update-signal
+                                                    pods-response')))))
         pods-global-query-fn (fn pods-global-query-fn [& _]
                                (.next pods-global-query-results))
 
@@ -2512,12 +2524,12 @@
                                      (take 1))))
 
         pods-watch-thread (start-pods-watch!
-                            dummy-scheduler
-                            {:api-request-fn pods-global-query-fn
-                             :exit-on-error? false
-                             :streaming-api-request-fn pods-watch-query-fn
-                             :watch-retries 1
-                             :watch-trigger-chan watch-trigger-chan})
+                           dummy-scheduler
+                           {:api-request-fn pods-global-query-fn
+                            :exit-on-error? false
+                            :streaming-api-request-fn pods-watch-query-fn
+                            :watch-retries 1
+                            :watch-trigger-chan watch-trigger-chan})
 
         get-instance (fn [{:keys [watch-state]} index]
                        (let [pod-id (str "test-app-1234-abcd" index)
@@ -2526,9 +2538,9 @@
                            (pod->ServiceInstance dummy-scheduler pod))))
         wait-for-version (fn [resource version-tag value]
                            (ct/wait-for
-                             #(= value
-                                 (get-in @watch-state [resource :version version-tag]))
-                             :interval 500 :timeout 5000 :unit-multiplier 1))]
+                            #(= value
+                                (get-in @watch-state [resource :version version-tag]))
+                            :interval 500 :timeout 5000 :unit-multiplier 1))]
 
     ;; Verify base state
     (is (wait-for-version :rs-metadata :snapshot 1000))
@@ -2731,81 +2743,81 @@
       (testing "succeeding"
         (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
               pod' (-> pod
-                     (assoc-in [:status :initContainerStatuses] [{:name "waiter-setup" :ready true :restartCount 1 :state {:waiting {:reason "CrashLoopBackOff"}}}
-                                                                 {:name "waiter-load" :ready true}]))
+                       (assoc-in [:status :initContainerStatuses] [{:name "waiter-setup" :ready true :restartCount 1 :state {:waiting {:reason "CrashLoopBackOff"}}}
+                                                                   {:name "waiter-load" :ready true}]))
               instance (pod->ServiceInstance dummy-scheduler pod')
               expected-instance-map (assoc instance-map
-                                      :k8s/container-statuses [{:name waiter-primary-container-name :ready true :restart-count 9 :type :app}
-                                                               {:name "waiter-setup" :ready true :reason "CrashLoopBackOff" :restart-count 1 :state :waiting :type :init}
-                                                               {:name "waiter-load" :ready true :type :init}])]
+                                           :k8s/container-statuses [{:name waiter-primary-container-name :ready true :restart-count 9 :type :app}
+                                                                    {:name "waiter-setup" :ready true :reason "CrashLoopBackOff" :restart-count 1 :state :waiting :type :init}
+                                                                    {:name "waiter-load" :ready true :type :init}])]
           (is (= (scheduler/make-ServiceInstance expected-instance-map) instance))))
 
       (testing "failing"
         (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
               pod' (-> pod
-                     (assoc-in [:status :initContainerStatuses] [{:name "waiter-setup" :ready false :restartCount 5 :state {:waiting {:reason "CrashLoopBackOff"}}}])
-                     (assoc-in [:status :containerStatuses] [{:name waiter-primary-container-name :ready false}]))
+                       (assoc-in [:status :initContainerStatuses] [{:name "waiter-setup" :ready false :restartCount 5 :state {:waiting {:reason "CrashLoopBackOff"}}}])
+                       (assoc-in [:status :containerStatuses] [{:name waiter-primary-container-name :ready false}]))
               instance (pod->ServiceInstance dummy-scheduler pod')
               expected-instance-map (assoc instance-map
-                                      :healthy? false
-                                      :id "test-app-1234.test-app-1234-abcd1-0"
-                                      :k8s/container-statuses [{:name waiter-primary-container-name :ready false :type :app}
-                                                               {:name "waiter-setup" :ready false :reason "CrashLoopBackOff" :restart-count 5 :state :waiting :type :init}]
-                                      :k8s/restart-count 0
-                                      :log-directory "/home/myself/r0"
-                                      :status "Init container(s) in crash loop: waiter-setup")]
+                                           :healthy? false
+                                           :id "test-app-1234.test-app-1234-abcd1-0"
+                                           :k8s/container-statuses [{:name waiter-primary-container-name :ready false :type :app}
+                                                                    {:name "waiter-setup" :ready false :reason "CrashLoopBackOff" :restart-count 5 :state :waiting :type :init}]
+                                           :k8s/restart-count 0
+                                           :log-directory "/home/myself/r0"
+                                           :status "Init container(s) in crash loop: waiter-setup")]
           (is (= (scheduler/make-ServiceInstance expected-instance-map) instance)))
 
         (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
               pod' (-> pod
-                     (assoc-in [:status :initContainerStatuses] [{:name "waiter-setup" :ready true :restartCount 1 :state {:waiting {:reason "CrashLoopBackOff"}}}
-                                                                 {:name "waiter-load" :ready false :restartCount 5 :state {:waiting {:reason "CrashLoopBackOff"}}}])
-                     (assoc-in [:status :containerStatuses] [{:name waiter-primary-container-name
-                                                              :ready false}]))
+                       (assoc-in [:status :initContainerStatuses] [{:name "waiter-setup" :ready true :restartCount 1 :state {:waiting {:reason "CrashLoopBackOff"}}}
+                                                                   {:name "waiter-load" :ready false :restartCount 5 :state {:waiting {:reason "CrashLoopBackOff"}}}])
+                       (assoc-in [:status :containerStatuses] [{:name waiter-primary-container-name
+                                                                :ready false}]))
               instance (pod->ServiceInstance dummy-scheduler pod')
               expected-instance-map (assoc instance-map
-                                      :healthy? false
-                                      :id "test-app-1234.test-app-1234-abcd1-0"
-                                      :k8s/container-statuses [{:name waiter-primary-container-name :ready false :type :app}
-                                                               {:name "waiter-setup" :ready true :reason "CrashLoopBackOff" :restart-count 1 :state :waiting :type :init}
-                                                               {:name "waiter-load" :ready false :reason "CrashLoopBackOff" :restart-count 5 :state :waiting :type :init}]
-                                      :k8s/restart-count 0
-                                      :log-directory "/home/myself/r0"
-                                      :status "Init container(s) in crash loop: waiter-load")]
+                                           :healthy? false
+                                           :id "test-app-1234.test-app-1234-abcd1-0"
+                                           :k8s/container-statuses [{:name waiter-primary-container-name :ready false :type :app}
+                                                                    {:name "waiter-setup" :ready true :reason "CrashLoopBackOff" :restart-count 1 :state :waiting :type :init}
+                                                                    {:name "waiter-load" :ready false :reason "CrashLoopBackOff" :restart-count 5 :state :waiting :type :init}]
+                                           :k8s/restart-count 0
+                                           :log-directory "/home/myself/r0"
+                                           :status "Init container(s) in crash loop: waiter-load")]
           (is (= (scheduler/make-ServiceInstance expected-instance-map) instance)))))
 
     (testing "pod app containers"
       (testing "app sidecar failing"
         (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
               pod' (-> pod
-                     (assoc-in [:status :initContainerStatuses] [{:name "waiter-setup" :ready true}
-                                                                 {:name "waiter-load" :ready true}])
-                     (assoc-in [:status :containerStatuses] [{:name waiter-primary-container-name :ready true :restartCount 9}
-                                                             {:name waiter-fileserver-sidecar-name :ready false :restartCount 5 :state {:waiting {:reason "CrashLoopBackOff"}}}]))
+                       (assoc-in [:status :initContainerStatuses] [{:name "waiter-setup" :ready true}
+                                                                   {:name "waiter-load" :ready true}])
+                       (assoc-in [:status :containerStatuses] [{:name waiter-primary-container-name :ready true :restartCount 9}
+                                                               {:name waiter-fileserver-sidecar-name :ready false :restartCount 5 :state {:waiting {:reason "CrashLoopBackOff"}}}]))
               instance (pod->ServiceInstance dummy-scheduler pod')
               expected-instance-map (assoc instance-map
-                                      :k8s/container-statuses [{:name waiter-primary-container-name :ready true :restart-count 9 :type :app}
-                                                               {:name waiter-fileserver-sidecar-name :ready false :reason "CrashLoopBackOff" :restart-count 5 :state :waiting :type :app}
-                                                               {:name "waiter-setup" :ready true :type :init}
-                                                               {:name "waiter-load" :ready true :type :init}]
-                                      :status (str "Application container(s) in crash loop: " waiter-fileserver-sidecar-name))]
+                                           :k8s/container-statuses [{:name waiter-primary-container-name :ready true :restart-count 9 :type :app}
+                                                                    {:name waiter-fileserver-sidecar-name :ready false :reason "CrashLoopBackOff" :restart-count 5 :state :waiting :type :app}
+                                                                    {:name "waiter-setup" :ready true :type :init}
+                                                                    {:name "waiter-load" :ready true :type :init}]
+                                           :status (str "Application container(s) in crash loop: " waiter-fileserver-sidecar-name))]
           (is (= (scheduler/make-ServiceInstance expected-instance-map) instance))))
 
       (testing "main container failing"
         (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
               pod' (-> pod
-                     (assoc-in [:status :initContainerStatuses] [{:name "waiter-setup" :ready true}
-                                                                 {:name "waiter-load" :ready true}])
-                     (assoc-in [:status :containerStatuses] [{:name waiter-primary-container-name :ready false :restartCount 9 :state {:waiting {:reason "CrashLoopBackOff"}}}
-                                                             {:name waiter-fileserver-sidecar-name :ready true :restartCount 5 :state {:running {}}}]))
+                       (assoc-in [:status :initContainerStatuses] [{:name "waiter-setup" :ready true}
+                                                                   {:name "waiter-load" :ready true}])
+                       (assoc-in [:status :containerStatuses] [{:name waiter-primary-container-name :ready false :restartCount 9 :state {:waiting {:reason "CrashLoopBackOff"}}}
+                                                               {:name waiter-fileserver-sidecar-name :ready true :restartCount 5 :state {:running {}}}]))
               instance (pod->ServiceInstance dummy-scheduler pod')
               expected-instance-map (assoc instance-map
-                                      :healthy? false
-                                      :k8s/container-statuses [{:name waiter-primary-container-name :ready false :reason "CrashLoopBackOff" :restart-count 9 :state :waiting :type :app}
-                                                               {:name waiter-fileserver-sidecar-name :ready true :restart-count 5 :state :running :type :app}
-                                                               {:name "waiter-setup" :ready true :type :init}
-                                                               {:name "waiter-load" :ready true :type :init}]
-                                      :status "Application in crash loop")]
+                                           :healthy? false
+                                           :k8s/container-statuses [{:name waiter-primary-container-name :ready false :reason "CrashLoopBackOff" :restart-count 9 :state :waiting :type :app}
+                                                                    {:name waiter-fileserver-sidecar-name :ready true :restart-count 5 :state :running :type :app}
+                                                                    {:name "waiter-setup" :ready true :type :init}
+                                                                    {:name "waiter-load" :ready true :type :init}]
+                                           :status "Application in crash loop")]
           (is (= (scheduler/make-ServiceInstance expected-instance-map) instance)))))
 
     (testing "pod to live instance"
@@ -2816,8 +2828,8 @@
     (testing "pod with envoy sidecar to instance"
       (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
             pod' (-> pod
-                   (assoc-in [:metadata :annotations :waiter/service-port] "8080")
-                   (assoc-in [:spec :containers 0 :ports 0 :containerPort] 8081))
+                     (assoc-in [:metadata :annotations :waiter/service-port] "8080")
+                     (assoc-in [:spec :containers 0 :ports 0 :containerPort] 8081))
             instance (pod->ServiceInstance dummy-scheduler pod')]
         (is (= (scheduler/make-ServiceInstance instance-map) instance))))
 
@@ -2846,9 +2858,9 @@
 
     (testing "pod to expired unhealthy instance exceeded kill threshold"
       (let [dummy-scheduler (assoc base-scheduler
-                              :leader?-fn (constantly true)
-                              :restart-expiry-threshold 5
-                              :restart-kill-threshold 8)
+                                   :leader?-fn (constantly true)
+                                   :restart-expiry-threshold 5
+                                   :restart-kill-threshold 8)
             pod (assoc-in pod [:status :containerStatuses 0 :restartCount] 9)
             killed-pod-name-atom (atom nil)
             instance (with-redefs [kill-restart-threshold-exceeded-pod (fn [_ {:keys [k8s/pod-name]}]
@@ -2859,9 +2871,9 @@
         (is (= (k8s-object->id pod) @killed-pod-name-atom)))
 
       (let [dummy-scheduler (assoc base-scheduler
-                              :leader?-fn (constantly false)
-                              :restart-expiry-threshold 5
-                              :restart-kill-threshold 8)
+                                   :leader?-fn (constantly false)
+                                   :restart-expiry-threshold 5
+                                   :restart-kill-threshold 8)
             pod (assoc-in pod [:status :containerStatuses 0 :restartCount] 9)
             killed-pod-name-atom (atom nil)
             instance (with-redefs [kill-restart-threshold-exceeded-pod (fn [_ {:keys [k8s/pod-name]}]
@@ -2873,15 +2885,15 @@
 
     (testing "pod to expired instance exceeded running grace period"
       (let [dummy-scheduler (assoc base-scheduler
-                              :container-running-grace-secs 45
-                              :restart-expiry-threshold 25)
+                                   :container-running-grace-secs 45
+                                   :restart-expiry-threshold 25)
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
 
     (testing "previously started pod not expired despite instance exceeded running grace period"
       (let [dummy-scheduler (assoc base-scheduler
-                              :container-running-grace-secs 45
-                              :restart-expiry-threshold 25)
+                                   :container-running-grace-secs 45
+                                   :restart-expiry-threshold 25)
             pod (assoc-in pod [:status :containerStatuses 0 :lastState] {:terminated {}})
             instance (pod->ServiceInstance dummy-scheduler pod)]
         (is (= (scheduler/make-ServiceInstance instance-map) instance))))
@@ -2986,15 +2998,17 @@
               (is (= (scheduler/make-ServiceInstance (version-expired-instance-map "1")) instance)))))))))
 
 (deftest test-service-id->state
-  (let [service-id "service-id"
+  (let [fetcher-state {:last-successful-iteration (du/date-to-str (t/now))}
+        service-id "service-id"
         syncer-state-atom (atom {:last-update-time :time
                                  :service-id->health-check-context {}})
         retrieve-syncer-state-fn (partial scheduler/retrieve-syncer-state @syncer-state-atom)
         kubernetes-scheduler (make-dummy-scheduler
-                               [service-id]
-                               {:retrieve-syncer-state-fn retrieve-syncer-state-fn
-                                :service-id->failed-instances-transient-store (atom {service-id [:failed-instances]})})
-        supported-include-params ["auth-token-renewer" "authorizer" "service-id->failed-instances"
+                              [service-id]
+                              {:event-fetcher-state (atom fetcher-state)
+                               :retrieve-syncer-state-fn retrieve-syncer-state-fn
+                               :service-id->failed-instances-transient-store (atom {service-id [:failed-instances]})})
+        supported-include-params ["auth-token-renewer" "authorizer" "event-fetcher-state" "service-id->failed-instances"
                                   "syncer" "syncer-details" "watch-state" "watch-state-details"]]
     (is (= {:failed-instances [:failed-instances]
             :syncer {:last-update-time :time}}
@@ -3075,3 +3089,126 @@
             {:cpus 0.2 :mem 100.0 :name waiter-raven-sidecar-name}])
     (is (= {:cpus 0.8 :mem 1680.0 :k8s/num-containers 3}
            (scheduler/compute-instance-usage scheduler service-id)))))
+
+(deftest test-k8s-event->simple-event
+  (let [message "Error: cannot find volume"
+        reason "Failed"
+        timestamp-str "2014-09-13T00:24:56Z"
+        type "Warning"]
+    (is (= {:creation-timestamp (du/str-to-date timestamp-str k8s-timestamp-format)
+            :message message
+            :reason reason
+            :type type}
+           (k8s-event->simple-event {:metadata {:creationTimestamp timestamp-str :name "w8r-myreplicaset-mypod.12345"}
+                                     :message message :name "w8r-myreplicaset-mypod" :reason reason :type type})))
+    (is (thrown-with-msg? IllegalArgumentException #"Invalid format: \"nope\""
+                          (k8s-event->simple-event {:metadata {:creationTimestamp "nope" :name "w8r-myreplicaset-mypod.12345"}
+                                                    :message message :name "w8r-myreplicaset-mypod" :reason reason :type type})))
+    (is (= {:creation-timestamp nil :message nil :reason nil :type nil}
+           (k8s-event->simple-event {:metadata {:name "w8r-myreplicaset-mypod.12345"} :name "w8r-myreplicaset-mypod"})))))
+
+(deftest test-get-cached-events-chan
+  (let [cache (cu/cache-factory {})
+        fetched-value {:v "fetched-value"}
+        fetched-promise (async/promise-chan)
+        fetch-fn (constantly fetched-promise)
+        known-namespace "known-namespace"
+        known-value {:v "known-value"}
+        known-object "known-object"
+        unknown-namespace "unknown-namespace"
+        unknown-object "unknown-object"]
+    (async/>!! fetched-promise fetched-value)
+    (cu/cache-put! cache {:namespace known-namespace :k8s-object-name known-object} known-value)
+    (let [create-key (fn [namespace object-name] {:namespace namespace :k8s-object-name object-name})]
+      (let [actual-value (async/<!! (get-cached-events-chan cache (create-key known-namespace known-object) fetch-fn {} {}))]
+        (is (true? (:w8r-cached actual-value)))
+        (is (= known-value (dissoc actual-value :w8r-cached))))
+      (is (= fetched-value (async/<!! (get-cached-events-chan cache (create-key known-namespace unknown-object) fetch-fn {} {}))))
+      (is (= fetched-value (async/<!! (get-cached-events-chan cache (create-key unknown-namespace known-object) fetch-fn {} {}))))
+      (is (= fetched-value (async/<!! (get-cached-events-chan cache (create-key unknown-namespace unknown-object) fetch-fn {} {})))))))
+
+(deftest test-service-unhealthy?
+  (is (true? (service-unhealthy? {:instances 1 :task-count 0 :task-stats {:healthy 0}} 30)))
+  (is (true? (service-unhealthy? {:k8s/replicaset-creation-timestamp (du/date-to-str (t/minus (t/now) (t/seconds 60)))
+                                  :instances 1 :task-count 0 :task-stats {:healthy 0}} 30)))
+  (is (false? (service-unhealthy? {:k8s/replicaset-creation-timestamp (du/date-to-str (t/now))
+                                   :instances 1 :task-count 0 :task-stats {:healthy 0}} 30)))
+  (is (false? (service-unhealthy? {:instances 0 :task-count 0 :task-stats {:healthy 0}} 30)))
+  (is (false? (service-unhealthy? {:instances 1 :task-count 2 :task-stats {:healthy 2}} 30)))
+  (is (true? (service-unhealthy? {:instances 1 :task-count 1 :task-stats {:healthy 0}} 30)))
+  (is (true? (service-unhealthy? {:k8s/replicaset-creation-timestamp "1978-06-22T11:00:00.000Z"
+                                  :instances 1 :task-count 1 :task-stats {:healthy 0}} 30)))
+  (is (false? (service-unhealthy? {:k8s/replicaset-creation-timestamp (du/date-to-str (t/now))
+                                   :instances 1 :task-count 1 :task-stats {:healthy 0}} 30)))
+  (is (false? (service-unhealthy? {:instances 1 :task-count 1 :task-stats {:healthy 1}} 30)))
+  (is (false? (service-unhealthy? {:instances 1 :task-count 1 :task-stats {:healthy 2}} 30)))
+  (is (false? (service-unhealthy? {:k8s/replicaset-creation-timestamp (du/date-to-str (t/now))
+                                   :instances 1 :task-count 1 :task-stats {:healthy 2}} 30))))
+
+(defn- make-pod-with-statuses
+  ([statuses]
+   (make-pod-with-statuses statuses "1978-06-22T11:00:00Z"))
+  ([statuses creation-timestamp-str]
+   (let [condition-statuses (if (nil? statuses)
+                              nil
+                              (vec (map (fn [v] {:status v}) statuses)))]
+     {:metadata {:creationTimestamp creation-timestamp-str} :status {:conditions condition-statuses}})))
+
+(deftest test-pod-unhealthy?
+  (is (true? (pod-unhealthy? (make-pod-with-statuses nil) 30)))
+  (is (false? (pod-unhealthy? (make-pod-with-statuses nil (du/date-to-str (t/now) k8s-timestamp-format)) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses []) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses [nil]) 30)))
+  (is (false? (pod-unhealthy? (make-pod-with-statuses ["True"]) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False"]) 30)))
+  (is (false? (pod-unhealthy? (make-pod-with-statuses ["False"] (du/date-to-str (t/now) k8s-timestamp-format)) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["Unknown"]) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False" "False"]) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False" "Unknown"]) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["True" "False"]) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False" "True"]) 30)))
+  (is (false? (pod-unhealthy? (make-pod-with-statuses ["True" "True"]) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["True" "False" "Unknown"]) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["True" "Unknown" "True"]) 30)))
+  (is (true? (pod-unhealthy? (make-pod-with-statuses ["False" "True" "True"]) 30))))
+
+(deftest test-start-event-fetcher!
+  (let [event-fetcher-state (atom {})
+        fetch-events-chan (au/latest-chan)
+        namespace "myself"
+        service-a-name "service-a"
+        service-a-id (str service-a-name "-id")
+        service-b-name "service-b"
+        service-b-id (str service-b-name "-id")
+        service-a (scheduler/make-Service {:id service-a-id :instances 1 :task-count 0 :k8s/app-name service-a-name :k8s/namespace namespace})
+        service-b (scheduler/make-Service {:id service-b-id :instances 1 :task-count 0 :k8s/app-name service-b-name :k8s/namespace namespace})
+        timestamp-str "2014-09-13T00:24:56Z"
+        object-name "w8r-realwork"
+        initial-state {:service-id->service {service-a-id service-a service-b-id service-b}}
+        simple-event {:creation-timestamp (du/str-to-date timestamp-str k8s-timestamp-format)
+                      :message "quota probs"
+                      :reason "FailedCreate"
+                      :type "Warning"}
+        k8s-response {:items [{:metadata {:creationTimestamp timestamp-str :name (str object-name ".123")}
+                               :involvedObject {:kind "ReplicaSet" :namespace namespace :name object-name}
+                               :message (:message simple-event) :reason (:reason simple-event) :type (:type simple-event)}]
+                      :metadata {:resourceVersion (str 123)}}
+        k8s-response-chan (async/chan 1)
+        options {:api-request-fn (constantly k8s-response-chan)
+                 :fetch-events-chan fetch-events-chan}
+        {:keys [watch-state] :as dummy-scheduler} (make-dummy-scheduler ["test-app-1234"])]
+    ;; Set an initial state
+    (async/put! k8s-response-chan k8s-response)
+    (swap! watch-state (constantly initial-state))
+    (is (nil? (-> @watch-state :service-id->service (get service-a-id) :k8s/events)))
+    (is (false? (cu/cache-contains? (:k8s-object-key->event-cache dummy-scheduler) {:namespace namespace :k8s-object-name object-name})))
+    (with-redefs [service-unhealthy? (fn [{:keys [id]} _] (= service-a-id id))
+                  pod-unhealthy? (constantly false)]
+      ;; Start fetcher go block
+      (start-event-fetcher! dummy-scheduler options)
+      ;; Wait for an update, check it
+      (let [{:keys [events object-id]} (async/<!! fetch-events-chan)]
+        (is (= service-a-id object-id))
+        (is (= 1 (count events)))
+        (is (= simple-event (first events)))
+        (is (true? (cu/cache-contains? (:k8s-object-key->event-cache dummy-scheduler) {:namespace namespace :k8s-object-name service-a-name})))))))
