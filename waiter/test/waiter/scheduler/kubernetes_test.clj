@@ -1860,6 +1860,7 @@
                                    :socket-timeout 10000}
                     :k8s-object-key->event-cache {:threshold 5000
                                                   :ttl 60}
+                    :kube-context "test-kube-ctx"
                     :log-bucket-sync-secs 60
                     :log-bucket-url nil
                     :max-patch-retries 5
@@ -2009,6 +2010,9 @@
 
         (testing "should retain custom plugin options"
           (is (= custom-options (-> base-config kubernetes-scheduler :custom-options))))
+
+        (testing "should retain kube-context option"
+          (is (= "test-kube-ctx" (-> base-config kubernetes-scheduler :kube-context))))
 
         (testing "periodic auth-refresh task"
           (let [kill-task-fn (atom (constantly nil))

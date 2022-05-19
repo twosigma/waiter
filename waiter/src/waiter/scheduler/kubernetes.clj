@@ -1960,7 +1960,7 @@
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
   [{:keys [authenticate-health-checks? authentication authorizer cluster-name container-running-grace-secs custom-options 
-           fetch-events-k8s-object-minimum-age-secs http-options determine-replicaset-namespace-fn leader?-fn log-bucket-sync-secs
+           fetch-events-k8s-object-minimum-age-secs http-options determine-replicaset-namespace-fn kube-context leader?-fn log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length namespace pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
            pod-suffix-length replicaset-api-version response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold
            raven-sidecar scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
@@ -2118,6 +2118,7 @@
                             :fileserver fileserver
                             :http-client http-client
                             :k8s-object-key->event-cache k8s-object-key->event-cache
+                            :kube-context kube-context
                             :leader?-fn leader?-fn
                             :log-bucket-url log-bucket-url
                             :max-patch-retries max-patch-retries
