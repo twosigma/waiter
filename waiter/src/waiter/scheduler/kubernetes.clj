@@ -1744,7 +1744,7 @@
 (defn- query-events
   "Query K8s for all namespace-scoped events with matching object names. Returns a
    channel containing the response or an exception."
-  [{:keys [api-server-url] :as scheduler} {:keys [api-request-fn]} {:keys [namespace k8s-object-name]}]
+  [{:keys [api-server-url] :as scheduler} {:keys [api-request-fn]} {:keys [k8s-object-name namespace]}]
   (log/info "fetching events from k8s for" namespace k8s-object-name)
   (let [events-url (str api-server-url "/api/v1/namespaces/" namespace "/events?fieldSelector=involvedObject.name%3D" k8s-object-name)
         events-chan (api-request-fn events-url scheduler)]
@@ -1768,9 +1768,9 @@
   [{:keys [instances k8s/replicaset-creation-timestamp task-count task-stats]} k8s-object-minimum-age-secs]
   (let [creation-timestamp (du/str-to-date-safe replicaset-creation-timestamp)
         healthy-count (:healthy task-stats 0)
-        thirty-seconds-ago (t/ago (t/seconds k8s-object-minimum-age-secs))]
+        max-creation-timestamp (t/ago (t/seconds k8s-object-minimum-age-secs))]
     (and (or (nil? creation-timestamp)
-             (t/before? creation-timestamp thirty-seconds-ago))
+             (t/before? creation-timestamp max-creation-timestamp))
          (or (< task-count instances)
              (< healthy-count task-count)))))
 
@@ -1778,11 +1778,11 @@
   "Return true if the given pod was created long enough ago and it appears unhealthy"
   [{:keys [metadata status]} k8s-object-minimum-age-secs]
   (let [creation-timestamp (timestamp-str->datetime (:creationTimestamp metadata))
-        thirty-seconds-ago (t/ago (t/seconds k8s-object-minimum-age-secs))
+        max-creation-timestamp (t/ago (t/seconds k8s-object-minimum-age-secs))
         {:keys [conditions]} status
         condition-statuses (map (comp #(Boolean/valueOf %) :status) conditions)]
     (and (or (nil? creation-timestamp)
-             (t/before? creation-timestamp thirty-seconds-ago))
+             (t/before? creation-timestamp max-creation-timestamp))
          (or (nil? condition-statuses)
              (empty? condition-statuses)
              (not-every? true? condition-statuses)))))
@@ -1855,9 +1855,7 @@
 (defn- update-event-fetcher-state-with
   "Update the event fecther state atom with the given content."
   [state-atom content]
-  (swap! state-atom
-         #(as-> % state
-            (merge state content))))
+  (swap! state-atom #(merge % content)))
 
 (def retry-event-fetcher
   "Configure run-with-retries helper for use in long-running event fetcher go-block."
