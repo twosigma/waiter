@@ -78,10 +78,11 @@
   (get-in k8s-error-response [:body :message] "Unknown reason - check logs"))
 
 (defn create-service-deployment-error
-  "Transforms the deployment error message to be more user friendly"
-  [k8s-error-response response->deployment-error-msg-fn]
-  {:service-deployment-error-details {:k8s-response-body (get-in k8s-error-response [:body])}
-   :service-deployment-error-msg (response->deployment-error-msg-fn k8s-error-response)})
+  "Creates a deployment error object containing a user-friendly message, details, and source"
+  [source-name source-object source-object->deployment-error-msg-fn source-object->deployment-error-details-fn]
+  {:service-deployment-error-details (source-object->deployment-error-details-fn source-object)
+   :service-deployment-error-msg (source-object->deployment-error-msg-fn source-object)
+   :service-deployment-error-source source-name})
 
 (defn- use-short-service-hash? [k8s-max-name-length]
   ;; This is fairly arbitrary, but if we have at least 48 characters for the app name,
@@ -798,7 +799,9 @@
           (catch Object response
             ; Don't create deployment error for http-409-conflict (replicaset already exists)
             (when-not (= (:status response) http-409-conflict)
-              (let [deployment-error (create-service-deployment-error response response->deployment-error-msg-fn)]
+              (let [response->deployment-error-details-fn (fn [k8s-response] {:k8s-response-body (get-in k8s-response [:body])})
+                    deployment-error (create-service-deployment-error "create-service" response
+                                                                      response->deployment-error-msg-fn response->deployment-error-details-fn)]
                 (log/info "creating deployment error for service" {:deployment-error deployment-error
                                                                    :service-id service-id})
                 (cu/cache-put! service-id->deployment-error-cache service-id deployment-error)))
