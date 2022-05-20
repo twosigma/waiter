@@ -27,7 +27,7 @@
   [waiter-url health-check-protocol idle-timeout service-id response & {:keys [query-params] :or {query-params {}}}]
   (assert-response-status response http-200-ok)
   (let [{:keys [ping-response service-description service-state]}
-        (some-> response :body json/read-str walk/keywordize-keys)]
+        (some-> response :body (utils/try-parse-json keyword))]
     (is (seq service-description) (str service-description))
     (is (= (service-id->service-description waiter-url service-id) service-description))
     (if (nil? idle-timeout)
@@ -37,6 +37,9 @@
                (get-in ping-response [:headers :x-kitchen-protocol-version]))
             (str ping-response))
         (is (= "get" (get-in ping-response [:headers :x-kitchen-request-method])) (str ping-response))
+        (is (not (str/blank? (get-in ping-response [:instance :host]))) (str ping-response))
+        (is (not (str/blank? (get-in ping-response [:instance :id]))) (str ping-response))
+        (is (number? (get-in ping-response [:instance :port])) (str ping-response))
         (if (utils/param-contains? query-params "exclude" "service-state")
           (is (= {:result "excluded" :service-id service-id} service-state))
           (is (= {:exists? true :healthy? true :service-id service-id :status "Running"} service-state))))
@@ -236,6 +239,30 @@
               (is (= current-user run-as-user)))))
         (finally
           (delete-token-and-assert waiter-url token))))))
+
+(deftest ^:parallel ^:integration-fast test-ping-response-instance
+  (testing-using-waiter-url
+    (let [request-headers {:x-waiter-debug "true" :x-waiter-name (rand-name)}
+          {:keys [body] :as ping-response} (make-kitchen-request waiter-url request-headers :path "/waiter-ping")
+          ping-json (try-parse-json body)
+          service-id (get-in ping-json ["service-state" "service-id"])]
+      (with-service-cleanup
+        service-id
+        (assert-response-status ping-response http-200-ok)
+        (let [ping-instance-id (get-in ping-json ["ping-response" "instance" "id"])
+              ping-instance-host (get-in ping-json ["ping-response" "instance" "host"])
+              ping-instance-port (get-in ping-json ["ping-response" "instance" "port"])
+              {:keys [headers] :as health-response} (make-kitchen-request waiter-url request-headers)
+              debug-instance-id (get headers "x-waiter-backend-id")
+              debug-instance-host (get headers "x-waiter-backend-host")
+              debug-instance-port (-> (get headers "x-waiter-backend-port") (Integer/parseInt))]
+          (assert-response-status health-response http-200-ok)
+          (is (= ping-instance-id debug-instance-id)
+              (str {:debug-response-headers headers :ping-response-body ping-json}))
+          (is (= ping-instance-host debug-instance-host)
+              (str {:debug-response-headers headers :ping-response-body ping-json}))
+          (is (= ping-instance-port debug-instance-port)
+              (str {:debug-response-headers headers :ping-response-body ping-json})))))))
 
 (deftest ^:parallel ^:integration-fast test-temporarily-unhealthy-instance
   (testing-using-waiter-url
