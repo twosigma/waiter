@@ -596,6 +596,17 @@
   [{:keys [service-id->service-description-fn]} service-id]
   (service-id->service-description-fn service-id))
 
+(defn- get-service-event-deployment-error
+  "Extract a deployment error if the given service includes a k8s event that is preventing
+   deployment."
+  [{:keys [instances k8s/events task-stats]}]
+  (let [{:keys [message reason]} (last events)
+        running-count [:running task-stats]]
+    (when (and (pos? instances)
+               (= 0 running-count)
+               (= reason "FailedCreate"))
+      message)))
+
 (defn- get-services
   "Get all Waiter Services (reified as ReplicaSets) running in this Kubernetes cluster."
   [{:keys [service-id->deployment-error-cache watch-state]}]
@@ -605,8 +616,10 @@
     (map
       (fn [service-id]
         (let [deployment-error (get-in service-id->deployment-error [service-id :data])
-              service (or (get service-id->service service-id) (create-empty-service service-id))]
+              service (or (get service-id->service service-id) (create-empty-service service-id))
+              service-event-deployment-error (get-service-event-deployment-error service)]
           (cond-> service
+            service-event-deployment-error (assoc :deployment-error service-event-deployment-error)
             deployment-error (assoc :deployment-error deployment-error))))
       service-ids)))
 
