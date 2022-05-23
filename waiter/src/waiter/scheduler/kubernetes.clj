@@ -596,16 +596,26 @@
   [{:keys [service-id->service-description-fn]} service-id]
   (service-id->service-description-fn service-id))
 
+(defn- prettify-quota-error
+  "If the given message matches an expected format for a quota limitation event, transform it to
+   a more user-friendly message. Otherwise, return the original message."
+  [raw-message namespace]
+  (let [quota-regex #".*Error creating: pods \"([^\"]+)\" is forbidden: exceeded quota: pods, (.*)"
+        matches (re-find quota-regex raw-message)]
+    (if matches
+      (str "Could not create pod (exceeded quota in namespace " namespace ") - " (last matches))
+      raw-message)))
+
 (defn- get-k8s-event-deployment-error
   "Extract a deployment error if the given service includes a k8s event that is preventing
    deployment."
-  [{:keys [instances k8s/events task-stats]}]
+  [{:keys [instances k8s/events k8s/namespace task-stats]}]
   (let [{:keys [message reason]} (last events)
         running-count (:running task-stats)]
     (when (and (pos? instances)
                (= 0 running-count)
                (= reason "FailedCreate"))
-      message)))
+      (prettify-quota-error message namespace))))
 
 (defn- get-services
   "Get all Waiter Services (reified as ReplicaSets) running in this Kubernetes cluster."
