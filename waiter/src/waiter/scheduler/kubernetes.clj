@@ -612,12 +612,13 @@
   [{:keys [instances k8s/events k8s/namespace task-stats]}]
   (let [{:keys [message reason]} (last events)
         running-count (:running task-stats)]
-    (when (and (pos? instances)
+    (when (and (number? instances)
+               (pos? instances)
                (= 0 running-count)
                (= reason "FailedCreate"))
       (prettify-quota-error message namespace))))
 
-(defn- get-services
+(defn get-services
   "Get all Waiter Services (reified as ReplicaSets) running in this Kubernetes cluster."
   [{:keys [service-id->deployment-error-cache watch-state]}]
   (let [service-id->service (-> watch-state deref :service-id->service)

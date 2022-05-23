@@ -1045,6 +1045,54 @@
                                sanitize-k8s-service-records)]
         (assert-data-equal expected-result actual-result)))))
 
+(deftest test-scheduler-get-services-with-events
+  (let [quota-str "memory=66282Mi, used: memory=198846Mi, limited: memory=200Gi"
+        test-event-quota {:creation-timestamp "2022-05-23T18:39:12.000Z"
+                          :message (str "Error creating: pods \"my-pod\" is forbidden: exceeded quota: pods, requested: " quota-str)
+                          :reason "FailedCreate"
+                          :type "Warning"}
+        test-cases [{:deployment-errors {}
+                     :expected-service (create-empty-service 123)
+                     :state-service (create-empty-service 123)
+                     :test-name "No deployment errors"}
+                    {:deployment-errors {}
+                     :expected-service (assoc (create-empty-service 123)
+                                              :deployment-error (str "Could not create pod (exceeded quota in namespace test) - requested: " quota-str)
+                                              :instances 1
+                                              :k8s/events [test-event-quota]
+                                              :k8s/namespace "test")
+                     :state-service (assoc (create-empty-service 123)
+                                           :instances 1
+                                           :k8s/events [test-event-quota]
+                                           :k8s/namespace "test")
+                     :test-name "Event-based deployment error"}
+                    {:deployment-errors {123 "broken"}
+                     :expected-service (assoc (create-empty-service 123) :deployment-error "broken")
+                     :state-service (create-empty-service 123)
+                     :test-name "Cache-sourced deployment error"}
+                    {:deployment-errors {123 "broken"}
+                     :expected-service (assoc (create-empty-service 123)
+                                              :deployment-error "broken"
+                                              :instances 1
+                                              :k8s/events [test-event-quota]
+                                              :k8s/namespace "test")
+                     :state-service (assoc (create-empty-service 123)
+                                           :instances 1
+                                           :k8s/events [test-event-quota]
+                                           :k8s/namespace "test")
+                     :test-name "Favor cache over events for deployment errors"}]]
+        (doseq [{:keys [deployment-errors expected-service state-service test-name]} test-cases]
+          (testing test-name
+            (let [deployment-error-cache (cu/cache-factory {})]
+              (doseq [[id deployment-error] deployment-errors]
+                (cu/cache-put! deployment-error-cache id deployment-error))
+              (let [service-id (:id state-service)
+                    state (atom {:service-id->service {service-id state-service}})
+                    actual-services (get-services {:service-id->deployment-error-cache deployment-error-cache
+                                                   :watch-state state})]
+                (is (= 1 (count actual-services)))
+                (is (= expected-service (first actual-services)))))))))
+
 (deftest test-scheduler-get-service->instances
   (let [rs-response
         {:kind "ReplicaSetList"
