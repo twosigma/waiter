@@ -596,8 +596,33 @@
   [{:keys [service-id->service-description-fn]} service-id]
   (service-id->service-description-fn service-id))
 
-(defn- get-services
-  "Get all Waiter Services (reified as ReplicaSets) running in this Kubernetes cluster."
+(defn- prettify-failed-create-error
+  "If the given message matches an expected format for a FailedCreate event, transform it to
+   a more user-friendly message. Otherwise, return the original message."
+  [raw-message namespace]
+  (let [quota-regex #".*Error creating: pods \"([^\"]+)\" is forbidden: exceeded quota: pods, (.*)"
+        matches (re-find quota-regex raw-message)]
+    (if matches
+      (str "Could not create pod (exceeded quota in namespace " namespace ") - " (last matches))
+      raw-message)))
+
+(defn- get-k8s-event-deployment-error
+  "Extract a deployment error if the given service includes a k8s event that is preventing
+   deployment."
+  [{:keys [instances k8s/events k8s/namespace task-stats]}]
+  (let [{:keys [message reason]} (last events)
+        running-count (:running task-stats)]
+    (when (and (number? instances)
+               (pos? instances)
+               (= 0 running-count)
+               (= reason "FailedCreate"))
+      (prettify-failed-create-error message namespace))))
+
+(defn get-services
+  "Get all Waiter Services (reified as ReplicaSets) running in this Kubernetes cluster.
+   If there are deployment errors for a service, they will be associated in the service
+   using key :deployment-error. If there are multiple deplyment error types, k8s API-related
+   errors will be favored over event-related errors."
   [{:keys [service-id->deployment-error-cache watch-state]}]
   (let [service-id->service (-> watch-state deref :service-id->service)
         service-id->deployment-error (cu/cache->map service-id->deployment-error-cache)
@@ -605,8 +630,10 @@
     (map
       (fn [service-id]
         (let [deployment-error (get-in service-id->deployment-error [service-id :data])
-              service (or (get service-id->service service-id) (create-empty-service service-id))]
+              service (or (get service-id->service service-id) (create-empty-service service-id))
+              k8s-event-deployment-error (get-k8s-event-deployment-error service)]
           (cond-> service
+            k8s-event-deployment-error (assoc :deployment-error k8s-event-deployment-error)
             deployment-error (assoc :deployment-error deployment-error))))
       service-ids)))
 
