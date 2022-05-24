@@ -596,8 +596,8 @@
   [{:keys [service-id->service-description-fn]} service-id]
   (service-id->service-description-fn service-id))
 
-(defn- prettify-quota-error
-  "If the given message matches an expected format for a quota limitation event, transform it to
+(defn- prettify-failed-create-error
+  "If the given message matches an expected format for a FailedCreate event, transform it to
    a more user-friendly message. Otherwise, return the original message."
   [raw-message namespace]
   (let [quota-regex #".*Error creating: pods \"([^\"]+)\" is forbidden: exceeded quota: pods, (.*)"
@@ -616,10 +616,13 @@
                (pos? instances)
                (= 0 running-count)
                (= reason "FailedCreate"))
-      (prettify-quota-error message namespace))))
+      (prettify-failed-create-error message namespace))))
 
 (defn get-services
-  "Get all Waiter Services (reified as ReplicaSets) running in this Kubernetes cluster."
+  "Get all Waiter Services (reified as ReplicaSets) running in this Kubernetes cluster.
+   If there are deployment errors for a service, they will be associated in the service
+   using key :deployment-error. If there are multiple deplyment error types, k8s API-related
+   errors will be favored over event-related errors."
   [{:keys [service-id->deployment-error-cache watch-state]}]
   (let [service-id->service (-> watch-state deref :service-id->service)
         service-id->deployment-error (cu/cache->map service-id->deployment-error-cache)
