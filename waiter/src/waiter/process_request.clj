@@ -1103,11 +1103,16 @@
                               (fa/<? (service-state-fn service-id (:result ping-response))))
               redirect-ping? (ru/redirect-response? ping-response)
               redirect-response (when redirect-ping?
-                                  (ssl/ssl-redirect-response request {}))]
+                                  (ssl/ssl-redirect-response request {}))
+              response-instance (:instance ping-response)]
           (merge
             (dissoc ping-response [:body :error-chan :headers :request :result :status :trailers])
             (utils/clj->json-response
-              {:ping-response (select-keys ping-response [:body :headers :result :status])
+              {:ping-response (-> ping-response
+                                  (select-keys [:body :headers :result :status])
+                                  (assoc :instance {:host (:host response-instance)
+                                                    :id (:id response-instance)
+                                                    :port (:port response-instance)}))
                :service-description core-service-description
                :service-state service-state}
               :headers (if redirect-ping? (:headers redirect-response) {})
