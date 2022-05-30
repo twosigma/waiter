@@ -6,3 +6,5 @@ cd "$DIR"
 CUSTOM_IMAGE=twosigma/integration
 echo "Building docker image for ${CUSTOM_IMAGE}"
 docker build -t ${CUSTOM_IMAGE} .
+
+type kind &>/dev/null && kind load docker-image ${CUSTOM_IMAGE}

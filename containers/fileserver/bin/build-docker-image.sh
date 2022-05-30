@@ -6,3 +6,5 @@ cd "$DIR"
 FILESERVER_IMAGE=twosigma/waiter-fileserver
 echo "Building docker image for ${FILESERVER_IMAGE}"
 docker build -t ${FILESERVER_IMAGE} .
+
+type kind &>/dev/null && kind load docker-image ${FILESERVER_IMAGE}

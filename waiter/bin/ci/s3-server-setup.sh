@@ -2,6 +2,8 @@
 
 set -e
 
+: ${WAITER_DOCKER_NETWORK:=bridge}
+
 # Install AWS CLI (for s3api commands) via pip
 # We use this to handle S3 authentication for bucket creation
 # https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-install.html
@@ -11,7 +13,15 @@ type aws || pip install awscli --upgrade --user
 # The API server endpoint is accessible via localhost:8888
 # https://hub.docker.com/r/scality/s3server
 echo Starting S3 server docker container
-docker run --name s3server --detach --rm --env=REMOTE_MANAGEMENT_DISABLE=1 --publish=8888:8000 zenko/cloudserver:8.1.15
+docker run \
+    --name s3server \
+    --network ${WAITER_DOCKER_NETWORK} \
+    --detach \
+    --rm \
+    --env=REMOTE_MANAGEMENT_DISABLE=1 \
+    --publish=8888:8000 \
+    zenko/cloudserver:8.1.15
+
 echo -n Waiting for S3 server
 while ! curl localhost:8888 &>/dev/null; do
     echo -n .

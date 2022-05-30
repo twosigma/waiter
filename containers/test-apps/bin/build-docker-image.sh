@@ -15,3 +15,5 @@ popd
 
 echo "Building docker image for ${TEST_APPS_IMAGE}"
 docker build -t ${TEST_APPS_IMAGE} .
+
+type kind &>/dev/null && kind load docker-image ${TEST_APPS_IMAGE}
