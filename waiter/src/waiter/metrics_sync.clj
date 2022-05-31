@@ -28,7 +28,8 @@
             [waiter.metrics :as metrics]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
-            [waiter.util.utils :as utils])
+            [waiter.util.utils :as utils]
+            [clj-time.format :as f])
   (:import (qbits.jet.websocket WebSocket)))
 
 (defmacro with-catch
@@ -104,10 +105,43 @@
         (log/error "not registering request as it is missing request id")
         router-metrics-state))))
 
+(defn merge-instance-id->metric-maps
+  "Merges two instance-id->metric maps iterating through the instance-ids in both maps and checking which map has the
+  latest metric based on 'updated-at'. If the metric does not exist in one of the maps, then defaults to the non nil
+  metric."
+  [instance-id->metric-1 instance-id->metric-2]
+  (pc/map-from-keys
+    (fn [instance-id]
+      (let [metric-1 (get instance-id->metric-1 instance-id)
+            metric-2 (get instance-id->metric-2 instance-id)]
+        (if (and (some? metric-1) (some? metric-2))
+          (let [updated-at-1 (f/parse (:updated-at metric-1))
+                updated-at-2 (f/parse (:updated-at metric-2))]
+            (if (t/before? updated-at-1 updated-at-2)
+              metric-2
+              metric-1))
+          (if (some? metric-1) metric-1 metric-2))))
+    (set (concat (keys instance-id->metric-1) (keys instance-id->metric-2)))))
+
+(defn merge-service-id->instance-id->metric-maps
+  "Merges two service-id->instance-id maps by calling merge-instance-id->metric-maps on the values with the same
+  service-id. This will ultimately merge two metrics for the same instance-id by choose the latest :updated-at or non
+  nil metric."
+  [service-id->instance-id->metric-1 service-id->instance-id->metric-2]
+  (pc/map-from-keys
+    (fn [service-id]
+      (merge-instance-id->metric-maps
+        (get service-id->instance-id->metric-1 service-id)
+        (get service-id->instance-id->metric-2 service-id)))
+    (set (concat (keys service-id->instance-id->metric-1) (keys service-id->instance-id->metric-2))))
+
+  ; TODO:LAST need to prune final map for irrelevant instances and services.
+  )
+
 (defn update-router-metrics
   "Updates the agent state with the latest metrics from a router.
    It will remove entries for missing services and only update leaf level values for data available from services."
-  [router-metrics-state {:keys [router-metrics source-router-id time]}]
+  [router-metrics-state {:keys [external-metrics router-metrics source-router-id time]}]
   (with-catch
     router-metrics-state
     (if source-router-id
@@ -116,8 +150,22 @@
                      (fn [existing-router-metrics]
                        (utils/deep-merge-maps (fn [x y] (or x y)) router-metrics
                                               (select-keys existing-router-metrics (keys router-metrics)))))
-          (assoc-in [:last-update-times source-router-id] time))
+          (assoc-in [:last-update-times source-router-id] time)
+
+          ; :external-metrics are merged based on :updated-at timestamp for individual instance metrics.
+          ; These metrics are absolute (one per waiter cluster, instead of waiter router), as they are provided
+          ; by an external source periodically with the /instance-metrics endpoint.
+          (update :external-metrics merge-service-id->instance-id->metric-maps external-metrics))
       router-metrics-state)))
+
+(defn update-router-metrics-with-external-metrics
+  "Merges the service external metrics with existing external service metrics. External metrics are provided to the
+  waiter routers from another entity. These metrics must be merged based on the :updated-at timestamp."
+  [router-metrics-state incoming-service-id->instance-id->metric]
+  (with-catch
+    router-metrics-state
+    (-> router-metrics-state
+        (update :external-metrics merge-service-id->instance-id->metric-maps incoming-service-id->instance-id->metric))))
 
 (defn- process-incoming-router-metrics
   "Receives peer router metrics data and forwards it for processing in `router-metrics-agent`.
@@ -184,11 +232,14 @@
 
 (defn publish-router-metrics
   "Publishes router metrics to peer routers."
-  [{:keys [router-id router-id->outgoing-ws] :as router-metrics-state} encrypt router-metrics tag]
+  [{:keys [router-id router-id->outgoing-ws external-metrics] :as router-metrics-state} encrypt router-metrics tag]
   (with-catch
     router-metrics-state
     (let [time (du/date-to-str (t/now))
-          metrics-data {:router-metrics router-metrics, :source-router-id router-id, :time time}]
+          metrics-data {:external-metrics external-metrics
+                        :router-metrics router-metrics,
+                        :source-router-id router-id,
+                        :time time}]
       (doseq [[target-router-id {:keys [out request-id]}] (seq router-id->outgoing-ws)]
         (let [encrypted-data (timers/start-stop-time!
                                (metrics/waiter-timer "metrics-syncer" "encrypt" target-router-id)
@@ -353,7 +404,8 @@
 (defn new-router-metrics-agent
   "Factory method for the router metrics agent."
   [router-id agent-initial-state]
-  (let [initial-state (merge {:last-update-times {}
+  (let [initial-state (merge {:external-metrics {}
+                              :last-update-times {}
                               :metrics {:routers {}}
                               :router-id router-id
                               :router-id->incoming-ws {}

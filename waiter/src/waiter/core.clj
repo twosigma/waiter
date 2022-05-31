@@ -110,6 +110,7 @@
                      "eject" :eject-instance-handler-fn
                      "ejected" {["/" :service-id] :ejected-instances-list-handler-fn}
                      "favicon.ico" :favicon-handler-fn
+                     "instance-metrics" :instance-metrics-request-handler-fn
                      "metrics" :metrics-request-handler-fn
                      (subs oidc/oidc-callback-uri 1) :oidc-callback-handler-fn
                      "service-id" :service-id-handler-fn
@@ -1597,6 +1598,37 @@
                                        notify-instance-killed-fn peers-acknowledged-eject-requests-fn
                                        scheduler populate-maintainer-chan! scaling-timeout-config
                                        scheduler-interactions-thread-pool request)))))
+   :instance-metrics-request-handler-fn (pc/fnk [[:daemons router-state-maintainer]
+                                                 [:state router-metrics-agent fallback-state-atom]]
+                                          (fn instance-metrics-request-handler-fn [request]
+                                            (let [service-metrics (-> request
+                                                                     ru/json-request
+                                                                     :body)]
+                                              (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
+                                                    {:keys [service-id->healthy-instances service-id->unhealthy-instances]} (query-state-fn)
+
+                                                    filtered-service-metrics
+                                                    (utils/select-keys-pred
+                                                      #(descriptor/service-exists? @fallback-state-atom %)
+                                                      service-metrics)
+
+                                                    filtered-instance-metrics
+                                                    (pc/map-from-keys
+                                                      (fn [service-id]
+                                                        (let [instance-id->metric (get filtered-service-metrics service-id)
+                                                              supported-instance-ids (set
+                                                                                       (map
+                                                                                         :id
+                                                                                         (concat (get service-id->healthy-instances service-id)
+                                                                                                 (get service-id->unhealthy-instances service-id))))]
+                                                          (utils/select-keys-pred
+                                                            #(contains? supported-instance-ids %)
+                                                            instance-id->metric)))
+                                                      (keys filtered-service-metrics))]
+                                                (log/info "received service metrics from external source for" {:service-ids (keys service-metrics)
+                                                                                                               :filtered-service-ids (keys filtered-instance-metrics)})
+                                                (send router-metrics-agent metrics-sync/update-router-metrics-with-external-metrics filtered-instance-metrics)
+                                                (utils/clj->json-response {})))))
    :metrics-request-handler-fn (pc/fnk []
                                  (fn metrics-request-handler-fn [request]
                                    (handler/metrics-request-handler request)))
