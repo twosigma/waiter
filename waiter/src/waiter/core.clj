@@ -1601,6 +1601,7 @@
    :instance-metrics-request-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                                  [:state router-metrics-agent fallback-state-atom]]
                                           (fn instance-metrics-request-handler-fn [request]
+                                            ; TODO:LAST add validation for structure of the metrics (e.g. which keys are there)
                                             (let [service-metrics (-> request
                                                                      ru/json-request
                                                                      :body)]

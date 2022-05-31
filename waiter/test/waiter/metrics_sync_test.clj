@@ -112,7 +112,8 @@
 
 (deftest test-update-router-metrics
   (testing "update-router-metrics:new-router-metrics"
-    (let [in-router-metrics-state {:metrics {:routers {"router-1" {"s1" {"c" 1}, "s2" {"c" 1}}
+    (let [in-router-metrics-state {:external-metrics {}
+                                   :metrics {:routers {"router-1" {"s1" {"c" 1}, "s2" {"c" 1}}
                                                        "router-2" {"s1" {"c" 2}, "s2" {"c" 2}}}}
                                    :last-update-times {"router-1" :router-1-time
                                                        "router-2" :router-2-time}
@@ -127,7 +128,8 @@
              out-router-metrics-state))))
 
   (testing "update-router-metrics:update-router-metrics"
-    (let [in-router-metrics-state {:metrics {:routers {"router-1" {"s1" {"c" 1}, "s2" {"c" 1}}
+    (let [in-router-metrics-state {:external-metrics {}
+                                   :metrics {:routers {"router-1" {"s1" {"c" 1}, "s2" {"c" 1}}
                                                        "router-2" {"s1" {"c" 2}, "s2" {"c" 2}}
                                                        "router-3" {"s1" {"c" 1}
                                                                    "s2" {"c" {"d" 1, "e" 1, "f" {"g" 1, "h" 1}}}
@@ -173,7 +175,8 @@
               ws-request-2 {:out (async/chan 10), :request-id "request-id-2"}
               ws-request-3 {:out (async/chan 10), :request-id "request-id-3"}
               ws-request-4 {:out (async/chan 10), :request-id "request-id-4"}
-              in-router-metrics-state {:metrics {:routers {"router-1" {"s1" {"c" 0}, "s2" {"c" 0}, "s3" {"c" 0}}
+              in-router-metrics-state {:external-metrics {}
+                                       :metrics {:routers {"router-1" {"s1" {"c" 0}, "s2" {"c" 0}, "s3" {"c" 0}}
                                                            "router-2" {"s1" {"c" 2}, "s3" {"c" 2}}
                                                            "router-3" {"s1" {"c" 3}, "s2" {"c" 3}, "s3" {"c" 3}}
                                                            "router-4" {"s1" {"c" 4}, "s4" {"c" 4}}
@@ -184,7 +187,10 @@
                                                                 "router-4" ws-request-4}
                                        :fee :fie}
               out-router-metrics-state (publish-router-metrics in-router-metrics-state encrypt router-metrics "core")]
-          (let [output-data {:data {:router-metrics router-metrics, :source-router-id "router-1", :time (du/date-to-str test-start-time)}}]
+          (let [output-data {:data {:external-metrics {}
+                                    :router-metrics router-metrics,
+                                    :source-router-id "router-1",
+                                    :time (du/date-to-str test-start-time)}}]
             (is (= output-data (async/<!! (:out ws-request-2))))
             (is (= output-data (async/<!! (:out ws-request-3))))
             (is (= output-data (async/<!! (:out ws-request-4)))))
@@ -454,7 +460,8 @@
 
 (deftest test-new-router-metrics-agent
   (let [metrics-agent (new-router-metrics-agent "router-0" {:router-id "router-1", :metrics {:routers {"r1" {:a :b}}}})]
-    (is (= {:last-update-times {}
+    (is (= {:external-metrics {}
+            :last-update-times {}
             :metrics {:routers {"r1" {:a :b}}}
             :router-id "router-0"
             :router-id->incoming-ws {}
@@ -522,3 +529,5 @@
     (await router-metrics-agent)
     (agent->service-id->router-id->metrics router-metrics-agent service-id)
     (is (= {"router-1" {"count" 3, "service-id" service-id}} (agent->service-id->router-id->metrics router-metrics-agent service-id)))))
+
+; TODO:LAST add unit tests here for external metrics sync
