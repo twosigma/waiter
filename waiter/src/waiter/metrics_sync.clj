@@ -105,7 +105,22 @@
         (log/error "not registering request as it is missing request id")
         router-metrics-state))))
 
-(defn merge-instance-id->metric-maps
+(defn- clean-service-id->instance-id->metric
+  "Remove services from outer map that are not tracked by this router. Remove instances in the instance-id->metric map
+  that are not tracked by this router. This is done to prevent memory leaks in the service-id->instance-id->metric map"
+  [service-id-exists?-fn service-id-instance-id-exists?-fn service-id->instance-id->metric]
+  (->> service-id->instance-id->metric
+       (utils/select-keys-pred service-id-exists?-fn)
+       keys
+       (pc/map-from-keys
+         (fn [service-id]
+           (let [instance-id->metric (get service-id->instance-id->metric service-id)]
+             (utils/select-keys-pred
+               (fn [instance-id]
+                 (service-id-instance-id-exists?-fn service-id instance-id))
+               instance-id->metric))))))
+
+(defn- merge-instance-id->metric-maps
   "Merges two instance-id->metric maps iterating through the instance-ids in both maps and checking which map has the
   latest metric based on 'updated-at'. If the metric does not exist in one of the maps, then defaults to the non nil
   metric."
@@ -113,30 +128,34 @@
   (pc/map-from-keys
     (fn [instance-id]
       (let [metric-1 (get instance-id->metric-1 instance-id)
-            metric-2 (get instance-id->metric-2 instance-id)]
-        (if (and (some? metric-1) (some? metric-2))
-          (let [updated-at-1 (f/parse (get metric-1 "updated-at"))
-                updated-at-2 (f/parse (get metric-2 "updated-at"))]
+            updated-at-1 (get metric-1 "updated-at")
+            metric-2 (get instance-id->metric-2 instance-id)
+            updated-at-2 (get metric-2 "updated-at")]
+        (if (and (some? updated-at-1) (some? updated-at-2))
+          (let [updated-at-1 (f/parse updated-at-1)
+                updated-at-2 (f/parse updated-at-2)]
             (if (t/before? updated-at-1 updated-at-2)
               metric-2
               metric-1))
-          (if (some? metric-1) metric-1 metric-2))))
+          (if (some? updated-at-1) metric-1 metric-2))))
     (set (concat (keys instance-id->metric-1) (keys instance-id->metric-2)))))
 
-(defn merge-service-id->instance-id->metric-maps
+(defn- merge-service-id->instance-id->metric-maps
   "Merges two service-id->instance-id maps by calling merge-instance-id->metric-maps on the values with the same
   service-id. This will ultimately merge two metrics for the same instance-id by choose the latest :updated-at or non
-  nil metric."
-  [service-id->instance-id->metric-1 service-id->instance-id->metric-2]
-  (pc/map-from-keys
-    (fn [service-id]
-      (merge-instance-id->metric-maps
-        (get service-id->instance-id->metric-1 service-id)
-        (get service-id->instance-id->metric-2 service-id)))
-    (set (concat (keys service-id->instance-id->metric-1) (keys service-id->instance-id->metric-2))))
-
-  ; TODO:LAST need to prune final map for irrelevant instances and services.
-  )
+  nil metric. The result will be filtered, and will only contain service-ids and instance-ids that are known by the
+  current router."
+  [service-id->instance-id->metric-1 service-id->instance-id->metric-2 service-id-exists?-fn service-id-instance-id-exists?-fn]
+  (let [map-1 (clean-service-id->instance-id->metric
+                service-id-exists?-fn service-id-instance-id-exists?-fn service-id->instance-id->metric-1)
+        map-2 (clean-service-id->instance-id->metric
+                service-id-exists?-fn service-id-instance-id-exists?-fn service-id->instance-id->metric-2)]
+    (pc/map-from-keys
+      (fn [service-id]
+        (merge-instance-id->metric-maps
+          (get map-1 service-id)
+          (get map-2 service-id)))
+      (set (concat (keys map-1) (keys map-2))))))
 
 (defn update-router-metrics
   "Updates the agent state with the latest metrics from a router.
@@ -155,17 +174,19 @@
           ; :external-metrics are merged based on 'updated-at' timestamp for individual instance metrics.
           ; These metrics are absolute (one per waiter cluster, instead of waiter router), as they are provided
           ; by an external source periodically with the /instance-metrics endpoint.
-          (update :external-metrics merge-service-id->instance-id->metric-maps external-metrics))
+          (update :external-metrics merge-service-id->instance-id->metric-maps external-metrics (constantly true)
+                  (constantly true)))
       router-metrics-state)))
 
 (defn update-router-metrics-with-external-metrics
   "Merges the service external metrics with existing external service metrics. External metrics are provided to the
   waiter routers from another entity. These metrics must be merged based on the 'updated-at' timestamp."
-  [router-metrics-state incoming-service-id->instance-id->metric]
+  [router-metrics-state incoming-service-id->instance-id->metric service-id-exists?-fn service-id-instance-id-exists?-fn]
   (with-catch
     router-metrics-state
     (-> router-metrics-state
-        (update :external-metrics merge-service-id->instance-id->metric-maps incoming-service-id->instance-id->metric))))
+        (update :external-metrics merge-service-id->instance-id->metric-maps incoming-service-id->instance-id->metric
+                service-id-exists?-fn service-id-instance-id-exists?-fn))))
 
 (defn- process-incoming-router-metrics
   "Receives peer router metrics data and forwards it for processing in `router-metrics-agent`.

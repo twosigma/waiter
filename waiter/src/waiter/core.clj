@@ -789,6 +789,9 @@
                                                  :service-description-defaults service-description-defaults
                                                  :synchronize-fn synchronize-fn}]
                                     (utils/create-component service-description-builder-config :context context)))
+   :service-id-exists?-fn (pc/fnk [fallback-state-atom]
+                            (fn [service-id]
+                              (descriptor/service-exists? @fallback-state-atom service-id)))
    :service-id-prefix (pc/fnk [[:settings [:cluster-config service-prefix]]] service-prefix)
    :start-service-cache (pc/fnk []
                           (cu/cache-factory {:threshold 100
@@ -1470,6 +1473,16 @@
                                         (scheduler/service-id->state scheduler service-id))
                      :service-maintainer-state query-service-maintainer-chan
                      :transient-metrics-gc-state (:query-service-state-fn gc-for-transient-metrics)})
+   :service-id-instance-id-exists?-fn (pc/fnk [router-state-maintainer]
+                                        (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer]
+                                          (fn [service-id instance-id]
+                                            (let [{:keys [service-id->healthy-instances service-id->unhealthy-instances]} (query-state-fn)
+                                                  instances (concat
+                                                              (get service-id->healthy-instances service-id)
+                                                              (get service-id->unhealthy-instances service-id))]
+                                              (-> (map :id instances)
+                                                  set
+                                                (contains? instance-id))))))
    :statsd (pc/fnk [[:routines service-id->service-description-fn]
                     [:settings statsd]
                     router-state-maintainer]
@@ -1599,36 +1612,25 @@
                                        scheduler populate-maintainer-chan! scaling-timeout-config
                                        scheduler-interactions-thread-pool request)))))
    :instance-metrics-request-handler-fn (pc/fnk [[:daemons router-state-maintainer]
-                                                 [:state router-metrics-agent fallback-state-atom]]
+                                                 [:state router-metrics-agent service-id-exists?-fn]]
                                           (fn instance-metrics-request-handler-fn [request]
                                             ; TODO:LAST add validation for structure of the metrics (e.g. which keys are there)
                                             (let [service-metrics (-> request
                                                                      ru/json-request
                                                                      :body)]
                                               (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
-                                                    {:keys [service-id->healthy-instances service-id->unhealthy-instances]} (query-state-fn)
-
-                                                    filtered-service-metrics
-                                                    (utils/select-keys-pred
-                                                      #(descriptor/service-exists? @fallback-state-atom %)
-                                                      service-metrics)
-
-                                                    filtered-instance-metrics
-                                                    (pc/map-from-keys
-                                                      (fn [service-id]
-                                                        (let [instance-id->metric (get filtered-service-metrics service-id)
-                                                              supported-instance-ids (set
-                                                                                       (map
-                                                                                         :id
-                                                                                         (concat (get service-id->healthy-instances service-id)
-                                                                                                 (get service-id->unhealthy-instances service-id))))]
-                                                          (utils/select-keys-pred
-                                                            #(contains? supported-instance-ids %)
-                                                            instance-id->metric)))
-                                                      (keys filtered-service-metrics))]
-                                                (log/info "received service metrics from external source for" {:service-ids (keys service-metrics)
-                                                                                                               :filtered-service-ids (keys filtered-instance-metrics)})
-                                                (send router-metrics-agent metrics-sync/update-router-metrics-with-external-metrics filtered-instance-metrics)
+                                                    service-id-instance-id-exists?-fn (fn [service-id instance-id]
+                                                                                        (let [{:keys [service-id->healthy-instances service-id->unhealthy-instances]} (query-state-fn)
+                                                                                              instances (concat
+                                                                                                          (get service-id->healthy-instances service-id)
+                                                                                                          (get service-id->unhealthy-instances service-id))]
+                                                                                          (-> (map :id instances)
+                                                                                              set
+                                                                                            (contains? instance-id))))]
+                                                (log/info "received service metrics from external source for" {:unfiltered (keys service-metrics)})
+                                                ; TODO:LAST get results of this operation
+                                                (send router-metrics-agent metrics-sync/update-router-metrics-with-external-metrics service-metrics
+                                                      service-id-exists?-fn service-id-instance-id-exists?-fn)
                                                 (utils/clj->json-response {})))))
    :metrics-request-handler-fn (pc/fnk []
                                  (fn metrics-request-handler-fn [request]
