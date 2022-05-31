@@ -152,36 +152,43 @@
         [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]] replicaset-json
        ;; for backward compatibility where the revision timestamp is missing we cannot use the destructuring above
        rs-annotations (get-in replicaset-json [:metadata :annotations] nil)
-       rs-pod-annotations (get-in replicaset-json [:spec :template :metadata :annotations] nil)
-       containers (get-in replicaset-json [:spec :template :spec :containers])
-       rs-containers (mapv :name containers)
-       rs-container-resources (mapv (fn [{:keys [name] :as container-spec}]
-                                      (let [{:keys [cpu memory]} (get-in container-spec [:resources :requests])]
-                                        {:cpus (-> cpu (str) (quantity->double-value))
-                                         :mem (-> memory (str) (quantity->double-value) (/ (* 1024 1024)))
-                                         :name name}))
-                                    containers)
-       rs-creation-timestamp (some-> replicaset-json (get-in [:metadata :creationTimestamp]) (timestamp-str->datetime) (du/date-to-str))
-       requested (get spec :replicas 0)
-       staged (- replicas (+ availableReplicas unavailableReplicas))]
-      (scheduler/make-Service
-        {:id service-id
-         :instances requested
-         :k8s/app-name name
-         :k8s/container-resources rs-container-resources
-         :k8s/containers rs-containers
-         :k8s/namespace namespace
-         :k8s/replicaset-annotations (dissoc rs-annotations :waiter/service-id)
-         :k8s/replicaset-creation-timestamp rs-creation-timestamp
-         :k8s/replicaset-pod-annotations (dissoc rs-pod-annotations :waiter/service-id)
-         :k8s/replicaset-uid uid
-         :task-count replicas
-         :task-stats {:healthy readyReplicas
-                      :running (- replicas staged)
-                      :staged staged
-                      :unhealthy (- replicas readyReplicas staged)}}))
-    (catch Throwable t
-      (log/error t "error converting ReplicaSet to Waiter Service"))))
+       rs-excluded? (-> rs-annotations :waiter/rs-excluded (Boolean/parseBoolean))]
+      ;; excluded replicasets should return nil,
+      ;; which causes us to exclude them from watch-state-update operations
+      ;; (e.g., deleting the service's entry from the service-id->service state map)
+      ;; we exclude duplicate replicasets during migrations to avoid corrupting the internal scheduler state
+      (when-not rs-excluded?
+        (let [rs-pod-annotations (get-in replicaset-json [:spec :template :metadata :annotations] nil)
+
+              containers (get-in replicaset-json [:spec :template :spec :containers])
+              rs-containers (mapv :name containers)
+              rs-container-resources (mapv (fn [{:keys [name] :as container-spec}]
+                                             (let [{:keys [cpu memory]} (get-in container-spec [:resources :requests])]
+                                               {:cpus (-> cpu (str) (quantity->double-value))
+                                                :mem (-> memory (str) (quantity->double-value) (/ (* 1024 1024)))
+                                                :name name}))
+                                           containers)
+              rs-creation-timestamp (some-> replicaset-json (get-in [:metadata :creationTimestamp]) (timestamp-str->datetime) (du/date-to-str))
+              requested (get spec :replicas 0)
+              staged (- replicas (+ availableReplicas unavailableReplicas))]
+          (scheduler/make-Service
+            {:id service-id
+             :instances requested
+             :k8s/app-name name
+             :k8s/container-resources rs-container-resources
+             :k8s/containers rs-containers
+             :k8s/namespace namespace
+             :k8s/replicaset-annotations (dissoc rs-annotations :waiter/service-id)
+             :k8s/replicaset-creation-timestamp rs-creation-timestamp
+             :k8s/replicaset-pod-annotations (dissoc rs-pod-annotations :waiter/service-id)
+             :k8s/replicaset-uid uid
+             :task-count replicas
+             :task-stats {:healthy readyReplicas
+                          :running (- replicas staged)
+                          :staged staged
+                          :unhealthy (- replicas readyReplicas staged)}}))))
+        (catch Throwable t
+          (log/error t "error converting ReplicaSet to Waiter Service"))))
 
 (defn create-empty-service
   "Creates an instance of an empty service"
@@ -402,6 +409,7 @@
           node-name (get-in pod [:spec :nodeName])
           pod-labels (get-in pod [:metadata :labels])
           pod-annotations (get-in pod [:metadata :annotations])
+          pod-excluded? (-> pod-annotations :waiter/pod-excluded (Boolean/parseBoolean))
           port0 (or (some-> pod-annotations :waiter/service-port (Integer/parseInt))
                     (get-in pod [:spec :containers 0 :ports 0 :containerPort]))
           port->protocol (some-> pod-annotations :waiter/port-onto-protocol (utils/try-parse-json keyword))
@@ -428,6 +436,9 @@
           pod-name (k8s-object->id pod)
           primary-container-ready (true? (get primary-container-status :ready))
           healthy? (and primary-container-ready
+                        ;; Excluded pods are considered unhealthy to remove them
+                        ;; from the pool of candidate instances for serviing requests.
+                        (not pod-excluded?)
                         ;; Note that when exceeded-restart-kill-threshold? becomes true, the container *just* restarted and is non-ready,
                         ;; therefore it's impossible to observe a healthy? status between the time the container restarted
                         ;; and the time that the instance was marked permanently unhealthy due to the high restart count.

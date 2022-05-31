@@ -1709,6 +1709,35 @@
                           (create-service descriptor dummy-scheduler))]
           (is (str/includes? spec-json "\"annotations\":{\"waiter/x\":\"waiter/y\"}")))))))
 
+(deftest test-replicaset-excluded
+  (let [replicaset-json {:metadata {:creationTimestamp "2019-08-01T00:00:00Z"
+                                    :name "test-app-1234"
+                                    :namespace "myself"
+                                    :labels {:app "test-app-1234"
+                                             :waiter/cluster "waiter"
+                                             :waiter/service-hash "test-app-1234"}
+                                    :annotations {:waiter/service-id "test-app-1234"}
+                                    :uid "test-app-1234-uid"}
+                         :spec {:replicas 2
+                                :selector {:matchLabels {:app "test-app-1234"
+                                                         :waiter/cluster "waiter"}}
+                                :template {:metadata {:annotations {:waiter/service-id "test-app-1234"}}
+                                           :spec {:containers [{:name waiter-primary-container-name
+                                                                :resources {:requests {:cpu "1" :memory "1Gi"}}}]}}}
+                         :status {:replicas 2
+                                  :readyReplicas 2
+                                  :availableReplicas 2}}
+        expected-service (replicaset->Service replicaset-json)]
+    (is (some? expected-service))
+    (is (= (get-in replicaset-json [:metadata :name]) (:id expected-service)))
+    (is (= (assoc expected-service :k8s/replicaset-annotations {:waiter/rs-excluded "false"})
+           (-> replicaset-json
+               (assoc-in [:metadata :annotations :waiter/rs-excluded] "false")
+               (replicaset->Service))))
+    (is (nil? (-> replicaset-json
+                  (assoc-in [:metadata :annotations :waiter/rs-excluded] "true")
+                  (replicaset->Service))))))
+
 (deftest test-delete-service
   (let [service-id "test-service-id"
         service (scheduler/make-Service {:id service-id :instances 1 :k8s/app-name service-id :k8s/namespace "myself"})
@@ -2789,6 +2818,7 @@
                       :status "Healthy"}
         expired-instance-map (assoc instance-map :flags #{:expired})
         expired-unhealthy-instance-map (assoc expired-instance-map :healthy? false :status "Unhealthy")
+        unhealthy-instance-map (assoc instance-map :healthy? false :status "Unhealthy")
         rs-revision-timestamp-path [:service-id->service service-id :k8s/replicaset-annotations :waiter/revision-timestamp]]
 
     (testing "pod init containers"
@@ -2891,6 +2921,16 @@
             instance (pod->ServiceInstance dummy-scheduler pod)
             instance-map' (assoc instance-map :k8s/context kube-context-name)]
         (is (= (scheduler/make-ServiceInstance instance-map') instance))))
+
+    (testing "pod with waiter/pod-excluded=false annotation"
+      (let [pod' (assoc-in pod [:metadata :annotations :waiter/pod-excluded] "false")
+            instance (pod->ServiceInstance base-scheduler pod')]
+        (is (= (scheduler/make-ServiceInstance instance-map) instance))))
+
+    (testing "pod with waiter/pod-excluded=true annotation"
+      (let [pod' (assoc-in pod [:metadata :annotations :waiter/pod-excluded] "true")
+            instance (pod->ServiceInstance base-scheduler pod')]
+        (is (= (scheduler/make-ServiceInstance unhealthy-instance-map) instance))))
 
     (testing "pod with expired annotation"
       (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
