@@ -790,7 +790,7 @@
                                                  :synchronize-fn synchronize-fn}]
                                     (utils/create-component service-description-builder-config :context context)))
    :service-id-exists?-fn (pc/fnk [fallback-state-atom]
-                            (fn [service-id]
+                            (fn service-id-exists?-fn [service-id]
                               (descriptor/service-exists? @fallback-state-atom service-id)))
    :service-id-prefix (pc/fnk [[:settings [:cluster-config service-prefix]]] service-prefix)
    :start-service-cache (pc/fnk []
@@ -1381,12 +1381,13 @@
                                {:router-mult-chan router-mult-chan}))
    :router-metrics-syncer (pc/fnk [[:routines crypt-helpers websocket-request-auth-cookie-attacher]
                                    [:settings [:metrics-config inter-router-metrics-idle-timeout-ms metrics-sync-interval-ms router-update-interval-ms]]
-                                   [:state local-usage-agent router-metrics-agent websocket-client]
-                                   router-list-maintainer]
+                                   [:state local-usage-agent router-metrics-agent service-id-exists?-fn websocket-client]
+                                   router-list-maintainer service-id-instance-id-active?-fn]
                             (let [{:keys [bytes-encryptor]} crypt-helpers
                                   router-chan (async/tap (:router-mult-chan router-list-maintainer) (au/latest-chan))]
                               {:metrics-syncer (metrics-sync/setup-metrics-syncer
-                                                 router-metrics-agent local-usage-agent metrics-sync-interval-ms bytes-encryptor)
+                                                 router-metrics-agent local-usage-agent metrics-sync-interval-ms bytes-encryptor
+                                                 service-id-exists?-fn service-id-instance-id-active?-fn)
                                :router-syncer (metrics-sync/setup-router-syncer router-chan router-metrics-agent router-update-interval-ms
                                                                                 inter-router-metrics-idle-timeout-ms metrics-sync-interval-ms
                                                                                 websocket-client bytes-encryptor websocket-request-auth-cookie-attacher)}))
@@ -1473,9 +1474,9 @@
                                         (scheduler/service-id->state scheduler service-id))
                      :service-maintainer-state query-service-maintainer-chan
                      :transient-metrics-gc-state (:query-service-state-fn gc-for-transient-metrics)})
-   :service-id-instance-id-exists?-fn (pc/fnk [router-state-maintainer]
+   :service-id-instance-id-active?-fn (pc/fnk [router-state-maintainer]
                                         (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer]
-                                          (fn [service-id instance-id]
+                                          (fn service-id-instance-id-active?-fn [service-id instance-id]
                                             (let [{:keys [service-id->healthy-instances service-id->unhealthy-instances]} (query-state-fn)
                                                   instances (concat
                                                               (get service-id->healthy-instances service-id)
@@ -1611,27 +1612,18 @@
                                        notify-instance-killed-fn peers-acknowledged-eject-requests-fn
                                        scheduler populate-maintainer-chan! scaling-timeout-config
                                        scheduler-interactions-thread-pool request)))))
-   :instance-metrics-request-handler-fn (pc/fnk [[:daemons router-state-maintainer]
+   :instance-metrics-request-handler-fn (pc/fnk [[:daemons service-id-instance-id-active?-fn]
                                                  [:state router-metrics-agent service-id-exists?-fn]]
                                           (fn instance-metrics-request-handler-fn [request]
                                             ; TODO:LAST add validation for structure of the metrics (e.g. which keys are there)
                                             (let [service-metrics (-> request
                                                                      ru/json-request
                                                                      :body)]
-                                              (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
-                                                    service-id-instance-id-exists?-fn (fn [service-id instance-id]
-                                                                                        (let [{:keys [service-id->healthy-instances service-id->unhealthy-instances]} (query-state-fn)
-                                                                                              instances (concat
-                                                                                                          (get service-id->healthy-instances service-id)
-                                                                                                          (get service-id->unhealthy-instances service-id))]
-                                                                                          (-> (map :id instances)
-                                                                                              set
-                                                                                            (contains? instance-id))))]
-                                                (log/info "received service metrics from external source for" {:unfiltered (keys service-metrics)})
-                                                ; TODO:LAST get results of this operation
-                                                (send router-metrics-agent metrics-sync/update-router-metrics-with-external-metrics service-metrics
-                                                      service-id-exists?-fn service-id-instance-id-exists?-fn)
-                                                (utils/clj->json-response {})))))
+                                              (log/info "received service metrics from external source for" {:unfiltered (keys service-metrics)})
+                                              ; TODO:LAST get results of this operation
+                                              (send router-metrics-agent metrics-sync/update-router-metrics-with-external-metrics service-metrics
+                                                    service-id-exists?-fn service-id-instance-id-active?-fn)
+                                              (utils/clj->json-response {}))))
    :metrics-request-handler-fn (pc/fnk []
                                  (fn metrics-request-handler-fn [request]
                                    (handler/metrics-request-handler request)))
@@ -1703,13 +1695,15 @@
                               (wrap-secure-request-fn
                                 (fn profile-list-handler-fn [request]
                                   (handler/display-profiles-handler profile->defaults request))))
-   :router-metrics-handler-fn (pc/fnk [[:routines crypt-helpers]
+   :router-metrics-handler-fn (pc/fnk [[:daemons service-id-instance-id-active?-fn]
+                                       [:routines crypt-helpers]
                                        [:settings [:metrics-config metrics-sync-interval-ms]]
-                                       [:state router-metrics-agent]]
+                                       [:state router-metrics-agent service-id-exists?-fn]]
                                 (let [{:keys [bytes-decryptor bytes-encryptor]} crypt-helpers]
                                   (fn router-metrics-handler-fn [request]
                                     (metrics-sync/incoming-router-metrics-handler
-                                      router-metrics-agent metrics-sync-interval-ms bytes-encryptor bytes-decryptor request))))
+                                      router-metrics-agent metrics-sync-interval-ms bytes-encryptor bytes-decryptor
+                                      service-id-exists?-fn service-id-instance-id-active?-fn request))))
    :service-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
                                 [:routines admin-user?-fn allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-async-fn
                                  retrieve-token-based-fallback-fn router-metrics-helpers service-id->references-fn
