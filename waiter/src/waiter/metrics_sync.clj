@@ -115,8 +115,8 @@
       (let [metric-1 (get instance-id->metric-1 instance-id)
             metric-2 (get instance-id->metric-2 instance-id)]
         (if (and (some? metric-1) (some? metric-2))
-          (let [updated-at-1 (f/parse (:updated-at metric-1))
-                updated-at-2 (f/parse (:updated-at metric-2))]
+          (let [updated-at-1 (f/parse (get metric-1 "updated-at"))
+                updated-at-2 (f/parse (get metric-2 "updated-at"))]
             (if (t/before? updated-at-1 updated-at-2)
               metric-2
               metric-1))
@@ -152,7 +152,7 @@
                                               (select-keys existing-router-metrics (keys router-metrics)))))
           (assoc-in [:last-update-times source-router-id] time)
 
-          ; :external-metrics are merged based on :updated-at timestamp for individual instance metrics.
+          ; :external-metrics are merged based on 'updated-at' timestamp for individual instance metrics.
           ; These metrics are absolute (one per waiter cluster, instead of waiter router), as they are provided
           ; by an external source periodically with the /instance-metrics endpoint.
           (update :external-metrics merge-service-id->instance-id->metric-maps external-metrics))
@@ -160,7 +160,7 @@
 
 (defn update-router-metrics-with-external-metrics
   "Merges the service external metrics with existing external service metrics. External metrics are provided to the
-  waiter routers from another entity. These metrics must be merged based on the :updated-at timestamp."
+  waiter routers from another entity. These metrics must be merged based on the 'updated-at' timestamp."
   [router-metrics-state incoming-service-id->instance-id->metric]
   (with-catch
     router-metrics-state
