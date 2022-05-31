@@ -609,14 +609,20 @@
 (defn- get-k8s-event-deployment-error
   "Extract a deployment error if the given service includes a k8s event that is preventing
    deployment."
-  [{:keys [instances k8s/events k8s/namespace task-stats]}]
-  (let [{:keys [message reason]} (last events)
+  [{:keys [id instances k8s/events k8s/namespace task-stats]}]
+  (let [{:keys [creation-timestamp message reason] :as latest-event} (last events)
         running-count (:running task-stats)]
     (when (and (number? instances)
                (pos? instances)
                (= 0 running-count)
                (= reason "FailedCreate"))
-      (prettify-failed-create-error message namespace))))
+      (let [creation-timestamp-str (du/date-to-str creation-timestamp)
+            json-event (assoc latest-event :creation-timestamp creation-timestamp-str)
+            details-fn (constantly {:k8s-event json-event})
+            error-fn (fn [msg] (prettify-failed-create-error msg namespace))
+            deployment-error (create-service-deployment-error "k8s-event" message error-fn details-fn)]
+        (log/info "service" id "in namespace" namespace "encountered deployment error from k8s event:" deployment-error)
+        deployment-error))))
 
 (defn get-services
   "Get all Waiter Services (reified as ReplicaSets) running in this Kubernetes cluster.
