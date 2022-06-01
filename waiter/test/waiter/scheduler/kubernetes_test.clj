@@ -1047,17 +1047,22 @@
 
 (deftest test-scheduler-get-services-with-events
   (let [quota-str "memory=66282Mi, used: memory=198846Mi, limited: memory=200Gi"
-        test-event-quota {:creation-timestamp "2022-05-23T18:39:12.000Z"
+        test-date (timestamp-str->datetime "2022-05-23T18:39:12Z")
+        w8r-date-str (du/date-to-str test-date)
+        test-event-quota {:creation-timestamp test-date
                           :message (str "Error creating: pods \"my-pod\" is forbidden: exceeded quota: pods, requested: " quota-str)
                           :reason "FailedCreate"
                           :type "Warning"}
+        details-event (assoc test-event-quota :creation-timestamp w8r-date-str)
         test-cases [{:deployment-errors {}
                      :expected-service (create-empty-service 123)
                      :state-service (create-empty-service 123)
                      :test-name "No deployment errors"}
                     {:deployment-errors {}
                      :expected-service (assoc (create-empty-service 123)
-                                              :deployment-error (str "Could not create pod (exceeded quota in namespace test) - requested: " quota-str)
+                                              :deployment-error {:service-deployment-error-details {:k8s-event details-event}
+                                                                 :service-deployment-error-msg (str "Could not create pod (exceeded quota in namespace test) - requested: " quota-str)
+                                                                 :service-deployment-error-source "k8s-event"}
                                               :instances 1
                                               :k8s/events [test-event-quota]
                                               :k8s/namespace "test")
