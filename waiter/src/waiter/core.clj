@@ -1615,15 +1615,9 @@
    :instance-metrics-request-handler-fn (pc/fnk [[:daemons service-id-instance-id-active?-fn]
                                                  [:state router-metrics-agent service-id-exists?-fn]]
                                           (fn instance-metrics-request-handler-fn [request]
-                                            ; TODO:LAST add validation for structure of the metrics (e.g. which keys are there)
-                                            (let [service-metrics (-> request
-                                                                     ru/json-request
-                                                                     :body)]
-                                              (log/info "received service metrics from external source for" {:unfiltered (keys service-metrics)})
-                                              ; TODO:LAST get results of this operation
-                                              (send router-metrics-agent metrics-sync/update-router-metrics-with-external-metrics service-metrics
-                                                    service-id-exists?-fn service-id-instance-id-active?-fn)
-                                              (utils/clj->json-response {}))))
+                                            (metrics-sync/handle-instance-metrics-request
+                                              router-metrics-agent service-id-exists?-fn service-id-instance-id-active?-fn
+                                              request)))
    :metrics-request-handler-fn (pc/fnk []
                                  (fn metrics-request-handler-fn [request]
                                    (handler/metrics-request-handler request)))

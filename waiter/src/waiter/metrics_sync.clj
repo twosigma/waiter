@@ -26,10 +26,11 @@
             [qbits.jet.client.websocket :as ws]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
+            [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
-            [waiter.util.utils :as utils]
-            [clj-time.format :as f])
+            [waiter.util.ring-utils :as ru]
+            [waiter.util.utils :as utils])
   (:import (qbits.jet.websocket WebSocket)))
 
 (defmacro with-catch
@@ -132,8 +133,8 @@
             metric-2 (get instance-id->metric-2 instance-id)
             updated-at-2 (get metric-2 "updated-at")]
         (if (and (some? updated-at-1) (some? updated-at-2))
-          (let [updated-at-1 (f/parse updated-at-1)
-                updated-at-2 (f/parse updated-at-2)]
+          (let [updated-at-1 (du/str-to-date updated-at-1)
+                updated-at-2 (du/str-to-date updated-at-2)]
             (if (t/before? updated-at-1 updated-at-2)
               metric-2
               metric-1))
@@ -498,3 +499,53 @@
                    router->service-id->metrics))
     (catch Exception e
       (log/error e "error in obtaining router-id->metrics data for" service-id))))
+
+(defn handle-instance-metrics-request
+  "Handle incoming external instance metrics and update metrics stored in memory. Expect the json body to be in the format
+  service-id->instance-id->metric where the metric is:
+  {'updated-at' ISO-8601 timestamp
+   'metric': {'active-request-count' non-negative-int
+              'last-request-time' ISO-8601 timestamp}}
+
+   There may be extra fields provided in the metric at any level. We just validate that those fields are there in the
+   correct format."
+  [router-metrics-agent service-id-exists?-fn service-id-instance-id-active?-fn request]
+  (let [service-metrics (-> request
+                            ru/json-request
+                          :body)
+        throw-error-response-if-invalid-fn
+        (fn throw-error-response-if-invalid-fn
+          [valid?-fn map keys error-msg]
+          (let [val (get-in map keys)]
+            (when (not (valid?-fn val))
+              (throw (ex-info
+                       (str "Invalid '" (str/join "." keys) "' field. " error-msg)
+                       {:log-level :info
+                        :status http-400-bad-request})))))
+
+        valid-time-str?-fn (fn [time-str]
+                             (try
+                               (du/str-to-date-safe time-str)
+                               true
+                               (catch Exception _
+                                 false)))
+        invalid-time-error-msg "Must be ISO-8601 time."]
+
+    ; throw error if any of the metrics for an instance is invalid, and any of the required metrics are missing
+    (doseq [[service-id instance-id->metric] service-metrics]
+      (doseq [[instance-id _] instance-id->metric]
+
+        (throw-error-response-if-invalid-fn
+          valid-time-str?-fn service-metrics [service-id instance-id "updated-at"] invalid-time-error-msg)
+
+        (throw-error-response-if-invalid-fn
+          valid-time-str?-fn service-metrics [service-id instance-id "metric" "last-request-time"] invalid-time-error-msg)
+
+        (throw-error-response-if-invalid-fn
+          #(nat-int? %) service-metrics [service-id instance-id "metric" "active-request-count"] "Must be non-negative-integer.")))
+
+    (log/info "received service metrics from external source." {:service-ids-preview (take 10 (keys service-metrics))
+                                                                :service-ids-count (count (keys service-metrics))})
+    (send router-metrics-agent update-router-metrics-with-external-metrics service-metrics
+          service-id-exists?-fn service-id-instance-id-active?-fn)
+    (utils/clj->json-response {})))
