@@ -80,8 +80,8 @@
 
       (testing "Metrics payload with only irrelevant external metrics will result in a no-op"
         (let [
-              ; s1.i1 are never going to be an actual service-id or instance-id on the waiter routers. These metrics are expected
-              ; to be filtered out.
+              ; s1 and i1 are never going to be an actual service-id or instance-id on the waiter routers. These metrics
+              ; are expected to be filtered out.
               req-body {"s1" {"i1" {"updated-at" "2022-05-31T14:50:44.956Z"
                                     "metrics" {"last-request-time" "2022-05-31T14:50:44.956Z"
                                                "active-request-count" 0}}}}
@@ -89,8 +89,14 @@
           (assert-response-status response http-200-ok)
           (is (= {"no-op" true} (try-parse-json (str body))))))
 
-      (testing "Sending external metrics for multiple instances and services updates the routers external metrics"
-        )
+      ;(testing "Sending external metrics for multiple instances and services updates the routers external metrics"
+      ;  (let [extra-headers {:x-waiter-name (rand-name)}
+      ;        {:keys [cookies instance-id service-id] :as canary-response}
+      ;        (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %))]
+      ;    (assert-response-status canary-response http-200-ok)
+      ;    (with-service-cleanup
+      ;      service-id
+      ;      (println instance-id service-id))))
 
       (testing "Irrelevant external metrics for instances not tracked by the router are discarded")
 
