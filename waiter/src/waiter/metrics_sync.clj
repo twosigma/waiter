@@ -509,7 +509,11 @@
 
    There may be extra fields provided in the metric at any level. We just validate that those fields are there in the
    correct format."
-  [router-metrics-agent service-id-exists?-fn service-id-instance-id-active?-fn request]
+  [router-metrics-agent service-id-exists?-fn service-id-instance-id-active?-fn {:keys [request-method] :as request}]
+  (when (not= request-method :post)
+    (throw (ex-info "Invalid request method. Only POST is supported." {:log-level :info
+                                                                       :request-method request-method
+                                                                       :status http-400-bad-request})))
   (let [service-metrics (-> request
                             ru/json-request
                           :body)
@@ -542,10 +546,15 @@
           valid-time-str?-fn service-metrics [service-id instance-id "metrics" "last-request-time"] invalid-time-error-msg)
 
         (throw-error-response-if-invalid-fn
-          #(nat-int? %) service-metrics [service-id instance-id "metrics" "active-request-count"] "Must be non-negative-integer.")))
+          #(nat-int? %) service-metrics [service-id instance-id "metrics" "active-request-count"] "Must be non-negative integer.")))
 
     (log/info "received service metrics from external source." {:service-ids-preview (take 10 (keys service-metrics))
                                                                 :service-ids-count (count (keys service-metrics))})
-    (send router-metrics-agent update-router-metrics-with-external-metrics service-metrics
-          service-id-exists?-fn service-id-instance-id-active?-fn)
-    (utils/clj->json-response {})))
+    (let [clean-service-metrics (clean-service-id->instance-id->metric
+                                  service-id-exists?-fn service-id-instance-id-active?-fn service-metrics)]
+      (log/info "removed irrelevant services and instances." {:service-ids-preview (take 10 (keys clean-service-metrics))
+                                                              :service-ids-count (count (keys clean-service-metrics))})
+      (when (not-empty clean-service-metrics)
+        (send router-metrics-agent update-router-metrics-with-external-metrics clean-service-metrics
+              service-id-exists?-fn service-id-instance-id-active?-fn))
+      (utils/clj->json-response {:no-op (empty? clean-service-metrics)}))))
