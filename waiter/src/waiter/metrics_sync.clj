@@ -539,10 +539,10 @@
           valid-time-str?-fn service-metrics [service-id instance-id "updated-at"] invalid-time-error-msg)
 
         (throw-error-response-if-invalid-fn
-          valid-time-str?-fn service-metrics [service-id instance-id "metric" "last-request-time"] invalid-time-error-msg)
+          valid-time-str?-fn service-metrics [service-id instance-id "metrics" "last-request-time"] invalid-time-error-msg)
 
         (throw-error-response-if-invalid-fn
-          #(nat-int? %) service-metrics [service-id instance-id "metric" "active-request-count"] "Must be non-negative-integer.")))
+          #(nat-int? %) service-metrics [service-id instance-id "metrics" "active-request-count"] "Must be non-negative-integer.")))
 
     (log/info "received service metrics from external source." {:service-ids-preview (take 10 (keys service-metrics))
                                                                 :service-ids-count (count (keys service-metrics))})
