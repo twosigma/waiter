@@ -33,7 +33,8 @@
             [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.client-tools :as ct]
-            [waiter.util.date-utils :as du])
+            [waiter.util.date-utils :as du]
+            [waiter.util.utils :as utils])
   (:import (java.net ConnectException SocketTimeoutException)
            (java.util.concurrent TimeoutException)
            (org.eclipse.jetty.client HttpClient)
@@ -222,62 +223,69 @@
 
 (deftest test-scheduler-broken-services-gc
   (let [leader? (constantly true)
-        state-store (atom {})
-        read-state-fn (fn [name] (get @state-store name))
-        write-iteration-counter (atom 0)
-        write-state-fn (fn [name state] (swap! state-store assoc name state) (swap! write-iteration-counter inc))
+        state-store (atom [])
+        read-state-fn (fn [name] (-> @state-store (last) (get name)))
+        max-iterations 20
+        iteration-counter (atom 0)
+        test-start-time (t/now)
+        clock (fn [] (-> test-start-time
+                         (t/plus (t/minutes @iteration-counter))
+                         (t/plus (t/millis @iteration-counter))))
+        write-state-fn (fn [name state]
+                         (swap! iteration-counter #(min max-iterations (inc %)))
+                         (swap! state-store conj {name state
+                                                  :iteration @iteration-counter
+                                                  :time (clock)}))
         service-id->service-description-fn (fn [service-id]
                                              (let [id (str/replace service-id #"[^0-9]" "")
                                                    id-int (Integer/parseInt id)]
                                                {"grace-period-secs" (* 60 id-int)}))]
-    (let [available-services-atom (atom #{"service5broken" "service6faulty" "service7" "service8stayalive" "service9stayalive"
-                                          "service10broken" "service11broken" "service12broken"})
+    (let [available-services-atom (atom #{"service5broken" "service6faulty" "service7" "service8stayalive"
+                                          "service10broken" "service11broken" "service14broken"})
           deleted-services-atom (atom #{})
           scheduler (reify ServiceScheduler
                       (delete-service [_ service-id]
                         (swap! available-services-atom disj service-id)
                         (swap! deleted-services-atom conj service-id)))
-          scheduler-state-chan (async/chan 1)
-          iteration-counter (atom 0)
-          test-start-time (t/now)
-          clock (fn [] (t/plus test-start-time (t/minutes @iteration-counter)))
+          scheduler-state-atom (atom nil)
           service-gc-go-routine (partial core/service-gc-go-routine read-state-fn write-state-fn leader? clock)]
       (testing "scheduler-broken-services-gc"
         (let [timeout-interval-ms 10
               broken-service-timeout-mins 5
               broken-service-min-hosts 3
-              query-state-fn (fn [] (async/<!! scheduler-state-chan))
+              query-state-fn (fn [] @scheduler-state-atom)
               channel-map (scheduler-broken-services-gc service-gc-go-routine query-state-fn service-id->service-description-fn scheduler
                                                         {:broken-service-min-hosts broken-service-min-hosts
                                                          :broken-service-timeout-mins broken-service-timeout-mins
                                                          :scheduler-gc-broken-service-interval-ms timeout-interval-ms})
               service-gc-exit-chan (:exit channel-map)]
-          (dotimes [iteration 20]
-            (async/>!!
-              scheduler-state-chan
-              {:all-available-service-ids (set @available-services-atom)
-               :service-id->failed-instances
-               (pc/map-from-keys
-                 (fn [service-id]
-                   (cond
-                     (str/includes? service-id "broken")
-                     (map (fn [index] {:id (str service-id ".failed" index) :host (str "failed" index "-host.example.com")})
-                          (range (inc (mod iteration 4))))
-                     (str/includes? service-id "faulty")
-                     (map (fn [index] {:id (str service-id ".faulty" index) :host "faulty-host.example.com"})
-                          (range (mod iteration 4)))
-                     :else []))
-                 @available-services-atom)
-               :service-id->healthy-instances
-               (pc/map-from-keys
-                 (fn [service-id]
-                   (if (str/includes? service-id "broken") [] [{:id (str service-id ".unhealthy")}]))
-                 @available-services-atom)})
-            (swap! iteration-counter inc)
-            (while (> @iteration-counter @write-iteration-counter) nil))
+          (while (< @iteration-counter 20)
+            (let [iteration (min (dec max-iterations) @iteration-counter)]
+              (reset!
+                scheduler-state-atom
+                {:all-available-service-ids (set @available-services-atom)
+                 :service-id->failed-instances
+                 (pc/map-from-keys
+                   (fn [service-id]
+                     (cond
+                       (str/includes? service-id "broken")
+                       (map (fn [index] {:id (str service-id ".failed" index) :host (str "failed" index "-host.example.com")})
+                            (range (inc (mod iteration 4))))
+                       (str/includes? service-id "faulty")
+                       (map (fn [index] {:id (str service-id ".faulty" index) :host "faulty-host.example.com"})
+                            (range (mod iteration 4)))
+                       :else []))
+                   @available-services-atom)
+                 :service-id->healthy-instances
+                 (pc/map-from-keys
+                   (fn [service-id]
+                     (if (str/includes? service-id "broken") [] [{:id (str service-id ".unhealthy")}]))
+                   @available-services-atom)})
+              (utils/sleep timeout-interval-ms)))
           (async/>!! service-gc-exit-chan :exit)
-          (is (= #{"service5broken" "service10broken" "service11broken"} @deleted-services-atom))
-          (is (= #{"service6faulty" "service7" "service8stayalive" "service9stayalive" "service12broken"} @available-services-atom)))))))
+          (let [assertion-msg (str @state-store)]
+            (is (= #{"service5broken" "service10broken" "service11broken"} @deleted-services-atom) assertion-msg)
+            (is (= #{"service6faulty" "service7" "service8stayalive" "service14broken"} @available-services-atom) assertion-msg)))))))
 
 (deftest test-scheduler-syncer
   (let [clock t/now
