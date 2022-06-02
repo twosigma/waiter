@@ -166,4 +166,7 @@
 
      (testing "Sending stale external metrics does not result in an update")
 
-     (testing "Externally killing a service results in the external metrics for that service to be discorded"))))
+     (testing "Externally killing a service results in the external metrics for that service to be discorded")
+     
+     (testing "Sending metrics with extra metadata does not get filtered out")
+     )))
