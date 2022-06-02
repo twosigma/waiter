@@ -76,9 +76,10 @@
 (defn send-metrics-and-assert-expected-metrics
   "Send metrics-payload to the waiter-url and assert that each router reports the expected-metrics as well as never
   reports any metrics for the expected-nil-keys-list."
-  [waiter-url routers metrics-payload expected-metrics expected-nil-keys-list & {:keys [fail-eagerly-on-nil-keys]
-                                                                                 :or {fail-eagerly-on-nil-keys true}}]
-  (let [metrics-response (make-request waiter-url "/instance-metrics" :method :post :body (utils/clj->json metrics-payload))]
+  [waiter-url routers cookies metrics-payload expected-metrics expected-nil-keys-list & {:keys [fail-eagerly-on-nil-keys]
+                                                                                         :or {fail-eagerly-on-nil-keys true}}]
+  (let [metrics-response (make-request waiter-url "/instance-metrics" :method :post :body (utils/clj->json metrics-payload)
+                                       :headers {:content-type "application/json"})]
     (assert-response-status metrics-response http-200-ok)
     (is (= {"no-op" false}
            (-> metrics-response
@@ -88,7 +89,8 @@
           (fn []
             (every?
               (fn router-has-expected-metrics?-fn [[_ router-url]]
-                (let [metrics-state-response (make-request router-url "/state/router-metrics")
+                (let [metrics-state-response (make-request router-url "/state/router-metrics" :cookies cookies
+                                                           :headers {:content-type "application/json"})
                       actual-metrics (-> metrics-state-response
                                          :body
                                          try-parse-json
@@ -125,7 +127,8 @@
   (testing-using-waiter-url
     (let [routers (routers waiter-url)]
       (testing "Empty body results in no-op"
-        (let [{:keys [body] :as response} (make-request waiter-url "/instance-metrics" :method :post :body "{}")]
+        (let [{:keys [body] :as response} (make-request waiter-url "/instance-metrics" :method :post :body "{}"
+                                                        :headers {:content-type "application/json"})]
           (assert-response-status response http-200-ok)
           (is (= {"no-op" true} (try-parse-json (str body))))))
 
@@ -135,14 +138,16 @@
               req-body {"s1" {"i1" {"updated-at" "2022-05-31T14:50:44.956Z"
                                     "metrics" {"last-request-time" "2022-05-31T14:50:44.956Z"
                                                "active-request-count" 0}}}}
-              {:keys [body] :as response} (make-request waiter-url "/instance-metrics" :method :post :body (utils/clj->json req-body))]
+              {:keys [body] :as response} (make-request waiter-url "/instance-metrics" :method :post :body (utils/clj->json req-body)
+                                                        :headers {:content-type "application/json"})]
           (assert-response-status response http-200-ok)
           (is (= {"no-op" true} (try-parse-json (str body))))))
 
       (let [; make sure raven does send external metrics for these services
-            extra-headers {:x-waiter-env-raven_export_metrics "false"}
+            extra-headers {:content-type "application/json"
+                           :x-waiter-env-raven_export_metrics "false"}
             extra-headers-1 (assoc extra-headers :x-waiter-name (rand-name))
-            canary-response-1 (make-request-with-debug-info extra-headers-1 #(make-kitchen-request waiter-url %))
+            {:keys [cookies] :as canary-response-1} (make-request-with-debug-info extra-headers-1 #(make-kitchen-request waiter-url %))
             instance-id-1 (:instance-id canary-response-1)
             service-id-1 (:service-id canary-response-1)]
         (assert-response-status canary-response-1 http-200-ok)
@@ -165,7 +170,7 @@
                     expected-metrics metrics-payload]
 
                 (testing "Sending external metrics for multiple instances updates existing metrics. Extra metadata should not be filtered out."
-                  (send-metrics-and-assert-expected-metrics waiter-url routers metrics-payload expected-metrics []))
+                  (send-metrics-and-assert-expected-metrics waiter-url routers cookies metrics-payload expected-metrics []))
 
                 (testing "Strictly later updated-at timestamp for instance metrics are stored. Unknown instances are ignored."
                   (let [metrics-payload-instance-1-updated
@@ -194,7 +199,7 @@
                         expected-nil-keys-list [[service-id-1 "this-instance-is-gibberish"]
                                                 [service-id-2 "another-fake-instance-id"]]]
                     (send-metrics-and-assert-expected-metrics
-                      waiter-url routers metrics-payload-instance-1-updated expected-metrics-instance-1-updated
+                      waiter-url routers cookies metrics-payload-instance-1-updated expected-metrics-instance-1-updated
                       expected-nil-keys-list)))
 
                 (testing "After service is killed, external metrics for that service should be discarded when new metrics are sent"
@@ -211,5 +216,5 @@
                     ; wait for service to no longer be tracked by routers
                     (async/<!! (async/timeout 3000))
                     (send-metrics-and-assert-expected-metrics
-                      waiter-url routers metrics-payload-instance-1-updated expected-metrics-instance-1-updated
+                      waiter-url routers cookies metrics-payload-instance-1-updated expected-metrics-instance-1-updated
                       expected-nil-keys-list :fail-eagerly-on-nil-keys false)))))))))))
