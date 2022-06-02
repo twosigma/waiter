@@ -14,14 +14,13 @@
 ;; limitations under the License.
 ;;
 (ns waiter.metrics-sync-integration-test
-  (:require [clojure.test :refer :all]
+  (:require [clojure.core.async :as async]
+            [clojure.data :as data]
+            [clojure.test :refer :all]
+            [clojure.tools.logging :as log]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
-            [waiter.util.utils :as utils]
-            [clojure.tools.logging :as log]
-            [clojure.data :as data]
-            [clojure.pprint :as pprint]
-            [clojure.core.async :as async]))
+            [waiter.util.utils :as utils]))
 
 (defmacro assert-invalid-body
   "Asserts that sending the provided body results in the expected-msg being inside the response body. This is used
