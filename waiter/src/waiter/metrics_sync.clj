@@ -178,10 +178,11 @@
 (defn update-router-metrics-with-external-metrics
   "Merges the service external metrics with existing external service metrics. External metrics are provided to the
   waiter routers from another entity. These metrics must be merged based on the 'updated-at' timestamp."
-  [router-metrics-state incoming-service-id->instance-id->metric query-state-fn]
+  [{:keys [router-id] :as router-metrics-state} incoming-service-id->instance-id->metric query-state-fn]
   (with-catch
     router-metrics-state
     (-> router-metrics-state
+        (assoc-in [:last-update-times router-id] (du/date-to-str (t/now)))
         (update :external-metrics merge-service-id->instance-id->metric-maps incoming-service-id->instance-id->metric
                 query-state-fn))))
 

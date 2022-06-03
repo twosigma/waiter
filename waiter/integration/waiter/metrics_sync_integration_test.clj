@@ -14,12 +14,14 @@
 ;; limitations under the License.
 ;;
 (ns waiter.metrics-sync-integration-test
-  (:require [clojure.core.async :as async]
+  (:require [clj-time.core :as t]
+            [clojure.core.async :as async]
             [clojure.data :as data]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils]))
 
 (defmacro assert-invalid-body
@@ -99,30 +101,55 @@
           (assert-invalid-body
             waiter-url (assoc-in metrics-payload ["service-metrics" "s1" "i1" "metrics" "active-request-count"] "") expected-msg))))))
 
+(defn get-last-update-time-from-metrics-response
+  "Gets last-update-time for router from /state/router-metrics response"
+  [router-id response]
+  (-> response :body
+    try-parse-json
+    (get-in ["state" "last-update-times" router-id])
+    du/str-to-date))
+
 (defn send-metrics-and-assert-expected-metrics
   "Send metrics-payload to the waiter-url and assert that each router reports the expected-metrics as well as never
   reports any metrics for the expected-nil-keys-list."
-  [waiter-url routers cookies metrics-payload expected-metrics expected-nil-keys-list & {:keys [fail-eagerly-on-nil-keys]
-                                                                                         :or {fail-eagerly-on-nil-keys true}}]
-  (let [metrics-response (make-request waiter-url "/metrics/external" :method :post :body (utils/clj->json metrics-payload)
-                                       :headers {:content-type "application/json"})]
-    (assert-response-status metrics-response http-200-ok)
+  [routers cookies metrics-payload expected-metrics expected-nil-keys-list & {:keys [fail-eagerly-on-nil-keys]
+                                                                              :or {fail-eagerly-on-nil-keys true}}]
+  (let [[first-router-id first-router-url] (first routers)
+        initial-metrics-response (make-request first-router-url "/state/router-metrics"
+                                               :cookies cookies
+                                               :headers {:content-type "application/json"})
+        update-metrics-response (make-request first-router-url "/metrics/external"
+                                              :method :post
+                                              :cookies cookies
+                                              :body (utils/clj->json metrics-payload)
+                                              :headers {:content-type "application/json"})
+        post-update-metrics-response (make-request first-router-url "/state/router-metrics"
+                                                   :cookies cookies
+                                                   :headers {:content-type "application/json"})]
+    (assert-response-status initial-metrics-response http-200-ok)
+    (assert-response-status update-metrics-response http-200-ok)
+    (assert-response-status post-update-metrics-response http-200-ok)
     (is (= {"no-op" false}
-           (-> metrics-response
-               :body
-               try-parse-json)))
+           (-> update-metrics-response :body
+             try-parse-json)))
+    ; expect last-update-time to be changed to later time in the post update metrics response
+    (is (t/before? (get-last-update-time-from-metrics-response first-router-id initial-metrics-response)
+                   (get-last-update-time-from-metrics-response first-router-id post-update-metrics-response))
+        "Router metrics state did not show there was any update to the last-update-time, even though our POST /metrics/external
+        request was successful.")
+
     (log/info "expected metrics from routers:" {:expected-nil-keys-list expected-nil-keys-list
                                                 :expected-metrics expected-metrics})
     (is (wait-for
           (fn []
             (every?
               (fn router-has-expected-metrics?-fn [[_ router-url]]
-                (let [metrics-state-response (make-request router-url "/state/router-metrics" :cookies cookies
+                (let [metrics-state-response (make-request router-url "/state/router-metrics"
+                                                           :cookies cookies
                                                            :headers {:content-type "application/json"})
-                      actual-metrics (-> metrics-state-response
-                                         :body
-                                         try-parse-json
-                                         (get-in ["state" "external-metrics"]))]
+                      actual-metrics (-> metrics-state-response :body
+                                       try-parse-json
+                                       (get-in ["state" "external-metrics"]))]
                   (log/info "metrics for router:" {:cur-metrics actual-metrics
                                                    :router router-url})
 
@@ -207,7 +234,7 @@
                     expected-metrics (get metrics-payload "service-metrics")]
 
                 (testing "Sending external metrics for multiple instances updates existing metrics. Extra metadata should not be filtered out."
-                  (send-metrics-and-assert-expected-metrics waiter-url routers cookies metrics-payload expected-metrics []))
+                  (send-metrics-and-assert-expected-metrics routers cookies metrics-payload expected-metrics []))
 
                 (testing "Strictly later updated-at timestamp for instance metrics are stored. Unknown instances are ignored."
                   (let [metrics-payload-instance-1-updated
@@ -238,8 +265,7 @@
                         expected-nil-keys-list [[service-id-1 "this-instance-is-gibberish"]
                                                 [service-id-2 "another-fake-instance-id"]]]
                     (send-metrics-and-assert-expected-metrics
-                      waiter-url routers cookies metrics-payload-instance-1-updated expected-metrics-instance-1-updated
-                      expected-nil-keys-list)))
+                      routers cookies metrics-payload-instance-1-updated expected-metrics-instance-1-updated expected-nil-keys-list)))
 
                 (testing "After service is killed, external metrics for that service should be discarded when new metrics are sent"
                   (let [metrics-payload-instance-1-updated
@@ -257,5 +283,5 @@
                     ; wait for service to no longer be tracked by routers
                     (async/<!! (async/timeout 3000))
                     (send-metrics-and-assert-expected-metrics
-                      waiter-url routers cookies metrics-payload-instance-1-updated expected-metrics-instance-1-updated
+                      routers cookies metrics-payload-instance-1-updated expected-metrics-instance-1-updated
                       expected-nil-keys-list :fail-eagerly-on-nil-keys false)))))))))))
