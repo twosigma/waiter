@@ -493,13 +493,18 @@
 
 (defn handle-external-metrics-request
   "Handle incoming external instance metrics and update metrics stored in memory. Expect the json body to be in the format
-  service-id->instance-id->metric where the metric is:
+  {'cluster': 'waiter-cluster-name'
+   'service-metrics': service-id->instance-id->metric Map}
+
+   where 'service-metrics' is map service-id->instance-id->metric where the instance's metric is:
   {'updated-at' ISO-8601 timestamp
    'metric': {'active-request-count' non-negative-int
               'last-request-time' ISO-8601 timestamp}}
 
-   There may be extra fields provided in the metric at any level. We just validate that those fields are there in the
-   correct format."
+   Extra fields in the instance's metric are kept, but are not expected to be there for any component in Waiter.
+   'updated-at' timestamp is used to determine which competing metrics is more up to date. Waiter keeps only the latest.
+   'active-request-count' is used for auto-scaling and calculating total outstanding requests for a service.
+   'last-request-time' is used for Garbage Collecting and starting new versions of a service."
   [router-metrics-agent query-state-fn {:keys [request-method] :as request}]
   (when (not= request-method :post)
     (throw (ex-info "Invalid request method. Only POST is supported." {:log-level :info
