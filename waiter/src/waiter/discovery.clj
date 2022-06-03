@@ -17,13 +17,16 @@
   (:require [clojure.tools.logging :as log]
             [plumbing.core :as pc])
   (:import (java.net Inet4Address)
+           (java.util HashMap)
            (org.apache.curator.framework CuratorFramework)
-           (org.apache.curator.x.discovery ServiceCache ServiceDiscovery ServiceDiscoveryBuilder ServiceInstance ServiceInstanceBuilder UriSpec)))
+           (org.apache.curator.x.discovery ServiceCache ServiceDiscovery ServiceDiscoveryBuilder ServiceInstance ServiceInstanceBuilder UriSpec)
+           (org.apache.curator.x.discovery.details JsonInstanceSerializer)))
 
 (defn- ->service-instance
   [id service-name {:keys [host port router-fqdn ssl-port]}]
-  (let [payload (hash-map "router-fqdn" router-fqdn
-                          "ssl-port" ssl-port)
+  (let [payload (doto (HashMap.)
+                  (.put "router-fqdn" router-fqdn)
+                  (.put "ssl-port" ssl-port))
         builder (-> (ServiceInstance/builder)
                     (.id id)
                     (.name service-name)
@@ -44,11 +47,13 @@
 
 (defn- ->service-discovery
   [^CuratorFramework curator base-path instance]
-  (-> (ServiceDiscoveryBuilder/builder Void)
-      (.client curator)
-      (.basePath base-path)
-      (.thisInstance instance)
-      (.build)))
+  (let [payload-class (class (HashMap.))]
+    (-> (ServiceDiscoveryBuilder/builder payload-class)
+        (.client curator)
+        (.basePath base-path)
+        (.serializer (JsonInstanceSerializer. payload-class))
+        (.thisInstance instance)
+        (.build))))
 
 (defn- ->service-cache
   [^ServiceDiscovery service-discovery service-name]
@@ -96,7 +101,7 @@
 (defn- router-details
   "Returns a map representing the details of the given router."
   [instance]
-  (let [custom-details (pc/map-keys keyword (.geyPayload instance))
+  (let [custom-details (pc/map-keys keyword (.getPayload instance))
         details {:address (.getAddress instance)
                  :custom-details custom-details
                  :id (.getId instance)
