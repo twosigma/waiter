@@ -49,6 +49,15 @@
       (testing "updated-at must be an ISO timestamp"
         (let [expected-msg "Invalid 's1.i1.updated-at' field. Must be ISO-8601 time."]
           (assert-invalid-body
+            ; wrong time format
+            waiter-url (assoc-in metrics-payload ["s1" "i1" "updated-at"] "2022-05-31") expected-msg)
+          (assert-invalid-body
+            ; missing milliseconds
+            waiter-url (assoc-in metrics-payload ["s1" "i1" "updated-at"] "2022-05-31T02:50:44Z") expected-msg)
+          (assert-invalid-body
+            ; missing 'Z' character
+            waiter-url (assoc-in metrics-payload ["s1" "i1" "updated-at"] "2022-05-31T14:50:44.956") expected-msg)
+          (assert-invalid-body
             waiter-url (assoc-in metrics-payload ["s1" "i1" "updated-at"] "not-iso-string") expected-msg)
           (assert-invalid-body
             waiter-url (assoc-in metrics-payload ["s1" "i1" "updated-at"] 5) expected-msg)
@@ -57,6 +66,15 @@
 
       (testing "last-request-time must be an ISO timestamp"
         (let [expected-msg "Invalid 's1.i1.metrics.last-request-time' field. Must be ISO-8601 time."]
+          (assert-invalid-body
+            ; wrong time format
+            waiter-url (assoc-in metrics-payload ["s1" "i1" "metrics" "last-request-time"] "2022-05-31") expected-msg)
+          (assert-invalid-body
+            ; missing milliseconds
+            waiter-url (assoc-in metrics-payload ["s1" "i1" "metrics" "last-request-time"] "2022-05-31T02:50:44Z") expected-msg)
+          (assert-invalid-body
+            ; missing 'Z' character
+            waiter-url (assoc-in metrics-payload ["s1" "i1" "metrics" "last-request-time"] "2022-05-31T14:50:44.956") expected-msg)
           (assert-invalid-body
             waiter-url (assoc-in metrics-payload ["s1" "i1" "metrics" "last-request-time"] "not-iso-string") expected-msg)
           (assert-invalid-body
