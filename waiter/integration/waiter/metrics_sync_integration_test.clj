@@ -24,25 +24,25 @@
 
 (defmacro assert-invalid-body
   "Asserts that sending the provided body results in the expected-msg being inside the response body. This is used
-  to confirm waiter is validating the /instance-metrics endpoint properly."
+  to confirm waiter is validating the /metrics/external endpoint properly."
   [waiter-url req-body expected-msg]
   `(let [waiter-url# ~waiter-url
          req-body# ~req-body
          string-req-body# (utils/clj->json req-body#)
          expected-msg# ~expected-msg
-         res# (make-request waiter-url# "/instance-metrics" :method :post :body string-req-body#)
+         res# (make-request waiter-url# "/metrics/external" :method :post :body string-req-body#)
          res-body# (:body res#)]
      (assert-response-status res# http-400-bad-request)
      (is (.contains res-body# expected-msg#))))
 
-(deftest ^:parallel ^:integration-fast test-instance-metrics-validate
+(deftest ^:parallel ^:integration-fast test-external-metrics-validate
   (testing-using-waiter-url
     (let [metrics-payload {"s1" {"i1" {"updated-at" "2022-05-31T14:50:44.956Z"
                                        "metrics" {"last-request-time" "2022-05-31T14:50:44.956Z"
                                                   "active-request-count" 0}}}}]
 
       (testing "method must be POST"
-        (let [{:keys [body status]} (make-request waiter-url "/instance-metrics" :method :get)]
+        (let [{:keys [body status]} (make-request waiter-url "/metrics/external" :method :get)]
           (is (= status http-400-bad-request))
           (is (.contains body "Invalid request method. Only POST is supported.") body)))
 
@@ -78,7 +78,7 @@
   reports any metrics for the expected-nil-keys-list."
   [waiter-url routers cookies metrics-payload expected-metrics expected-nil-keys-list & {:keys [fail-eagerly-on-nil-keys]
                                                                                          :or {fail-eagerly-on-nil-keys true}}]
-  (let [metrics-response (make-request waiter-url "/instance-metrics" :method :post :body (utils/clj->json metrics-payload)
+  (let [metrics-response (make-request waiter-url "/metrics/external" :method :post :body (utils/clj->json metrics-payload)
                                        :headers {:content-type "application/json"})]
     (assert-response-status metrics-response http-200-ok)
     (is (= {"no-op" false}
@@ -123,11 +123,11 @@
           :interval 1 :timeout 5)
         "All Waiter routers never reported the expected metrics.")))
 
-(deftest ^:parallel ^:integration-slow test-instance-metrics-updates-metrics-syncer
+(deftest ^:parallel ^:integration-slow test-external-metrics-updates-metrics-syncer
   (testing-using-waiter-url
     (let [routers (routers waiter-url)]
       (testing "Empty body results in no-op"
-        (let [{:keys [body] :as response} (make-request waiter-url "/instance-metrics" :method :post :body "{}"
+        (let [{:keys [body] :as response} (make-request waiter-url "/metrics/external" :method :post :body "{}"
                                                         :headers {:content-type "application/json"})]
           (assert-response-status response http-200-ok)
           (is (= {"no-op" true} (try-parse-json (str body))))))
@@ -138,7 +138,7 @@
               req-body {"s1" {"i1" {"updated-at" "2022-05-31T14:50:44.956Z"
                                     "metrics" {"last-request-time" "2022-05-31T14:50:44.956Z"
                                                "active-request-count" 0}}}}
-              {:keys [body] :as response} (make-request waiter-url "/instance-metrics" :method :post :body (utils/clj->json req-body)
+              {:keys [body] :as response} (make-request waiter-url "/metrics/external" :method :post :body (utils/clj->json req-body)
                                                         :headers {:content-type "application/json"})]
           (assert-response-status response http-200-ok)
           (is (= {"no-op" true} (try-parse-json (str body))))))

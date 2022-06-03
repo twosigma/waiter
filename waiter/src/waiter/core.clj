@@ -110,8 +110,8 @@
                      "eject" :eject-instance-handler-fn
                      "ejected" {["/" :service-id] :ejected-instances-list-handler-fn}
                      "favicon.ico" :favicon-handler-fn
-                     "instance-metrics" :instance-metrics-request-handler-fn
-                     "metrics" :metrics-request-handler-fn
+                     "metrics" {"" :metrics-request-handler-fn
+                                "/external" :external-metrics-handler-fn}
                      (subs oidc/oidc-callback-uri 1) :oidc-callback-handler-fn
                      "service-id" :service-id-handler-fn
                      "profiles" :profile-list-handler-fn
@@ -1587,6 +1587,12 @@
    :ejected-instances-list-handler-fn (pc/fnk [[:daemons populate-maintainer-chan!]]
                                         (fn ejected-instances-list-handler-fn [{{:keys [service-id]} :route-params :as request}]
                                           (handler/get-ejected-instances populate-maintainer-chan! service-id request)))
+   :external-metrics-handler-fn (pc/fnk [[:daemons service-id-instance-id-active?-fn]
+                                         [:state router-metrics-agent service-id-exists?-fn]]
+                                  (fn external-metrics-handler-fn [request]
+                                    (metrics-sync/handle-external-metrics-request
+                                      router-metrics-agent service-id-exists?-fn service-id-instance-id-active?-fn
+                                      request)))
    :favicon-handler-fn (pc/fnk []
                          (fn favicon-handler-fn [_]
                            {:body (io/input-stream (io/resource "web/favicon.ico"))
@@ -1613,12 +1619,6 @@
                                        notify-instance-killed-fn peers-acknowledged-eject-requests-fn
                                        scheduler populate-maintainer-chan! scaling-timeout-config
                                        scheduler-interactions-thread-pool request)))))
-   :instance-metrics-request-handler-fn (pc/fnk [[:daemons service-id-instance-id-active?-fn]
-                                                 [:state router-metrics-agent service-id-exists?-fn]]
-                                          (fn instance-metrics-request-handler-fn [request]
-                                            (metrics-sync/handle-instance-metrics-request
-                                              router-metrics-agent service-id-exists?-fn service-id-instance-id-active?-fn
-                                              request)))
    :metrics-request-handler-fn (pc/fnk []
                                  (fn metrics-request-handler-fn [request]
                                    (handler/metrics-request-handler request)))

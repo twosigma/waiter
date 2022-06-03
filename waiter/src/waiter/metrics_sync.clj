@@ -175,7 +175,7 @@
 
           ; :external-metrics are merged based on 'updated-at' timestamp for individual instance metrics.
           ; These metrics are absolute (one per waiter cluster, instead of waiter router), as they are provided
-          ; by an external source periodically with the /instance-metrics endpoint.
+          ; by an external source periodically with the /metrics/external endpoint.
           (update :external-metrics merge-service-id->instance-id->metric-maps external-metrics service-id-exists?-fn
                   service-id-instance-id-active?-fn))
       router-metrics-state)))
@@ -500,7 +500,7 @@
     (catch Exception e
       (log/error e "error in obtaining router-id->metrics data for" service-id))))
 
-(defn handle-instance-metrics-request
+(defn handle-external-metrics-request
   "Handle incoming external instance metrics and update metrics stored in memory. Expect the json body to be in the format
   service-id->instance-id->metric where the metric is:
   {'updated-at' ISO-8601 timestamp
