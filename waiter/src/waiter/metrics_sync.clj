@@ -124,22 +124,16 @@
 (defn- merge-instance-id->metric-maps
   "Merges two instance-id->metric maps iterating through the instance-ids in both maps and checking which map has the
   latest metric based on 'updated-at'. If the metric does not exist in one of the maps, then defaults to the non nil
-  metric."
+  metric. We can assume that 'updated-at' is an ISO-8601 timestamp because it was already validated."
   [instance-id->metric-1 instance-id->metric-2]
-  (pc/map-from-keys
-    (fn [instance-id]
-      (let [metric-1 (get instance-id->metric-1 instance-id)
-            updated-at-1 (get metric-1 "updated-at")
-            metric-2 (get instance-id->metric-2 instance-id)
-            updated-at-2 (get metric-2 "updated-at")]
-        (if (and (some? updated-at-1) (some? updated-at-2))
-          (let [updated-at-1 (du/str-to-date updated-at-1)
-                updated-at-2 (du/str-to-date updated-at-2)]
-            (if (t/before? updated-at-1 updated-at-2)
-              metric-2
-              metric-1))
-          (if (some? updated-at-1) metric-1 metric-2))))
-    (set (concat (keys instance-id->metric-1) (keys instance-id->metric-2)))))
+  (merge-with (fn [metric-1 metric-2]
+                (let [updated-at-1 (get metric-1 "updated-at")
+                      updated-at-2 (get metric-2 "updated-at")]
+                  (if (pos? (compare updated-at-2 updated-at-1))
+                    metric-2
+                    metric-1)))
+              instance-id->metric-1
+              instance-id->metric-2))
 
 (defn- merge-service-id->instance-id->metric-maps
   "Merges two service-id->instance-id maps by calling merge-instance-id->metric-maps on the values with the same
@@ -151,12 +145,10 @@
                 service-id-exists?-fn service-id-instance-id-active?-fn service-id->instance-id->metric-1)
         map-2 (clean-service-id->instance-id->metric
                 service-id-exists?-fn service-id-instance-id-active?-fn service-id->instance-id->metric-2)]
-    (pc/map-from-keys
-      (fn [service-id]
-        (merge-instance-id->metric-maps
-          (get map-1 service-id)
-          (get map-2 service-id)))
-      (set (concat (keys map-1) (keys map-2))))))
+    (merge-with (fn [instance-id->metric-1 instance-id->metric-2]
+                  (merge-instance-id->metric-maps instance-id->metric-1 instance-id->metric-2))
+                map-1
+                map-2)))
 
 (defn update-router-metrics
   "Updates the agent state with the latest metrics from a router.
