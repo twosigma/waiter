@@ -124,11 +124,12 @@
 (defn- merge-instance-id->metric-maps
   "Merges two instance-id->metric maps iterating through the instance-ids in both maps and checking which map has the
   latest metric based on 'updated-at'. If the metric does not exist in one of the maps, then defaults to the non nil
-  metric. We can assume that 'updated-at' is an ISO-8601 timestamp because it was already validated."
+  metric."
   [instance-id->metric-1 instance-id->metric-2]
   (merge-with (fn [metric-1 metric-2]
                 (let [updated-at-1 (get metric-1 "updated-at")
                       updated-at-2 (get metric-2 "updated-at")]
+                  ; We can assume that 'updated-at' is an ISO-8601 timestamp because it was already validated
                   (if (pos? (compare updated-at-2 updated-at-1))
                     metric-2
                     metric-1)))
@@ -513,7 +514,7 @@
         (fn throw-error-response-if-invalid-fn
           [valid?-fn map keys error-msg]
           (let [val (get-in map keys)]
-            (when (not (valid?-fn val))
+            (when-not (valid?-fn val)
               (throw (ex-info
                        (str "Invalid '" (str/join "." keys) "' field. " error-msg)
                        {:log-level :info
