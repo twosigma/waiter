@@ -811,7 +811,7 @@
                                               :scheduler-sync-time (t/now)}]])
       (async/<!! router-state-push-chan)
 
-      (async/>!! router-chan {router-id-0 (router-id->router-url router-id-0)})
+      (async/>!! router-chan {:router-id->endpoint-url {router-id-0 (router-id->router-url router-id-0)}})
       (let [{:keys [service-id->my-instance->slots] :as router-state} (async/<!! router-state-push-chan)]
         (is (= {service-id-0 {instance-0-1 1 instance-0-2 1 instance-0-3 1 instance-0-4 1 instance-0-5 1 instance-0-6 1}
                 service-id-1 {instance-1-1 1}
@@ -822,8 +822,8 @@
                service-id->my-instance->slots)
             (str router-state)))
 
-      (async/>!! router-chan {router-id-0 (router-id->router-url router-id-0)
-                              router-id-1 (router-id->router-url router-id-1)})
+      (async/>!! router-chan {:router-id->endpoint-url {router-id-0 (router-id->router-url router-id-0)
+                                                        router-id-1 (router-id->router-url router-id-1)}})
       (let [{:keys [service-id->my-instance->slots] :as router-state} (async/<!! router-state-push-chan)]
         (is (= {service-id-0 {instance-0-2 1 instance-0-4 1 instance-0-6 1}
                 service-id-1 {}
@@ -834,9 +834,9 @@
                service-id->my-instance->slots)
             (str router-state)))
 
-      (async/>!! router-chan {router-id-0 (router-id->router-url router-id-0)
-                              router-id-1 (router-id->router-url router-id-1)
-                              router-id-2 (router-id->router-url router-id-2)})
+      (async/>!! router-chan {:router-id->endpoint-url {router-id-0 (router-id->router-url router-id-0)
+                                                        router-id-1 (router-id->router-url router-id-1)
+                                                        router-id-2 (router-id->router-url router-id-2)}})
       (let [{:keys [service-id->my-instance->slots] :as router-state} (async/<!! router-state-push-chan)]
         (is (= {service-id-0 {instance-0-3 1 instance-0-6 1}
                 service-id-1 {}
@@ -847,8 +847,8 @@
                service-id->my-instance->slots)
             (str router-state)))
 
-      (async/>!! router-chan {router-id-0 (router-id->router-url router-id-0)
-                              router-id-2 (router-id->router-url router-id-2)})
+      (async/>!! router-chan {:router-id->endpoint-url {router-id-0 (router-id->router-url router-id-0)
+                                                        router-id-2 (router-id->router-url router-id-2)}})
       (let [{:keys [service-id->my-instance->slots] :as router-state} (async/<!! router-state-push-chan)]
         (is (= {service-id-0 {instance-0-2 1 instance-0-4 1 instance-0-6 1}
                 service-id-1 {}
@@ -859,8 +859,8 @@
                service-id->my-instance->slots)
             (str router-state)))
 
-      (async/>!! router-chan {router-id-1 (router-id->router-url router-id-1)
-                              router-id-2 (router-id->router-url router-id-2)})
+      (async/>!! router-chan {:router-id->endpoint-url {router-id-1 (router-id->router-url router-id-1)
+                                                        router-id-2 (router-id->router-url router-id-2)}})
       (let [{:keys [service-id->my-instance->slots] :as router-state} (async/<!! router-state-push-chan)]
         (is (= {service-id-0 nil
                 service-id-1 nil
@@ -871,9 +871,9 @@
                service-id->my-instance->slots)
             (str router-state)))
 
-      (async/>!! router-chan {router-id-0 (router-id->router-url router-id-0)
-                              router-id-1 (router-id->router-url router-id-1)
-                              router-id-2 (router-id->router-url router-id-2)})
+      (async/>!! router-chan {:router-id->endpoint-url {router-id-0 (router-id->router-url router-id-0)
+                                                        router-id-1 (router-id->router-url router-id-1)
+                                                        router-id-2 (router-id->router-url router-id-2)}})
       (let [{:keys [service-id->my-instance->slots] :as router-state} (async/<!! router-state-push-chan)]
         (is (= {service-id-0 {instance-0-3 1 instance-0-6 1}
                 service-id-1 {}
@@ -1177,8 +1177,9 @@
                                 (let [instances-partition (partition (quot (inc (count instances)) (count routers)) instances)]
                                   (map #(sort (:id (remove nil? %))) instances-partition)))))
         router-id "router.0"
-        routers {router-id (str "http://www." router-id ".com")
-                 "router.1" (str "http://www.router.1.com")}
+        router-id->endpoint-url {router-id (str "http://www." router-id ".com")
+                                 "router.1" (str "http://www.router.1.com")}
+        routers {:router-id->endpoint-url router-id->endpoint-url}
         services-fn #(vec (map (fn [i] (str "service-" i)) (range (inc (if (> % (/ num-message-iterations 2)) (- % 5) %)))))
         service-id->service-description-fn (fn [id] (let [service-num (Integer/parseInt (str/replace id "service-" ""))]
                                                       {"concurrency-level" concurrency-level
@@ -1199,7 +1200,7 @@
 
 
       (async/>!! router-chan routers)
-      (is (= routers (:routers (async/<!! router-state-push-chan))))
+      (is (= (:router-id->endpoint-url routers) (:routers (async/<!! router-state-push-chan))))
 
       (let [start-time (t/now)
             healthy-instances-fn (fn [service-id index n]
@@ -1268,10 +1269,11 @@
                                     (pc/map-from-keys
                                       (fn [service]
                                         (let [healthy-instances (healthy-instances-fn service (index-fn service) n)
-                                              my-instances (second (first (slot-partition-fn routers healthy-instances)))]
+                                              my-instances (second (first (slot-partition-fn router-id->endpoint-url healthy-instances)))]
                                           my-instances))
                                       expected-service-ids)
-                                    :routers routers
+                                    :router-details (:router-id->details routers)
+                                    :routers (:router-id->endpoint-url routers)
                                     :time current-time})
                   state (async/<!! router-state-push-chan)
                   actual-state (dissoc state :iteration :service-id->instance-counts)]
@@ -1290,14 +1292,15 @@
         concurrency-level 1
         slot-partition-fn (fn [routers instances]
                             (pc/map-vals
-                              (fn [my-instances] (into {} (map (fn [instance] {instance concurrency-level}) my-instances)))
-                              (zipmap
-                                routers
-                                (let [instances-partition (partition (quot (inc (count instances)) (count routers)) instances)]
-                                  (map #(sort (:id (remove nil? %))) instances-partition)))))
+                             (fn [my-instances] (into {} (map (fn [instance] {instance concurrency-level}) my-instances)))
+                             (zipmap
+                              routers
+                              (let [instances-partition (partition (quot (inc (count instances)) (count routers)) instances)]
+                                (map #(sort (:id (remove nil? %))) instances-partition)))))
         router-id "router.0"
-        routers {router-id (str "http://www." router-id ".com")
-                 "router.1" (str "http://www.router.1.com")}
+        routers {:router-id->details {}
+                 :router-id->endpoint-url {router-id (str "http://www." router-id ".com")
+                                           "router.1" (str "http://www.router.1.com")}}
         services-fn #(vec (map (fn [i] (str "service-" i)) (range (inc (if (> % (/ num-message-iterations 2)) (- % 5) %)))))
         grace-period-secs 100
         service-id->service-description-fn (fn [id] (let [service-num (Integer/parseInt (str/replace id "service-" ""))]
@@ -1318,7 +1321,7 @@
         (async/tap router-state-push-mult router-state-push-chan))
 
       (async/>!! router-chan routers)
-      (is (= routers (:routers (async/<!! router-state-push-chan))))
+      (is (= (:router-id->endpoint-url routers) (:routers (async/<!! router-state-push-chan))))
 
       (let [start-time (t/now)
             unhealthy-health-check-statuses [http-400-bad-request http-401-unauthorized http-402-payment-required]
@@ -1372,7 +1375,7 @@
 
                   state (async/<!! router-state-push-chan)
                   actual-state (dissoc state :iteration :service-id->healthy-instances :service-id->expired-instances :service-id->starting-instances
-                                       :service-id->instance-counts :service-id->my-instance->slots :routers :time)]
+                                       :service-id->instance-counts :service-id->my-instance->slots :router-details :routers :time)]
               (when (not= expected-state actual-state)
                 (clojure.pprint/pprint (take 2 (clojure.data/diff expected-state actual-state))))
               (is (= expected-state actual-state) (str (take 2 (clojure.data/diff expected-state actual-state)))))))

@@ -163,6 +163,9 @@
                   ;; However, larger headers will also consume more memory.
                   :response-header-size 8192
 
+                  ;; The fully qualified domain name for this router
+                  :router-fqdn "route1.waiter.example.com"
+
                   ;; Whether to send the Date header in responses
                   :send-date-header? false
 

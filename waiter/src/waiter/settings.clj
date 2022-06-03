@@ -134,6 +134,7 @@
                                      (s/optional-key :max-threads) schema/positive-int
                                      (s/optional-key :request-header-size) schema/positive-int
                                      (s/optional-key :response-header-size) schema/positive-int
+                                     (s/optional-key :router-fqdn) schema/non-empty-string
                                      (s/optional-key :send-date-header?) s/Bool
                                      (s/optional-key :ssl-port) schema/positive-int
                                      (s/optional-key :truststore) schema/non-empty-string

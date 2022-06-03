@@ -14,14 +14,17 @@
 ;; limitations under the License.
 ;;
 (ns waiter.discovery
-  (:require [clojure.tools.logging :as log])
+  (:require [clojure.tools.logging :as log]
+            [plumbing.core :as pc])
   (:import (java.net Inet4Address)
            (org.apache.curator.framework CuratorFramework)
            (org.apache.curator.x.discovery ServiceCache ServiceDiscovery ServiceDiscoveryBuilder ServiceInstance ServiceInstanceBuilder UriSpec)))
 
 (defn- ->service-instance
-  [id service-name {:keys [host port]}]
-  (let [builder (-> (ServiceInstance/builder)
+  [id service-name {:keys [host port router-fqdn ssl-port]}]
+  (let [payload (hash-map "router-fqdn" router-fqdn
+                          "ssl-port" ssl-port)
+        builder (-> (ServiceInstance/builder)
                     (.id id)
                     (.name service-name)
                     (.uriSpec (UriSpec. "{scheme}://{address}:{port}/{endpoint}"))
@@ -35,7 +38,8 @@
                                                     {:id id
                                                      :inet-addresses inet-addresses
                                                      :service-name service-name}))))
-                                host)))]
+                                host))
+                    (.payload payload))]
     (.build builder)))
 
 (defn- ->service-discovery
@@ -89,14 +93,32 @@
     (zipmap (map #(str (.getId %)) filtered-instances)
             (map #(get-instance-url % protocol endpoint) filtered-instances))))
 
+(defn- router-details
+  "Returns a map representing the details of the given router."
+  [instance]
+  (let [custom-details (pc/map-keys keyword (.geyPayload instance))
+        details {:address (.getAddress instance)
+                 :custom-details custom-details
+                 :id (.getId instance)
+                 :name (.getName instance)
+                 :port (.getPort instance)}]
+    details))
+
+(defn router-id->details
+  "For all routers that pass the exclude-set, returns a mapping from router-id to its details."
+  [discovery & {:keys [exclude-set] :or {exclude-set #{}}}]
+  (let [filtered-instances (routers discovery exclude-set)]
+    (zipmap (map #(str (.getId %)) filtered-instances)
+            (map router-details filtered-instances))))
+
 (defn cluster-size
   "Returns the number of routers particpating in the ZooKeeper cluster."
   [discovery]
   (count (routers discovery #{})))
 
 (defn register
-  [router-id curator service-name discovery-path {:keys [host port]}]
-  (let [instance (->service-instance router-id service-name {:host host :port port})
+  [router-id curator service-name discovery-path {:keys [host port router-fqdn ssl-port]}]
+  (let [instance (->service-instance router-id service-name {:host host :port port :router-fqdn router-fqdn :ssl-port ssl-port})
         discovery (->service-discovery curator discovery-path instance)
         cache (->service-cache discovery service-name)]
     (log/info "Using service name:" service-name "for router id:" router-id)

@@ -541,6 +541,7 @@
     (let [state-atom (atom {:all-available-service-ids #{}
                             :iteration 0
                             :routers []
+                            :router-details []
                             :service-id->deployment-error {}
                             :service-id->expired-instances {}
                             :service-id->failed-instances {}
@@ -742,10 +743,10 @@
 
                         router-chan
                         ([data]
-                         (let [router-id->endpoint-url data
+                         (let [{:keys [router-id->details router-id->endpoint-url]} data
                                new-state
                                (if (not= routers router-id->endpoint-url)
-                                 (let [candidate-state (assoc current-state :routers router-id->endpoint-url)
+                                 (let [candidate-state (assoc current-state :router-details router-id->details :routers router-id->endpoint-url)
                                        current-routers (-> current-state :routers keys vec sort)
                                        new-routers (-> router-id->endpoint-url keys vec sort)]
                                    (log/info "peer router info changed from" current-routers "to" new-routers)

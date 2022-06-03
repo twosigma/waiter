@@ -21,11 +21,15 @@
 
 (deftest test-retrieve-peer-routers
   (testing "successful-retrieval-from-discovery"
-    (with-redefs [discovery/router-id->endpoint-url (constantly {"router-1" "url-1", "router-2" "url-2"})]
-      (let [discovery (Object.)
-            router-chan (async/chan 1)]
-        (retrieve-peer-routers discovery router-chan)
-        (is (= {"router-1" "url-1", "router-2" "url-2"} (async/<!! router-chan))))))
+    (let [router-id->details {"router-1" {}, "router-2" {}}
+          router-id->endpoint-url {"router-1" "url-1", "router-2" "url-2"}]
+      (with-redefs [discovery/router-id->details (constantly router-id->details)
+                    discovery/router-id->endpoint-url (constantly router-id->endpoint-url)]
+        (let [discovery (Object.)
+              router-chan (async/chan 1)]
+          (retrieve-peer-routers discovery router-chan)
+          (is (= {:router-id->details router-id->details :router-id->endpoint-url router-id->endpoint-url}
+                 (async/<!! router-chan)))))))
   (testing "exception-on-retrieval-from-discovery"
     (with-redefs [discovery/router-id->endpoint-url (fn [_ _ _]
                                                       (throw (RuntimeException. "Expected exception thrown from test")))]
