@@ -24,6 +24,7 @@
             [metrics.timers :as timers]
             [plumbing.core :as pc]
             [qbits.jet.client.websocket :as ws]
+            [waiter.config :as config]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
             [waiter.status-codes :refer :all]
@@ -504,9 +505,7 @@
     (throw (ex-info "Invalid request method. Only POST is supported." {:log-level :info
                                                                        :request-method request-method
                                                                        :status http-400-bad-request})))
-  (let [service-metrics (-> request
-                            ru/json-request
-                          :body)
+  (let [{:strs [cluster service-metrics]} (-> request ru/json-request :body)
         throw-error-response-if-invalid-fn
         (fn throw-error-response-if-invalid-fn
           [valid?-fn map keys error-msg]
@@ -518,6 +517,13 @@
                         :status http-400-bad-request})))))
 
         invalid-time-error-msg "Must be ISO-8601 time."]
+
+    ; only process metrics if the cluster matches the current cluster
+    (when (not= cluster (config/retrieve-cluster-name))
+      (throw (ex-info "Metrics are for a different cluster."
+                      {:cluster cluster
+                       :log-level :info
+                       :status http-400-bad-request})))
 
     ; throw error if any of the metrics for an instance is invalid, and any of the required metrics are missing
     (doseq [[service-id instance-id->metric] service-metrics]

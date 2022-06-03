@@ -37,59 +37,67 @@
 
 (deftest ^:parallel ^:integration-fast test-external-metrics-validate
   (testing-using-waiter-url
-    (let [metrics-payload {"s1" {"i1" {"updated-at" "2022-05-31T14:50:44.956Z"
-                                       "metrics" {"last-request-time" "2022-05-31T14:50:44.956Z"
-                                                  "active-request-count" 0}}}}]
+    (let [cluster-name (retrieve-cluster-name waiter-url)
+          metrics-payload
+          {"cluster" cluster-name
+           "service-metrics"
+           {"s1" {"i1" {"updated-at" "2022-05-31T14:50:44.956Z"
+                        "metrics" {"last-request-time" "2022-05-31T14:50:44.956Z"
+                                   "active-request-count" 0}}}}}]
 
       (testing "method must be POST"
         (let [{:keys [body status]} (make-request waiter-url "/metrics/external" :method :get)]
           (is (= status http-400-bad-request))
           (is (.contains body "Invalid request method. Only POST is supported.") body)))
 
+      (testing "wrong cluster in payload causes a 400 response"
+        (let [expected-msg "Metrics are for a different cluster."]
+          (assert-invalid-body waiter-url (assoc-in metrics-payload ["cluster"] "different-cluster") expected-msg)))
+
       (testing "updated-at must be an ISO timestamp"
         (let [expected-msg "Invalid 's1.i1.updated-at' field. Must be ISO-8601 time."]
           (assert-invalid-body
             ; wrong time format
-            waiter-url (assoc-in metrics-payload ["s1" "i1" "updated-at"] "2022-05-31") expected-msg)
+            waiter-url (assoc-in metrics-payload ["service-metrics" "s1" "i1" "updated-at"] "2022-05-31") expected-msg)
           (assert-invalid-body
             ; missing milliseconds
-            waiter-url (assoc-in metrics-payload ["s1" "i1" "updated-at"] "2022-05-31T02:50:44Z") expected-msg)
+            waiter-url (assoc-in metrics-payload ["service-metrics" "s1" "i1" "updated-at"] "2022-05-31T02:50:44Z") expected-msg)
           (assert-invalid-body
             ; missing 'Z' character
-            waiter-url (assoc-in metrics-payload ["s1" "i1" "updated-at"] "2022-05-31T14:50:44.956") expected-msg)
+            waiter-url (assoc-in metrics-payload ["service-metrics" "s1" "i1" "updated-at"] "2022-05-31T14:50:44.956") expected-msg)
           (assert-invalid-body
-            waiter-url (assoc-in metrics-payload ["s1" "i1" "updated-at"] "not-iso-string") expected-msg)
+            waiter-url (assoc-in metrics-payload ["service-metrics" "s1" "i1" "updated-at"] "not-iso-string") expected-msg)
           (assert-invalid-body
-            waiter-url (assoc-in metrics-payload ["s1" "i1" "updated-at"] 5) expected-msg)
+            waiter-url (assoc-in metrics-payload ["service-metrics" "s1" "i1" "updated-at"] 5) expected-msg)
           (assert-invalid-body
-            waiter-url (assoc-in metrics-payload ["s1" "i1" "updated-at"] "") expected-msg)))
+            waiter-url (assoc-in metrics-payload ["service-metrics" "s1" "i1" "updated-at"] "") expected-msg)))
 
       (testing "last-request-time must be an ISO timestamp"
         (let [expected-msg "Invalid 's1.i1.metrics.last-request-time' field. Must be ISO-8601 time."]
           (assert-invalid-body
             ; wrong time format
-            waiter-url (assoc-in metrics-payload ["s1" "i1" "metrics" "last-request-time"] "2022-05-31") expected-msg)
+            waiter-url (assoc-in metrics-payload ["service-metrics" "s1" "i1" "metrics" "last-request-time"] "2022-05-31") expected-msg)
           (assert-invalid-body
             ; missing milliseconds
-            waiter-url (assoc-in metrics-payload ["s1" "i1" "metrics" "last-request-time"] "2022-05-31T02:50:44Z") expected-msg)
+            waiter-url (assoc-in metrics-payload ["service-metrics" "s1" "i1" "metrics" "last-request-time"] "2022-05-31T02:50:44Z") expected-msg)
           (assert-invalid-body
             ; missing 'Z' character
-            waiter-url (assoc-in metrics-payload ["s1" "i1" "metrics" "last-request-time"] "2022-05-31T14:50:44.956") expected-msg)
+            waiter-url (assoc-in metrics-payload ["service-metrics" "s1" "i1" "metrics" "last-request-time"] "2022-05-31T14:50:44.956") expected-msg)
           (assert-invalid-body
-            waiter-url (assoc-in metrics-payload ["s1" "i1" "metrics" "last-request-time"] "not-iso-string") expected-msg)
+            waiter-url (assoc-in metrics-payload ["service-metrics" "s1" "i1" "metrics" "last-request-time"] "not-iso-string") expected-msg)
           (assert-invalid-body
-            waiter-url (assoc-in metrics-payload ["s1" "i1" "metrics" "last-request-time"] 5) expected-msg)
+            waiter-url (assoc-in metrics-payload ["service-metrics" "s1" "i1" "metrics" "last-request-time"] 5) expected-msg)
           (assert-invalid-body
-            waiter-url (assoc-in metrics-payload ["s1" "i1" "metrics" "last-request-time"] "") expected-msg)))
+            waiter-url (assoc-in metrics-payload ["service-metrics" "s1" "i1" "metrics" "last-request-time"] "") expected-msg)))
 
       (testing "active-request-count must be a non negative integer"
         (let [expected-msg "Invalid 's1.i1.metrics.active-request-count' field. Must be non-negative integer."]
           (assert-invalid-body
-            waiter-url (assoc-in metrics-payload ["s1" "i1" "metrics" "active-request-count"] -1) expected-msg)
+            waiter-url (assoc-in metrics-payload ["service-metrics" "s1" "i1" "metrics" "active-request-count"] -1) expected-msg)
           (assert-invalid-body
-            waiter-url (assoc-in metrics-payload ["s1" "i1" "metrics" "active-request-count"] "test") expected-msg)
+            waiter-url (assoc-in metrics-payload ["service-metrics" "s1" "i1" "metrics" "active-request-count"] "test") expected-msg)
           (assert-invalid-body
-            waiter-url (assoc-in metrics-payload ["s1" "i1" "metrics" "active-request-count"] "") expected-msg))))))
+            waiter-url (assoc-in metrics-payload ["service-metrics" "s1" "i1" "metrics" "active-request-count"] "") expected-msg))))))
 
 (defn send-metrics-and-assert-expected-metrics
   "Send metrics-payload to the waiter-url and assert that each router reports the expected-metrics as well as never
@@ -144,9 +152,13 @@
 
 (deftest ^:parallel ^:integration-slow test-external-metrics-updates-metrics-syncer
   (testing-using-waiter-url
-    (let [routers (routers waiter-url)]
+    (let [cluster-name (retrieve-cluster-name waiter-url)
+          routers (routers waiter-url)]
       (testing "Empty body results in no-op"
-        (let [{:keys [body] :as response} (make-request waiter-url "/metrics/external" :method :post :body "{}"
+        (let [req-body {"cluster" cluster-name}
+              {:keys [body] :as response} (make-request waiter-url "/metrics/external"
+                                                        :method :post
+                                                        :body (utils/clj->json req-body)
                                                         :headers {:content-type "application/json"})]
           (assert-response-status response http-200-ok)
           (is (= {"no-op" true} (try-parse-json (str body))))))
@@ -154,10 +166,13 @@
       (testing "Metrics payload with only irrelevant external metrics will result in a no-op"
         (let [; s1 and i1 are never going to be an actual service-id or instance-id on the waiter routers. These metrics
               ; are expected to be filtered out.
-              req-body {"s1" {"i1" {"updated-at" "2022-05-31T14:50:44.956Z"
-                                    "metrics" {"last-request-time" "2022-05-31T14:50:44.956Z"
-                                               "active-request-count" 0}}}}
-              {:keys [body] :as response} (make-request waiter-url "/metrics/external" :method :post :body (utils/clj->json req-body)
+              req-body {"cluster" cluster-name
+                        "service-metrics" {"s1" {"i1" {"updated-at" "2022-05-31T14:50:44.956Z"
+                                                       "metrics" {"last-request-time" "2022-05-31T14:50:44.956Z"
+                                                                  "active-request-count" 0}}}}}
+              {:keys [body] :as response} (make-request waiter-url "/metrics/external"
+                                                        :method :post
+                                                        :body (utils/clj->json req-body)
                                                         :headers {:content-type "application/json"})]
           (assert-response-status response http-200-ok)
           (is (= {"no-op" true} (try-parse-json (str body))))))
@@ -179,40 +194,45 @@
             (assert-response-status canary-response-2 http-200-ok)
             (with-service-cleanup
               service-id-2
-              (let [metrics-payload {service-id-1 {instance-id-1 {"updated-at" "3000-05-31T14:50:44.956Z"
-                                                                  "metrics" {"last-request-time" "2022-05-31T14:50:44.956Z"
-                                                                             "active-request-count" 1}}}
-                                     service-id-2 {instance-id-2 {"updated-at" "3000-05-31T14:50:44.956Z"
-                                                                  "metrics" {"last-request-time" "2022-05-31T14:00:50.103Z"
-                                                                             "active-request-count" 2
-                                                                             "extra-metadata-should-not-be-filtered" "any-value"}}}}
-                    expected-metrics metrics-payload]
+              (let [metrics-payload
+                    {"cluster" cluster-name
+                     "service-metrics"
+                     {service-id-1 {instance-id-1 {"updated-at" "3000-05-31T14:50:44.956Z"
+                                                   "metrics" {"last-request-time" "2022-05-31T14:50:44.956Z"
+                                                              "active-request-count" 1}}}
+                      service-id-2 {instance-id-2 {"updated-at" "3000-05-31T14:50:44.956Z"
+                                                   "metrics" {"last-request-time" "2022-05-31T14:00:50.103Z"
+                                                              "active-request-count" 2
+                                                              "extra-metadata-should-not-be-filtered" "any-value"}}}}}
+                    expected-metrics (get metrics-payload "service-metrics")]
 
                 (testing "Sending external metrics for multiple instances updates existing metrics. Extra metadata should not be filtered out."
                   (send-metrics-and-assert-expected-metrics waiter-url routers cookies metrics-payload expected-metrics []))
 
                 (testing "Strictly later updated-at timestamp for instance metrics are stored. Unknown instances are ignored."
                   (let [metrics-payload-instance-1-updated
-                        {service-id-1 {"this-instance-is-gibberish" {"updated-at" "3001-05-31T14:50:44.956Z"
-                                                                     "metrics" {"last-request-time" "2022-05-01T14:50:44.956Z"
-                                                                                "active-request-count" 0}}
-                                       instance-id-1 {"updated-at" "3001-05-31T14:50:44.956Z"
-                                                      "metrics" {"last-request-time" "2022-05-01T14:50:44.956Z"
-                                                                 "active-request-count" 0}}}
-                         service-id-2 {"another-fake-instance-id" {"updated-at" "3000-05-31T14:50:44.800Z"
-                                                                   "metrics" {"last-request-time" "2022-06-01T14:00:50.103Z"
-                                                                              "active-request-count" 0}}
+                        {"cluster" cluster-name
+                         "service-metrics"
+                         {service-id-1 {"this-instance-is-gibberish" {"updated-at" "3001-05-31T14:50:44.956Z"
+                                                                      "metrics" {"last-request-time" "2022-05-01T14:50:44.956Z"
+                                                                                 "active-request-count" 0}}
+                                        instance-id-1 {"updated-at" "3001-05-31T14:50:44.956Z"
+                                                       "metrics" {"last-request-time" "2022-05-01T14:50:44.956Z"
+                                                                  "active-request-count" 0}}}
+                          service-id-2 {"another-fake-instance-id" {"updated-at" "3000-05-31T14:50:44.800Z"
+                                                                    "metrics" {"last-request-time" "2022-06-01T14:00:50.103Z"
+                                                                               "active-request-count" 0}}
 
-                                       ; instance-id-2 is attempting to update with stale metrics
-                                       instance-id-2 {"updated-at" "3000-05-31T14:50:44.800Z"
-                                                      "metrics" {"last-request-time" "2022-06-01T14:00:50.103Z"
-                                                                 "active-request-count" 0}}}}
+                                        ; instance-id-2 is attempting to update with stale metrics
+                                        instance-id-2 {"updated-at" "3000-05-31T14:50:44.800Z"
+                                                       "metrics" {"last-request-time" "2022-06-01T14:00:50.103Z"
+                                                                  "active-request-count" 0}}}}}
 
                         ; We only expect instance-id-1 to get updated because it has a later 'updated-at' timestamp
                         ; compared to previous stored while instance-id-2 has a stale timestamp and should be discarded
                         expected-metrics-instance-1-updated
-                        (assoc-in metrics-payload [service-id-1 instance-id-1]
-                                  (get-in metrics-payload-instance-1-updated [service-id-1 instance-id-1]))
+                        (assoc-in expected-metrics [service-id-1 instance-id-1]
+                                  (get-in metrics-payload-instance-1-updated ["service-metrics" service-id-1 instance-id-1]))
 
                         ; We expect these keys list have nil values on each router
                         expected-nil-keys-list [[service-id-1 "this-instance-is-gibberish"]
@@ -223,10 +243,12 @@
 
                 (testing "After service is killed, external metrics for that service should be discarded when new metrics are sent"
                   (let [metrics-payload-instance-1-updated
-                        {service-id-1 {instance-id-1 {"updated-at" "3002-05-31T14:50:44.956Z"
-                                                      "metrics" {"last-request-time" "2022-05-01T14:50:44.956Z"
-                                                                 "active-request-count" 0}}}}
-                        expected-metrics-instance-1-updated metrics-payload-instance-1-updated
+                        {"cluster" cluster-name
+                         "service-metrics"
+                         {service-id-1 {instance-id-1 {"updated-at" "3002-05-31T14:50:44.956Z"
+                                                       "metrics" {"last-request-time" "2022-05-01T14:50:44.956Z"
+                                                                  "active-request-count" 0}}}}}
+                        expected-metrics-instance-1-updated (get metrics-payload-instance-1-updated "service-metrics")
 
                         ; service-id-2 was killed, and should not be tracked in external metrics
                         expected-nil-keys-list [[service-id-2 instance-id-2]]]
