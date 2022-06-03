@@ -85,6 +85,8 @@
            (-> metrics-response
                :body
                try-parse-json)))
+    (log/info "expected metrics from routers:" {:expected-nil-keys-list expected-nil-keys-list
+                                                :expected-metrics expected-metrics})
     (is (wait-for
           (fn []
             (every?
@@ -107,12 +109,11 @@
                         ; metrics is a super map of the expected metrics. This is because the expected metrics keys->values
                         ; should all be in the actual metrics
                         [only-in-expected only-in-actual in-both] (data/diff expected-metrics actual-metrics)]
-                    (log/info "metrics diff result:" {:expected-nil-keys-list expected-nil-keys-list
-                                                      :expected-nil-keys-values (map #(get-in actual-metrics %) expected-nil-keys-list)
-                                                      :in-both in-both
-                                                      :only-in-expected only-in-expected
-                                                      :only-in-actual only-in-actual
-                                                      :expected-metrics expected-metrics})
+                    (log/info "actual metrics from routers:" {:expected-nil-keys-values (map #(get-in actual-metrics %) expected-nil-keys-list)
+                                                              :in-both in-both
+                                                              :only-in-expected only-in-expected
+                                                              :only-in-actual only-in-actual
+                                                              :router-url router-url})
                     (when fail-eagerly-on-nil-keys
                       (is provided-key-values-are-nil? "Expected metrics to not have metrics for provided keys."))
                     (and

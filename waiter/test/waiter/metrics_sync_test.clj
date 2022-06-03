@@ -119,8 +119,7 @@
                                                        "router-2" :router-2-time}
                                    :fee :fie}
           out-router-metrics-state (update-router-metrics in-router-metrics-state
-                                                          (constantly true)
-                                                          (constantly true)
+                                                          (constantly {})
                                                           {:router-metrics {"s1" {"c" 3}, "s2" {"c" 3}}
                                                            :source-router-id "router-3"
                                                            :time :router-3-time})]
@@ -141,8 +140,7 @@
                                                        "router-3" :router-3-time-old}
                                    :fee :fie}
           out-router-metrics-state (update-router-metrics in-router-metrics-state
-                                                          (constantly true)
-                                                          (constantly true)
+                                                          (constantly {})
                                                           {:router-metrics {"s1" {"c" 3}, "s2" {"c" {"e" 3, "f" {"g" 3}}}}
                                                            :source-router-id "router-3"
                                                            :time :router-3-time})]
@@ -191,7 +189,7 @@
                                                                 "router-4" ws-request-4}
                                        :fee :fie}
               out-router-metrics-state (publish-router-metrics in-router-metrics-state encrypt router-metrics "core"
-                                                               (constantly true) (constantly true))]
+                                                               (constantly {}))]
           (let [output-data {:data {:external-metrics {}
                                     :router-metrics router-metrics,
                                     :source-router-id "router-1",
@@ -344,7 +342,7 @@
           router-metrics-agent (agent in-router-metrics-state)
           ws-request {:in (async/chan 10), :out (async/chan 10)}]
       (async/>!! (:in ws-request) (encrypt {}))
-      (incoming-router-metrics-handler router-metrics-agent metrics-read-interval-ms encrypt decrypt (constantly true) (constantly true) ws-request)
+      (incoming-router-metrics-handler router-metrics-agent metrics-read-interval-ms encrypt decrypt (constantly {}) ws-request)
       (is (= (encrypt {:message "Missing source router!", :data {}}) (async/<!! (:out ws-request))))
       (is (nil? (async/<!! (:out ws-request)))))))
 
@@ -363,7 +361,7 @@
           source-router-id "router-1"
           iteration-limit 20]
       (async/>!! (:in ws-request) (encrypt {:source-router-id source-router-id}))
-      (incoming-router-metrics-handler router-metrics-agent 10 encrypt decrypt (constantly true) (constantly true) ws-request)
+      (incoming-router-metrics-handler router-metrics-agent 10 encrypt decrypt (constantly {}) ws-request)
       (let [release-chan (async/chan 1)]
         (async/go-loop [iteration 0]
           (log/debug "processing iteration" iteration)
@@ -430,7 +428,7 @@
                                                                   "outstanding" 1
                                                                   :response-chan @response-chan-atom
                                                                   :version @counter}})
-                  publish-router-metrics (fn [agent-state _ router-metrics _ _ _]
+                  publish-router-metrics (fn [agent-state _ router-metrics _ _]
                                            (let [response-chan (get-in router-metrics ["s1" :response-chan])]
                                              (when response-chan
                                                (async/>!! response-chan router-metrics)))
@@ -442,8 +440,7 @@
               encrypt identity
               local-usage-agent (agent {"s1" {"last-request-time" (DateTime. 1000)}
                                         "s2" {"last-request-time" (DateTime. 2000)}})
-              {:keys [exit-chan]} (setup-metrics-syncer router-metrics-agent local-usage-agent 10 encrypt (constantly true)
-                                                        (constantly true))]
+              {:keys [exit-chan]} (setup-metrics-syncer router-metrics-agent local-usage-agent 10 encrypt (constantly {}))]
           (let [response-chan (async/promise-chan)]
             (reset! response-chan-atom response-chan)
             (swap! counter inc)
@@ -535,5 +532,3 @@
     (await router-metrics-agent)
     (agent->service-id->router-id->metrics router-metrics-agent service-id)
     (is (= {"router-1" {"count" 3, "service-id" service-id}} (agent->service-id->router-id->metrics router-metrics-agent service-id)))))
-
-; TODO:LAST add unit tests here for external metrics sync
