@@ -647,12 +647,12 @@
    :discovery (pc/fnk [[:curator curator]
                        [:settings
                         [:cluster-config name]
-                        [:server-options router-fqdn ssl-port]
                         [:zookeeper base-path discovery-relative-path]
-                        host port]
+                        host port server-options]
                        router-id]
-                (discovery/register router-id curator name (str base-path "/" discovery-relative-path)
-                                    {:host host :port (primary-port port) :router-fqdn router-fqdn :ssl-port ssl-port}))
+                (let [{:keys [router-fqdn ssl-port]} server-options] 
+                  (discovery/register router-id curator name (str base-path "/" discovery-relative-path)
+                                      {:host host :port (primary-port port) :router-fqdn router-fqdn :ssl-port ssl-port})))
    :ejection-expiry-tracker (pc/fnk [[:settings [:ejection-config expiry-threshold]]]
                               (let [service-id->instance-ids-atom (atom {})]
                                 (ejection-expiry/->EjectionExpiryTracker expiry-threshold service-id->instance-ids-atom)))
