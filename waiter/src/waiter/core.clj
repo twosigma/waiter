@@ -1481,9 +1481,10 @@
                                                   instances (concat
                                                               (get service-id->healthy-instances service-id)
                                                               (get service-id->unhealthy-instances service-id))]
-                                              (-> (map :id instances)
-                                                  set
-                                                (contains? instance-id))))))
+                                              (some (fn service-instances-contains-instance-id?
+                                                      [{:keys [id]}]
+                                                      (= id instance-id))
+                                                    instances)))))
    :statsd (pc/fnk [[:routines service-id->service-description-fn]
                     [:settings statsd]
                     router-state-maintainer]
