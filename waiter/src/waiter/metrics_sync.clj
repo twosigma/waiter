@@ -520,12 +520,6 @@
                        {:log-level :info
                         :status http-400-bad-request})))))
 
-        valid-time-str?-fn (fn [time-str]
-                             (try
-                               (du/str-to-date-safe time-str)
-                               true
-                               (catch Exception _
-                                 false)))
         invalid-time-error-msg "Must be ISO-8601 time."]
 
     ; throw error if any of the metrics for an instance is invalid, and any of the required metrics are missing
@@ -533,10 +527,10 @@
       (doseq [[instance-id _] instance-id->metric]
 
         (throw-error-response-if-invalid-fn
-          valid-time-str?-fn service-metrics [service-id instance-id "updated-at"] invalid-time-error-msg)
+          du/valid-date? service-metrics [service-id instance-id "updated-at"] invalid-time-error-msg)
 
         (throw-error-response-if-invalid-fn
-          valid-time-str?-fn service-metrics [service-id instance-id "metrics" "last-request-time"] invalid-time-error-msg)
+          du/valid-date? service-metrics [service-id instance-id "metrics" "last-request-time"] invalid-time-error-msg)
 
         (throw-error-response-if-invalid-fn
           #(nat-int? %) service-metrics [service-id instance-id "metrics" "active-request-count"] "Must be non-negative integer.")))

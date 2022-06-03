@@ -52,6 +52,15 @@
   (^DateTime [date-str formatter]
     (when date-str (str-to-date date-str formatter))))
 
+(defn valid-date?
+  "Return true if the time-str is a ISO-8601 string, and false otherwise."
+  [time-str]
+  (try
+    (str-to-date time-str)
+    true
+    (catch Exception _
+      false)))
+
 (defn time-seq
   "Returns a sequence of date-time values growing over specific period.
   Takes as input the starting value and the growing value, returning a
