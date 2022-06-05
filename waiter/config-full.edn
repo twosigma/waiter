@@ -107,9 +107,15 @@
 
  ; ---------- Node ----------
 
+ ; The fully qualified domain name for this router
+ :router-fqdn "route1.waiter.example.com"
+
  ; Use a descriptive name for this router; this is useful in multi-router
  ; scenarios for identifying which router handled a request:
  :router-id-prefix "router-1"
+
+ ; The ssl port configured with certs for the name given by :router-fqdn
+ :router-ssl-port 12323
 
  ; ---------- Network ----------
 
@@ -162,9 +168,6 @@
                   ;; Larger headers will allow for more and/or larger cookies and longer HTTP headers (eg for redirection).
                   ;; However, larger headers will also consume more memory.
                   :response-header-size 8192
-
-                  ;; The fully qualified domain name for this router
-                  :router-fqdn "route1.waiter.example.com"
 
                   ;; Whether to send the Date header in responses
                   :send-date-header? false

@@ -648,11 +648,10 @@
                        [:settings
                         [:cluster-config name]
                         [:zookeeper base-path discovery-relative-path]
-                        host port server-options]
+                        host port {router-fqdn nil} {router-ssl-port nil}]
                        router-id]
-                (let [{:keys [router-fqdn ssl-port]} server-options] 
-                  (discovery/register router-id curator name (str base-path "/" discovery-relative-path)
-                                      {:host host :port (primary-port port) :router-fqdn router-fqdn :ssl-port ssl-port})))
+                (discovery/register router-id curator name (str base-path "/" discovery-relative-path)
+                                    {:host host :port (primary-port port) :router-fqdn router-fqdn :router-ssl-port router-ssl-port}))
    :ejection-expiry-tracker (pc/fnk [[:settings [:ejection-config expiry-threshold]]]
                               (let [service-id->instance-ids-atom (atom {})]
                                 (ejection-expiry/->EjectionExpiryTracker expiry-threshold service-id->instance-ids-atom)))

@@ -105,7 +105,9 @@
    (s/required-key :profile-config) {schema/non-empty-string schema/profile-definition}
    (s/optional-key :request-log) {(s/optional-key :request-headers) #{schema/non-empty-string}
                                   (s/optional-key :response-headers) #{schema/non-empty-string}}
+   (s/optional-key :router-fqdn) schema/non-empty-string
    (s/required-key :router-id-prefix) s/Str
+   (s/optional-key :router-ssl-port) schema/positive-int
    (s/required-key :router-syncer) {(s/required-key :delay-ms) schema/positive-int
                                     (s/required-key :interval-ms) schema/positive-int}
    (s/required-key :scaling) {(s/required-key :autoscaler-interval-ms) schema/positive-int
@@ -134,7 +136,6 @@
                                      (s/optional-key :max-threads) schema/positive-int
                                      (s/optional-key :request-header-size) schema/positive-int
                                      (s/optional-key :response-header-size) schema/positive-int
-                                     (s/optional-key :router-fqdn) schema/non-empty-string
                                      (s/optional-key :send-date-header?) s/Bool
                                      (s/optional-key :ssl-port) schema/positive-int
                                      (s/optional-key :truststore) schema/non-empty-string

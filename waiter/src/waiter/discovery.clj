@@ -23,10 +23,10 @@
            (org.apache.curator.x.discovery.details JsonInstanceSerializer)))
 
 (defn- ->service-instance
-  [id service-name {:keys [host port router-fqdn ssl-port]}]
+  [id service-name {:keys [host port router-fqdn router-ssl-port]}]
   (let [payload (doto (HashMap.)
                   (.put "router-fqdn" router-fqdn)
-                  (.put "ssl-port" ssl-port))
+                  (.put "router-ssl-port" router-ssl-port))
         builder (-> (ServiceInstance/builder)
                     (.id id)
                     (.name service-name)
@@ -122,8 +122,8 @@
   (count (routers discovery #{})))
 
 (defn register
-  [router-id curator service-name discovery-path {:keys [host port router-fqdn ssl-port]}]
-  (let [instance (->service-instance router-id service-name {:host host :port port :router-fqdn router-fqdn :ssl-port ssl-port})
+  [router-id curator service-name discovery-path {:keys [host port router-fqdn router-ssl-port]}]
+  (let [instance (->service-instance router-id service-name {:host host :port port :router-fqdn router-fqdn :router-ssl-port router-ssl-port})
         discovery (->service-discovery curator discovery-path instance)
         cache (->service-cache discovery service-name)]
     (log/info "Using service name:" service-name "for router id:" router-id)
