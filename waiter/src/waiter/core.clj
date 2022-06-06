@@ -1575,11 +1575,12 @@
                                         (fn ejected-instances-list-handler-fn [{{:keys [service-id]} :route-params :as request}]
                                           (handler/get-ejected-instances populate-maintainer-chan! service-id request)))
    :external-metrics-handler-fn (pc/fnk [[:daemons router-state-maintainer]
+                                         [:settings [:cluster-config name]]
                                          [:state router-metrics-agent]]
                                   (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer]
                                     (fn external-metrics-handler-fn [request]
                                       (metrics-sync/handle-external-metrics-request
-                                        router-metrics-agent query-state-fn request))))
+                                        router-metrics-agent query-state-fn name request))))
    :favicon-handler-fn (pc/fnk []
                          (fn favicon-handler-fn [_]
                            {:body (io/input-stream (io/resource "web/favicon.ico"))

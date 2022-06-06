@@ -24,7 +24,6 @@
             [metrics.timers :as timers]
             [plumbing.core :as pc]
             [qbits.jet.client.websocket :as ws]
-            [waiter.config :as config]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
             [waiter.status-codes :refer :all]
@@ -147,12 +146,11 @@
   nil metric. The result will be filtered, and will only contain service-ids and instance-ids that are known by the
   current router."
   [service-id->instance-id->metric-1 service-id->instance-id->metric-2 query-state-fn]
-  (let [map-1 (clean-service-id->instance-id->metric query-state-fn service-id->instance-id->metric-1)
-        map-2 (clean-service-id->instance-id->metric query-state-fn service-id->instance-id->metric-2)]
-    (merge-with (fn [instance-id->metric-1 instance-id->metric-2]
-                  (merge-instance-id->metric-maps instance-id->metric-1 instance-id->metric-2))
-                map-1
-                map-2)))
+  (->> (merge-with (fn [instance-id->metric-1 instance-id->metric-2]
+                     (merge-instance-id->metric-maps instance-id->metric-1 instance-id->metric-2))
+                   service-id->instance-id->metric-1
+                   service-id->instance-id->metric-2)
+       (clean-service-id->instance-id->metric query-state-fn)))
 
 (defn update-router-metrics
   "Updates the agent state with the latest metrics from a router.
@@ -258,8 +256,8 @@
     router-metrics-state
     (let [time (du/date-to-str (t/now))
           metrics-data {:external-metrics external-metrics
-                        :router-metrics router-metrics,
-                        :source-router-id router-id,
+                        :router-metrics router-metrics
+                        :source-router-id router-id
                         :time time}]
       (doseq [[target-router-id {:keys [out request-id]}] (seq router-id->outgoing-ws)]
         (let [encrypted-data (timers/start-stop-time!
@@ -492,6 +490,17 @@
     (catch Exception e
       (log/error e "error in obtaining router-id->metrics data for" service-id))))
 
+(defn- throw-error-response-if-invalid-body
+  "Validates incoming body map of a request and throws 400 response error if the provided value for the 'keys' in the
+   body 'map' do not pass the 'valid?-fn' predicate."
+  [valid?-fn map keys error-msg]
+  (let [val (get-in map keys)]
+    (when-not (valid?-fn val)
+      (throw (ex-info
+               (str "Invalid '" (str/join "." keys) "' field. " error-msg)
+               {:log-level :info
+                :status http-400-bad-request})))))
+
 (defn handle-external-metrics-request
   "Handle incoming external instance metrics and update metrics stored in memory. Expect the json body to be in the format
   {'cluster': 'waiter-cluster-name'
@@ -506,26 +515,16 @@
    'updated-at' timestamp is used to determine which competing metrics is more up to date. Waiter keeps only the latest.
    'active-request-count' is used for auto-scaling and calculating total outstanding requests for a service.
    'last-request-time' is used for Garbage Collecting and starting new versions of a service."
-  [router-metrics-agent query-state-fn {:keys [request-method] :as request}]
+  [router-metrics-agent query-state-fn router-cluster-name {:keys [request-method] :as request}]
   (when (not= request-method :post)
     (throw (ex-info "Invalid request method. Only POST is supported." {:log-level :info
                                                                        :request-method request-method
                                                                        :status http-400-bad-request})))
   (let [{:strs [cluster service-metrics]} (-> request ru/json-request :body)
-        throw-error-response-if-invalid-fn
-        (fn throw-error-response-if-invalid-fn
-          [valid?-fn map keys error-msg]
-          (let [val (get-in map keys)]
-            (when-not (valid?-fn val)
-              (throw (ex-info
-                       (str "Invalid '" (str/join "." keys) "' field. " error-msg)
-                       {:log-level :info
-                        :status http-400-bad-request})))))
-
         invalid-time-error-msg "Must be ISO-8601 time."]
 
     ; only process metrics if the cluster matches the current cluster
-    (when (not= cluster (config/retrieve-cluster-name))
+    (when (not= cluster router-cluster-name)
       (throw (ex-info "Metrics are for a different cluster."
                       {:cluster cluster
                        :log-level :info
@@ -535,13 +534,13 @@
     (doseq [[service-id instance-id->metric] service-metrics]
       (doseq [[instance-id _] instance-id->metric]
 
-        (throw-error-response-if-invalid-fn
+        (throw-error-response-if-invalid-body
           du/valid-date? service-metrics [service-id instance-id "updated-at"] invalid-time-error-msg)
 
-        (throw-error-response-if-invalid-fn
+        (throw-error-response-if-invalid-body
           du/valid-date? service-metrics [service-id instance-id "metrics" "last-request-time"] invalid-time-error-msg)
 
-        (throw-error-response-if-invalid-fn
+        (throw-error-response-if-invalid-body
           #(nat-int? %) service-metrics [service-id instance-id "metrics" "active-request-count"] "Must be non-negative integer.")))
 
     (log/info "received service metrics from external source." {:service-ids-preview (take 10 (keys service-metrics))
