@@ -960,14 +960,28 @@
   [service-description]
   (or (get service-description "health-check-url") default-health-check-path))
 
-(let [valid-token-re #"[a-zA-Z]([a-zA-Z0-9\-_$\.])+"]
-  (defn validate-token
-    "Validate token name against regex and throw an exception if not valid."
-    [token]
-    (when-not (re-matches valid-token-re token)
-      (throw (ex-info
-               "Token must match pattern"
-               {:status http-400-bad-request :token token :pattern (str valid-token-re) :log-level :warn})))))
+(def invalid-chars-re #"[^a-zA-Z0-9\-_$\.]")
+(def valid-token-re #"[a-zA-Z]([a-zA-Z0-9\-_$\.])+")
+
+(defn validate-token
+  "Validate token name against regex and throw an exception if not valid."
+  [token]
+  (let [bad-char (re-find invalid-chars-re token)]
+    (cond
+      bad-char (throw (ex-info (str "Token contains invalid character: \"" bad-char "\"") 
+                               {:status http-400-bad-request
+                                :token token
+                                :pattern (str invalid-chars-re)
+                                :invalid-char bad-char
+                                :char-index (str/index-of token bad-char)
+                                :char-codepoint (format "u%04X" (.codePointAt bad-char 0))
+                                :log-level :warn}))
+
+      (not (re-matches valid-token-re token)) (throw (ex-info "Token must match pattern"
+                                                              {:status http-400-bad-request 
+                                                               :token token 
+                                                               :pattern (str valid-token-re) 
+                                                               :log-level :warn})))))
 
 (defn- token->token-data
   "Retrieves the data stored against the token in the kv-store."

@@ -1095,7 +1095,7 @@
         (assert-response-status response http-400-bad-request)))
 
 
-    (testing "can't create bad token"
+    (testing "can't create bad token (invalid char)"
       (let [service-desc {:name (rand-name "notused")
                           :cpus 1
                           :debug true
@@ -1107,8 +1107,24 @@
                           :run-as-user (retrieve-username)
                           :health-check-url "/not-used"}
             response (post-token waiter-url service-desc)]
+        (is (str/includes? (:body response) "Token contains invalid character: \"#\""))
+        (assert-response-status response http-400-bad-request)))
+
+    (testing "can't create bad token (invalid format)"
+      (let [service-desc {:name (rand-name "notused")
+                          :cpus 1
+                          :debug true
+                          :mem 1024
+                          :version "universe b10452d0b0380ce61764543847085631ee3d7af9"
+                          :token "123badformat"
+                          :cmd "not-used"
+                          :permitted-user "*"
+                          :run-as-user (retrieve-username)
+                          :health-check-url "/not-used"}
+            response (post-token waiter-url service-desc)]
         (is (str/includes? (:body response) "Token must match pattern"))
         (assert-response-status response http-400-bad-request)))))
+
 
 (deftest ^:parallel ^:integration-fast test-token-metadata
   (testing-using-waiter-url
