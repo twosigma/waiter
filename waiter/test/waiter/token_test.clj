@@ -1594,11 +1594,26 @@
           (is (= http-400-bad-request status))
           (is (str/includes? body "min-instances (2) must be less than or equal to max-instances (1)"))))
 
-      (testing "post:new-service-description:invalid-token"
+      (testing "post:new-service-description:invalid-token-char"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               service-description (walk/stringify-keys
                                     {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
                                      :permitted-user "tu2" :token "###"
+                                     :min-instances 2 :max-instances 10})
+              {:keys [body status]}
+              (run-handle-token-request
+                kv-store token-root waiter-hostnames entitlement-manager make-peer-requests-fn nil attach-service-defaults-fn
+                {:authorization/user auth-user
+                 :body (StringBufferInputStream. (utils/clj->json service-description))
+                 :request-method :post})]
+          (is (= http-400-bad-request status))
+          (is (str/includes? body "Token contains invalid character: \"#\""))))
+
+      (testing "post:new-service-description:invalid-token-format"
+        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+              service-description (walk/stringify-keys
+                                    {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
+                                     :permitted-user "tu2" :token "123badformat"
                                      :min-instances 2 :max-instances 10})
               {:keys [body status]}
               (run-handle-token-request
