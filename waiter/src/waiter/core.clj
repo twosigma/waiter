@@ -110,7 +110,8 @@
                      "eject" :eject-instance-handler-fn
                      "ejected" {["/" :service-id] :ejected-instances-list-handler-fn}
                      "favicon.ico" :favicon-handler-fn
-                     "metrics" :metrics-request-handler-fn
+                     "metrics" {"" :metrics-request-handler-fn
+                                "/external" :external-metrics-handler-fn}
                      (subs oidc/oidc-callback-uri 1) :oidc-callback-handler-fn
                      "service-id" :service-id-handler-fn
                      "profiles" :profile-list-handler-fn
@@ -1378,11 +1379,13 @@
    :router-metrics-syncer (pc/fnk [[:routines crypt-helpers websocket-request-auth-cookie-attacher]
                                    [:settings [:metrics-config inter-router-metrics-idle-timeout-ms metrics-sync-interval-ms router-update-interval-ms]]
                                    [:state local-usage-agent router-metrics-agent websocket-client]
-                                   router-list-maintainer]
+                                   router-list-maintainer router-state-maintainer]
                             (let [{:keys [bytes-encryptor]} crypt-helpers
+                                  {{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                   router-chan (async/tap (:router-mult-chan router-list-maintainer) (au/latest-chan))]
                               {:metrics-syncer (metrics-sync/setup-metrics-syncer
-                                                 router-metrics-agent local-usage-agent metrics-sync-interval-ms bytes-encryptor)
+                                                 router-metrics-agent local-usage-agent metrics-sync-interval-ms bytes-encryptor
+                                                 query-state-fn)
                                :router-syncer (metrics-sync/setup-router-syncer router-chan router-metrics-agent router-update-interval-ms
                                                                                 inter-router-metrics-idle-timeout-ms metrics-sync-interval-ms
                                                                                 websocket-client bytes-encryptor websocket-request-auth-cookie-attacher)}))
@@ -1571,6 +1574,13 @@
    :ejected-instances-list-handler-fn (pc/fnk [[:daemons populate-maintainer-chan!]]
                                         (fn ejected-instances-list-handler-fn [{{:keys [service-id]} :route-params :as request}]
                                           (handler/get-ejected-instances populate-maintainer-chan! service-id request)))
+   :external-metrics-handler-fn (pc/fnk [[:daemons router-state-maintainer]
+                                         [:settings [:cluster-config name]]
+                                         [:state router-metrics-agent]]
+                                  (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer]
+                                    (fn external-metrics-handler-fn [request]
+                                      (metrics-sync/handle-external-metrics-request
+                                        router-metrics-agent query-state-fn name request))))
    :favicon-handler-fn (pc/fnk []
                          (fn favicon-handler-fn [_]
                            {:body (io/input-stream (io/resource "web/favicon.ico"))
@@ -1668,13 +1678,16 @@
                               (wrap-secure-request-fn
                                 (fn profile-list-handler-fn [request]
                                   (handler/display-profiles-handler profile->defaults request))))
-   :router-metrics-handler-fn (pc/fnk [[:routines crypt-helpers]
+   :router-metrics-handler-fn (pc/fnk [[:daemons router-state-maintainer]
+                                       [:routines crypt-helpers]
                                        [:settings [:metrics-config metrics-sync-interval-ms]]
                                        [:state router-metrics-agent]]
-                                (let [{:keys [bytes-decryptor bytes-encryptor]} crypt-helpers]
+                                (let [{:keys [bytes-decryptor bytes-encryptor]} crypt-helpers
+                                      {{:keys [query-state-fn]} :maintainer} router-state-maintainer]
                                   (fn router-metrics-handler-fn [request]
                                     (metrics-sync/incoming-router-metrics-handler
-                                      router-metrics-agent metrics-sync-interval-ms bytes-encryptor bytes-decryptor request))))
+                                      router-metrics-agent metrics-sync-interval-ms bytes-encryptor bytes-decryptor
+                                      query-state-fn request))))
    :service-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
                                 [:routines admin-user?-fn allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-async-fn
                                  retrieve-token-based-fallback-fn router-metrics-helpers service-id->references-fn

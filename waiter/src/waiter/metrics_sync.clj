@@ -26,8 +26,10 @@
             [qbits.jet.client.websocket :as ws]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
+            [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
+            [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
   (:import (qbits.jet.websocket WebSocket)))
 
@@ -104,10 +106,57 @@
         (log/error "not registering request as it is missing request id")
         router-metrics-state))))
 
+(defn- clean-service-id->instance-id->metric
+  "Remove services from outer map that are not tracked by this router. Remove instances in the instance-id->metric map
+  that are not tracked by this router. This is done to prevent memory leaks in the service-id->instance-id->metric map"
+  [query-state-fn service-id->instance-id->metric]
+  (let [{:keys [all-available-service-ids service-id->healthy-instances service-id->unhealthy-instances]} (query-state-fn)]
+    (->> (select-keys service-id->instance-id->metric all-available-service-ids)
+         seq
+         (map
+           (fn [[service-id instance-id->metric]]
+             [service-id
+              (select-keys
+                instance-id->metric
+                (map
+                  :id
+                  (concat
+                    (get service-id->healthy-instances service-id)
+                    (get service-id->unhealthy-instances service-id))))]))
+         (into {}))))
+
+(defn- merge-instance-id->metric-maps
+  "Merges two instance-id->metric maps iterating through the instance-ids in both maps and checking which map has the
+  latest metric based on 'updated-at'. If the metric does not exist in one of the maps, then defaults to the non nil
+  metric."
+  [instance-id->metric-1 instance-id->metric-2]
+  (merge-with (fn [metric-1 metric-2]
+                (let [updated-at-1 (get metric-1 "updated-at")
+                      updated-at-2 (get metric-2 "updated-at")]
+                  ; We can assume that 'updated-at' is an ISO-8601 timestamp because it was already validated
+                  (if (pos? (compare updated-at-2 updated-at-1))
+                    metric-2
+                    metric-1)))
+              instance-id->metric-1
+              instance-id->metric-2))
+
+(defn- merge-service-id->instance-id->metric-maps
+  "Merges two service-id->instance-id maps by calling merge-instance-id->metric-maps on the values with the same
+  service-id. This will ultimately merge two metrics for the same instance-id by choose the latest :updated-at or non
+  nil metric. The result will be filtered, and will only contain service-ids and instance-ids that are known by the
+  current router."
+  [service-id->instance-id->metric-1 service-id->instance-id->metric-2 query-state-fn]
+  (->> (merge-with (fn [instance-id->metric-1 instance-id->metric-2]
+                     (merge-instance-id->metric-maps instance-id->metric-1 instance-id->metric-2))
+                   service-id->instance-id->metric-1
+                   service-id->instance-id->metric-2)
+       (clean-service-id->instance-id->metric query-state-fn)))
+
 (defn update-router-metrics
   "Updates the agent state with the latest metrics from a router.
    It will remove entries for missing services and only update leaf level values for data available from services."
-  [router-metrics-state {:keys [router-metrics source-router-id time]}]
+  [router-metrics-state query-state-fn
+   {:keys [external-metrics router-metrics source-router-id time]}]
   (with-catch
     router-metrics-state
     (if source-router-id
@@ -116,13 +165,29 @@
                      (fn [existing-router-metrics]
                        (utils/deep-merge-maps (fn [x y] (or x y)) router-metrics
                                               (select-keys existing-router-metrics (keys router-metrics)))))
-          (assoc-in [:last-update-times source-router-id] time))
+          (assoc-in [:last-update-times source-router-id] time)
+
+          ; :external-metrics are merged based on 'updated-at' timestamp for individual instance metrics.
+          ; These metrics are absolute (one per waiter cluster, instead of waiter router), as they are provided
+          ; by an external source periodically with the /metrics/external endpoint.
+          (update :external-metrics merge-service-id->instance-id->metric-maps external-metrics query-state-fn))
       router-metrics-state)))
+
+(defn update-router-metrics-with-external-metrics
+  "Merges the service external metrics with existing external service metrics. External metrics are provided to the
+  waiter routers from another entity. These metrics must be merged based on the 'updated-at' timestamp."
+  [{:keys [router-id] :as router-metrics-state} incoming-service-id->instance-id->metric query-state-fn]
+  (with-catch
+    router-metrics-state
+    (-> router-metrics-state
+        (assoc-in [:last-update-times router-id] (du/date-to-str (t/now)))
+        (update :external-metrics merge-service-id->instance-id->metric-maps incoming-service-id->instance-id->metric
+                query-state-fn))))
 
 (defn- process-incoming-router-metrics
   "Receives peer router metrics data and forwards it for processing in `router-metrics-agent`.
    The rate of receiving metrics is throttled by `metrics-sync-interval-ms` ms."
-  [source-router-id encrypt decrypt router-metrics-agent metrics-sync-interval-ms {:keys [in out request-id]}]
+  [source-router-id encrypt decrypt router-metrics-agent metrics-sync-interval-ms query-state-fn {:keys [in out request-id]}]
   (let [in-latest-chan (au/latest-chan)]
     (async/pipe in in-latest-chan) ; consume data from `in`
     (async/go-loop []
@@ -135,7 +200,7 @@
                                  (metrics/waiter-timer "metrics-syncer" "decrypt" source-router-id)
                                  (decrypt received-data))]
             (cid/cdebug request-id "received metrics data from router" source-router-id)
-            (send router-metrics-agent update-router-metrics decrypted-data)
+            (send router-metrics-agent update-router-metrics query-state-fn decrypted-data)
             (async/<! (async/timeout metrics-sync-interval-ms)) ; throttle rate of receiving metrics
             (recur)))
         (do
@@ -145,7 +210,7 @@
 (defn incoming-router-metrics-handler
   "Receive connections for metrics from peer routers.
    Once the connection is authenticated, it invokes `process-incoming-router-metrics ` for receiving and processing metrics."
-  [router-metrics-agent metrics-sync-interval-ms encrypt decrypt {:keys [in out] :as request}]
+  [router-metrics-agent metrics-sync-interval-ms encrypt decrypt query-state-fn {:keys [in out] :as request}]
   (async/go
     (try
       (let [raw-data (async/<! in)
@@ -158,7 +223,8 @@
           (do
             (async/>! out :authenticated)
             (send router-metrics-agent register-router-ws :router-id->incoming-ws source-router-id request encrypt router-metrics-agent)
-            (process-incoming-router-metrics source-router-id encrypt decrypt router-metrics-agent metrics-sync-interval-ms request))))
+            (process-incoming-router-metrics source-router-id encrypt decrypt router-metrics-agent metrics-sync-interval-ms
+                                             query-state-fn request))))
       (catch Exception e
         (log/error e "error in processing incoming router metrics request")))
     ;; return an empty response map to maintain consistency with the http case
@@ -184,11 +250,15 @@
 
 (defn publish-router-metrics
   "Publishes router metrics to peer routers."
-  [{:keys [router-id router-id->outgoing-ws] :as router-metrics-state} encrypt router-metrics tag]
+  [{:keys [router-id router-id->outgoing-ws external-metrics] :as router-metrics-state} encrypt router-metrics tag
+   query-state-fn]
   (with-catch
     router-metrics-state
     (let [time (du/date-to-str (t/now))
-          metrics-data {:router-metrics router-metrics, :source-router-id router-id, :time time}]
+          metrics-data {:external-metrics external-metrics
+                        :router-metrics router-metrics
+                        :source-router-id router-id
+                        :time time}]
       (doseq [[target-router-id {:keys [out request-id]}] (seq router-id->outgoing-ws)]
         (let [encrypted-data (timers/start-stop-time!
                                (metrics/waiter-timer "metrics-syncer" "encrypt" target-router-id)
@@ -197,7 +267,7 @@
           (meters/mark! (metrics/waiter-meter "metrics-syncer" "sent-rate" target-router-id))
           (meters/mark! (metrics/waiter-meter "metrics-syncer" "sent-bytes" target-router-id) (.capacity encrypted-data))
           (async/put! out encrypted-data)))
-      (update-router-metrics router-metrics-state metrics-data))))
+      (update-router-metrics router-metrics-state query-state-fn metrics-data))))
 
 (defn- cleanup-router-requests
   "Close and remove websocket connections for obsolete routers."
@@ -308,7 +378,7 @@
 (defn setup-metrics-syncer
   "Launches a go-block that trigger publishing of metrics with peer routers.
    `metrics-sync-interval-ms` is used to throttle the rate of sending metrics."
-  [router-metrics-agent local-usage-agent metrics-sync-interval-ms encrypt]
+  [router-metrics-agent local-usage-agent metrics-sync-interval-ms encrypt query-state-fn]
   (let [exit-chan (async/chan 1)
         query-chan (async/chan 1)]
     (cid/with-correlation-id
@@ -338,7 +408,7 @@
                   (metrics/reset-counter
                     (metrics/waiter-counter "metrics-syncer" "metrics" "services")
                     (count service-id->metrics))
-                  (send router-metrics-agent publish-router-metrics encrypt service-id->metrics "core"))
+                  (send router-metrics-agent publish-router-metrics encrypt service-id->metrics "core" query-state-fn))
                 (catch Exception e
                   (log/error e "error in making broadcast router metrics request" {:iteration iteration})))
               (recur (inc iteration) (async/timeout metrics-sync-interval-ms)))
@@ -353,7 +423,8 @@
 (defn new-router-metrics-agent
   "Factory method for the router metrics agent."
   [router-id agent-initial-state]
-  (let [initial-state (merge {:last-update-times {}
+  (let [initial-state (merge {:external-metrics {}
+                              :last-update-times {}
                               :metrics {:routers {}}
                               :router-id router-id
                               :router-id->incoming-ws {}
@@ -418,3 +489,65 @@
                    router->service-id->metrics))
     (catch Exception e
       (log/error e "error in obtaining router-id->metrics data for" service-id))))
+
+(defn- throw-error-response-if-invalid-body
+  "Validates incoming body map of a request and throws 400 response error if the provided value for the 'keys' in the
+   body 'map' do not pass the 'valid?-fn' predicate."
+  [valid?-fn map keys error-msg]
+  (let [val (get-in map keys)]
+    (when-not (valid?-fn val)
+      (throw (ex-info
+               (str "Invalid '" (str/join "." keys) "' field. " error-msg)
+               {:log-level :info
+                :status http-400-bad-request})))))
+
+(defn handle-external-metrics-request
+  "Handle incoming external instance metrics and update metrics stored in memory. Expect the json body to be in the format
+  {'cluster': 'waiter-cluster-name'
+   'service-metrics': service-id->instance-id->metric Map}
+
+   where 'service-metrics' is map service-id->instance-id->metric where the instance's metric is:
+  {'updated-at' ISO-8601 timestamp
+   'metric': {'active-request-count' non-negative-int
+              'last-request-time' ISO-8601 timestamp}}
+
+   Extra fields in the instance's metric are kept, but are not expected to be there for any component in Waiter.
+   'updated-at' timestamp is used to determine which competing metrics is more up to date. Waiter keeps only the latest.
+   'active-request-count' is used for auto-scaling and calculating total outstanding requests for a service.
+   'last-request-time' is used for Garbage Collecting and starting new versions of a service."
+  [router-metrics-agent query-state-fn router-cluster-name {:keys [request-method] :as request}]
+  (when (not= request-method :post)
+    (throw (ex-info "Invalid request method. Only POST is supported." {:log-level :info
+                                                                       :request-method request-method
+                                                                       :status http-400-bad-request})))
+  (let [{:strs [cluster service-metrics]} (-> request ru/json-request :body)
+        invalid-time-error-msg "Must be ISO-8601 time."]
+
+    ; only process metrics if the cluster matches the current cluster
+    (when (not= cluster router-cluster-name)
+      (throw (ex-info "Metrics are for a different cluster."
+                      {:cluster cluster
+                       :log-level :info
+                       :status http-400-bad-request})))
+
+    ; throw error if any of the metrics for an instance is invalid, and any of the required metrics are missing
+    (doseq [[service-id instance-id->metric] service-metrics]
+      (doseq [[instance-id _] instance-id->metric]
+
+        (throw-error-response-if-invalid-body
+          du/valid-date? service-metrics [service-id instance-id "updated-at"] invalid-time-error-msg)
+
+        (throw-error-response-if-invalid-body
+          du/valid-date? service-metrics [service-id instance-id "metrics" "last-request-time"] invalid-time-error-msg)
+
+        (throw-error-response-if-invalid-body
+          #(nat-int? %) service-metrics [service-id instance-id "metrics" "active-request-count"] "Must be non-negative integer.")))
+
+    (log/info "received service metrics from external source." {:service-ids-preview (take 10 (keys service-metrics))
+                                                                :service-ids-count (count (keys service-metrics))})
+    (let [clean-service-metrics (clean-service-id->instance-id->metric query-state-fn service-metrics)]
+      (log/info "removed irrelevant services and instances." {:service-ids-preview (take 10 (keys clean-service-metrics))
+                                                              :service-ids-count (count (keys clean-service-metrics))})
+      (when (not-empty clean-service-metrics)
+        (send router-metrics-agent update-router-metrics-with-external-metrics clean-service-metrics query-state-fn))
+      (utils/clj->json-response {:no-op (empty? clean-service-metrics)}))))
