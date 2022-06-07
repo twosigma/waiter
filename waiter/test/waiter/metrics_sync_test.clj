@@ -483,27 +483,70 @@
           time-5 (DateTime. 5000)
           in-router-metrics-state {:metrics
                                    {:routers
-                                    {"router-0" {"s1" {"last-request-time" time-1, "outstanding" 0, "total" 2}
-                                                 "s2" {"last-request-time" time-2, "outstanding" 0, "total" 1}
-                                                 "s3" {"last-request-time" time-3, "outstanding" 0}}
+                                    {"router-0" {"s1" {"last-request-time" time-1
+                                                       "outstanding" 0
+                                                       "total" 2
+                                                       "waiting-for-available-instance" 1}
+                                                 "s2" {"last-request-time" time-2
+                                                       "outstanding" 0
+                                                       "total" 1
+                                                       "waiting-for-available-instance" 0}
+                                                 "s3" {"last-request-time" time-3
+                                                       "outstanding" 0}}
                                      "router-1" {"s1" {"outstanding" 1}
-                                                 "s2" {"last-request-time" time-1, "outstanding" 1, "total" 1}
-                                                 "s3" {"last-request-time" time-4, "outstanding" 1, "total" 2}}
+                                                 "s2" {"last-request-time" time-1
+                                                       "outstanding" 1
+                                                       "total" 1
+                                                       "waiting-for-available-instance" 0}
+                                                 "s3" {"last-request-time" time-4
+                                                       "outstanding" 1
+                                                       "total" 2
+                                                       "waiting-for-available-instance" 1}}
                                      "router-2" {"s1" {"outstanding" 2}
-                                                 "s3" {"last-request-time" time-1, "outstanding" 2, "total" 5}
-                                                 "s5" {"last-request-time" time-2, "outstanding" 1}}
-                                     "router-3" {"s1" {"outstanding" 3}
-                                                 "s2" {"last-request-time" time-3, "outstanding" 3}
-                                                 "s3" {"last-request-time" time-2, "outstanding" 3, "total" 6}}
+                                                 "s3" {"last-request-time" time-1
+                                                       "outstanding" 2
+                                                       "total" 5
+                                                       "waiting-for-available-instance" 3}
+                                                 "s5" {"last-request-time" time-2
+                                                       "outstanding" 1
+                                                       "waiting-for-available-instance" 1}}
+                                     "router-3" {"s1" {"outstanding" 3
+                                                       "waiting-for-available-instance" 10}
+                                                 "s2" {"last-request-time" time-3
+                                                       "outstanding" 3
+                                                       "waiting-for-available-instance" 5}
+                                                 "s3" {"last-request-time" time-2
+                                                       "outstanding" 3
+                                                       "total" 6}}
                                      "router-4" {"s1" {"outstanding" 4}
-                                                 "s4" {"last-request-time" time-5, "outstanding" 4, "total" 4}
-                                                 "s5" {"last-request-time" time-1, "outstanding" 2, "total" 3}}}}}
+                                                 "s4" {"last-request-time" time-5
+                                                       "outstanding" 4
+                                                       "total" 4
+                                                       "waiting-for-available-instance" 0}
+                                                 "s5" {"last-request-time" time-1
+                                                       "outstanding" 2
+                                                       "total" 3}}}}}
           router-metrics-agent (agent in-router-metrics-state)
-          expected-output {"s1" {"last-request-time" time-1, "outstanding" 10, "total" 2}
-                           "s2" {"last-request-time" time-3, "outstanding" 4, "total" 2}
-                           "s3" {"last-request-time" time-4, "outstanding" 6, "total" 13}
-                           "s4" {"last-request-time" time-5, "outstanding" 4, "total" 4}
-                           "s5" {"last-request-time" time-2, "outstanding" 3, "total" 3}}]
+          expected-output {"s1" {"last-request-time" time-1
+                                 "outstanding" 10
+                                 "total" 2
+                                 "waiting-for-available-instance" 11}
+                           "s2" {"last-request-time" time-3
+                                 "outstanding" 4
+                                 "total" 2
+                                 "waiting-for-available-instance" 5}
+                           "s3" {"last-request-time" time-4
+                                 "outstanding" 6
+                                 "total" 13
+                                 "waiting-for-available-instance" 4}
+                           "s4" {"last-request-time" time-5
+                                 "outstanding" 4
+                                 "total" 4
+                                 "waiting-for-available-instance" 0}
+                           "s5" {"last-request-time" time-2
+                                 "outstanding" 3
+                                 "total" 3
+                                 "waiting-for-available-instance" 1}}]
       (is (= expected-output (agent->service-id->metrics router-metrics-agent)))))
 
   (testing "faulty-router-metrics"

@@ -285,3 +285,72 @@
                     (send-metrics-and-assert-expected-metrics
                       routers cookies metrics-payload-instance-1-updated expected-metrics-instance-1-updated
                       expected-nil-keys-list :fail-eagerly-on-nil-keys false)))))))))))
+
+(defn assert-num-queued-requests
+  "Assert that all routers eventually report the correct number of queued requests for a 'service-id'"
+  [routers cookies service-id expected-queued-requests]
+  (is (wait-for
+        (fn []
+          (every?
+            (fn router-has-expected-queued-requests [[router-id router-url]]
+              (let [metrics-state-response (make-request router-url "/state/router-metrics"
+                                                         :cookies cookies
+                                                         :headers {:content-type "application/json"})
+                    metrics (-> metrics-state-response :body
+                                try-parse-json
+                                (get-in ["state" "metrics" "routers"]))
+                    router-id-queued-request-count-entries
+                    (->> metrics seq (map (fn entry->queued-request-entry
+                                            [[router-id metric]]
+                                            [router-id (get-in metric [service-id "waiting-for-available-instance"])])))
+
+                    ; we have to total the requests across routers before asserting
+                    actual-queued-requests (->> router-id-queued-request-count-entries
+                                                (map second)
+                                                (remove nil?)
+                                                (reduce +))]
+                (log/info "queued requests reported by router" {:actual-queued-requests actual-queued-requests
+                                                                :expected-queued-requests expected-queued-requests
+                                                                :service-id service-id
+                                                                :router-id router-id
+                                                                :router-id->metric (into {} router-id-queued-request-count-entries)
+                                                                :router-url router-url})
+                (= expected-queued-requests actual-queued-requests)))
+            routers))
+        :interval 1 :timeout 5)))
+
+(deftest ^:parallel ^:integration-slow test-waiting-for-available-instance-metrics-syncer
+  (testing-using-waiter-url
+    (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
+          routers (routers waiter-url)
+          extra-headers {:content-type "application/json"
+                         :x-waiter-env-raven_export_metrics "false"
+                         ; service should take at least 5 seconds to start so that we can guarantee requests
+                         ; are in queue for at least 5 seconds (we will later assert metrics report queue count).
+                         :x-waiter-cmd (str "sleep 5; " (kitchen-cmd "-p $PORT0"))
+                         :x-waiter-name (rand-name)
+                         :x-waiter-min-instances 1}
+          make-service-request!
+          (fn []
+            (async/go
+              (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %))))
+
+          ; make initial request so that we know the calculated service-id for cleanup
+          service-id (retrieve-kitchen-service-id waiter-url extra-headers)]
+      (with-service-cleanup
+        service-id
+        (let [
+              ; total number of queued requests should be 4
+              num-expected-queued-requests 4
+              result-ch
+              (async/go
+                ; start 4 requests concurrently, which should each take at least 5 seconds before exiting
+                (let [request-chs (doall (repeatedly num-expected-queued-requests make-service-request!))]
+                  (doseq [ping-response (map async/<!! request-chs)]
+                    (is (= service-id (:service-id ping-response)))
+                    (assert-response-status ping-response http-200-ok))))]
+          (assert-num-queued-requests routers cookies service-id num-expected-queued-requests)
+          ; let requests terminate before confirming that the queued requests became zero as there are no longer
+          ; any requests hitting the service
+          (async/<!! result-ch)
+          (assert-num-queued-requests routers cookies service-id 0))))))
