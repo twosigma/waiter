@@ -175,7 +175,7 @@
    The numeric values in each entry of the map come from corresponding codahale metrics."
   []
   (let [services-string "services"
-        included-counter-names ["in-flight" "outstanding" "slots-available" "slots-in-use" "total"]
+        included-counter-names ["in-flight" "outstanding" "slots-available" "slots-in-use" "total" "waiting-for-available-instance"]
         metric-filter (reify MetricFilter
                         (matches [_ name _]
                           (boolean
@@ -194,6 +194,7 @@
                          (assoc-if ["counters" "instance-counts" "slots-available"] "slots-available")
                          (assoc-if ["counters" "instance-counts" "slots-in-use"] "slots-in-use")
                          (assoc-if ["counters" "request-counts" "outstanding"] "outstanding")
+                         (assoc-if ["counters" "request-counts" "waiting-for-available-instance"] "waiting-for-available-instance")
                          (assoc-if ["counters" "request-counts" "total"] "total")
                          (assoc-if ["counters" "work-stealing" "received-from" "in-flight"] "slots-received")
                          (persistent!))))
