@@ -107,15 +107,9 @@
 
  ; ---------- Node ----------
 
- ; The fully qualified domain name for this router
- :router-fqdn "route1.waiter.example.com"
-
  ; Use a descriptive name for this router; this is useful in multi-router
  ; scenarios for identifying which router handled a request:
  :router-id-prefix "router-1"
-
- ; The ssl port configured with certs for the name given by :router-fqdn
- :router-ssl-port 12323
 
  ; ---------- Network ----------
 
@@ -1034,6 +1028,14 @@
 
                     ; total number of token metrics events that can be buffered before old events are overwritten
                     :token-metric-chan-buffer-size 4096}
+
+ ; ---------- Router Config ----------
+
+ :router-config {; The fully qualified domain name for this router
+                 :router-fqdn "route1.waiter.example.com"
+
+                 ; The ssl port configured with certs for the name given by :router-fqdn
+                 :router-ssl-port 12323}
 
  ; ---------- Miscellaneous ----------
 
