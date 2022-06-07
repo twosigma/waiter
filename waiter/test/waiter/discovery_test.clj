@@ -16,7 +16,8 @@
 (ns waiter.discovery-test
   (:require [clojure.test :refer :all]
             [waiter.discovery :refer :all])
-  (:import (org.apache.curator.x.discovery ServiceCache ServiceInstance)))
+  (:import (java.util HashMap)
+           (org.apache.curator.x.discovery ServiceCache ServiceInstance)))
 
 (defn- prepare-discovery
   [service-name instance-ids]
@@ -28,6 +29,9 @@
                                 (.id %1)
                                 (.name service-name)
                                 (.port 1234)
+                                (.payload (doto (HashMap.)
+                                            (.put "router-fqdn" (str "route." %1 ".test.com"))
+                                            (.put "router-ssl-port" 12345)))
                                 (.build))
                            instance-ids)))})
 
@@ -56,3 +60,25 @@
   (is (= 1 (cluster-size (prepare-discovery "waiter" ["r1"]))))
   (is (= 2 (cluster-size (prepare-discovery "waiter" ["r1" "r2"]))))
   (is (= 3 (cluster-size (prepare-discovery "waiter" ["r1" "r2" "r3"])))))
+
+(defn- prepare-router-details
+  [name id]
+  {:address (str id ".test.com")
+   :custom-details {:router-fqdn (str "route." id ".test.com")
+                    :router-ssl-port 12345}
+   :id id
+   :name name
+   :port 1234})
+
+(deftest test-router-id->details
+  (is (empty? (router-id->details (prepare-discovery "waiter" []))))
+  (is (empty? (router-id->details (prepare-discovery "waiter" ["r1" "r2" "r3"]) :exclude-set #{"r1" "r2" "r3"})))
+  (is (= {"r1" (prepare-router-details "waiter" "r1")}
+         (router-id->details (prepare-discovery "waiter" ["r1" "r2" "r3"]) :exclude-set #{"r2" "r3"})))
+  (is (= {"r1" (prepare-router-details "waiter" "r1")
+          "r2" (prepare-router-details "waiter" "r2")}
+         (router-id->details (prepare-discovery "waiter" ["r1" "r2" "r3"]) :exclude-set #{"r3"})))
+  (is (= {"r1" (prepare-router-details "waiter" "r1")
+          "r2" (prepare-router-details "waiter" "r2")
+          "r3" (prepare-router-details "waiter" "r3")}
+         (router-id->details (prepare-discovery "waiter" ["r1" "r2" "r3"]) :exclude-set #{}))))

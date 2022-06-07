@@ -530,7 +530,7 @@
                :curator-retry-policy {:base-sleep-time-ms 100
                                       :max-retries 10
                                       :max-sleep-time-ms 120000}
-               :discovery-relative-path "discovery"
+               :discovery-relative-path "discovery-v2"
                :gc-relative-path "gc-state"
                :leader-latch-relative-path "leader-latch"
                :mutex-timeout-ms 1000}})

@@ -21,7 +21,8 @@
 
 (deftest test-retrieve-peer-routers
   (testing "successful-retrieval-from-discovery"
-    (let [router-id->details {"router-1" {}, "router-2" {}}
+    (let [router-id->details {"router-1" {:id "1" :custom-details {:router-fqdn "r1.waiter.com" :router-ssl-port 1234}}
+                              "router-2" {:id "2" :custom-details {:router-fqdn "r2.waiter.com" :router-ssl-port 1234}}}
           router-id->endpoint-url {"router-1" "url-1", "router-2" "url-2"}]
       (with-redefs [discovery/router-id->details (constantly router-id->details)
                     discovery/router-id->endpoint-url (constantly router-id->endpoint-url)]

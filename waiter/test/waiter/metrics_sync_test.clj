@@ -409,23 +409,17 @@
             router-id->endpoint-url {"router-1" "http://www.router-1.com/"
                                      "router-2" "http://www.router-2.com/"
                                      "router-3" "http://www.router-3.com/"}
-            router-state {:router-id->details {}
-                          :router-id->endpoint-url router-id->endpoint-url}]
-        (println router-state)
+            router-state {:router-id->endpoint-url router-id->endpoint-url}]
         (async/>!! router-state-chan router-state)
         (query-go-block-state) ; ensure router-state was read
         (let [out-router-metrics-state (retrieve-agent-state router-metrics-agent)]
           (is (= {:router-id "router-0", :routers router-id->endpoint-url, :source "update-1"} out-router-metrics-state)))
-        (println "check 1 pass")
-        (println router-state)
         (let [response-chan (async/promise-chan)]
           (async/>!! router-state-chan (assoc-in router-state [:router-id->endpoint-url :response-chan] response-chan))
           (async/<!! response-chan))
         (is (pos? (:timeouts (query-go-block-state))))
         (let [out-router-metrics-state (retrieve-agent-state router-metrics-agent)]
           (is (= {:router-id "router-0", :routers router-id->endpoint-url, :source "update-2"} out-router-metrics-state)))
-        (println "check 2 pass")
-        (println router-state)
         (async/>!! exit-chan :exit)))))
 
 (deftest test-setup-metrics-syncer

@@ -1162,6 +1162,15 @@
 
       (async/>!! exit-chan :exit))))
 
+(defn- make-router-details
+  [id]
+  {:address "0.0.0.0"
+   :custom-details {:router-fqdn (str "r1." id ".com")
+                    :router-ssl-port 12345}
+   :id id
+   :name "waiter"
+   :port 1234})
+
 (deftest test-router-state-maintainer-scheduler-state-incremental
   (let [scheduler-state-chan (async/chan 1)
         router-chan (async/chan 1)
@@ -1177,9 +1186,12 @@
                                 (let [instances-partition (partition (quot (inc (count instances)) (count routers)) instances)]
                                   (map #(sort (:id (remove nil? %))) instances-partition)))))
         router-id "router.0"
+        router-id->details {router-id (make-router-details router-id)
+                            "router.1" (make-router-details "router.1")}
         router-id->endpoint-url {router-id (str "http://www." router-id ".com")
                                  "router.1" (str "http://www.router.1.com")}
-        routers {:router-id->endpoint-url router-id->endpoint-url}
+        routers {:router-id->details router-id->details
+                 :router-id->endpoint-url router-id->endpoint-url}
         services-fn #(vec (map (fn [i] (str "service-" i)) (range (inc (if (> % (/ num-message-iterations 2)) (- % 5) %)))))
         service-id->service-description-fn (fn [id] (let [service-num (Integer/parseInt (str/replace id "service-" ""))]
                                                       {"concurrency-level" concurrency-level
@@ -1200,7 +1212,9 @@
 
 
       (async/>!! router-chan routers)
-      (is (= (:router-id->endpoint-url routers) (:routers (async/<!! router-state-push-chan))))
+      (let [router-state (async/<!! router-state-push-chan)]
+        (is (= (:router-id->details routers) (:router-details router-state)))
+        (is (= (:router-id->endpoint-url routers) (:routers router-state))))
 
       (let [start-time (t/now)
             healthy-instances-fn (fn [service-id index n]
@@ -1298,7 +1312,9 @@
                               (let [instances-partition (partition (quot (inc (count instances)) (count routers)) instances)]
                                 (map #(sort (:id (remove nil? %))) instances-partition)))))
         router-id "router.0"
-        routers {:router-id->details {}
+        router-id->details {router-id (make-router-details router-id)
+                            "router.1" (make-router-details "router.1")}
+        routers {:router-id->details router-id->details
                  :router-id->endpoint-url {router-id (str "http://www." router-id ".com")
                                            "router.1" (str "http://www.router.1.com")}}
         services-fn #(vec (map (fn [i] (str "service-" i)) (range (inc (if (> % (/ num-message-iterations 2)) (- % 5) %)))))
@@ -1321,7 +1337,9 @@
         (async/tap router-state-push-mult router-state-push-chan))
 
       (async/>!! router-chan routers)
-      (is (= (:router-id->endpoint-url routers) (:routers (async/<!! router-state-push-chan))))
+      (let [router-state (async/<!! router-state-push-chan)]
+        (is (= (:router-id->details routers) (:router-details router-state)))
+        (is (= (:router-id->endpoint-url routers) (:routers router-state))))
 
       (let [start-time (t/now)
             unhealthy-health-check-statuses [http-400-bad-request http-401-unauthorized http-402-payment-required]
