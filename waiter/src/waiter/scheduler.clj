@@ -666,46 +666,6 @@
                         service
                         (assoc instances :active-instances active-instances))))))))
 
-(defn start-new-services-daemon
-  "Listens on token-metric-chan-mult and determines whether to trigger start new services for a token. Only the leader
-  router starts new services. Tokens with new last-request-time pointing to a service descriptor that does not exist will
-  have the latest service started.
-
-  Returns a map with keys:
-  :process-token-event-ch is a channel where messages are pushed to it when a service was started for a token event."
-  [retrieve-latest-descriptor-fn service-exists? kv-store token-metric-chan-mult start-new-service-fn leader?-fn]
-  (cid/with-correlation-id
-    "start-new-services-goroutine"
-    (let [correlation-id (cid/get-correlation-id)
-          process-token-event-ch-buffer (async/sliding-buffer 1000)
-          process-events!-fn
-          (fn process-events! [events]
-            (filter
-              (fn latest-service-does-not-exist?
-                [{:keys [token]}]
-                (when (leader?-fn)
-                  (let [{:strs [run-as-user]}
-                        (sd/token->service-parameter-template kv-store token :error-on-missing false)
-                        {:keys [service-id] :as latest-descriptor}
-                        (retrieve-latest-descriptor-fn run-as-user token)
-                        service-does-not-exist? (not (service-exists? service-id))]
-                    (when service-does-not-exist?
-                      (cid/cinfo correlation-id "starting" {:service-id (get latest-descriptor :service-id)})
-                      (start-new-service-fn latest-descriptor))
-                    service-does-not-exist?)))
-              events))
-          process-token-event-ch
-          (async/chan
-            process-token-event-ch-buffer
-            (comp
-              (map process-events!-fn)
-              (filter seq))
-            (fn process-token-event-ch-ex-handler
-              [e]
-              (cid/cerror correlation-id e "unexpected error when processing new token metric")))]
-      (async/tap token-metric-chan-mult process-token-event-ch)
-      {:process-token-event-ch process-token-event-ch})))
-
 ;;
 ;; Support for tracking killed instance candidates
 ;;
@@ -1251,3 +1211,82 @@
           (log/error e "Error in launch-metrics-maintainer. Instance launch metrics will not be collected."))))
     {:exit-chan exit-chan
      :query-chan query-chan}))
+
+
+(defn start-new-services-maintainer
+  "This ensures that tokens receiving requests will have the latest service corresponding to it running. Whenever there
+   are any implicit changes to the token's service description resulting in a new service-id while that token is handling
+   requests, this daemon will start the new service corresponding to that service-id. We do this by building a map,
+   service-id->last-request-time, whenever the 'timer-chan' is triggered and seeing if any service-ids have a new
+   last-request-time. We then build a set of corresponding tokens to the service-ids and see if they point to a
+   service-id that is not running. We attempt to start a new service for those tokens/service-ids (not including
+   run-as-requester or parameterized services.
+
+   Returns a map with keys:
+   :query-state-fn function that queries the current state of the daemon"
+  [clock timer-chan retrieve-latest-descriptor-fn service-exists? kv-store token-metric-chan-mult start-new-service-fn]
+  (cid/with-correlation-id
+    "start-new-services-goroutine"
+    (let [correlation-id (cid/get-correlation-id)
+          exit-chan (async/promise-chan)
+          state-atom (atom {:last-update-time nil
+                            :service-id->last-request-time {}})
+          query-state-fn (fn query-state-fn [_]
+                           @state-atom)
+          go-chan
+          (async/go
+            (try
+              (loop [{:keys [service-id->last-request-time] :as current-state} @state-atom]
+                (reset! state-atom current-state)
+                (let [[msg current-chan]
+                      (async/alts! [exit-chan timer-chan]
+                                   :priority true)
+                      next-state
+                      (condp = current-chan
+                        exit-chan
+                        (do
+                          (log/warn "stopping start-new-services-maintainer")
+                          (when (not= :exit msg)
+                            (throw (ex-info "Stopping start-new-services-maintainer" {:time (clock) :reason msg}))))
+
+                        timer-chan
+                        (timers/start-stop-time!
+                          (metrics/waiter-timer "core" "start-new-services-maintainer" "process-services")
+                          (try
+                            (let [
+                                  ; TODO: build this
+                                  new-service-id->last-request-time {}
+
+                                  ; TODO: build this
+                                  service-ids-with-new-last-request-times {}
+
+                                  ; TODO: build this
+                                  ; - filter out run-as-requester and parameterized services for now
+                                  tokens-with-new-last-request-times []
+                                  ]
+                              ; TODO: build this, iterate through tokens and attempt to start a service for them
+                              )
+                            (catch Exception e
+                              (log/error e "error while processing services in start-new-services-maintainer.")
+                              current-state))))]
+                  (if next-state
+                    (recur (assoc next-state :last-update-time (clock)))
+                    (log/info "Stopping start-new-services-maintainer as next loop values are nil"))))
+              (catch Exception e
+                (log/error e "Fatal error in start-new-services-maintainer")
+                (System/exit 1))))
+          ]
+      {:exit-chan exit-chan
+       :go-chan go-chan
+       :query-state-fn query-state-fn})))
+
+;(when (leader?-fn)
+;  (let [{:strs [run-as-user]}
+;        (sd/token->service-parameter-template kv-store token :error-on-missing false)
+;        {:keys [service-id] :as latest-descriptor}
+;        (retrieve-latest-descriptor-fn run-as-user token)
+;        service-does-not-exist? (not (service-exists? service-id))]
+;    (when service-does-not-exist?
+;      (cid/cinfo correlation-id "starting" {:service-id (get latest-descriptor :service-id)})
+;      (start-new-service-fn latest-descriptor))
+;    service-does-not-exist?))

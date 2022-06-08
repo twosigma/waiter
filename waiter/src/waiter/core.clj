@@ -1452,17 +1452,20 @@
                                 (async/tap router-state-push-mult state-chan)
                                 (maintainer/start-service-chan-maintainer
                                   {} state-chan query-service-maintainer-chan start-service remove-service retrieve-channel)))
-   :start-new-services-daemon (pc/fnk
-                                [[:routines retrieve-latest-descriptor-fn start-new-service-fn]
-                                 [:state kv-store fallback-state-atom leader?-fn]
-                                 metrics-consumer-maintainer]
-                                (let [{:keys [token-metric-chan-mult]} metrics-consumer-maintainer
-                                      service-exists? (fn service-exists?
-                                                        [service-id]
-                                                        (descriptor/service-exists? @fallback-state-atom service-id))]
-                                  (scheduler/start-new-services-daemon
-                                    retrieve-latest-descriptor-fn service-exists? kv-store token-metric-chan-mult
-                                    start-new-service-fn leader?-fn)))
+   :start-new-services-maintainer (pc/fnk
+                                    [[:routines retrieve-latest-descriptor-fn start-new-service-fn]
+                                     [:state clock kv-store fallback-state-atom]
+                                     metrics-consumer-maintainer]
+                                    ; TODO: need to add settings here for timeout
+                                    (let [start-new-services-maintainer-timer-ch (au/timer-chan 1000)
+                                          {:keys [token-metric-chan-mult]} metrics-consumer-maintainer
+                                          service-exists?
+                                          (fn service-exists?
+                                            [service-id]
+                                            (descriptor/service-exists? @fallback-state-atom service-id))]
+                                      (scheduler/start-new-services-maintainer
+                                        clock start-new-services-maintainer-timer-ch retrieve-latest-descriptor-fn service-exists?
+                                        kv-store token-metric-chan-mult start-new-service-fn)))
    :state-sources (pc/fnk [[:scheduler scheduler]
                            [:state query-service-maintainer-chan]
                            autoscaler autoscaling-multiplexer gc-for-transient-metrics interstitial-maintainer
