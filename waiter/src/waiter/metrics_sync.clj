@@ -452,6 +452,7 @@
 (defn agent->service-id->metrics
   "Retrieves aggregated view of service-id->metrics using data available from all peer routers in the agent."
   [router-metrics-agent]
+  ; TODO:LAST we need to provide a consistent view of last-request-time here
   (try
     (let [router-id->service-id->metrics (get-in @router-metrics-agent [:metrics :routers])
           aggregate-router-metrics (fn aggregate-router-metrics [router->metrics]

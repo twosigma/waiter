@@ -27,6 +27,7 @@
             [slingshot.slingshot :as ss]
             [waiter.config :as config]
             [waiter.correlation-id :as cid]
+            [waiter.descriptor :as descriptor]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.request-log :as rlog]
@@ -36,7 +37,8 @@
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
-            [waiter.util.utils :as utils])
+            [waiter.util.utils :as utils]
+            [waiter.token :as token])
   (:import (java.io EOFException)
            (java.net ConnectException SocketTimeoutException)
            (java.util.concurrent TimeoutException)
@@ -1224,7 +1226,8 @@
 
    Returns a map with keys:
    :query-state-fn function that queries the current state of the daemon"
-  [clock timer-chan retrieve-latest-descriptor-fn service-exists? kv-store token-metric-chan-mult start-new-service-fn]
+  [clock timer-chan token-cluster-calculator service-id->source-tokens-entries-fn service-id->metrics-fn
+   retrieve-latest-descriptor-fn fallback-state-atom kv-store start-new-service-fn]
   (cid/with-correlation-id
     "start-new-services-goroutine"
     (let [correlation-id (cid/get-correlation-id)
@@ -1233,11 +1236,13 @@
                             :service-id->last-request-time {}})
           query-state-fn (fn query-state-fn [_]
                            @state-atom)
+          default-cluster (token/get-default-cluster token-cluster-calculator)
           go-chan
           (async/go
             (try
-              (loop [{:keys [service-id->last-request-time] :as current-state} @state-atom]
+              (loop [{:keys [service-id->last-request-time last-update-time] :as current-state} @state-atom]
                 (reset! state-atom current-state)
+                (println "new iteration" last-update-time)
                 (let [[msg current-chan]
                       (async/alts! [exit-chan timer-chan]
                                    :priority true)
@@ -1253,19 +1258,140 @@
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "start-new-services-maintainer" "process-services")
                           (try
-                            (let [
-                                  ; TODO: build this
-                                  new-service-id->last-request-time {}
+                            (let [new-service-id->last-request-time
+                                  (->> (service-id->metrics-fn)
+                                       seq
+                                       (map
+                                         (fn [[service-id {:strs [last-request-time]}]]
+                                           [service-id last-request-time]))
+                                       (filter
+                                         (fn [[_ last-request-time]]
+                                           (some? last-request-time)))
+                                       (into {}))
+                                  _ (println "new-service-ids->last-request-time" new-service-id->last-request-time)
 
-                                  ; TODO: build this
-                                  service-ids-with-new-last-request-times {}
+                                  service-ids-with-new-last-request-times
+                                  (->> (seq new-service-id->last-request-time)
+                                       (filter
+                                         (fn [[service-id new-last-request-time]]
+                                           (->> (get service-id->last-request-time service-id)
+                                                (compare new-last-request-time)
+                                                pos?)))
+                                       (map first)
+                                       set)
+                                  _ (println "service-ids with new last request times" service-ids-with-new-last-request-times)
+                                  fallback-state @fallback-state-atom
+                                  _ (println "1" (->> service-ids-with-new-last-request-times
+                                                      (reduce
+                                                        (fn [tokens-set service-id]
+                                                          (-> service-id
+                                                              service-id->source-tokens-entries-fn
+                                                              (map #(get % "token"))
+                                                              set
+                                                              (conj tokens-set)))
+                                                        #{})))
+                                  _ (println "2" (->> service-ids-with-new-last-request-times
+                                                      (reduce
+                                                        (fn [tokens-set service-id]
+                                                          (-> service-id
+                                                              service-id->source-tokens-entries-fn
+                                                              (map #(get % "token"))
+                                                              set
+                                                              (conj tokens-set)))
+                                                        #{})
 
-                                  ; TODO: build this
-                                  ; - filter out run-as-requester and parameterized services for now
-                                  tokens-with-new-last-request-times []
-                                  ]
-                              ; TODO: build this, iterate through tokens and attempt to start a service for them
-                              )
+                                                      ; filter out tokens that are not in the same cluster as current waiter router
+                                                      (filter (fn token-in-same-cluster?-fn
+                                                                [token]
+                                                                (let [token-parameters
+                                                                      (sd/token->token-parameters kv-store token :error-on-missing false)
+                                                                      token-cluster (get token-parameters "cluster")]
+                                                                  (and (some? token-parameters)
+                                                                       (= token-cluster default-cluster)))))))
+                                  _ (println "3" (->> service-ids-with-new-last-request-times
+                                                      (reduce
+                                                        (fn [tokens-set service-id]
+                                                          (-> service-id
+                                                              service-id->source-tokens-entries-fn
+                                                              (map #(get % "token"))
+                                                              set
+                                                              (conj tokens-set)))
+                                                        #{})
+
+                                                      ; filter out tokens that are not in the same cluster as current waiter router
+                                                      (filter (fn token-in-same-cluster?-fn
+                                                                [token]
+                                                                (let [token-parameters
+                                                                      (sd/token->token-parameters kv-store token :error-on-missing false)
+                                                                      token-cluster (get token-parameters "cluster")]
+                                                                  (and (some? token-parameters)
+                                                                       (= token-cluster default-cluster)))))
+
+                                                      ; TODO: support run-as-requester and parameterized services.
+                                                      ; filter out run-as-requester and parameterized services.
+                                                      (filter (fn token-non-run-as-requester-parameterized?-fn
+                                                                [token]
+                                                                (when-let
+                                                                  [{:strs [run-as-user] :as service-description-template}
+                                                                   (sd/token->service-parameter-template kv-store token :error-on-missing false)]
+                                                                  (and run-as-user
+                                                                       (not (sd/run-as-requester? service-description-template))
+                                                                       (not (sd/requires-parameters? service-description-template))))))))
+                                  tokens-with-new-last-request-times
+                                  (->> service-ids-with-new-last-request-times
+                                       (reduce
+                                         (fn [tokens-set service-id]
+                                           (-> service-id
+                                               service-id->source-tokens-entries-fn
+                                               (map #(get % "token"))
+                                               set
+                                               (conj tokens-set)))
+                                         #{})
+
+                                       ; filter out tokens that are not in the same cluster as current waiter router
+                                       (filter (fn token-in-same-cluster?-fn
+                                                 [token]
+                                                 (let [token-parameters
+                                                       (sd/token->token-parameters kv-store token :error-on-missing false)
+                                                       token-cluster (get token-parameters "cluster")]
+                                                   (and (some? token-parameters)
+                                                        (= token-cluster default-cluster)))))
+
+                                       ; TODO: support run-as-requester and parameterized services.
+                                       ; filter out run-as-requester and parameterized services.
+                                       (filter (fn token-non-run-as-requester-parameterized?-fn
+                                                 [token]
+                                                 (when-let
+                                                   [{:strs [run-as-user] :as service-description-template}
+                                                    (sd/token->service-parameter-template kv-store token :error-on-missing false)]
+                                                   (and run-as-user
+                                                        (not (sd/run-as-requester? service-description-template))
+                                                        (not (sd/requires-parameters? service-description-template))))))
+
+                                       ; filter for tokens that point to a service that have not started yet
+                                       (filter (fn token-should-start-service?-fn
+                                                 [token]
+                                                 (let [{:strs [run-as-user]}
+                                                       (sd/token->service-parameter-template kv-store token :error-on-missing false)
+                                                       {:keys [service-id]}
+                                                       (retrieve-latest-descriptor-fn run-as-user token)]
+                                                   (descriptor/service-exists? fallback-state service-id)))))]
+
+                              (println "tokens with new last request times" tokens-with-new-last-request-times)
+
+                              (cid/cinfo correlation-id "starting services for tokens with new last-request-times"
+                                         {:tokens tokens-with-new-last-request-times})
+
+                              ; attempt to start a new service for each of the tokens
+                              (doseq [token (seq tokens-with-new-last-request-times)]
+                                (let [{:strs [run-as-user]}
+                                      (sd/token->service-parameter-template kv-store token :error-on-missing false)
+                                      {:keys [service-id] :as latest-descriptor}
+                                      (retrieve-latest-descriptor-fn run-as-user token)]
+                                  (cid/cinfo correlation-id "starting service due to new last-request-time"
+                                             {:service-id service-id})
+                                  (start-new-service-fn latest-descriptor)))
+                              {:service-id->last-request-time new-service-id->last-request-time})
                             (catch Exception e
                               (log/error e "error while processing services in start-new-services-maintainer.")
                               current-state))))]
@@ -1274,8 +1400,7 @@
                     (log/info "Stopping start-new-services-maintainer as next loop values are nil"))))
               (catch Exception e
                 (log/error e "Fatal error in start-new-services-maintainer")
-                (System/exit 1))))
-          ]
+                (System/exit 1))))]
       {:exit-chan exit-chan
        :go-chan go-chan
        :query-state-fn query-state-fn})))
