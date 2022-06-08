@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.discovery-test
-  (:require [clojure.test :refer :all]
+  (:require [clojure.string :as str]
+            [clojure.test :refer :all]
             [clojure.walk :as walk]
             [waiter.curator :as curator]
             [waiter.discovery :refer :all])
@@ -87,6 +88,10 @@
           "r3" (prepare-router-details "waiter" "r3")}
          (router-id->details (prepare-discovery "waiter" ["r1" "r2" "r3"]) :exclude-set #{}))))
 
+(deftest test-versioned-discovery-path
+  (is (str/ends-with? (versioned-discovery-path "/base") "-v2")
+      "unexpected discovery path suffix - see discovery/->service-instance for a note on discovery paths and payload types"))
+
 (deftest test-service-discover-payload-type
   (testing "service instances should include expected HashMap payload"
       (let [zk (curator/start-in-process-zookeeper)
@@ -95,7 +100,7 @@
         (try
           (.start curator)
           (let [{:keys [service-instance] :as discovery}
-                (register "r1" curator "waiter" "discovery" {:host "waiter.com" :port 1234 :router-fqdn "r1.waiter.com" :router-ssl-port 12345})
+                (register "r1" curator "waiter" "/base/discovery" {:host "waiter.com" :port 1234 :router-fqdn "r1.waiter.com" :router-ssl-port 12345})
                 payload (.getPayload service-instance)
                 expected-payload {"router-fqdn" "r1.waiter.com" "router-ssl-port" 12345}]
             (is (= HashMap (type payload)) "unexpected payload type - see discovery/->service-instance for a note on changes to payload types")

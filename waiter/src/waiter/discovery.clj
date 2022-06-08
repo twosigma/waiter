@@ -24,11 +24,12 @@
 
 (defn- ->service-instance
   [id service-name {:keys [host port router-fqdn router-ssl-port]}]
-  ;; The payload type must be consistent for a given ZK discovery-path.
+  ;; Note that the payload type must be consistent for a given ZK discovery-path.
   ;; If the payload type changes here, then there is a runtime risk that existing
   ;; services in ZK will no longer be deserializable. This will prevent Waiter from
-  ;; starting and impact releases/rollbacks. If you must change the payload type,
-  ;; then you MUST pair the change with an updated discovery-path.
+  ;; starting and impact releases/rollbacks. If you change the payload type,
+  ;; then you MUST pair the change with an updated discovery-path suffix
+  ;; (see versioned-discovery-path).
   (let [payload (doto (HashMap.)
                   (.put "router-fqdn" router-fqdn)
                   (.put "router-ssl-port" router-ssl-port))
@@ -126,9 +127,16 @@
   [discovery]
   (count (routers discovery #{})))
 
+(defn versioned-discovery-path
+  "Returns a versioned discovery path. See the note in ->service-instance about payload types
+   and discovery paths."
+  [discovery-path]
+  (str discovery-path "-v2"))
+
 (defn register
-  [router-id curator service-name discovery-path {:keys [host port router-fqdn router-ssl-port]}]
-  (let [instance (->service-instance router-id service-name {:host host :port port :router-fqdn router-fqdn :router-ssl-port router-ssl-port})
+  [router-id curator service-name discovery-path-base {:keys [host port router-fqdn router-ssl-port]}]
+  (let [discovery-path (versioned-discovery-path discovery-path-base)
+        instance (->service-instance router-id service-name {:host host :port port :router-fqdn router-fqdn :router-ssl-port router-ssl-port})
         discovery (->service-discovery curator discovery-path instance)
         cache (->service-cache discovery service-name)]
     (log/info "Using service name:" service-name "for router id:" router-id)
