@@ -324,7 +324,6 @@
     (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
           routers (routers waiter-url)
           extra-headers {:content-type "application/json"
-                         :x-waiter-env-raven_export_metrics "false"
                          ; service should take at least 5 seconds to start so that we can guarantee requests
                          ; are in queue for at least 5 seconds (we will later assert metrics report queue count).
                          :x-waiter-cmd (str "sleep 5; " (kitchen-cmd "-p $PORT0"))
