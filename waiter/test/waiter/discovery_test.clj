@@ -15,8 +15,12 @@
 ;;
 (ns waiter.discovery-test
   (:require [clojure.test :refer :all]
+            [clojure.walk :as walk]
+            [waiter.curator :as curator]
             [waiter.discovery :refer :all])
   (:import (java.util HashMap)
+           (org.apache.curator.framework CuratorFrameworkFactory)
+           (org.apache.curator.retry RetryNTimes)
            (org.apache.curator.x.discovery ServiceCache ServiceInstance)))
 
 (defn- prepare-discovery
@@ -82,3 +86,24 @@
           "r2" (prepare-router-details "waiter" "r2")
           "r3" (prepare-router-details "waiter" "r3")}
          (router-id->details (prepare-discovery "waiter" ["r1" "r2" "r3"]) :exclude-set #{}))))
+
+(deftest test-service-discover-payload-type
+  (testing "service instances should include expected HashMap payload"
+      (let [zk (curator/start-in-process-zookeeper)
+            zk-server (:zk-server zk)
+            curator (CuratorFrameworkFactory/newClient (:zk-connection-string zk) (RetryNTimes. 10 100))]
+        (try
+          (.start curator)
+          (let [{:keys [service-instance] :as discovery}
+                (register "r1" curator "waiter" "discovery" {:host "waiter.com" :port 1234 :router-fqdn "r1.waiter.com" :router-ssl-port 12345})
+                payload (.getPayload service-instance)
+                expected-payload {"router-fqdn" "r1.waiter.com" "router-ssl-port" 12345}]
+            (is (= HashMap (type payload)) "unexpected payload type - see discovery/->service-instance for a note on changes to payload types")
+            (is (= expected-payload payload))
+            (let [details (router-id->details discovery)]
+              (is (= 1 (count details)))
+              (is (contains? details "r1"))
+              (is (= (walk/keywordize-keys expected-payload) (:custom-details (get details "r1"))))))
+          (finally
+            (.close curator)
+            (.stop zk-server))))))

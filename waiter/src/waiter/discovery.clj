@@ -24,6 +24,11 @@
 
 (defn- ->service-instance
   [id service-name {:keys [host port router-fqdn router-ssl-port]}]
+  ;; The payload type must be consistent for a given ZK discovery-path.
+  ;; If the payload type changes here, then there is a runtime risk that existing
+  ;; services in ZK will no longer be deserializable. This will prevent Waiter from
+  ;; starting and impact releases/rollbacks. If you must change the payload type,
+  ;; then you MUST pair the change with an updated discovery-path.
   (let [payload (doto (HashMap.)
                   (.put "router-fqdn" router-fqdn)
                   (.put "router-ssl-port" router-ssl-port))
