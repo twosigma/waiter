@@ -174,20 +174,21 @@ def _get_latest_cluster(clusters, query_result):
     :param clusters: list of local cluster configs from the configuration file
     :param query_result: value from query_token function
     :return: Finds latest token configuration from the query_result. Gets the cluster that is configured in the
-     token description and returns a local cluster who's serverside name matches the one specified in the token.
+     token description and returns a local cluster who's server side name matches the one specified in the token.
      If the token's cluster does not exist in one of the local cluster configurations then an Exception is raised.
     """
     token_descriptions = list(query_result['clusters'].values())
     token_result = max(token_descriptions, key=lambda token: token['token']['last-update-time'])
     if token_result['token'].get('deleted', False):
         return None
-    cluster_name_goal = token_result['token']['cluster']
-    provided_cluster_names = []
+    cluster_name_goal = token_result['token']['cluster'].upper()
+    provided_cluster_names = set()
     for c in clusters:
         cluster_settings, _ = http_util.make_data_request(c, lambda: http_util.get(c, '/settings'))
-        cluster_config_name = cluster_settings['cluster-config']['name']
-        provided_cluster_names.append(cluster_config_name)
-        if cluster_name_goal.upper() == cluster_config_name.upper():
+        cluster_config_name = cluster_settings['cluster-config']['name'].upper()
+        cluster_local_config_name = c['name'].upper()
+        provided_cluster_names.add(cluster_config_name)
+        if cluster_name_goal == cluster_config_name or cluster_name_goal == cluster_local_config_name:
             return c
     raise Exception(f'The token is configured in cluster {cluster_name_goal}, which is not provided.' +
                     f' The following clusters were provided: {", ".join(provided_cluster_names)}.')

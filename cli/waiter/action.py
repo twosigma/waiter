@@ -240,10 +240,15 @@ def process_kill_request(clusters, token_name_or_service_id, is_service_id, forc
 
 
 def token_explicitly_created_on_cluster(cluster, token_cluster_name):
-    """Returns true if the given token cluster matches the configured cluster name of the given cluster"""
+    """Returns true if the given token cluster matches the configured cluster name of the given cluster
+    or if the token cluster matches the configured cluster name in the .waiter.json file"""
     cluster_settings, _ = http_util.make_data_request(cluster, lambda: http_util.get(cluster, '/settings'))
     cluster_config_name = cluster_settings['cluster-config']['name'].upper()
-    created_on_this_cluster = token_cluster_name == cluster_config_name or token_cluster_name == cluster['name']
+    cluster_local_config_name = cluster['name'].upper()
+
+    # we consider the token having the same cluster value as the configured cluster in .waiter.json as an alias
+    # which makes it easier to change a Waiter cluster name without making breaking changes to the CLI client.
+    created_on_this_cluster = token_cluster_name == cluster_config_name or token_cluster_name == cluster_local_config_name
     return created_on_this_cluster
 
 
