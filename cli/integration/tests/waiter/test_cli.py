@@ -819,7 +819,6 @@ class WaiterCliTest(util.WaiterTest):
                 self.assertEqual(0, cp.returncode, cp.stderr)
                 self.assertIn('Pinging token', cli.stdout(cp))
                 self.assertIn('successful', cli.stdout(cp))
-                self.assertIn(alias_cluster_name, cli.stdout(cp))
                 self.assertIn('Service is currently', cli.stdout(cp))
                 self.assertTrue(any(s in cli.stdout(cp) for s in ['Running', 'Starting']))
                 util.wait_until_services_for_token(self.waiter_url, token_name, 1)
