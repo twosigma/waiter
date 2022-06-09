@@ -354,14 +354,14 @@
             (log/info "exiting router-syncer"))
 
           router-state-chan
-          (let [router-id->http-endpoint data]
-            (when (seq router-id->http-endpoint)
+          (let [{:keys [router-id->endpoint-url]} data]
+            (when (seq router-id->endpoint-url)
               (let [connect-options {:async-write-timeout metrics-sync-interval-ms
                                      :in au/latest-chan
                                      :max-idle-timeout inter-router-metrics-idle-timeout-ms
                                      :middleware (fn router-syncer-middleware [_ request] (attach-auth-cookie! request))
                                      :out au/latest-chan}]
-                (send router-metrics-agent update-metrics-router-state websocket-client router-id->http-endpoint
+                (send router-metrics-agent update-metrics-router-state websocket-client router-id->endpoint-url
                       encrypt connect-options router-metrics-agent)))
             (recur (inc iteration) timeouts (async/timeout router-update-interval-ms)))
 

@@ -14,14 +14,26 @@
 ;; limitations under the License.
 ;;
 (ns waiter.discovery
-  (:require [clojure.tools.logging :as log])
+  (:require [clojure.tools.logging :as log]
+            [plumbing.core :as pc])
   (:import (java.net Inet4Address)
+           (java.util HashMap)
            (org.apache.curator.framework CuratorFramework)
-           (org.apache.curator.x.discovery ServiceCache ServiceDiscovery ServiceDiscoveryBuilder ServiceInstance ServiceInstanceBuilder UriSpec)))
+           (org.apache.curator.x.discovery ServiceCache ServiceDiscovery ServiceDiscoveryBuilder ServiceInstance ServiceInstanceBuilder UriSpec)
+           (org.apache.curator.x.discovery.details JsonInstanceSerializer)))
 
 (defn- ->service-instance
-  [id service-name {:keys [host port]}]
-  (let [builder (-> (ServiceInstance/builder)
+  [id service-name {:keys [host port router-fqdn router-ssl-port]}]
+  ;; Note that the payload type must be consistent for a given ZK discovery-path.
+  ;; If the payload type changes here, then there is a runtime risk that existing
+  ;; services in ZK will no longer be deserializable. This will prevent Waiter from
+  ;; starting and impact releases/rollbacks. If you change the payload type,
+  ;; then you MUST pair the change with an updated discovery-path suffix
+  ;; (see versioned-discovery-path).
+  (let [payload (doto (HashMap.)
+                  (.put "router-fqdn" router-fqdn)
+                  (.put "router-ssl-port" router-ssl-port))
+        builder (-> (ServiceInstance/builder)
                     (.id id)
                     (.name service-name)
                     (.uriSpec (UriSpec. "{scheme}://{address}:{port}/{endpoint}"))
@@ -35,16 +47,19 @@
                                                     {:id id
                                                      :inet-addresses inet-addresses
                                                      :service-name service-name}))))
-                                host)))]
+                                host))
+                    (.payload payload))]
     (.build builder)))
 
 (defn- ->service-discovery
   [^CuratorFramework curator base-path instance]
-  (-> (ServiceDiscoveryBuilder/builder Void)
-      (.client curator)
-      (.basePath base-path)
-      (.thisInstance instance)
-      (.build)))
+  (let [payload-class (class (HashMap.))]
+    (-> (ServiceDiscoveryBuilder/builder payload-class)
+        (.client curator)
+        (.basePath base-path)
+        (.serializer (JsonInstanceSerializer. payload-class))
+        (.thisInstance instance)
+        (.build))))
 
 (defn- ->service-cache
   [^ServiceDiscovery service-discovery service-name]
@@ -89,14 +104,39 @@
     (zipmap (map #(str (.getId %)) filtered-instances)
             (map #(get-instance-url % protocol endpoint) filtered-instances))))
 
+(defn- router-details
+  "Returns a map representing the details of the given router."
+  [instance]
+  (let [custom-details (pc/map-keys keyword (.getPayload instance))
+        details {:address (.getAddress instance)
+                 :custom-details custom-details
+                 :id (.getId instance)
+                 :name (.getName instance)
+                 :port (.getPort instance)}]
+    details))
+
+(defn router-id->details
+  "For all routers that pass the exclude-set, returns a mapping from router-id to its details."
+  [discovery & {:keys [exclude-set] :or {exclude-set #{}}}]
+  (let [filtered-instances (routers discovery exclude-set)]
+    (zipmap (map #(str (.getId %)) filtered-instances)
+            (map router-details filtered-instances))))
+
 (defn cluster-size
   "Returns the number of routers particpating in the ZooKeeper cluster."
   [discovery]
   (count (routers discovery #{})))
 
+(defn versioned-discovery-path
+  "Returns a versioned discovery path. See the note in ->service-instance about payload types
+   and discovery paths."
+  [discovery-path]
+  (str discovery-path "-v2"))
+
 (defn register
-  [router-id curator service-name discovery-path {:keys [host port]}]
-  (let [instance (->service-instance router-id service-name {:host host :port port})
+  [router-id curator service-name discovery-path-base {:keys [host port router-fqdn router-ssl-port]}]
+  (let [discovery-path (versioned-discovery-path discovery-path-base)
+        instance (->service-instance router-id service-name {:host host :port port :router-fqdn router-fqdn :router-ssl-port router-ssl-port})
         discovery (->service-discovery curator discovery-path instance)
         cache (->service-cache discovery service-name)]
     (log/info "Using service name:" service-name "for router id:" router-id)

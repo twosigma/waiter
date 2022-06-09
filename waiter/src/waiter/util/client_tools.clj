@@ -697,6 +697,14 @@
                      (str/starts-with? router-url HTTP-SCHEME) (str/replace HTTP-SCHEME "")))
                  routers-raw)))
 
+(defn router-details
+  "Fetches and returns router details from the maintainer state."
+  [waiter-url]
+  (let [state-json (maintainer-state waiter-url)
+        router-details-raw (get-in state-json ["state" "router-details"] {})]
+    (log/debug "router details retrieved from /state:" router-details-raw)
+    router-details-raw))
+
 (defn router-endpoint
   [waiter-url router-id]
   (let [routers (routers waiter-url)]

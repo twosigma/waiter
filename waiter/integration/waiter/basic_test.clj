@@ -1651,3 +1651,16 @@
             ; cleanup in case a service was created
             (when service-id
               (delete-service waiter-url service-id))))))))
+
+(deftest ^:parallel ^:integration-fast test-state-maintainer-router-details
+  (testing-using-waiter-url
+   (testing "state includes router details"
+     (doseq [[_ details] (router-details waiter-url)]
+       (is (contains? details "address"))
+       (is (contains? details "custom-details"))
+       (let [custom-details (get details "custom-details")]
+         (is (contains? custom-details "router-fqdn"))
+         (is (contains? custom-details "router-ssl-port")))
+       (is (contains? details "id"))
+       (is (contains? details "name"))
+       (is (contains? details "port"))))))

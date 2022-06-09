@@ -25,7 +25,11 @@
   "Query `discovery` for the list of currently running routers and populates it into `router-chan`."
   [discovery router-chan]
   (log/trace "querying discovery for routers")
-  (async/>!! router-chan (discovery/router-id->endpoint-url discovery "http" "")))
+  (let [router-id->endpoint-url (discovery/router-id->endpoint-url discovery "http" "")
+        router-id->details (discovery/router-id->details discovery)
+        router-info {:router-id->details router-id->details
+                     :router-id->endpoint-url router-id->endpoint-url}]
+    (async/>!! router-chan router-info)))
 
 (defn start-router-syncer
   "Starts loop to query discovery service for the list of currently running routers and
