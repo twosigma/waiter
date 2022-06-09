@@ -534,6 +534,21 @@ class MultiWaiterCliTest(util.WaiterTest):
                                  'sync-group': sync_group_name}]
         self._test_choose_latest_configured_cluster(cluster_test_configs, 0)
 
+    def test_update_token_latest_configured_to_alias_cluster(self):
+        alias_cluster_name = 'weird-cluster'
+        sync_group_name = 'group_name'
+        cluster_test_configs = [{'name': 'waiter1',
+                                 'url': self.waiter_url_1,
+                                 'token-to-create': util.minimal_service_description(cluster=self.waiter_1_cluster),
+                                 'default-for-create': True,
+                                 'sync-group': sync_group_name},
+                                {'name': alias_cluster_name,
+                                 'url': self.waiter_url_2,
+                                 'token-to-create': util.minimal_service_description(cluster=alias_cluster_name),
+                                 'sync-group': sync_group_name}]
+        self._test_choose_latest_configured_cluster(cluster_test_configs, 0)
+
+
     def test_update_token_latest_configured_to_missing_cluster(self):
         sync_group_1 = "sync-group-1"
         unlisted_cluster_name = "unlisted_cluster"
