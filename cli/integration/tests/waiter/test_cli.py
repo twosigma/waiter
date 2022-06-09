@@ -803,6 +803,27 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
+    
+    def test_ping_alias(self):
+        alias_cluster_name = 'weird-cluster'
+        # config uses alias cluster name as the locally configured name
+        config = {'clusters': [{'name': alias_cluster_name,
+                                'url': self.waiter_url,
+                                'default-for-create': True}]}
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description(cluster=alias_cluster_name))
+        try:
+            with cli.temp_config_file(config) as path:
+                self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
+                cp = cli.ping(self.waiter_url, token_name, flags=f'--config {path}')
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                self.assertIn('Pinging token', cli.stdout(cp))
+                self.assertIn('successful', cli.stdout(cp))
+                self.assertIn('Service is currently', cli.stdout(cp))
+                self.assertTrue(any(s in cli.stdout(cp) for s in ['Running', 'Starting']))
+                util.wait_until_services_for_token(self.waiter_url, token_name, 1)
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
 
     def test_create_does_not_patch(self):
         token_name = self.token_name()
