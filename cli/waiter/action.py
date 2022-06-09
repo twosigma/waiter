@@ -248,7 +248,7 @@ def token_explicitly_created_on_cluster(cluster, token_cluster_name):
 
     # we consider the token having the same cluster value as the configured cluster in .waiter.json as an alias
     # which makes it easier to change a Waiter cluster name without making breaking changes to the CLI client.
-    created_on_this_cluster = token_cluster_name == cluster_config_name or token_cluster_name == cluster_local_config_name
+    created_on_this_cluster = token_cluster_name in [cluster_config_name, cluster_local_config_name]
     return created_on_this_cluster
 
 

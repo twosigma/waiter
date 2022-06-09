@@ -188,7 +188,7 @@ def _get_latest_cluster(clusters, query_result):
         cluster_config_name = cluster_settings['cluster-config']['name'].upper()
         cluster_local_config_name = c['name'].upper()
         provided_cluster_names.add(cluster_config_name)
-        if cluster_name_goal == cluster_config_name or cluster_name_goal == cluster_local_config_name:
+        if cluster_name_goal in [cluster_config_name, cluster_local_config_name]:
             return c
     raise Exception(f'The token is configured in cluster {cluster_name_goal}, which is not provided.' +
                     f' The following clusters were provided: {", ".join(provided_cluster_names)}.')
