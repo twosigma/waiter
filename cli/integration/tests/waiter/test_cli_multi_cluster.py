@@ -546,7 +546,7 @@ class MultiWaiterCliTest(util.WaiterTest):
                                  'url': self.waiter_url_2,
                                  'token-to-create': util.minimal_service_description(cluster=alias_cluster_name),
                                  'sync-group': sync_group_name}]
-        self._test_choose_latest_configured_cluster(cluster_test_configs, 0)
+        self._test_choose_latest_configured_cluster(cluster_test_configs, 1)
 
 
     def test_update_token_latest_configured_to_missing_cluster(self):
@@ -574,6 +574,7 @@ class MultiWaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url_1, token_name)
             util.delete_token(self.waiter_url_2, token_name)
+
 
     def _test_update_token_multiple_sync_groups(self, config):
         token_name = self.token_name()
