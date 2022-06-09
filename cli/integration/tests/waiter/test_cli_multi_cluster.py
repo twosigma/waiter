@@ -553,9 +553,9 @@ class MultiWaiterCliTest(util.WaiterTest):
                 cp = cli.update(token_name=token_name, flags=f'--config {path}', update_flags=f'--version {version}')
                 self.assertEqual(1, cp.returncode, cp.stderr)
                 self.assertIn('The token is configured in cluster', cli.stderr(cp))
-                self.assertIn(unlisted_cluster_name, cli.stderr(cp))
-                self.assertIn(self.waiter_1_cluster, cli.stderr(cp))
-                self.assertIn(self.waiter_2_cluster, cli.stderr(cp))
+                self.assertIn(unlisted_cluster_name.upper(), cli.stderr(cp))
+                self.assertIn(self.waiter_1_cluster.upper(), cli.stderr(cp))
+                self.assertIn(self.waiter_2_cluster.upper(), cli.stderr(cp))
         finally:
             util.delete_token(self.waiter_url_1, token_name)
             util.delete_token(self.waiter_url_2, token_name)
