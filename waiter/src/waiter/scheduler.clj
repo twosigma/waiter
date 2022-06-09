@@ -1226,7 +1226,7 @@
 
    Returns a map with keys:
    :query-state-fn function that queries the current state of the daemon"
-  [clock timer-chan token-cluster-calculator service-id->source-tokens-entries-fn service-id->metrics-fn
+  [clock timer-chan service-id->source-tokens-entries-fn service-id->metrics-fn
    retrieve-latest-descriptor-fn fallback-state-atom kv-store start-new-service-fn]
   (cid/with-correlation-id
     "start-new-services-goroutine"
@@ -1236,7 +1236,6 @@
                             :service-id->last-request-time {}})
           query-state-fn (fn query-state-fn [_]
                            @state-atom)
-          default-cluster (token/get-default-cluster token-cluster-calculator)
           go-chan
           (async/go
             (try
@@ -1279,6 +1278,11 @@
                                                 pos?)))
                                        (map first)
                                        set)
+
+                                  ; set of tokens that match several conditions:
+                                  ; 1. a source token for a service-id with new last-request-time
+                                  ; 2. not a run-as-requester or parameterized service
+                                  ; 3. the token resolves to a service-id that is not yet been started
                                   tokens-with-new-last-request-times
                                   (->> service-ids-with-new-last-request-times
                                        (reduce
@@ -1291,18 +1295,6 @@
                                              set
                                              (concat tokens-set)))
                                          #{})
-
-                                       ; filter out tokens that are not in the same cluster as current waiter router
-                                       (filter (fn token-in-same-cluster?-fn
-                                                 [token]
-                                                 (let [token-parameters
-                                                       (sd/token->token-parameters kv-store token :error-on-missing false)
-                                                       token-cluster (get token-parameters "cluster")]
-                                                   (and (some? token-parameters)
-                                                        (= token-cluster default-cluster)))))
-
-                                       ; TODO: support run-as-requester and parameterized services.
-                                       ; filter out run-as-requester and parameterized services.
                                        (filter (fn token-non-run-as-requester-parameterized?-fn
                                                  [token]
                                                  (when-let
@@ -1311,8 +1303,6 @@
                                                    (and run-as-user
                                                         (not (sd/run-as-requester? service-description-template))
                                                         (not (sd/requires-parameters? service-description-template))))))
-
-                                       ; filter for tokens that point to a service that have not started yet
                                        (filter (fn token-should-start-service?-fn
                                                  [token]
                                                  (let [{:strs [run-as-user]}
@@ -1322,14 +1312,14 @@
                                                    (descriptor/service-exists? fallback-state service-id)))))]
                               (cid/cinfo correlation-id "starting services for tokens with new last-request-times"
                                          {:tokens tokens-with-new-last-request-times})
-                              ; attempt to start a new service for each of the tokens
                               (doseq [token (seq tokens-with-new-last-request-times)]
                                 (let [{:strs [run-as-user]}
                                       (sd/token->service-parameter-template kv-store token :error-on-missing false)
                                       {:keys [service-id] :as latest-descriptor}
                                       (retrieve-latest-descriptor-fn run-as-user token)]
                                   (cid/cinfo correlation-id "starting service due to new last-request-time"
-                                             {:service-id service-id})
+                                             {:service-id service-id
+                                              :token token})
                                   (start-new-service-fn latest-descriptor)))
                               {:service-id->last-request-time new-service-id->last-request-time})
                             (catch Exception e
@@ -1345,13 +1335,3 @@
        :go-chan go-chan
        :query-state-fn query-state-fn})))
 
-;(when (leader?-fn)
-;  (let [{:strs [run-as-user]}
-;        (sd/token->service-parameter-template kv-store token :error-on-missing false)
-;        {:keys [service-id] :as latest-descriptor}
-;        (retrieve-latest-descriptor-fn run-as-user token)
-;        service-does-not-exist? (not (service-exists? service-id))]
-;    (when service-does-not-exist?
-;      (cid/cinfo correlation-id "starting" {:service-id (get latest-descriptor :service-id)})
-;      (start-new-service-fn latest-descriptor))
-;    service-does-not-exist?))
