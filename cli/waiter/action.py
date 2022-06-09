@@ -243,7 +243,7 @@ def token_explicitly_created_on_cluster(cluster, token_cluster_name):
     """Returns true if the given token cluster matches the configured cluster name of the given cluster"""
     cluster_settings, _ = http_util.make_data_request(cluster, lambda: http_util.get(cluster, '/settings'))
     cluster_config_name = cluster_settings['cluster-config']['name'].upper()
-    created_on_this_cluster = token_cluster_name == cluster_config_name
+    created_on_this_cluster = token_cluster_name == cluster_config_name or token_cluster_name == cluster['name']
     return created_on_this_cluster
 
 
