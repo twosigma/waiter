@@ -433,8 +433,8 @@
         metrics-agent (agent initial-state)]
     metrics-agent))
 
-(defn- merge-router-metrics
-  "Merges all the metrics shared among routers.
+(defn- merge-service-metrics
+  "Merges service metrics across many maps.
    last-request-time is combined using the max operator.
    Counters are combined using sum reduction."
   [& maps]
@@ -452,11 +452,14 @@
 (defn agent->service-id->metrics
   "Retrieves aggregated view of service-id->metrics using data available from all peer routers in the agent."
   [router-metrics-agent]
-  ; TODO:LAST we need to provide a consistent view of last-request-time here
   (try
-    (let [router-id->service-id->metrics (get-in @router-metrics-agent [:metrics :routers])
-          aggregate-router-metrics (fn aggregate-router-metrics [router->metrics]
-                                     (apply merge-router-metrics (vals router->metrics)))
+    (let [external-metrics (get @router-metrics-agent :external-metrics)
+          router-id->service-id->metrics (get-in @router-metrics-agent [:metrics :routers])
+          aggregate-service-metrics (fn aggregate-service-metrics [key->metrics]
+                                      (->> key->metrics
+                                           vals
+                                           (filter some?)
+                                           (apply merge-service-metrics)))
           service-ids (->> router-id->service-id->metrics
                            (vals)
                            (map keys)
@@ -470,9 +473,20 @@
                                                                     (service-id->metrics service-id))
                                                                   router-id->service-id->metrics)]
                                  (try
-                                   (->> router->metrics
-                                        (utils/filterm val)
-                                        aggregate-router-metrics)
+                                   (let [router-metrics (-> router->metrics
+                                                            vals
+                                                            (filter some?)
+                                                            (apply merge-service-metrics))
+                                         {:strs [last-request-time]}
+                                         (-> external-metrics
+                                             (get service-id)
+                                             (pc/map-vals
+                                               (fn [{:strs [metrics]}] ; TODO:LAST simply this and use that func
+                                                 metrics))
+                                             vals
+                                             (filter some?)
+                                             (apply merge-service-metrics))]
+                                     (update router-metrics "last-request-time" t/max-date last-request-time))
                                    (catch Exception e
                                      (log/error e "error in retrieving aggregated metrics for" service-id))))))
            (filter second)

@@ -711,6 +711,9 @@
                        :scheduler-gc-broken-service-interval-ms 60000
                        :scheduler-gc-interval-ms 60000}
 
+ ;; How often (milliseconds) to check and start new services for tokens with implicit changes that are receiving requests
+ :scheduler-start-new-services-interval-ms 5000
+
  ;; How often (seconds) to query the scheduler for the service and instance statuses:
  :scheduler-syncer-interval-secs 5
 

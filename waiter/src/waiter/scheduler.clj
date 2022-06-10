@@ -37,8 +37,7 @@
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
-            [waiter.util.utils :as utils]
-            [waiter.token :as token])
+            [waiter.util.utils :as utils])
   (:import (java.io EOFException)
            (java.net ConnectException SocketTimeoutException)
            (java.util.concurrent TimeoutException)
@@ -1239,10 +1238,8 @@
           go-chan
           (async/go
             (try
-              (loop [{:keys [service-id->last-request-time last-update-time] :as current-state} @state-atom]
+              (loop [{:keys [service-id->last-request-time] :as current-state} @state-atom]
                 (reset! state-atom current-state)
-                (println "----")
-                (println "new iteration" last-update-time)
                 (let [[msg current-chan]
                       (async/alts! [exit-chan timer-chan]
                                    :priority true)

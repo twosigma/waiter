@@ -123,6 +123,7 @@
                                           (s/required-key :broken-service-timeout-mins) schema/positive-int
                                           (s/required-key :scheduler-gc-broken-service-interval-ms) schema/positive-int
                                           (s/required-key :scheduler-gc-interval-ms) schema/positive-int}
+   (s/required-key :scheduler-start-new-services-interval-ms) schema/positive-int
    (s/required-key :scheduler-syncer-interval-secs) schema/positive-int
    (s/required-key :server-options) {(s/optional-key :accept-queue-size) schema/non-negative-int
                                      (s/optional-key :blocking-timeout) schema/non-negative-int
@@ -451,6 +452,7 @@
                          :broken-service-timeout-mins 30
                          :scheduler-gc-broken-service-interval-ms 60000
                          :scheduler-gc-interval-ms 60000}
+   :scheduler-start-new-services-interval-ms 5000
    :scheduler-syncer-interval-secs 5
    :server-options {;; HttpInput.read() uses getBlockingTimeout() and does not uses zero to mean:
                     ;; 0 for a blocking timeout equal to the idle timeout 

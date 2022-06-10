@@ -1455,10 +1455,10 @@
    :start-new-services-maintainer (pc/fnk
                                     [[:routines retrieve-latest-descriptor-fn router-metrics-helpers
                                       service-id->source-tokens-entries-fn start-new-service-fn]
+                                     [:settings scheduler-start-new-services-interval-ms]
                                      [:state clock kv-store fallback-state-atom]]
-                                    ; TODO: need to add settings here for timeout
                                     (let [{:keys [service-id->metrics-fn]} router-metrics-helpers
-                                          start-new-services-maintainer-timer-ch (au/timer-chan 5000)]
+                                          start-new-services-maintainer-timer-ch (au/timer-chan scheduler-start-new-services-interval-ms)]
                                       (scheduler/start-new-services-maintainer
                                         clock start-new-services-maintainer-timer-ch service-id->source-tokens-entries-fn
                                         service-id->metrics-fn retrieve-latest-descriptor-fn fallback-state-atom kv-store
