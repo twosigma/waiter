@@ -473,19 +473,16 @@
                                                                     (service-id->metrics service-id))
                                                                   router-id->service-id->metrics)]
                                  (try
-                                   (let [router-metrics (-> router->metrics
-                                                            vals
-                                                            (filter some?)
-                                                            (apply merge-service-metrics))
+                                   (let [router-metrics (aggregate-service-metrics router->metrics)
+                                         ; TODO: we will also need to provide the aggregate active-request-counts
+                                         ; this will be done when we implement autoscaling for services
                                          {:strs [last-request-time]}
                                          (-> external-metrics
                                              (get service-id)
                                              (pc/map-vals
-                                               (fn [{:strs [metrics]}] ; TODO:LAST simply this and use that func
+                                               (fn [{:strs [metrics]}]
                                                  metrics))
-                                             vals
-                                             (filter some?)
-                                             (apply merge-service-metrics))]
+                                             aggregate-service-metrics)]
                                      (update router-metrics "last-request-time" t/max-date last-request-time))
                                    (catch Exception e
                                      (log/error e "error in retrieving aggregated metrics for" service-id))))))
