@@ -809,7 +809,8 @@
                                                                  "gc-broken-services" "gc-services" "gc-transient-metrics" "instance-tracker" "interstitial"
                                                                  "jwt-auth-server" "kv-store" "launch-metrics" "leader" "local-usage" "metrics-consumer"
                                                                  "maintainer" "router-metrics" "scheduler" "service-description-builder"
-                                                                 "service-maintainer" "statsd" "token-validator" "token-watch-maintainer" "work-stealing"]
+                                                                 "service-maintainer" "start-new-services-maintainer" "statsd" "token-validator" "token-watch-maintainer"
+                                                                 "work-stealing"]
                                                              (pc/map-from-keys make-url))
                                                            (pc/for-map [component-key (keys custom-components)]
                                                              (str "custom-components:" (name component-key))

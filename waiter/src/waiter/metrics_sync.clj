@@ -474,16 +474,22 @@
                                                                   router-id->service-id->metrics)]
                                  (try
                                    (let [router-metrics (aggregate-service-metrics router->metrics)
-                                         ; TODO: we will also need to provide the aggregate active-request-counts
-                                         ; this will be done when we implement autoscaling for services
-                                         {:strs [last-request-time]}
-                                         (-> external-metrics
-                                             (get service-id)
-                                             (pc/map-vals
-                                               (fn [{:strs [metrics]}]
-                                                 metrics))
-                                             aggregate-service-metrics)]
-                                     (update router-metrics "last-request-time" t/max-date last-request-time))
+                                         ; TODO: we will also need to aggregate active-request-counts and queued-requests
+                                         ; and choose between external vs router metrics if service has bypass configured
+                                         {:strs [last-request-time] :as ext-metric}
+                                         (some->> service-id
+                                                  (get external-metrics)
+                                                  (pc/map-vals
+                                                    (fn [{:strs [metrics]}]
+                                                      ; if there are external-metrics, then last-request-time will always be
+                                                      ; a valid ISO-8601 string
+                                                      (update metrics "last-request-time" du/str-to-date)))
+                                                  aggregate-service-metrics)]
+                                     (println "service-id metrics" {:external-metric ext-metric
+                                                                    :router-metrics router-metrics})
+                                     (if (some? last-request-time)
+                                       (update router-metrics "last-request-time" t/max-date last-request-time)
+                                       router-metrics))
                                    (catch Exception e
                                      (log/error e "error in retrieving aggregated metrics for" service-id))))))
            (filter second)

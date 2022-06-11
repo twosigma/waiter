@@ -141,6 +141,7 @@
                               ["/scheduler" :state-scheduler-handler-fn]
                               ["/service-description-builder" :state-service-description-builder-handler-fn]
                               ["/service-maintainer" :state-service-maintainer-handler-fn]
+                              ["/start-new-services-maintainer" :state-start-new-services-maintainer-fn]
                               ["/statsd" :state-statsd-handler-fn]
                               ["/token-validator" :state-token-validator-fn]
                               ["/token-watch-maintainer" :state-token-watch-maintainer-fn]
@@ -1453,7 +1454,7 @@
                                 (maintainer/start-service-chan-maintainer
                                   {} state-chan query-service-maintainer-chan start-service remove-service retrieve-channel)))
    :start-new-services-maintainer (pc/fnk
-                                    [[:routines retrieve-latest-descriptor-fn router-metrics-helpers
+                                    [[:routines retrieve-descriptor-fn retrieve-latest-descriptor-fn router-metrics-helpers
                                       service-id->source-tokens-entries-fn start-new-service-fn]
                                      [:settings scheduler-start-new-services-interval-ms]
                                      [:state clock kv-store fallback-state-atom]]
@@ -1461,8 +1462,8 @@
                                           start-new-services-maintainer-timer-ch (au/timer-chan scheduler-start-new-services-interval-ms)]
                                       (scheduler/start-new-services-maintainer
                                         clock start-new-services-maintainer-timer-ch service-id->source-tokens-entries-fn
-                                        service-id->metrics-fn retrieve-latest-descriptor-fn fallback-state-atom kv-store
-                                        start-new-service-fn)))
+                                        service-id->metrics-fn retrieve-descriptor-fn retrieve-latest-descriptor-fn
+                                        fallback-state-atom kv-store start-new-service-fn)))
    :state-sources (pc/fnk [[:scheduler scheduler]
                            [:state query-service-maintainer-chan]
                            autoscaler autoscaling-multiplexer gc-for-transient-metrics interstitial-maintainer
@@ -1541,8 +1542,8 @@
                                                           (conj "127.0.0.1"))
                                        password (first passwords)
                                        auth-handler (-> (constantly (utils/attach-waiter-source {:status http-204-no-content}))
-                                                      (wrap-secure-request-fn)
-                                                      (wrap-service-discovery-fn))]
+                                                        (wrap-secure-request-fn)
+                                                        (wrap-service-discovery-fn))]
                                    (fn auth-keep-alive-handler-fn [request]
                                      (auth/process-auth-keep-alive-request token->token-parameters waiter-hostnames password auth-handler request))))
    :default-websocket-handler-fn (pc/fnk [[:daemons populate-maintainer-chan!]
@@ -1562,9 +1563,9 @@
                                                                           instance-request-properties determine-priority-fn ws/process-response!
                                                                           ws/abort-request-callback-factory local-usage-agent request))]
                                      (->> process-request-fn
-                                       ws/wrap-ws-close-on-error
-                                       wrap-descriptor-fn
-                                       (ws/make-request-handler password))))
+                                          ws/wrap-ws-close-on-error
+                                          wrap-descriptor-fn
+                                          (ws/make-request-handler password))))
    :display-settings-handler-fn (pc/fnk [wrap-secure-request-fn settings]
                                   (wrap-secure-request-fn
                                     (fn display-settings-handler-fn [_]
@@ -1667,9 +1668,9 @@
                                  ; websocket-request-acceptor for websocket upgrade requests
                                  (fn process-handler-wrapper-fn [handler]
                                    (-> handler
-                                     pr/wrap-too-many-requests
-                                     pr/wrap-suspended-service
-                                     pr/wrap-response-status-metrics
+                                       pr/wrap-too-many-requests
+                                       pr/wrap-suspended-service
+                                       pr/wrap-response-status-metrics
                                      (interstitial/wrap-interstitial interstitial-state-atom)
                                      wrap-descriptor-fn
                                      wrap-secure-request-fn
@@ -1715,8 +1716,8 @@
                                    wrap-descriptor-fn wrap-secure-request-fn]
                             (-> (fn service-id-handler-fn [request]
                                   (handler/service-id-handler request kv-store store-service-description-fn))
-                              wrap-descriptor-fn
-                              wrap-secure-request-fn))
+                                wrap-descriptor-fn
+                                wrap-secure-request-fn))
    :service-list-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
                                      [:routines prepend-waiter-url retrieve-token-based-fallback-fn router-metrics-helpers
                                       service-id->references-fn service-id->service-description-fn service-id->source-tokens-entries-fn
@@ -1937,6 +1938,14 @@
                                    (handler/get-service-state
                                      router-id enable-work-stealing-support? populate-maintainer-chan! local-usage-agent
                                      service-id state-sources request))))
+   :state-start-new-services-maintainer-fn (pc/fnk [[:daemons start-new-services-maintainer]
+                                                    [:state router-id]
+                                                    wrap-secure-request-fn]
+                                             (let [{:keys [query-state-fn]} start-new-services-maintainer]
+                                               (wrap-secure-request-fn
+                                                 (fn state-start-new-services-handler-fn
+                                                   [request]
+                                                   (handler/get-daemon-state router-id query-state-fn request)))))
    :state-statsd-handler-fn (pc/fnk [[:state router-id]
                                      wrap-secure-request-fn]
                               (wrap-secure-request-fn
@@ -2053,10 +2062,10 @@
                                                    websocket-secure-request-acceptor-fn
                                                    auth/wrap-auth-bypass-acceptor
                                                    pr/wrap-maintenance-mode-acceptor
-                                                   handler/wrap-wss-redirect
-                                                   ws/wrap-service-discovery-data
-                                                   wrap-service-discovery-fn
-                                                   ws/wrap-ws-acceptor-error-handling)]
+                                                 handler/wrap-wss-redirect
+                                                 ws/wrap-service-discovery-data
+                                                 wrap-service-discovery-fn
+                                                 ws/wrap-ws-acceptor-error-handling)]
                                    (ws/make-websocket-request-acceptor server-name handler)))
    :websocket-secure-request-acceptor-fn (pc/fnk [[:state passwords]]
                                            (fn websocket-secure-request-acceptor-fn
@@ -2106,9 +2115,9 @@
                                (fn wrap-secure-request-fn
                                  [handler]
                                  (let [handler (-> handler
-                                                 (cors/wrap-cors-request
-                                                   cors-validator waiter-request?-fn exposed-headers)
-                                                 authentication-method-wrapper-fn)]
+                                                   (cors/wrap-cors-request
+                                                     cors-validator waiter-request?-fn exposed-headers)
+                                                   authentication-method-wrapper-fn)]
                                    (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
                                      (log/debug "secure request received at" uri)
                                      (handler request))))))})

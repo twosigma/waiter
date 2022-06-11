@@ -1226,11 +1226,10 @@
   "Get service-ids that are associated with a token."
   [waiter-url token]
   (let [query-params {"token" token}
-        {:keys [body] :as response} (make-request waiter-url "/apps" :query-params query-params)
-        services (-> body (json/read-str) (walk/keywordize-keys))
-        service-ids (map (fn [entry] (some->> entry :service-id)) services)]
+        {:keys [body] :as response} (make-request waiter-url "/apps" :query-params query-params)]
     (assert-response-status response 200)
-    service-ids))
+    (println "body:" body)
+    (->> body (json/read-str) (walk/keywordize-keys) (map (fn [entry] (some->> entry :service-id))))))
 
 (defmacro with-service-cleanup
   "Ensures a service is cleaned up."

@@ -1225,16 +1225,16 @@
 
    Returns a map with keys:
    :query-state-fn function that queries the current state of the daemon"
-  [clock timer-chan service-id->source-tokens-entries-fn service-id->metrics-fn
-   retrieve-latest-descriptor-fn fallback-state-atom kv-store start-new-service-fn]
+  [clock timer-chan service-id->source-tokens-entries-fn service-id->metrics-fn retrieve-descriptor-fn retrieve-latest-descriptor-fn
+   fallback-state-atom kv-store start-new-service-fn]
   (cid/with-correlation-id
-    "start-new-services-goroutine"
+    "start-new-services-maintainer"
     (let [correlation-id (cid/get-correlation-id)
           exit-chan (async/promise-chan)
           state-atom (atom {:last-update-time nil
                             :service-id->last-request-time {}})
           query-state-fn (fn query-state-fn [_]
-                           @state-atom)
+                           (assoc @state-atom :supported-include-params []))
           go-chan
           (async/go
             (try
@@ -1275,12 +1275,29 @@
                                                 pos?)))
                                        (map first)
                                        set)
-
+                                  _ (cid/cinfo correlation-id "service-ids with new last-request-times"
+                                                {:service-ids (str/join ", " service-ids-with-new-last-request-times)
+                                                 :service-id->new-last-request-time
+                                                 (pc/map-from-keys
+                                                   (fn [service-id]
+                                                     (get new-service-id->last-request-time service-id))
+                                                   service-ids-with-new-last-request-times)
+                                                 :service-id->old-last-request-time
+                                                 (pc/map-from-keys
+                                                   (fn [service-id]
+                                                     (get service-id->last-request-time service-id))
+                                                   service-ids-with-new-last-request-times)})
+                                  count-atom (atom 0)
+                                  print-identity-fn
+                                  (fn [temp]
+                                    (swap! count-atom inc)
+                                    (cid/cinfo correlation-id (str @count-atom) {:tokens temp})
+                                    temp)
                                   ; set of tokens that match several conditions:
                                   ; 1. a source token for a service-id with new last-request-time
                                   ; 2. not a run-as-requester or parameterized service
                                   ; 3. the token resolves to a service-id that is not yet been started
-                                  tokens-with-new-last-request-times
+                                  token-latest-descriptors-with-new-last-request-times
                                   (->> service-ids-with-new-last-request-times
                                        (reduce
                                          (fn [tokens-set service-id]
@@ -1292,32 +1309,44 @@
                                              set
                                              (concat tokens-set)))
                                          #{})
+                                       print-identity-fn
                                        (filter (fn token-non-run-as-requester-parameterized?-fn
                                                  [token]
+                                                 (cid/cinfo correlation-id "1.a token information"
+                                                            {:desc (sd/token->service-parameter-template kv-store token :error-on-missing false)})
                                                  (when-let
                                                    [{:strs [run-as-user] :as service-description-template}
                                                     (sd/token->service-parameter-template kv-store token :error-on-missing false)]
                                                    (and run-as-user
                                                         (not (sd/run-as-requester? service-description-template))
                                                         (not (sd/requires-parameters? service-description-template))))))
-                                       (filter (fn token-should-start-service?-fn
-                                                 [token]
-                                                 (let [{:strs [run-as-user]}
-                                                       (sd/token->service-parameter-template kv-store token :error-on-missing false)
-                                                       {:keys [service-id]}
-                                                       (retrieve-latest-descriptor-fn run-as-user token)]
-                                                   (descriptor/service-exists? fallback-state service-id)))))]
-                              (cid/cinfo correlation-id "starting services for tokens with new last-request-times"
-                                         {:tokens tokens-with-new-last-request-times})
-                              (doseq [token (seq tokens-with-new-last-request-times)]
-                                (let [{:strs [run-as-user]}
-                                      (sd/token->service-parameter-template kv-store token :error-on-missing false)
-                                      {:keys [service-id] :as latest-descriptor}
-                                      (retrieve-latest-descriptor-fn run-as-user token)]
+                                       print-identity-fn
+                                       ; we use retrieve-descriptor-fn instead of retrieve-latest-descriptor-fn because
+                                       ; it has a side effect for updating the service-id and source token references
+                                       (map (fn token-to-latest-descriptor
+                                              [token]
+                                              (let [{:strs [run-as-user]}
+                                                    (sd/token->service-parameter-template kv-store token :error-on-missing false)
+                                                    {:keys [latest-descriptor]} (retrieve-descriptor-fn run-as-user token)
+                                                    {:keys [service-id]} latest-descriptor
+                                                    conflicting-descriptor (retrieve-latest-descriptor-fn run-as-user token)]
+                                                ; TODO:LAST descriptors are changing for some reason
+                                                (cid/cinfo correlation-id "descriptors that may conflict"
+                                                           {:descriptor latest-descriptor
+                                                            :conflicting-descriptor conflicting-descriptor})
+                                                (when (not (descriptor/service-exists? fallback-state service-id))
+                                                  {:latest-descriptor latest-descriptor
+                                                   :token token}))))
+                                       (filter some?)
+                                       print-identity-fn)]
+                              (doseq [{:keys [token latest-descriptor]} token-latest-descriptors-with-new-last-request-times]
+                                (let [{:keys [service-id]} latest-descriptor]
                                   (cid/cinfo correlation-id "starting service due to new last-request-time"
                                              {:service-id service-id
                                               :token token})
+                                  ; need to store source tokens and reference
                                   (start-new-service-fn latest-descriptor)))
+                              ; TODO: add counter
                               {:service-id->last-request-time new-service-id->last-request-time})
                             (catch Exception e
                               (log/error e "error while processing services in start-new-services-maintainer.")
