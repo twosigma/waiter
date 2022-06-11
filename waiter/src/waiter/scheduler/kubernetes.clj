@@ -46,9 +46,9 @@
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
-  (:import (java.io InputStreamReader)
-           (java.util.concurrent Executors)
-           (org.joda.time.format DateTimeFormat)))
+  (:import [java.io InputStreamReader]
+           [java.util.concurrent Executors]
+           [org.joda.time.format DateTimeFormat]))
 
 (defn authorization-from-environment
   "Sample implementation of the authentication string refresh function.
@@ -811,11 +811,51 @@
   [{:keys [replicaset-spec-builder-fn] :as scheduler} service-id service-description context]
   (replicaset-spec-builder-fn scheduler service-id service-description context))
 
+(defn- token->k8s-service-name
+  [token]
+  ;; TODO shams fix assumption
+  (-> token (str/split #"\.") (first)))
+
+(defn- rs-spec->waiter-token
+  [rs-spec]
+  (get-in rs-spec [:metadata :annotations :waiter/token]))
+
+(defn default-service-spec-builder
+  "Factory function which creates a Kubernetes Service spec for a headless service defined by the given ReplicaSet."
+  [service-api-version rs-spec replicaset-uid]
+  (let [rs-api-version (get rs-spec :apiVersion)
+        rs-kind (get rs-spec :kind)
+        rs-labels (get-in rs-spec [:metadata :labels])
+        token (rs-spec->waiter-token rs-spec)
+        rs-pod-labels (get-in rs-spec [:spec :template :metadata :labels])
+        rs-name (get-in rs-spec [:metadata :name])
+        service-name (token->k8s-service-name token)
+        service-id (k8s-object->service-id rs-spec)]
+    (log/info "creating service"
+              {:service-name service-name
+               :replicaset-name rs-name
+               :service-id service-id})
+    {:apiVersion service-api-version
+     :kind "Service"
+     :metadata {:annotations {:waiter/service-id service-id
+                              :waiter/token token}
+                :labels rs-labels
+                :name service-name
+                :ownerReferences [{:apiVersion rs-api-version
+                                   :blockOwnerDeletion true
+                                   :controller false
+                                   :kind rs-kind
+                                   :name rs-name
+                                   :uid replicaset-uid}]}
+     :spec {:clusterIP "None"
+            :selector (select-keys rs-pod-labels [:app :waiter/cluster :waiter/user])}}))
+
 (defn create-service
   "Reify a Waiter Service as a Kubernetes ReplicaSet."
   [{:keys [run-as-user-source service-description service-id]}
    {:keys [api-server-url pdb-api-version pdb-spec-builder-fn replicaset-api-version
-           response->deployment-error-msg-fn service-id->deployment-error-cache] :as scheduler}]
+           response->deployment-error-msg-fn service-api-version service-id->deployment-error-cache
+           service-spec-builder-fn] :as scheduler}]
   (let [{:strs [cmd-type]} service-description]
     (when (= "docker" cmd-type)
       (throw (ex-info "Unsupported command type on service"
@@ -860,6 +900,41 @@
               (catch Exception ex
                 (log/error ex "unable to create pod disruption budget for service"
                            {:pdb-api-version pdb-api-version :replicaset-uid replicaset-uid :service-id service-id})))))))
+    (if (= "headless" (get-in service-description ["metadata" "waiter-proxy-bypass-opt-in"]))
+      (if-let [token (rs-spec->waiter-token rs-spec)]
+        (let [service-spec-builder-fn (or service-spec-builder-fn
+                                          (log/info "creating service using default-service-spec-builder")
+                                          default-service-spec-builder)
+              request-namespace (k8s-object->namespace rs-spec)
+              service-name (token->k8s-service-name token)
+              request-url (str api-server-url "/api/" service-api-version "/namespaces/" request-namespace "/services")
+              service-obj-url (str request-url "/" service-name)
+              service-obj (try
+                            (log/info "checking presence of k8s service" service-name)
+                            (api-request service-obj-url scheduler :request-method :get)
+                            (catch Exception ex
+                              (log/error ex (str "unable to retrieve k8s service at " request-url))
+                              nil))
+              request-method (if service-obj :put :post)
+              service-spec (service-spec-builder-fn service-api-version rs-spec replicaset-uid)
+              with-retries (utils/retry-strategy {:delay-multiplier 1.0 :initial-delay-ms 100 :max-retries 2})
+              error-details {:replicaset-uid replicaset-uid
+                             :request-method request-method
+                             :service-api-version service-api-version
+                             :service-name service-name
+                             :service-id service-id}]
+          (do
+            (log/info "editing k8s service" service-name "with method" request-method)
+            (try
+              (with-retries
+                (fn create-or-update-k8s-service []
+                  (api-request request-url scheduler
+                               :body (utils/clj->json service-spec)
+                               :request-method request-method)))
+              (catch Exception ex
+                (log/error ex "unable to edit service object" error-details)))))
+        (log/info "not creating service as no waiter config token in rs-spec"))
+      (log/info "not creating service as headless mode is not enabled"))
     service))
 
 (defn- delete-service
@@ -1997,7 +2072,7 @@
            fetch-events-k8s-object-minimum-age-secs http-options determine-replicaset-namespace-fn kube-context leader?-fn log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length namespace pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
            pod-suffix-length replicaset-api-version response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold
-           raven-sidecar scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
+           raven-sidecar scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-api-version service-id->service-description-fn
            service-id->password-fn start-scheduler-syncer-fn url watch-chan-throttle-interval-ms watch-connect-timeout-ms watch-init-timeout-ms
            watch-retries watch-socket-timeout-ms watch-validate-ssl]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver
@@ -2080,6 +2155,8 @@
                                           deref)]
                                 (assert (fn? f) "PodDisruptionBudget spec function must be a Clojure fn")
                                 f))
+        service-api-version (or service-api-version "v1")
+        service-spec-builder-fn default-service-spec-builder
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
                                                :factory-fn
                                                utils/resolve-symbol
@@ -2172,10 +2249,12 @@
                             :retrieve-auth-token-state-fn retrieve-auth-token-state-fn
                             :retrieve-syncer-state-fn retrieve-syncer-state-fn
                             :scheduler-name scheduler-name
+                            :service-api-version service-api-version
                             :service-id->deployment-error-cache service-id->deployment-error-cache
                             :service-id->failed-instances-transient-store service-id->failed-instances-transient-store
                             :service-id->password-fn service-id->password-fn
                             :service-id->service-description-fn service-id->service-description-fn
+                            :service-spec-builder-fn service-spec-builder-fn
                             :watch-state watch-state}
           scheduler (map->KubernetesScheduler scheduler-config)
           _ (deliver scheduler-promise scheduler)
