@@ -273,16 +273,15 @@
 
 (defn service-id-handler
   "Retrieves the service-id of the service specified by the request."
-  [{:keys [descriptor latest-service-id] :as request} kv-store store-service-description-fn retrieve-latest-descriptor-fn]
+  [{:keys [descriptor] :as request} kv-store store-service-description-fn]
   (try
-    (let [{:keys [service-id core-service-description]} descriptor
-          temp (retrieve-latest-descriptor-fn "kevin" "token")]
+    (let [{:keys [service-id core-service-description]} descriptor]
       (when (not= core-service-description (sd/fetch-core kv-store service-id))
         ; eagerly store the service description for this service-id
         (store-service-description-fn descriptor))
       (utils/attach-waiter-source
-        {:body (str service-id " " latest-service-id " " (:service-id temp))
-         :status http-200-ok}))
+        {:body service-id
+         :status http-200-ok }))
     (catch Exception ex
       (utils/exception->response ex request))))
 
