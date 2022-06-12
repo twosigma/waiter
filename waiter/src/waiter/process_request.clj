@@ -1113,7 +1113,7 @@
                                   (assoc :instance {:host (:host response-instance)
                                                     :id (:id response-instance)
                                                     :port (:port response-instance)}))
-               :service-description core-service-description
+               :service-description service-description ; TODO:LAST undo change were we provide actual service-description core desc
                :service-state service-state}
               :headers (if redirect-ping? (:headers redirect-response) {})
               :status (if redirect-ping? (:status redirect-response) http-200-ok)))))

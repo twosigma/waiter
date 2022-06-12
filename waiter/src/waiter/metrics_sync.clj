@@ -485,8 +485,8 @@
                                                       ; a valid ISO-8601 string
                                                       (update metrics "last-request-time" du/str-to-date)))
                                                   aggregate-service-metrics)]
-                                     (println "service-id metrics" {:external-metric ext-metric
-                                                                    :router-metrics router-metrics})
+                                    ;;  (println "service-id metrics" {:external-metric ext-metric
+                                    ;;                                 :router-metrics router-metrics})
                                      (if (some? last-request-time)
                                        (update router-metrics "last-request-time" t/max-date last-request-time)
                                        router-metrics))

@@ -16,6 +16,7 @@
 (ns waiter.scheduler
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
+            [clojure.data :as data]
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
@@ -1328,12 +1329,14 @@
                                               (let [{:strs [run-as-user]}
                                                     (sd/token->service-parameter-template kv-store token :error-on-missing false)
                                                     {:keys [latest-descriptor]} (retrieve-descriptor-fn run-as-user token)
-                                                    {:keys [service-id]} latest-descriptor
-                                                    conflicting-descriptor (retrieve-latest-descriptor-fn run-as-user token)]
+                                                    {:keys [service-id service-description]} latest-descriptor]
                                                 ; TODO:LAST descriptors are changing for some reason
-                                                (cid/cinfo correlation-id "descriptors that may conflict"
-                                                           {:descriptor latest-descriptor
-                                                            :conflicting-descriptor conflicting-descriptor})
+                                                (cid/cinfo correlation-id "temp: service description of service trying to start"
+                                                           {:service-description service-description
+                                                            :json (utils/clj->json service-description)
+                                                            :service-id service-id
+                                                            :run-as-user run-as-user 
+                                                            :token token})
                                                 (when (not (descriptor/service-exists? fallback-state service-id))
                                                   {:latest-descriptor latest-descriptor
                                                    :token token}))))
