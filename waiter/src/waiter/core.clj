@@ -1711,11 +1711,11 @@
                                                         service-id->references-fn query-state-fn query-autoscaler-state-fn
                                                         service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash
                                                         fallback-state-atom retrieve-token-based-fallback-fn request)))))
-   :service-id-handler-fn (pc/fnk [[:routines store-service-description-fn]
+   :service-id-handler-fn (pc/fnk [[:routines store-service-description-fn retrieve-latest-descriptor-fn]
                                    [:state kv-store]
                                    wrap-descriptor-fn wrap-secure-request-fn]
                             (-> (fn service-id-handler-fn [request]
-                                  (handler/service-id-handler request kv-store store-service-description-fn))
+                                  (handler/service-id-handler request kv-store store-service-description-fn retrieve-latest-descriptor-fn))
                                 wrap-descriptor-fn
                                 wrap-secure-request-fn))
    :service-list-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]

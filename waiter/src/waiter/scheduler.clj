@@ -1297,8 +1297,7 @@
                                   ; set of tokens that match several conditions:
                                   ; 1. a source token for a service-id with new last-request-time
                                   ; 2. not a run-as-requester or parameterized service
-                                  ; 3. the token resolves to a service-id that is not yet been started
-                                  token-latest-descriptors-with-new-last-request-times
+                                  tokens-with-new-last-request-times
                                   (->> service-ids-with-new-last-request-times
                                        (reduce
                                          (fn [tokens-set service-id]
@@ -1321,35 +1320,19 @@
                                                    (and run-as-user
                                                         (not (sd/run-as-requester? service-description-template))
                                                         (not (sd/requires-parameters? service-description-template))))))
-                                       print-identity-fn
-                                       ; we use retrieve-descriptor-fn instead of retrieve-latest-descriptor-fn because
-                                       ; it has a side effect for updating the service-id and source token references
-                                       (map (fn token-to-latest-descriptor
-                                              [token]
-                                              (let [{:strs [run-as-user]}
-                                                    (sd/token->service-parameter-template kv-store token :error-on-missing false)
-                                                    ; {:keys [latest-descriptor]} (retrieve-descriptor-fn run-as-user token)
-                                                    latest-descriptor (retrieve-latest-descriptor-fn run-as-user token)
-                                                    {:keys [service-id service-description]} latest-descriptor]
-                                                ; TODO:LAST descriptors are changing for some reason
-                                                (cid/cinfo correlation-id "temp: service description of service trying to start"
-                                                           {:service-description service-description
-                                                            :json (utils/clj->json service-description)
-                                                            :service-id service-id
-                                                            :run-as-user run-as-user 
-                                                            :token token})
-                                                (when (not (descriptor/service-exists? fallback-state service-id))
-                                                  {:latest-descriptor latest-descriptor
-                                                   :token token}))))
-                                       (filter some?)
                                        print-identity-fn)]
-                              (doseq [{:keys [token latest-descriptor]} token-latest-descriptors-with-new-last-request-times]
-                                (let [{:keys [service-id]} latest-descriptor]
-                                  (cid/cinfo correlation-id "starting service due to new last-request-time"
-                                             {:service-id service-id
-                                              :token token})
-                                  ; need to store source tokens and reference
-                                  (start-new-service-fn latest-descriptor)))
+                              (doseq [token tokens-with-new-last-request-times]
+                                (let [{:strs [run-as-user]}
+                                      (sd/token->service-parameter-template kv-store token :error-on-missing false)
+                                      ; we use retrieve-descriptor-fn instead of retrieve-latest-descriptor-fn because
+                                      ; it has a side effect for updating the service-id and source token references
+                                      {{:keys [service-id] :as latest-descriptor} :latest-descriptor} (retrieve-descriptor-fn run-as-user token)]
+                                  (when (not (descriptor/service-exists? fallback-state service-id))
+                                    (cid/cinfo correlation-id "starting service due to new last-request-time"
+                                               {:service-id service-id
+                                                :token token})
+                                    ; need to store source tokens and reference
+                                    (start-new-service-fn latest-descriptor))))
                               ; TODO: add counter
                               {:service-id->last-request-time new-service-id->last-request-time})
                             (catch Exception e
