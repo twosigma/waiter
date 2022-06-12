@@ -1375,7 +1375,6 @@
         (let [component->last-update-epoch-time (cond-> {}
                                                   (seq token->token-data)
                                                   (assoc :token (retrieve-most-recent-last-update-time token->token-data)))
-              ; TODO:LAST this is where service-id are finally generated, call to service-description-builder
               build-map (build service-description-builder user-service-description
                                {:assoc-run-as-user-approved? assoc-run-as-user-approved?
                                 :component->last-update-epoch-time component->last-update-epoch-time
@@ -1388,20 +1387,7 @@
                                 :token-service-mapping token-service-mapping
                                 :username username})
               service-preauthorized (and token-preauthorized (empty? service-description-based-on-headers))
-              service-authentication-disabled (and token-authentication-disabled (empty? service-description-based-on-headers))
-              _ (log/info "INSIDE SERVER CALCULATIONS:" {:service-description user-service-description
-                                                         :assoc-run-as-user-approved? assoc-run-as-user-approved?
-                                                         :component->last-update-epoch-time component->last-update-epoch-time
-                                                         :component->previous-descriptor-fns component->previous-descriptor-fns
-                                                         :reference-type->entry {}
-                                                         :run-as-user-changed? run-as-user-changed?
-                                                         :service-id-prefix service-id-prefix
-                                                         :source-tokens source-tokens
-                                                         :token-sequence token-sequence
-                                                         :token-service-mapping token-service-mapping
-                                                         :username username
-                                                         :service-id (:service-id build-map)})
-              ]
+              service-authentication-disabled (and token-authentication-disabled (empty? service-description-based-on-headers))]
           (-> build-map
             (select-keys [:component->previous-descriptor-fns :core-service-description :reference-type->entry
                           :run-as-user-source :service-description :service-id])
