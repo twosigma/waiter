@@ -17,15 +17,13 @@
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data :as data]
+            [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
             [waiter.util.date-utils :as du]
-            [waiter.util.utils :as utils]
-            [clojure.data.json :as json]
-            [clojure.walk :as walk]
-            [clojure.string :as str]))
+            [waiter.util.utils :as utils]))
 
 (defmacro assert-invalid-body
   "Asserts that sending the provided body results in the expected-msg being inside the response body. This is used
@@ -108,8 +106,8 @@
   "Gets last-update-time for router from /state/router-metrics response"
   [router-id response]
   (-> response :body
-      try-parse-json
-      (get-in ["state" "last-update-times" router-id])
+    try-parse-json
+    (get-in ["state" "last-update-times" router-id])
     du/str-to-date))
 
 (defn send-metrics-and-assert-expected-metrics
@@ -134,7 +132,7 @@
     (assert-response-status post-update-metrics-response http-200-ok)
     (is (= {"no-op" false}
            (-> update-metrics-response :body
-               try-parse-json)))
+             try-parse-json)))
     ; expect last-update-time to be changed to later time in the post update metrics response
     (is (t/before? (get-last-update-time-from-metrics-response first-router-id initial-metrics-response)
                    (get-last-update-time-from-metrics-response first-router-id post-update-metrics-response))
@@ -151,8 +149,8 @@
                                                            :cookies cookies
                                                            :headers {:content-type "application/json"})
                       actual-metrics (-> metrics-state-response :body
-                                         try-parse-json
-                                         (get-in ["state" "external-metrics"]))]
+                                       try-parse-json
+                                       (get-in ["state" "external-metrics"]))]
                   (log/info "metrics for router:" {:cur-metrics actual-metrics
                                                    :router router-url})
 
