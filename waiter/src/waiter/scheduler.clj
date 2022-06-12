@@ -1328,7 +1328,8 @@
                                               [token]
                                               (let [{:strs [run-as-user]}
                                                     (sd/token->service-parameter-template kv-store token :error-on-missing false)
-                                                    {:keys [latest-descriptor]} (retrieve-descriptor-fn run-as-user token)
+                                                    ; {:keys [latest-descriptor]} (retrieve-descriptor-fn run-as-user token)
+                                                    latest-descriptor (retrieve-latest-descriptor-fn run-as-user token)
                                                     {:keys [service-id service-description]} latest-descriptor]
                                                 ; TODO:LAST descriptors are changing for some reason
                                                 (cid/cinfo correlation-id "temp: service description of service trying to start"
