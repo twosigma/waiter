@@ -1542,8 +1542,8 @@
                                                           (conj "127.0.0.1"))
                                        password (first passwords)
                                        auth-handler (-> (constantly (utils/attach-waiter-source {:status http-204-no-content}))
-                                                        (wrap-secure-request-fn)
-                                                        (wrap-service-discovery-fn))]
+                                                      (wrap-secure-request-fn)
+                                                      (wrap-service-discovery-fn))]
                                    (fn auth-keep-alive-handler-fn [request]
                                      (auth/process-auth-keep-alive-request token->token-parameters waiter-hostnames password auth-handler request))))
    :default-websocket-handler-fn (pc/fnk [[:daemons populate-maintainer-chan!]
@@ -1668,9 +1668,9 @@
                                  ; websocket-request-acceptor for websocket upgrade requests
                                  (fn process-handler-wrapper-fn [handler]
                                    (-> handler
-                                       pr/wrap-too-many-requests
-                                       pr/wrap-suspended-service
-                                       pr/wrap-response-status-metrics
+                                     pr/wrap-too-many-requests
+                                     pr/wrap-suspended-service
+                                     pr/wrap-response-status-metrics
                                      (interstitial/wrap-interstitial interstitial-state-atom)
                                      wrap-descriptor-fn
                                      wrap-secure-request-fn
@@ -1716,8 +1716,8 @@
                                    wrap-descriptor-fn wrap-secure-request-fn]
                             (-> (fn service-id-handler-fn [request]
                                   (handler/service-id-handler request kv-store store-service-description-fn retrieve-latest-descriptor-fn))
-                                wrap-descriptor-fn
-                                wrap-secure-request-fn))
+                              wrap-descriptor-fn
+                              wrap-secure-request-fn))
    :service-list-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
                                      [:routines prepend-waiter-url retrieve-token-based-fallback-fn router-metrics-helpers
                                       service-id->references-fn service-id->service-description-fn service-id->source-tokens-entries-fn
@@ -2059,9 +2059,9 @@
                                  ; If adding new middleware for websocket upgrade requests, consider adding the same middleware to
                                  ; process-request-wrapper-fn
                                  (let [handler (-> #(ws/request-subprotocol-acceptor (:upgrade-request %) (:upgrade-response %))
-                                                   websocket-secure-request-acceptor-fn
-                                                   auth/wrap-auth-bypass-acceptor
-                                                   pr/wrap-maintenance-mode-acceptor
+                                                 websocket-secure-request-acceptor-fn
+                                                 auth/wrap-auth-bypass-acceptor
+                                                 pr/wrap-maintenance-mode-acceptor
                                                  handler/wrap-wss-redirect
                                                  ws/wrap-service-discovery-data
                                                  wrap-service-discovery-fn
@@ -2115,9 +2115,9 @@
                                (fn wrap-secure-request-fn
                                  [handler]
                                  (let [handler (-> handler
-                                                   (cors/wrap-cors-request
-                                                     cors-validator waiter-request?-fn exposed-headers)
-                                                   authentication-method-wrapper-fn)]
+                                                 (cors/wrap-cors-request
+                                                   cors-validator waiter-request?-fn exposed-headers)
+                                                 authentication-method-wrapper-fn)]
                                    (fn inner-wrap-secure-request-fn [{:keys [uri] :as request}]
                                      (log/debug "secure request received at" uri)
                                      (handler request))))))})
