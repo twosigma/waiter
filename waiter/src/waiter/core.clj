@@ -1563,9 +1563,9 @@
                                                                           instance-request-properties determine-priority-fn ws/process-response!
                                                                           ws/abort-request-callback-factory local-usage-agent request))]
                                      (->> process-request-fn
-                                          ws/wrap-ws-close-on-error
-                                          wrap-descriptor-fn
-                                          (ws/make-request-handler password))))
+                                       ws/wrap-ws-close-on-error
+                                       wrap-descriptor-fn
+                                       (ws/make-request-handler password))))
    :display-settings-handler-fn (pc/fnk [wrap-secure-request-fn settings]
                                   (wrap-secure-request-fn
                                     (fn display-settings-handler-fn [_]
