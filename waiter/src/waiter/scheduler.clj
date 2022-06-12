@@ -16,7 +16,6 @@
 (ns waiter.scheduler
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
-            [clojure.data :as data]
             [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
