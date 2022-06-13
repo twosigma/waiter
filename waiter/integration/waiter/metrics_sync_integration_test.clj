@@ -123,19 +123,22 @@
                                               :method :post
                                               :cookies cookies
                                               :body (utils/clj->json metrics-payload)
-                                              :headers {:content-type "application/json"})
-        post-update-metrics-response (make-request first-router-url "/state/router-metrics"
-                                                   :cookies cookies
-                                                   :headers {:content-type "application/json"})]
+                                              :headers {:content-type "application/json"})]
     (assert-response-status initial-metrics-response http-200-ok)
     (assert-response-status update-metrics-response http-200-ok)
-    (assert-response-status post-update-metrics-response http-200-ok)
     (is (= {"no-op" false}
            (-> update-metrics-response :body
              try-parse-json)))
     ; expect last-update-time to be changed to later time in the post update metrics response
-    (is (t/before? (get-last-update-time-from-metrics-response first-router-id initial-metrics-response)
-                   (get-last-update-time-from-metrics-response first-router-id post-update-metrics-response))
+    (is (wait-for
+          (fn metrics-last-request-time-updated? []
+            (let [metrics-response (make-request first-router-url "/state/router-metrics"
+                                                 :cookies cookies
+                                                 :headers {:content-type "application/json"})]
+              (assert-response-status metrics-response http-200-ok)
+              (t/before? (get-last-update-time-from-metrics-response first-router-id initial-metrics-response)
+                         (get-last-update-time-from-metrics-response first-router-id metrics-response))))
+          :interval 1 :timeout 5)
         "Router metrics state did not show there was any update to the last-update-time, even though our POST /metrics/external
         request was successful.")
 
