@@ -1297,7 +1297,7 @@
                                                 (and run-as-user ; run-as-user defaults to '*', so confirm it is defined
                                                      (not (sd/run-as-requester? service-description-template))
                                                      (not (sd/requires-parameters? service-description-template))))))
-                                    set)
+                                    set)]
                               (doseq [token tokens-with-new-last-request-times]
                                 (let [{:strs [run-as-user]}
                                       (sd/token->service-parameter-template kv-store token :error-on-missing false)
