@@ -1454,7 +1454,7 @@
                                 (maintainer/start-service-chan-maintainer
                                   {} state-chan query-service-maintainer-chan start-service remove-service retrieve-channel)))
    :start-new-services-maintainer (pc/fnk
-                                    [[:routines retrieve-descriptor-fn retrieve-latest-descriptor-fn router-metrics-helpers
+                                    [[:routines retrieve-descriptor-fn router-metrics-helpers
                                       service-id->source-tokens-entries-fn start-new-service-fn]
                                      [:settings scheduler-start-new-services-interval-ms]
                                      [:state clock kv-store fallback-state-atom]]
@@ -1462,8 +1462,8 @@
                                           start-new-services-maintainer-timer-ch (au/timer-chan scheduler-start-new-services-interval-ms)]
                                       (scheduler/start-new-services-maintainer
                                         clock start-new-services-maintainer-timer-ch service-id->source-tokens-entries-fn
-                                        service-id->metrics-fn retrieve-descriptor-fn retrieve-latest-descriptor-fn
-                                        fallback-state-atom kv-store start-new-service-fn)))
+                                        service-id->metrics-fn retrieve-descriptor-fn fallback-state-atom kv-store
+                                        start-new-service-fn)))
    :state-sources (pc/fnk [[:scheduler scheduler]
                            [:state query-service-maintainer-chan]
                            autoscaler autoscaling-multiplexer gc-for-transient-metrics interstitial-maintainer

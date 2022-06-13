@@ -1217,20 +1217,24 @@
 (defn start-new-services-maintainer
   "This ensures that tokens receiving requests will have the latest service corresponding to it running. Whenever there
    are any implicit changes to the token's service description resulting in a new service-id while that token is handling
-   requests, this daemon will start the new service corresponding to that service-id. We do this by building a map,
-   service-id->last-request-time, whenever the 'timer-chan' is triggered and seeing if any service-ids have a new
-   last-request-time. We then build a set of corresponding tokens to the service-ids and see if they point to a
+   requests. This daemon will start the new service corresponding to that service-id. We do this by building a map,
+   service-id->last-request-time, whenever the 'timer-chan' is triggered, and seeing if any service-ids have a new
+   last-request-time. We then build a set of corresponding source tokens to the service-ids and see if they point to a
    service-id that is not running. We attempt to start a new service for those tokens/service-ids (not including
-   run-as-requester or parameterized services.
+   run-as-requester or parameterized services).
 
    Returns a map with keys:
+   :exit-chan when a message is put on the exit-chan, the daemon terminates
+   :go-chan the corresponding async/go chan of the daemon. This can be used to see if the daemon has terminated.
+   :query-chan channel that puts the state in a response-chan after the daemon processes other channels first (e.g timer-chan)
    :query-state-fn function that queries the current state of the daemon"
-  [clock timer-chan service-id->source-tokens-entries-fn service-id->metrics-fn retrieve-descriptor-fn retrieve-latest-descriptor-fn
+  [clock timer-chan service-id->source-tokens-entries-fn service-id->metrics-fn retrieve-descriptor-fn
    fallback-state-atom kv-store start-new-service-fn]
   (cid/with-correlation-id
     "start-new-services-maintainer"
     (let [correlation-id (cid/get-correlation-id)
           exit-chan (async/promise-chan)
+          query-chan (async/chan)
           state-atom (atom {:last-update-time nil
                             :service-id->last-request-time {}})
           query-state-fn (fn query-state-fn [_]
@@ -1241,8 +1245,7 @@
               (loop [{:keys [service-id->last-request-time] :as current-state} @state-atom]
                 (reset! state-atom current-state)
                 (let [[msg current-chan]
-                      (async/alts! [exit-chan timer-chan]
-                                   :priority true)
+                      (async/alts! [exit-chan timer-chan query-chan] :priority true)
                       next-state
                       (condp = current-chan
                         exit-chan
@@ -1255,71 +1258,46 @@
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "start-new-services-maintainer" "process-services")
                           (try
-                            (let [fallback-state @fallback-state-atom
+                            (let [count-atom (atom 0)
+                                  fallback-state @fallback-state-atom
                                   new-service-id->last-request-time
                                   (->> (service-id->metrics-fn)
-                                       seq
-                                       (map
-                                         (fn [[service-id {:strs [last-request-time]}]]
-                                           [service-id last-request-time]))
-                                       (filter
-                                         (fn [[_ last-request-time]]
-                                           (some? last-request-time)))
-                                       (into {}))
+                                    seq
+                                    (map
+                                      (fn [[service-id {:strs [last-request-time]}]]
+                                        [service-id last-request-time]))
+                                    (filter
+                                      (fn [[_ last-request-time]]
+                                        (some? last-request-time)))
+                                    (into {}))
                                   service-ids-with-new-last-request-times
                                   (->> (seq new-service-id->last-request-time)
-                                       (filter
-                                         (fn [[service-id new-last-request-time]]
-                                           (->> (get service-id->last-request-time service-id)
-                                                (compare new-last-request-time)
-                                                pos?)))
-                                       (map first)
-                                       set)
-                                  _ (cid/cinfo correlation-id "service-ids with new last-request-times"
-                                                {:service-ids (str/join ", " service-ids-with-new-last-request-times)
-                                                 :service-id->new-last-request-time
-                                                 (pc/map-from-keys
-                                                   (fn [service-id]
-                                                     (get new-service-id->last-request-time service-id))
-                                                   service-ids-with-new-last-request-times)
-                                                 :service-id->old-last-request-time
-                                                 (pc/map-from-keys
-                                                   (fn [service-id]
-                                                     (get service-id->last-request-time service-id))
-                                                   service-ids-with-new-last-request-times)})
-                                  count-atom (atom 0)
-                                  print-identity-fn
-                                  (fn [temp]
-                                    (swap! count-atom inc)
-                                    (cid/cinfo correlation-id (str @count-atom) {:tokens temp})
-                                    temp)
-                                  ; set of tokens that match several conditions:
-                                  ; 1. a source token for a service-id with new last-request-time
-                                  ; 2. not a run-as-requester or parameterized service
+                                    (filter
+                                      (fn [[service-id new-last-request-time]]
+                                        (let [old-last-request-time (get service-id->last-request-time service-id)]
+                                          (or (nil? old-last-request-time)
+                                              (t/after? new-last-request-time old-last-request-time)))))
+                                    (map first))
                                   tokens-with-new-last-request-times
                                   (->> service-ids-with-new-last-request-times
-                                       (reduce
-                                         (fn [tokens-set service-id]
-                                           (->> service-id
-                                                service-id->source-tokens-entries-fn
-                                                vec
-                                                flatten
-                                             (map #(get % "token"))
-                                             set
-                                             (concat tokens-set)))
-                                         #{})
-                                       print-identity-fn
-                                       (filter (fn token-non-run-as-requester-parameterized?-fn
-                                                 [token]
-                                                 (cid/cinfo correlation-id "1.a token information"
-                                                            {:desc (sd/token->service-parameter-template kv-store token :error-on-missing false)})
-                                                 (when-let
-                                                   [{:strs [run-as-user] :as service-description-template}
-                                                    (sd/token->service-parameter-template kv-store token :error-on-missing false)]
-                                                   (and run-as-user
-                                                        (not (sd/run-as-requester? service-description-template))
-                                                        (not (sd/requires-parameters? service-description-template))))))
-                                       print-identity-fn)]
+                                    (map
+                                      (fn [service-id]
+                                        (->> service-id
+                                          service-id->source-tokens-entries-fn
+                                          vec
+                                          flatten
+                                          (map #(get % "token"))
+                                          set)))
+                                    (reduce concat #{})
+                                    (filter (fn token-is-not-run-as-requester-or-parameterized?-fn
+                                              [token]
+                                              (when-let
+                                                [{:strs [run-as-user] :as service-description-template}
+                                                 (sd/token->service-parameter-template kv-store token :error-on-missing false)]
+                                                (and run-as-user ; run-as-user defaults to '*', so confirm it is defined
+                                                     (not (sd/run-as-requester? service-description-template))
+                                                     (not (sd/requires-parameters? service-description-template))))))
+                                    set)
                               (doseq [token tokens-with-new-last-request-times]
                                 (let [{:strs [run-as-user]}
                                       (sd/token->service-parameter-template kv-store token :error-on-missing false)
@@ -1330,13 +1308,18 @@
                                     (cid/cinfo correlation-id "starting service due to new last-request-time"
                                                {:service-id service-id
                                                 :token token})
-                                    ; need to store source tokens and reference
-                                    (start-new-service-fn latest-descriptor))))
-                              ; TODO: add counter
+                                    (start-new-service-fn latest-descriptor)
+                                    (meters/mark! (metrics/waiter-meter "core" "start-new-services-maintainer" "start-new-service")))))
+                              (counters/inc! (metrics/waiter-counter "core" "start-new-services-maintainer" "refresh-sync"))
                               {:service-id->last-request-time new-service-id->last-request-time})
                             (catch Exception e
                               (log/error e "error while processing services in start-new-services-maintainer.")
-                              current-state))))]
+                              current-state)))
+
+                        query-chan
+                        (let [{:keys [response-chan include-flags]} msg]
+                          (async/put! response-chan (query-state-fn include-flags))
+                          current-state))]
                   (if next-state
                     (recur (assoc next-state :last-update-time (clock)))
                     (log/info "Stopping start-new-services-maintainer as next loop values are nil"))))
@@ -1345,5 +1328,5 @@
                 (System/exit 1))))]
       {:exit-chan exit-chan
        :go-chan go-chan
+       :query-chan query-chan
        :query-state-fn query-state-fn})))
-

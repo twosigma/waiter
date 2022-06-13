@@ -476,7 +476,7 @@
                                    (let [router-metrics (aggregate-service-metrics router->metrics)
                                          ; TODO: we will also need to aggregate active-request-counts and queued-requests
                                          ; and choose between external vs router metrics if service has bypass configured
-                                         {:strs [last-request-time] :as ext-metric}
+                                         {:strs [last-request-time]}
                                          (some->> service-id
                                                   (get external-metrics)
                                                   (pc/map-vals
@@ -485,8 +485,6 @@
                                                       ; a valid ISO-8601 string
                                                       (update metrics "last-request-time" du/str-to-date)))
                                                   aggregate-service-metrics)]
-                                    ;;  (println "service-id metrics" {:external-metric ext-metric
-                                    ;;                                 :router-metrics router-metrics})
                                      (if (some? last-request-time)
                                        (update router-metrics "last-request-time" t/max-date last-request-time)
                                        router-metrics))

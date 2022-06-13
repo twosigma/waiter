@@ -28,9 +28,11 @@
             [waiter.core :as core]
             [waiter.curator :as curator]
             [waiter.headers :as headers]
+            [waiter.kv :as kv]
             [waiter.metrics :as metrics]
             [waiter.scheduler :refer :all]
             [waiter.status-codes :refer :all]
+            [waiter.token :as tk]
             [waiter.util.async-utils :as au]
             [waiter.util.client-tools :as ct]
             [waiter.util.date-utils :as du]
@@ -1102,3 +1104,334 @@
     (is (= #{instance-2 instance-3} (set (get @transient-store service-id))))
     (add-to-store-and-track-failed-instance! transient-store max-instances-to-keep service-id instance-4)
     (is (= #{instance-3 instance-4} (set (get @transient-store service-id))))))
+
+(defn- start-new-services-maintainer-with-rounds
+  "Starts a 'start-new-services-maintainer' using stubs provided at each round in the list 'rounds'. Calls to dependent
+  function are stubbed to return what is provided in the 'rounds' fixture."
+  [rounds]
+  (let [round-count-atom (atom -1)
+        get-round (fn get-round-fn []
+                    (get rounds @round-count-atom))
+        clock (fn clock-fn []
+                (-> (get-round) :clock))
+        timer-ch (async/chan)
+        service-id->source-tokens-fn
+        (fn service-id->source-tokens-fn [service-id]
+          (-> (get-round) (get-in [:service-id->source-tokens service-id])))
+        service-id->metrics-fn (fn service-id->metrics-fn []
+                                 (-> (get-round) :service-id->metrics))
+        retrieve-descriptor-fn (fn retrieve-descriptor-fn [run-as-user token]
+                                 (-> (get-round)
+                                   (get-in [:token-run-as-user->descriptor {:run-as-user run-as-user :token token}])))
+        start-new-service-calls-atom (atom {})
+        start-new-service-fn (fn start-new-service-fn [descriptor]
+                               (swap! start-new-service-calls-atom update @round-count-atom conj descriptor))
+        fallback-state-atom (atom {})
+        kv-store (kv/->LocalKeyValueStore (atom {}))]
+    (assoc
+      (start-new-services-maintainer
+        clock timer-ch service-id->source-tokens-fn service-id->metrics-fn retrieve-descriptor-fn fallback-state-atom kv-store
+        start-new-service-fn)
+      :fallback-state-atom fallback-state-atom
+      :kv-store kv-store
+      :round-count-atom round-count-atom
+      :start-new-service-calls-atom start-new-service-calls-atom
+      :trigger-maintainer-refresh!! (fn trigger-maintainer-refresh!! []
+                                      (swap! round-count-atom inc)
+                                      (async/>!! timer-ch {})))))
+
+(deftest test-start-new-services-maintainer
+  (let [lock (Object.)
+        synchronize-fn
+        (fn synchronize-fn
+          [_ f]
+          (locking lock
+            (f)))
+        history-length 5
+        limit-per-owner 10
+        store-service-desc-for-token-fn
+        (fn store-service-desc-for-token-fn
+          [kv-store token service-desc token-metadata]
+          (tk/store-service-description-for-token
+            synchronize-fn kv-store history-length limit-per-owner token service-desc token-metadata))
+        close-maintainer!!
+        (fn close-maintainer!!
+          [exit-chan go-chan]
+          (async/>!! exit-chan :exit)
+          (async/<!! go-chan))]
+    (testing "when initialized, the maintainer queries for initial list of service metrics and eagerly tries to start
+    services for their source token"
+      (let [now (t/now)
+            rounds [{:clock now
+                     :service-id->metrics {"s1" {"last-request-time" now}
+                                           "s2" {"last-request-time" (t/minus now (t/days 100))}}
+                     :service-id->source-tokens {"s1" [{"token" "t1"}]
+                                                 "s2" [{"token" "t2"}]}
+                     :token-run-as-user->descriptor
+                     {{:token "t1" :run-as-user "u1"} {:latest-descriptor {:service-id "s1-1"}}
+                      {:token "t2" :run-as-user "u2"} {:latest-descriptor {:service-id "s2-1"}}}}]
+            {:keys [exit-chan fallback-state-atom go-chan kv-store start-new-service-calls-atom trigger-maintainer-refresh!! query-chan]}
+            (start-new-services-maintainer-with-rounds rounds)]
+        ; store t1 and t2 in kv-store
+        (store-service-desc-for-token-fn kv-store "t1" {"cpus" 1 "run-as-user" "u1"} {"owner" "u1"})
+        (store-service-desc-for-token-fn kv-store "t2" {"cpus" 1 "run-as-user" "u2"} {"owner" "u2"})
+        ; fallback-state-atom provides current available-service-ids (does not contain s1-1 s2-1)
+        (reset! fallback-state-atom {:available-service-ids #{"s1" "s2"}})
+        (trigger-maintainer-refresh!!)
+
+        ; assert that maintainer state reflects the new last-request-times
+        (let [res-ch (async/promise-chan)]
+          (async/>!! query-chan {:response-chan res-ch :include-flags []})
+          (let [{:keys [last-update-time service-id->last-request-time]} (async/<!! res-ch)]
+            (is (= now last-update-time))
+            (is (= {"s1" now
+                    "s2" (t/minus now (t/days 100))}
+                  service-id->last-request-time))))
+        ; This confirms that services were attempted to start for both "s1-1" and "s2-1" after the first round.
+        ; A service was started for "s2-1" even though the last-request-time was old for "s2". We prefer to eagerly start
+        ; services for tokens with new last-request-times over potentially missing a new service-id update during router
+        ; startup.
+        (is (= {0 [{:service-id "s2-1"} {:service-id "s1-1"}]}
+               @start-new-service-calls-atom))
+
+        (close-maintainer!! exit-chan go-chan)))
+
+    (testing "services with the same source token, will only result in one call for service to start"
+      (let [now (t/now)
+            rounds [{:clock now
+                     :service-id->metrics {"s1" {"last-request-time" now}
+                                           "s2" {"last-request-time" (t/minus now (t/days 100))}}
+                     :service-id->source-tokens {"s1" [{"token" "t1"}]
+                                                 "s2" [{"token" "t1"}]}
+                     :token-run-as-user->descriptor
+                     {{:token "t1" :run-as-user "u1"} {:latest-descriptor {:service-id "s1-1"}}}}]
+            {:keys [exit-chan fallback-state-atom go-chan kv-store start-new-service-calls-atom trigger-maintainer-refresh!! query-chan]}
+            (start-new-services-maintainer-with-rounds rounds)]
+        (store-service-desc-for-token-fn kv-store "t1" {"cpus" 1 "run-as-user" "u1"} {"owner" "u1"})
+        (reset! fallback-state-atom {:available-service-ids #{"s1" "s2"}})
+        (trigger-maintainer-refresh!!)
+        (let [res-ch (async/promise-chan)]
+          (async/>!! query-chan {:response-chan res-ch :include-flags []})
+          (let [{:keys [last-update-time service-id->last-request-time]} (async/<!! res-ch)]
+            (is (= now last-update-time))
+            (is (= {"s1" now
+                    "s2" (t/minus now (t/days 100))}
+                   service-id->last-request-time))))
+        ; only 's1-1' is attempted to be started because both 's1' and 's2' resolve to token 't1'
+        (is (= {0 [{:service-id "s1-1"}]}
+               @start-new-service-calls-atom))
+
+        (close-maintainer!! exit-chan go-chan)))
+
+    (testing "run-as-requester tokens are ignored"
+      (let [now (t/now)
+            rounds [{:clock now
+                     :service-id->metrics {"s1" {"last-request-time" now}}
+                     :service-id->source-tokens {"s1" [{"token" "t1"}]}
+                     :token-run-as-user->descriptor
+                     {{:token "t1" :run-as-user "u1"} {:latest-descriptor {:service-id "s1-1"}}}}
+                    {:clock now
+                     :service-id->metrics {"s1" {"last-request-time" (t/plus now (t/minutes 10))}}
+                     :service-id->source-tokens {"s1" [{"token" "t1"}]}
+                     :token-run-as-user->descriptor
+                     {{:token "t1" :run-as-user "u1"} {:latest-descriptor {:service-id "s1-1"}}}}]
+            {:keys [exit-chan fallback-state-atom go-chan kv-store start-new-service-calls-atom trigger-maintainer-refresh!! query-chan]}
+            (start-new-services-maintainer-with-rounds rounds)]
+        ; not specifying the 'run-as-user' field defaults to run-as-requester with value '*'
+        (store-service-desc-for-token-fn kv-store "t1" {"cpus" 1} {"owner" "u1"})
+        (reset! fallback-state-atom {:available-service-ids #{"s1"}})
+        (trigger-maintainer-refresh!!)
+
+        ; round 0: no new service calls are made as it is run-as-requester
+        (let [res-ch (async/promise-chan)]
+          (async/>!! query-chan {:response-chan res-ch :include-flags []})
+          (let [{:keys [last-update-time service-id->last-request-time]} (async/<!! res-ch)]
+            (is (= now last-update-time))
+            (is (= {"s1" now}
+                   service-id->last-request-time))))
+        (is (= {} @start-new-service-calls-atom))
+
+        ; explicitly specify 'run-as-user: *', token is still considered run-as-requester
+        (store-service-desc-for-token-fn kv-store "t1" {"cpus" 1 "run-as-user" "*"} {"owner" "u1"})
+        (trigger-maintainer-refresh!!)
+
+        ; round 1: no new service calls are made as it is run-as-requester still
+        (let [res-ch (async/promise-chan)]
+          (async/>!! query-chan {:response-chan res-ch :include-flags []})
+          (let [{:keys [last-update-time service-id->last-request-time]} (async/<!! res-ch)]
+            (is (= now last-update-time))
+            (is (= {"s1" (t/plus now (t/minutes 10))}
+                   service-id->last-request-time))))
+        (is (= {} @start-new-service-calls-atom))
+
+        (close-maintainer!! exit-chan go-chan)))
+
+    (testing "skip starting services for service-ids that are already active"
+      (let [now (t/now)
+            rounds [{:clock now
+                     :service-id->metrics {"s1" {"last-request-time" now}
+                                           "s1-1" {"last-request-time" now}}
+                     :service-id->source-tokens {"s1" [{"token" "t1"}]
+                                                 "s1-1" [{"token" "t2"}]}
+                     :token-run-as-user->descriptor
+                     {{:token "t1" :run-as-user "u1"} {:latest-descriptor {:service-id "s1-1"}}
+                      {:token "t2" :run-as-user "u1"} {:latest-descriptor {:service-id "s1-1"}}}}]
+            {:keys [exit-chan fallback-state-atom go-chan kv-store start-new-service-calls-atom trigger-maintainer-refresh!! query-chan]}
+            (start-new-services-maintainer-with-rounds rounds)]
+        (store-service-desc-for-token-fn kv-store "t1" {"cpus" 1 "run-as-user" "u1"} {"owner" "u1"})
+        (reset! fallback-state-atom {:available-service-ids #{"s1" "s1-1"}})
+        (trigger-maintainer-refresh!!)
+
+        ; no new service calls are made as s1-1 already exists
+        (let [res-ch (async/promise-chan)]
+          (async/>!! query-chan {:response-chan res-ch :include-flags []})
+          (let [{:keys [last-update-time service-id->last-request-time]} (async/<!! res-ch)]
+            (is (= now last-update-time))
+            (is (= {"s1" now
+                    "s1-1" now}
+                   service-id->last-request-time))))
+        (is (= {} @start-new-service-calls-atom))
+
+        (close-maintainer!! exit-chan go-chan)))
+
+    (testing "combinations of several new service last-request-times after 1 round"
+      (let [now (t/now)
+            later-time (t/plus now (t/seconds 1))
+            service-id->source-tokens {"s1-new-lrt" [{"token" "t1-new-lrt"}]
+                                       "s2-no-change" [{"token" "t2-no-change"}]
+                                       "s3-shared-token" [{"token" "t6-1"}]
+                                       "s4-run-as-req" [{"token" "t4-run-as-req"}]
+                                       "s5-token-update" [{"token" "t5-token-update"}]
+                                       "s6-many-source-tokens" [{"token" "t6-1"} {"token" "t6-2"} {"token" "t6-3"}]
+                                       "s7-killed" [{"token" "t7-killed"}]
+                                       "s8-no-tokens" []}
+            rounds [{:clock now
+                     :service-id->metrics {"s1-new-lrt" {"last-request-time" now}
+                                           "s2-no-change" {"last-request-time" (t/minus now (t/days 100))}
+                                           "s3-shared-token" {"last-request-time" now}
+                                           "s4-run-as-req" {"last-request-time" now}
+                                           "s5-token-update" {"last-request-time" now}
+                                           "s6-many-source-tokens" {"last-request-time" now}
+                                           "s7-killed" {"last-request-time" now}
+                                           "s8-no-tokens" {"last-request-time" now}}
+                     :service-id->source-tokens service-id->source-tokens
+                     :token-run-as-user->descriptor
+                     {{:token "t1-new-lrt" :run-as-user "u1"} {:latest-descriptor {:service-id "s1-new-lrt"}}
+                      {:token "t2-no-change" :run-as-user "u1"} {:latest-descriptor {:service-id "s2-no-change"}}
+                      {:token "t4-run-as-req" :run-as-user "u1"} {:latest-descriptor {:service-id "s4-run-as-req"}}
+                      {:token "t5-token-update" :run-as-user "u1"} {:latest-descriptor {:service-id "s5-token-update"}}
+                      {:token "t6-1" :run-as-user "u1"} {:latest-descriptor {:service-id "s6-many-source-tokens"}}
+                      {:token "t6-2" :run-as-user "u1"} {:latest-descriptor {:service-id "s6-many-source-tokens"}}
+                      {:token "t6-3" :run-as-user "u1"} {:latest-descriptor {:service-id "s6-many-source-tokens"}}
+                      {:token "t7-killed" :run-as-user "u1"} {:latest-descriptor {:service-id "s7-killed"}}}}
+                    {:clock later-time
+                     :service-id->metrics {"s1-new-lrt" {"last-request-time" later-time}
+                                           "s2-no-change" {"last-request-time" (t/minus now (t/days 100))}
+                                           "s3-shared-token" {"last-request-time" later-time}
+                                           "s4-run-as-req" {"last-request-time" later-time}
+                                           "s5-token-update" {"last-request-time" later-time}
+                                           "s6-many-source-tokens" {"last-request-time" later-time}
+                                           "s8-no-tokens" {"last-request-time" later-time}}
+                     :service-id->source-tokens service-id->source-tokens
+                     :token-run-as-user->descriptor
+                     {{:token "t1-new-lrt" :run-as-user "u1"} {:latest-descriptor {:service-id "s1-new"}}
+                      {:token "t2-no-change" :run-as-user "u1"} {:latest-descriptor {:service-id "s2-new"}}
+                      {:token "t4-run-as-req" :run-as-user "u1"} {:latest-descriptor {:service-id "s4-new"}}
+                      {:token "t5-token-update" :run-as-user "u1"} {:latest-descriptor {:service-id "s5-new"}}
+                      {:token "t6-1" :run-as-user "u1"} {:latest-descriptor {:service-id "s6-1-new"}}
+                      {:token "t6-2" :run-as-user "u1"} {:latest-descriptor {:service-id "s6-2-new"}}
+                      {:token "t6-3" :run-as-user "u1"} {:latest-descriptor {:service-id "s6-3-new"}}
+                      {:token "t7-killed" :run-as-user "u1"} {:latest-descriptor {:service-id "s7-killed"}}}}]
+            {:keys [exit-chan fallback-state-atom go-chan kv-store start-new-service-calls-atom trigger-maintainer-refresh!! query-chan]}
+            (start-new-services-maintainer-with-rounds rounds)]
+        (store-service-desc-for-token-fn kv-store "t1-new-lrt" {"cpus" 1 "run-as-user" "u1"} {"owner" "u1"})
+        (store-service-desc-for-token-fn kv-store "t2-no-change" {"cpus" 1 "run-as-user" "u1"} {"owner" "u1"})
+        (store-service-desc-for-token-fn kv-store "t4-run-as-req" {"cpus" 1 "run-as-user" "*"} {"owner" "u1"})
+        (store-service-desc-for-token-fn kv-store "t5-token-update" {"cpus" 1 "run-as-user" "u1"} {"owner" "u1"})
+        (store-service-desc-for-token-fn kv-store "t6-1" {"cpus" 1 "run-as-user" "u1"} {"owner" "u1"})
+        (store-service-desc-for-token-fn kv-store "t6-2" {"cpus" 1 "run-as-user" "u1"} {"owner" "u1"})
+        (store-service-desc-for-token-fn kv-store "t6-3" {"cpus" 1 "run-as-user" "u1"} {"owner" "u1"})
+        (store-service-desc-for-token-fn kv-store "t7-killed" {"cpus" 1 "run-as-user" "u1"} {"owner" "u1"})
+        (reset! fallback-state-atom {:available-service-ids #{"s1-new-lrt" "s2-no-change" "s4-run-as-req" "s5-token-update"
+                                                              "s6-many-source-tokens" "s7-killed" "s8-no-tokens"}})
+
+        ; expect that no new services to be started as they are all in fallback-state-atom
+        (trigger-maintainer-refresh!!)
+        (let [res-ch (async/promise-chan)]
+          (async/>!! query-chan {:response-chan res-ch :include-flags []})
+          (let [{:keys [last-update-time service-id->last-request-time]} (async/<!! res-ch)]
+            (is (= now last-update-time))
+            (is (= {"s1-new-lrt" now
+                    "s2-no-change" (t/minus now (t/days 100))
+                    "s3-shared-token" now
+                    "s4-run-as-req" now
+                    "s5-token-update" now
+                    "s6-many-source-tokens" now
+                    "s7-killed" now
+                    "s8-no-tokens" now}
+                   service-id->last-request-time))))
+        (is (= {} @start-new-service-calls-atom))
+
+        ; remove s7-killed service
+        (swap! fallback-state-atom update :available-service-ids disj "s7-killed")
+        ; update t5 to be run-as-requester
+        (store-service-desc-for-token-fn kv-store "t5-token-update" {"cpus" 1 "run-as-user" "*"} {"owner" "u1"})
+
+        ; expect only certain services to be triggered to start: s1-new, s6-1-new, s6-2-new, s6-3-new
+        (trigger-maintainer-refresh!!)
+        (let [res-ch (async/promise-chan)]
+          (async/>!! query-chan {:response-chan res-ch :include-flags []})
+          (let [{:keys [last-update-time service-id->last-request-time]} (async/<!! res-ch)]
+            (is (= later-time last-update-time))
+            (is (= {"s1-new-lrt" later-time
+                    "s2-no-change" (t/minus now (t/days 100))
+                    "s3-shared-token" later-time
+                    "s4-run-as-req" later-time
+                    "s5-token-update" later-time
+                    "s6-many-source-tokens" later-time
+                    "s8-no-tokens" later-time}
+                   service-id->last-request-time))))
+        (is (= #{{:service-id "s1-new"} {:service-id "s6-1-new"} {:service-id "s6-2-new"} {:service-id "s6-3-new"}}
+               (-> @start-new-service-calls-atom (get 1) set))
+            (str "services created does not match expected: " @start-new-service-calls-atom))
+
+        (close-maintainer!! exit-chan go-chan)))
+
+    (testing "many rounds with no last-request-time changes, the maintainer will not attempt to start new service for tokens"
+      (let [now (t/now)
+            rounds (-> (repeat 10 {:clock now
+                                   :service-id->metrics {"s1" {"last-request-time" now}}
+                                   :service-id->source-tokens {"s1" [{"token" "t1"}]}
+                                   :token-run-as-user->descriptor
+                                   {{:token "t1" :run-as-user "u1"} {:latest-descriptor {:service-id "s1-1"}}}})
+                     vec)
+            {:keys [exit-chan fallback-state-atom go-chan kv-store start-new-service-calls-atom trigger-maintainer-refresh!! query-chan]}
+            (start-new-services-maintainer-with-rounds rounds)]
+        (store-service-desc-for-token-fn kv-store "t1" {"cpus" 1 "run-as-user" "u1"} {"owner" "u1"})
+        (reset! fallback-state-atom {:available-service-ids #{"s1"}})
+        (trigger-maintainer-refresh!!)
+
+        ; assert that the maintainer attempts to start the service on the initial round
+        (let [res-ch (async/promise-chan)]
+          (async/>!! query-chan {:response-chan res-ch :include-flags []})
+          (let [{:keys [last-update-time service-id->last-request-time]} (async/<!! res-ch)]
+            (is (= now last-update-time))
+            (is (= {"s1" now}
+                   service-id->last-request-time))))
+        (is (= {0 [{:service-id "s1-1"}]}
+               @start-new-service-calls-atom))
+
+        ; there should be no new attempts to start a new service as there are no new last-request-times
+        (dotimes [count 9]
+          (let [round (inc count)]
+            (trigger-maintainer-refresh!!)
+            (let [res-ch (async/promise-chan)]
+              (async/>!! query-chan {:response-chan res-ch :include-flags []})
+              (let [{:keys [last-update-time service-id->last-request-time]} (async/<!! res-ch)]
+                (is (= now last-update-time))
+                (is (= {"s1" now}
+                       service-id->last-request-time))))
+            (is (nil? (get @start-new-service-calls-atom round))
+                (str "service calls expected to be empty: " @start-new-service-calls-atom))))
+
+        (close-maintainer!! exit-chan go-chan)))))
