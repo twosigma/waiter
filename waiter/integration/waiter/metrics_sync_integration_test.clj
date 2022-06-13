@@ -332,7 +332,8 @@
                                         {:service-id service-id
                                          :service-id-last-request-time service-id-last-request-time
                                          :router-url router-url})
-                              (t/after? service-id-last-request-time before-ping))))
+                              (and (some? service-id-last-request-time)
+                                   (t/after? service-id-last-request-time before-ping)))))
                         routers))
                     :interval 1
                     :timeout 10)
