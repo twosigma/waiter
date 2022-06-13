@@ -311,8 +311,7 @@
       (assert-response-status post-token-res 200)
       (testing "updating a token and sending new last-request-time for the token causes new service to start"
         (try
-          (let [before-ping (t/now)
-                request-headers {"x-waiter-token" token-name}
+          (let [request-headers {"x-waiter-token" token-name}
                 {:keys [instance-id service-id] :as ping-res}
                 (make-request-with-debug-info request-headers #(make-request waiter-url "/waiter-ping" :headers %))]
             (assert-response-status ping-res http-200-ok)
@@ -335,8 +334,7 @@
                                         {:service-id service-id
                                          :service-id-last-request-time service-id-last-request-time
                                          :router-url router-url})
-                              (and (some? service-id-last-request-time)
-                                   (t/after? service-id-last-request-time before-ping)))))
+                              (some? service-id-last-request-time))))
                         routers))
                     :interval 1
                     :timeout 10)
