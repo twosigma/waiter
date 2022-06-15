@@ -314,6 +314,23 @@
         {:pod-namespace (:k8s/namespace instance)
          :service-account (get instance-env "SERVICE_ACCOUNT")}))))
 
+(deftest ^:parallel ^:integration-fast test-kubernetes-scheduler-state
+  (testing-using-waiter-url
+    (when (using-k8s? waiter-url)
+      (let [{:keys [body service-id] :as response}
+            (make-request-with-debug-info
+              {:x-waiter-name (rand-name)
+               :x-waiter-cmd "sleep 900"}
+              #(make-shell-request waiter-url % :method :get :path "/"))]
+        (with-service-cleanup
+          service-id
+          (is (wait-for
+                (fn []
+                  (let [state (service-state waiter-url service-id)
+                        unhealthy-instances (get-in state [:state :scheduler-state :syncer :instance-id->unhealthy-instance])]
+                    (log/debug "state for" service-id state)
+                    (seq unhealthy-instances))))))))))
+
 (deftest ^:parallel ^:integration-fast test-service-account-injection
   (testing-using-waiter-url
     (when (using-k8s? waiter-url)
