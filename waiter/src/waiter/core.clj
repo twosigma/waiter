@@ -76,7 +76,8 @@
             [waiter.util.semaphore :as semaphore]
             [waiter.util.utils :as utils]
             [waiter.websocket :as ws]
-            [waiter.work-stealing :as work-stealing])
+            [waiter.work-stealing :as work-stealing]
+            [clj-time.coerce :as tc])
   (:import (java.net InetAddress URI)
            (java.util.concurrent Executors)
            (javax.servlet ServletRequest)
@@ -1001,9 +1002,9 @@
                                                         (request-handler request)
                                                         :else
                                                         (auth-handler request)))
-                                             jwt-authenticator (jwt/wrap-auth-handler jwt-authenticator)
-                                             oidc-authenticator (oidc/wrap-auth-handler oidc-authenticator)
-                                             true (auth/wrap-auth-cookie-handler password)))))
+                                                    jwt-authenticator (jwt/wrap-auth-handler jwt-authenticator)
+                                                    oidc-authenticator (oidc/wrap-auth-handler oidc-authenticator)
+                                                    true (auth/wrap-auth-cookie-handler password)))))
    :can-run-as?-fn (pc/fnk [[:state entitlement-manager]]
                      (fn can-run-as [auth-user run-as-user]
                        (authz/run-as? entitlement-manager auth-user run-as-user)))
@@ -1154,6 +1155,13 @@
    :service-id->stale? (pc/fnk [reference-type->stale-info-fn service-id->references-fn]
                          (fn service-id->stale? [service-id]
                            (sd/service-id->stale? reference-type->stale-info-fn service-id->references-fn service-id)))
+   :service-id->stale-info (pc/fnk [service-id->references-fn reference-type->stale-info-fn]
+                             (fn service-id->stale-info
+                               [service-id last-modified-time]
+                               (let [references (service-id->references-fn service-id)
+                                     {:keys [stale? update-epoch-time]} (sd/references->stale-info reference-type->stale-info-fn references)]
+                                 {:stale? stale?
+                                  :update-time (if update-epoch-time (tc/from-long update-epoch-time) last-modified-time)})))
    :service-invocation-authorized?-fn (pc/fnk [can-run-as?-fn]
                                         (fn service-invocation-authorized?-fn
                                           [auth-user descriptor]
@@ -1454,7 +1462,7 @@
                                 (maintainer/start-service-chan-maintainer
                                   {} state-chan query-service-maintainer-chan start-service remove-service retrieve-channel)))
    :start-new-services-maintainer (pc/fnk
-                                    [[:routines retrieve-descriptor-fn router-metrics-helpers
+                                    [[:routines retrieve-descriptor-fn router-metrics-helpers service-id->stale-info
                                       service-id->source-tokens-entries-fn start-new-service-fn]
                                      [:settings scheduler-start-new-services-interval-ms]
                                      [:state clock kv-store fallback-state-atom]]
@@ -1462,8 +1470,8 @@
                                           start-new-services-maintainer-timer-ch (au/timer-chan scheduler-start-new-services-interval-ms)]
                                       (scheduler/start-new-services-maintainer
                                         clock start-new-services-maintainer-timer-ch service-id->source-tokens-entries-fn
-                                        service-id->metrics-fn retrieve-descriptor-fn fallback-state-atom kv-store
-                                        start-new-service-fn)))
+                                        service-id->metrics-fn service-id->stale-info start-new-service-fn retrieve-descriptor-fn
+                                        fallback-state-atom kv-store)))
    :state-sources (pc/fnk [[:scheduler scheduler]
                            [:state query-service-maintainer-chan]
                            autoscaler autoscaling-multiplexer gc-for-transient-metrics interstitial-maintainer
