@@ -1472,7 +1472,7 @@
                      :interstitial-maintainer-state (:query-chan interstitial-maintainer)
                      :scheduler-broken-services-gc-state (:query-service-state-fn scheduler-broken-services-gc)
                      :scheduler-services-gc-state (:query-service-state-fn scheduler-services-gc)
-                     :scheduler-state (fn scheduler-state-fn [service-id]
+                     :scheduler-state (fn scheduler-state-fn [{:keys [service-id]}]
                                         (scheduler/service-id->state scheduler service-id))
                      :service-maintainer-state query-service-maintainer-chan
                      :transient-metrics-gc-state (:query-service-state-fn gc-for-transient-metrics)})
