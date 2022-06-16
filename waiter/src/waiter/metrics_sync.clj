@@ -487,7 +487,7 @@
                                                   aggregate-service-metrics)]
                                      (cond-> router-metrics
                                        (some? last-request-time)
-                                       (update router-metrics "last-request-time" t/max-date last-request-time)))
+                                       (update "last-request-time" t/max-date last-request-time)))
                                    (catch Exception e
                                      (log/error e "error in retrieving aggregated metrics for" service-id))))))
            (filter second)
