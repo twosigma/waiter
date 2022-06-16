@@ -1157,11 +1157,9 @@
                            (sd/service-id->stale? reference-type->stale-info-fn service-id->references-fn service-id)))
    :service-id->stale-info (pc/fnk [service-id->references-fn reference-type->stale-info-fn]
                              (fn service-id->stale-info
-                               [service-id last-modified-time]
-                               (let [references (service-id->references-fn service-id)
-                                     {:keys [stale? update-epoch-time]} (sd/references->stale-info reference-type->stale-info-fn references)]
-                                 {:stale? stale?
-                                  :update-time (if update-epoch-time (tc/from-long update-epoch-time) last-modified-time)})))
+                               [service-id]
+                               (let [references (service-id->references-fn service-id)]
+                                 (sd/references->stale-info reference-type->stale-info-fn references))))
    :service-invocation-authorized?-fn (pc/fnk [can-run-as?-fn]
                                         (fn service-invocation-authorized?-fn
                                           [auth-user descriptor]
