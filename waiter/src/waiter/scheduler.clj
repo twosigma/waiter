@@ -1299,12 +1299,15 @@
                                          ; for one token and not stale for another token, resulting in no new service
                                          ; starting for the former token.
                                          (fn service-id-maps-to-one-token? [[service-id _]]
-                                           (let [source-tokens (->> service-id
-                                                                    service-id->source-tokens-entries-fn
-                                                                    vec
-                                                                    flatten
-                                                                    (map #(get % "token"))
-                                                                    set)
+                                           (let [source-tokens
+                                                 (->> service-id
+                                                      service-id->source-tokens-entries-fn
+                                                      vec
+                                                      flatten
+                                                      (map #(get % "token"))
+                                                      ; There may be 1 source token but many (token, version) pairs, so
+                                                      ; make a set with just the token value.
+                                                      set)
                                                  many-source-tokens? (> 1 (count source-tokens))]
                                              (when many-source-tokens?
                                                (cid/cinfo correlation-id "Skipping service-id because it maps to many source tokens."
