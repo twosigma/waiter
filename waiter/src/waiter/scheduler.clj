@@ -1277,21 +1277,22 @@
                                              (or (nil? old-last-request-time)
                                                  (t/after? new-last-request-time old-last-request-time)))))
                                        (filter
-                                         ; WARNING: Edge cases not addressed:
-                                         ; Checking if a service is stale using 'service-id->stale-info' might not be fully
-                                         ; accurate in the case it points to multiple tokens. It may be stale for one token
-                                         ; and not stale for another token. In this case, the service is in general NOT
-                                         ; considered stale, and therefore we will not attempt to start a service for the token
-                                         ; that the service is stale for. Also, the function 'service-id->stale-info' update-time
-                                         ; is the maximum time the service became stale for any of the referenced tokens. This means
-                                         ; that if the last-request-time is after one of the tokens update-time, it may not be
-                                         ; later than another token's update-time, and thus we won't try to start a new service
-                                         ; for the stale token.
-                                         ;
-                                         ; This daemon was originally created to support services in bypass mode which are always
-                                         ; have exclusive mapping enabled (strict 1:many token to service mapping instead of many:many).
-                                         ; Because these edge cases don't apply for services that have exclusive mapping enabled,
-                                         ; we think it is acceptable to leave this edge case unaddressed.
+                                         ; Ignore the services that map to many source tokens (legacy mapping) and
+                                         ; log them. Services with many:many token mapping have an edge case where
+                                         ; the 'service-id->stale-info' function does not consider it stale unless
+                                         ; ALL references to tokens are stale.
+                                         (fn service-id-maps-to-one-token? [[service-id _]]
+                                           (let [source-tokens (->> service-id
+                                                                    service-id->source-tokens-entries-fn
+                                                                    vec
+                                                                    flatten
+                                                                    (map #(get % "token")))
+                                                 many-source-tokens? (> 1 (count source-tokens))]
+                                             (when many-source-tokens?
+                                               (log/info "Skipping service-id because it maps to many tokens." {:service-id service-id
+                                                                                                                :source-tokens source-tokens}))
+                                             (not many-source-tokens?))))
+                                       (filter
                                          (fn service-id-new-last-request-time-after-stale? [[service-id new-last-request-time]]
                                            (let [{:keys [stale? update-time]} (service-id->stale-info service-id)]
                                              (and stale?
