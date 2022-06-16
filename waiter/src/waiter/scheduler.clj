@@ -1267,14 +1267,12 @@
                                   fallback-state @fallback-state-atom
                                   new-service-id->last-request-time
                                   (->> (service-id->metrics-fn)
-                                       seq
-                                       (map
-                                         (fn [[service-id {:strs [last-request-time]}]]
-                                           [service-id last-request-time]))
-                                       (filter
+                                       (pc/map-vals
+                                         (fn [{:strs [last-request-time]}]
+                                           last-request-time))
+                                       (utils/filterm
                                          (fn [[_ last-request-time]]
-                                           (some? last-request-time)))
-                                       (into {}))
+                                           (some? last-request-time))))
                                   stale-service-ids-with-new-last-request-times
                                   (->> (seq new-service-id->last-request-time)
                                        (filter
