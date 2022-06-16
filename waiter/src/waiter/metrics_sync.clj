@@ -485,9 +485,9 @@
                                                       ; a valid ISO-8601 string
                                                       (update metrics "last-request-time" du/str-to-date)))
                                                   aggregate-service-metrics)]
-                                     (if (some? last-request-time)
-                                       (update router-metrics "last-request-time" t/max-date last-request-time)
-                                       router-metrics))
+                                     (cond-> router-metrics
+                                       (some? last-request-time)
+                                       (update router-metrics "last-request-time" t/max-date last-request-time)))
                                    (catch Exception e
                                      (log/error e "error in retrieving aggregated metrics for" service-id))))))
            (filter second)
