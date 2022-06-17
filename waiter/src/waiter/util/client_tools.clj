@@ -610,8 +610,8 @@
     (throw (ex-info "WAITER_TEST_JWT_ACCESS_TOKEN_URL environment variable has not been provided" {}))))
 
 (defn retrieve-service-id [waiter-url waiter-headers &
-                           {:keys [cookies verbose] :or {cookies [] verbose false}}]
-  (let [service-id-result (make-request waiter-url "/service-id" :cookies cookies :headers waiter-headers)
+                           {:keys [cookies verbose query-params] :or {cookies [] verbose false query-params {}}}]
+  (let [service-id-result (make-request waiter-url "/service-id" :cookies cookies :headers waiter-headers :query-params query-params)
         service-id (str (:body service-id-result))]
     (when verbose
       (log/info "service id: " service-id))

@@ -362,7 +362,7 @@
 
               ; modify the last-request-time for the token externally, which should trigger starting of new service for
               ; the token as it should resolve to a new service-id
-              (let [
+              (let [new-service-id (retrieve-service-id waiter-url {"x-waiter-token" token-name} :query-params {"latest" "true"})
                     ; last-request-time is always later than current last-request-time
                     last-request-time (du/date-to-str (t/from-now (t/days 2)))
                     metrics-payload {"cluster" cluster-name
@@ -380,9 +380,11 @@
                           (fn [[_ router-url]]
                             (let [service-ids (get-services-for-token-and-assert router-url token-name cookies)]
                               (log/info "router-url reported service-ids for token while waiting for new service to start:"
-                                        {:service-ids (str/join ", " service-ids)
+                                        {:expected-service-ids (str/join ", " [service-id new-service-id])
+                                         :service-ids (str/join ", " service-ids)
                                          :router-url router-url})
-                              (= 2 (count service-ids))))
+                              (= #{service-id new-service-id}
+                                 (set service-ids))))
                           routers))
                       :interval 5
                       :timeout 30)
