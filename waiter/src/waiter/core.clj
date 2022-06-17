@@ -22,14 +22,13 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [digest]
-            [full.async :refer [<? <?? go-try]]
+            [full.async :refer [<?]]
             [metrics.counters :as counters]
             [metrics.meters :as meters]
             [metrics.timers :as timers]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [ring.middleware.basic-authentication :as basic-authentication]
-            [ring.middleware.ssl :as ssl]
             [ring.util.response :as rr]
             [waiter.async-request :as async-req]
             [waiter.auth.authentication :as auth]
@@ -76,8 +75,7 @@
             [waiter.util.semaphore :as semaphore]
             [waiter.util.utils :as utils]
             [waiter.websocket :as ws]
-            [waiter.work-stealing :as work-stealing]
-            [clj-time.coerce :as tc])
+            [waiter.work-stealing :as work-stealing])
   (:import (java.net InetAddress URI)
            (java.util.concurrent Executors)
            (javax.servlet ServletRequest)
@@ -87,8 +85,7 @@
            (org.apache.curator.retry BoundedExponentialBackoffRetry)
            (org.eclipse.jetty.client HttpClient)
            (org.eclipse.jetty.client.util BasicAuthentication$BasicResult)
-           (org.eclipse.jetty.websocket.client WebSocketClient)
-           (org.eclipse.jetty.websocket.servlet ServletUpgradeRequest ServletUpgradeResponse)))
+           (org.eclipse.jetty.websocket.client WebSocketClient)))
 
 (defn routes-mapper
   "Returns a map containing a keyword handler and the parsed route-params based on the request uri."
