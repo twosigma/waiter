@@ -337,7 +337,7 @@
                   (str "Service-id was never reported in service-id->last-request-time for start-new-services-maintainer: " service-id))
 
               ; make a dummy update to the token so that it is pointing to a new service-id
-              (let [update-token-body (assoc-in post-token-req-body [:metadata "foo"] "bar")
+              (let [update-token-body (assoc-in post-token-req-body [:metadata "foo"] (rand-name))
                     update-token-res (post-token waiter-url update-token-body :cookies cookies)]
                 (assert-response-status update-token-res http-200-ok))
 
