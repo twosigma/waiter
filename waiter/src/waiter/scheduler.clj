@@ -1225,26 +1225,71 @@
          (fn [[_ last-request-time]]
            (some? last-request-time)))))
 
+(defn- make-service-id-new-last-request-time?-fn
+  "Returns a function that returns true if the proposed 'last-request-time' is after the last request time of value in the
+  provided 'service-id->last-request-time' for the 'service-id'. If the last request time in 'service-id->last-request-time'
+  map is nil, then the function will return true."
+  [service-id->last-request-time]
+  (fn service-id-new-last-request-time?
+    [[service-id new-last-request-time]]
+    (let [old-last-request-time (get service-id->last-request-time service-id)]
+      (or (nil? old-last-request-time)
+          (t/after? new-last-request-time old-last-request-time)))))
+
+(defn- make-service-id-received-request-after-becoming-stale?-fn
+  "Returns a function that returns true if the provided 'last-request-time' associated with the 'service-id' is after
+  that service became stale based on its entry in the 'service-id->stale-info' map returned by the provided 'get-service-id->stale-info'.
+  This is used to determine whether a service-id is stale? and received requests after becoming stale."
+  [get-service-id->stale-info]
+  (fn service-id-received-request-after-becoming-stale?
+    [[service-id new-last-request-time]]
+    (let [{:keys [stale? update-time]} (get-service-id->stale-info service-id)]
+      (and stale?
+           ; assume that update-time is before last-request-time when update-time is nil to avoid missing
+           ; an event to start new service.
+           (or (nil? update-time)
+               (t/before? update-time new-last-request-time)
+               (t/equal? update-time new-last-request-time))))))
+
+(defn- make-one-source-token?-fn
+  "Returns a function that returns true if there is only 1 unique source token."
+  [correlation-id]
+  (fn one-srouce-token?
+    [{:keys [service-id source-tokens]}]
+    (let [many-source-tokens? (> 1 (count source-tokens))]
+      (when many-source-tokens?
+        (cid/cinfo correlation-id "Skipping service-id because it maps to many source tokens."
+                   {:service-id service-id
+                    :source-tokens source-tokens}))
+      (= 1 (count source-tokens)))))
+
+(defn- make-token-is-not-run-as-requester-or-parameterized?-fn
+  "Returns a function that returns true if the token is not run-as-requester or parameterized."
+  [correlation-id kv-store]
+  (fn token-is-not-run-as-requester-or-parameterized?
+    [token]
+    (when-let
+      [{:strs [run-as-user] :as service-description-template}
+       (sd/token->service-parameter-template kv-store token :error-on-missing false)]
+      (let [supported-token?
+            (and
+              ; run-as-user defaults to '*', so confirm it is defined
+              run-as-user
+              (not (sd/run-as-requester? service-description-template))
+              (not (sd/requires-parameters? service-description-template)))]
+        (when-not supported-token?
+          (cid/cinfo correlation-id "Skipping token because it is either run-as-requester or parameterized."
+                     {:token token}))
+        supported-token?))))
+
 (defn- get-tokens-to-start-services-for
   "Get lazy sequence of tokens that need a service to be started for using the service-id->last-request-time maps to determine
   which services are active."
   [correlation-id service-id->stale-info service-id->source-tokens-entries-fn kv-store new-service-id->last-request-time
    service-id->last-request-time]
   (->> (seq new-service-id->last-request-time)
-       (filter
-         (fn service-id-new-last-request-time? [[service-id new-last-request-time]]
-           (let [old-last-request-time (get service-id->last-request-time service-id)]
-             (or (nil? old-last-request-time)
-                 (t/after? new-last-request-time old-last-request-time)))))
-       (filter
-         (fn service-id-new-last-request-time-after-stale? [[service-id new-last-request-time]]
-           (let [{:keys [stale? update-time]} (service-id->stale-info service-id)]
-             (and stale?
-                  ; assume that update-time is before last-request-time when update-time is nil to avoid missing
-                  ; an event to start new service.
-                  (or (nil? update-time)
-                      (t/before? update-time new-last-request-time)
-                      (t/equal? update-time new-last-request-time))))))
+       (filter (make-service-id-new-last-request-time?-fn service-id->last-request-time))
+       (filter (make-service-id-received-request-after-becoming-stale?-fn service-id->stale-info))
        (map
          (fn get-source-tokens-from-service-id
            [[service-id _]]
@@ -1258,42 +1303,24 @@
                                 ; make a set with just the token values instead.
                                 set)}))
        (filter
-         ; TODO: support the legacy token mapping use case by using individual token references
-         ; Ignore the services that map to many source tokens (legacy mapping) and
+         ; TODO: support the legacy token mapping use case by using individual token references.
+         ; For now, ignore the services that map to many source tokens (legacy mapping) and
          ; log them. Services with many:many token mapping have an edge case because
          ; the 'service-id->stale-info' function does not consider it stale unless
          ; ALL references to tokens are stale. This means that a service could be stale
          ; for one token and not stale for another token, resulting in no new service
          ; starting for the former token.
-         (fn one-source-token? [{:keys [service-id source-tokens]}]
-           (let [many-source-tokens? (> 1 (count source-tokens))]
-             (when many-source-tokens?
-               (cid/cinfo correlation-id "Skipping service-id because it maps to many source tokens."
-                          {:service-id service-id
-                           :source-tokens source-tokens}))
-             (= 1 (count source-tokens)))))
-       (map :source-tokens)
-       ; Because we previously filtered out services that did not have exactly 1 source token,
-       ; we can just pick the first one.
-       (map first)
+         (make-one-source-token?-fn correlation-id))
+       (map
+         (fn get-single-source-token [{:keys [source-tokens]}]
+           ; Because we previously filtered out services that did not have exactly 1 source token,
+           ; we can just pick the first one.
+           (first source-tokens)))
        set
        (filter
-         ; TODO: support run-as-requester and parameterized services by keeping track of
-         ; original service-id and getting the run-as-user and parameters from the description. These tokens are filtered
-         ; out for now.
-         (fn token-is-not-run-as-requester-or-parameterized?-fn
-           [token]
-           (when-let
-             [{:strs [run-as-user] :as service-description-template}
-              (sd/token->service-parameter-template kv-store token :error-on-missing false)]
-             (let [supported-token?
-                   (and run-as-user                         ; run-as-user defaults to '*', so confirm it is defined
-                        (not (sd/run-as-requester? service-description-template))
-                        (not (sd/requires-parameters? service-description-template)))]
-               (when-not supported-token?
-                 (cid/cinfo correlation-id "Skipping token because it is either run-as-requester or parameterized."
-                            {:token token}))
-               supported-token?))))))
+         ; TODO: support run-as-requester and parameterized services by keeping track of original service-id and getting
+         ; the run-as-user and parameters from the description. These tokens are filtered out for now.
+         (make-token-is-not-run-as-requester-or-parameterized?-fn correlation-id kv-store))))
 
 (defn start-new-services-maintainer
   "This daemon ensures that tokens receiving requests will have the latest service corresponding to it running. Whenever there
@@ -1340,15 +1367,12 @@
                           (metrics/waiter-timer "core" "start-new-services-maintainer" "process-services")
                           (try
                             (let [fallback-state @fallback-state-atom
-                                  new-service-id->last-request-time
-                                  (create-service-id->last-request-time-from-metrics service-id->metrics-fn)
-                                  tokens-with-new-last-request-times
-                                  (get-tokens-to-start-services-for
-                                    correlation-id service-id->stale-info service-id->source-tokens-entries-fn kv-store
-                                    new-service-id->last-request-time service-id->last-request-time)]
+                                  new-service-id->last-request-time (create-service-id->last-request-time-from-metrics service-id->metrics-fn)
+                                  tokens-with-new-last-request-times (get-tokens-to-start-services-for
+                                                                       correlation-id service-id->stale-info service-id->source-tokens-entries-fn kv-store
+                                                                       new-service-id->last-request-time service-id->last-request-time)]
                               (doseq [token tokens-with-new-last-request-times]
-                                (let [{:strs [run-as-user]}
-                                      (sd/token->service-parameter-template kv-store token :error-on-missing false)
+                                (let [{:strs [run-as-user]} (sd/token->service-parameter-template kv-store token :error-on-missing false)
                                       ; we use retrieve-descriptor-fn instead of retrieve-latest-descriptor-fn because
                                       ; it has a side effect for updating the service-id and source token references
                                       {{:keys [service-id] :as latest-descriptor} :latest-descriptor} (retrieve-descriptor-fn run-as-user token)]
