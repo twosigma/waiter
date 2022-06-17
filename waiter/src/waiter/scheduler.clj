@@ -1322,6 +1322,40 @@
          ; the run-as-user and parameters from the description. These tokens are filtered out for now.
          (make-token-is-not-run-as-requester-or-parameterized?-fn correlation-id kv-store))))
 
+(defn- start-latest-services-for-tokens
+  "Given a list of tokens, try to start the latest service for the token. If an individual token errors, we skip that token
+  and continue to the next."
+  [correlation-id kv-store fallback-state start-new-service-fn retrieve-descriptor-fn tokens]
+  (let [error-results (->> tokens
+                           (map
+                             (fn start-latest-service
+                               [token]
+                               (try
+                                 (let [{:strs [run-as-user]} (sd/token->service-parameter-template kv-store token :error-on-missing false)
+                                       ; we use retrieve-descriptor-fn instead of retrieve-latest-descriptor-fn because
+                                       ; it has a side effect for updating the service-id and source token references
+                                       {{:keys [service-id] :as latest-descriptor} :latest-descriptor} (retrieve-descriptor-fn run-as-user token)
+                                       should-start-service? (not (descriptor/service-exists? fallback-state service-id))]
+                                   (when should-start-service?
+                                     (cid/cinfo correlation-id "starting service due to new last-request-time"
+                                                {:service-id service-id
+                                                 :token token})
+                                     (start-new-service-fn latest-descriptor)
+                                     (meters/mark! (metrics/waiter-meter "core" "start-new-services-maintainer" "start-new-service")))
+                                   {:token token :success true})
+                                 (catch Exception e
+                                   {:token token
+                                    :success false
+                                    :error e}))))
+                           (filter
+                             (fn result-errored?
+                               [{:keys [success]}]
+                               (not success)))
+                           doall)]
+    (when (> (count error-results) 0)
+      (cid/cerror correlation-id "Failed to start latest service for tokens" {:tokens (map error-results :token)
+                                                                              :sample-10-errors (take 10 error-results)}))))
+
 (defn start-new-services-maintainer
   "This daemon ensures that tokens receiving requests will have the latest service corresponding to it running. Whenever there
    are any implicit changes to the token's service description resulting in a new service-id while that token is handling
@@ -1368,20 +1402,11 @@
                           (try
                             (let [fallback-state @fallback-state-atom
                                   new-service-id->last-request-time (create-service-id->last-request-time-from-metrics service-id->metrics-fn)
-                                  tokens-with-new-last-request-times (get-tokens-to-start-services-for
-                                                                       correlation-id service-id->stale-info service-id->source-tokens-entries-fn kv-store
-                                                                       service-id->last-request-time new-service-id->last-request-time)]
-                              (doseq [token tokens-with-new-last-request-times]
-                                (let [{:strs [run-as-user]} (sd/token->service-parameter-template kv-store token :error-on-missing false)
-                                      ; we use retrieve-descriptor-fn instead of retrieve-latest-descriptor-fn because
-                                      ; it has a side effect for updating the service-id and source token references
-                                      {{:keys [service-id] :as latest-descriptor} :latest-descriptor} (retrieve-descriptor-fn run-as-user token)]
-                                  (when (not (descriptor/service-exists? fallback-state service-id))
-                                    (cid/cinfo correlation-id "starting service due to new last-request-time"
-                                               {:service-id service-id
-                                                :token token})
-                                    (start-new-service-fn latest-descriptor)
-                                    (meters/mark! (metrics/waiter-meter "core" "start-new-services-maintainer" "start-new-service")))))
+                                  tokens (get-tokens-to-start-services-for
+                                           correlation-id service-id->stale-info service-id->source-tokens-entries-fn kv-store
+                                           service-id->last-request-time new-service-id->last-request-time)]
+                              (start-latest-services-for-tokens
+                                correlation-id kv-store fallback-state start-new-service-fn retrieve-descriptor-fn tokens)
                               (counters/inc! (metrics/waiter-counter "core" "start-new-services-maintainer" "refresh-sync"))
                               {:service-id->last-request-time new-service-id->last-request-time})
                             (catch Exception e
