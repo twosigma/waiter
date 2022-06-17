@@ -1462,11 +1462,10 @@
                                      [:settings scheduler-start-new-services-interval-ms]
                                      [:state clock kv-store fallback-state-atom]]
                                     (let [{:keys [service-id->metrics-fn]} router-metrics-helpers
-                                          start-new-services-maintainer-timer-ch (au/timer-chan scheduler-start-new-services-interval-ms)]
+                                          trigger-ch (au/timer-chan scheduler-start-new-services-interval-ms)]
                                       (scheduler/start-new-services-maintainer
-                                        clock start-new-services-maintainer-timer-ch service-id->source-tokens-entries-fn
-                                        service-id->metrics-fn service-id->stale-info start-new-service-fn retrieve-descriptor-fn
-                                        fallback-state-atom kv-store)))
+                                        clock trigger-ch service-id->source-tokens-entries-fn service-id->metrics-fn
+                                        service-id->stale-info start-new-service-fn retrieve-descriptor-fn fallback-state-atom kv-store)))
    :state-sources (pc/fnk [[:scheduler scheduler]
                            [:state query-service-maintainer-chan]
                            autoscaler autoscaling-multiplexer gc-for-transient-metrics interstitial-maintainer

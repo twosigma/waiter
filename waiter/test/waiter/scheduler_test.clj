@@ -1114,7 +1114,7 @@
                     (get rounds @round-count-atom))
         clock (fn clock-fn []
                 (-> (get-round) :clock))
-        timer-ch (async/chan)
+        trigger-ch (async/chan)
         service-id->source-tokens-fn
         (fn service-id->source-tokens-fn [service-id]
           (-> (get-round) (get-in [:service-id->source-tokens service-id])))
@@ -1133,7 +1133,7 @@
         kv-store (kv/->LocalKeyValueStore (atom {}))]
     (assoc
       (start-new-services-maintainer
-        clock timer-ch service-id->source-tokens-fn service-id->metrics-fn service-id->stale-info-fn start-new-service-fn
+        clock trigger-ch service-id->source-tokens-fn service-id->metrics-fn service-id->stale-info-fn start-new-service-fn
         retrieve-descriptor-fn fallback-state-atom kv-store)
       :fallback-state-atom fallback-state-atom
       :kv-store kv-store
@@ -1141,7 +1141,7 @@
       :start-new-service-calls-atom start-new-service-calls-atom
       :trigger-maintainer-refresh!! (fn trigger-maintainer-refresh!! []
                                       (swap! round-count-atom inc)
-                                      (async/>!! timer-ch {})))))
+                                      (async/>!! trigger-ch {})))))
 
 (deftest test-start-new-services-maintainer
   (let [lock (Object.)

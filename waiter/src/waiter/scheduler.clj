@@ -1299,7 +1299,7 @@
   "This daemon ensures that tokens receiving requests will have the latest service corresponding to it running. Whenever there
    are any implicit changes to the token's service description resulting in a new service-id while that token is handling
    requests. This daemon will start the new service corresponding to that service-id. We do this by building a map,
-   service-id->last-request-time, whenever the 'timer-chan' is triggered, and seeing if any service-ids have a new
+   service-id->last-request-time, whenever the 'trigger-ch' is triggered, and seeing if any service-ids have a new
    last-request-time. We then build a set of corresponding source tokens to the service-ids and see if they point to a
    service-id that is not running. We attempt to start a new service for those tokens/service-ids (not including
    run-as-requester or parameterized services).
@@ -1307,9 +1307,9 @@
    Returns a map with keys:
    :exit-chan when a message is put on the exit-chan, the daemon terminates
    :go-chan the corresponding async/go chan of the daemon. This can be used to see if the daemon has terminated.
-   :query-chan channel that puts the state in a response-chan after the daemon processes other channels first (e.g timer-chan)
+   :query-chan channel that puts the state in a response-chan after the daemon processes other channels first (e.g trigger-ch)
    :query-state-fn function that queries the current state of the daemon"
-  [clock timer-chan service-id->source-tokens-entries-fn service-id->metrics-fn service-id->stale-info start-new-service-fn
+  [clock trigger-ch service-id->source-tokens-entries-fn service-id->metrics-fn service-id->stale-info start-new-service-fn
    retrieve-descriptor-fn fallback-state-atom kv-store]
   (cid/with-correlation-id
     "start-new-services-maintainer"
@@ -1326,7 +1326,7 @@
               (loop [{:keys [service-id->last-request-time] :as current-state} @state-atom]
                 (reset! state-atom current-state)
                 (let [[msg current-chan]
-                      (async/alts! [exit-chan timer-chan query-chan] :priority true)
+                      (async/alts! [exit-chan trigger-ch query-chan] :priority true)
                       next-state
                       (condp = current-chan
                         exit-chan
@@ -1335,7 +1335,7 @@
                           (when (not= :exit msg)
                             (throw (ex-info "Stopping start-new-services-maintainer" {:time (clock) :reason msg}))))
 
-                        timer-chan
+                        trigger-ch
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "start-new-services-maintainer" "process-services")
                           (try
