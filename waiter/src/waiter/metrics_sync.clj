@@ -483,7 +483,7 @@
                                                     (fn [{:strs [metrics]}]
                                                       ; if there are external-metrics, then last-request-time will always be
                                                       ; a valid ISO-8601 string
-                                                      (update metrics "last-request-time" du/str-to-date)))
+                                                      (update metrics "last-request-time" du/str-to-date-ignore-error)))
                                                   aggregate-service-metrics)]
                                      (cond-> router-metrics
                                        (some? last-request-time)
