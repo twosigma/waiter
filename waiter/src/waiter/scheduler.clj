@@ -1285,8 +1285,8 @@
 (defn- get-tokens-to-start-services-for
   "Get lazy sequence of tokens that need a service to be started for using the service-id->last-request-time maps to determine
   which services are active."
-  [correlation-id service-id->stale-info service-id->source-tokens-entries-fn kv-store new-service-id->last-request-time
-   service-id->last-request-time]
+  [correlation-id service-id->stale-info service-id->source-tokens-entries-fn kv-store service-id->last-request-time
+   new-service-id->last-request-time]
   (->> (seq new-service-id->last-request-time)
        (filter (make-service-id-new-last-request-time?-fn service-id->last-request-time))
        (filter (make-service-id-received-request-after-becoming-stale?-fn service-id->stale-info))
@@ -1370,7 +1370,7 @@
                                   new-service-id->last-request-time (create-service-id->last-request-time-from-metrics service-id->metrics-fn)
                                   tokens-with-new-last-request-times (get-tokens-to-start-services-for
                                                                        correlation-id service-id->stale-info service-id->source-tokens-entries-fn kv-store
-                                                                       new-service-id->last-request-time service-id->last-request-time)]
+                                                                       service-id->last-request-time new-service-id->last-request-time)]
                               (doseq [token tokens-with-new-last-request-times]
                                 (let [{:strs [run-as-user]} (sd/token->service-parameter-template kv-store token :error-on-missing false)
                                       ; we use retrieve-descriptor-fn instead of retrieve-latest-descriptor-fn because
