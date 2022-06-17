@@ -1213,6 +1213,86 @@
     {:exit-chan exit-chan
      :query-chan query-chan}))
 
+(defn- create-service-id->last-request-time-from-metrics
+  "Using the 'service-id->metrics-fn' which provides a map of service-id->metrics, this function creates a new map
+  service-id->last-request-time."
+  [service-id->metrics-fn]
+  (->> (service-id->metrics-fn)
+       (pc/map-vals
+         (fn [{:strs [last-request-time]}]
+           last-request-time))
+       (utils/filterm
+         (fn [[_ last-request-time]]
+           (some? last-request-time)))))
+
+(defn- get-tokens-to-start-services-for
+  "Get lazy sequence of tokens that need a service to be started for using the service-id->last-request-time maps to determine
+  which services are active."
+  [correlation-id service-id->stale-info service-id->source-tokens-entries-fn kv-store new-service-id->last-request-time
+   service-id->last-request-time]
+  (->> (seq new-service-id->last-request-time)
+       (filter
+         (fn service-id-new-last-request-time? [[service-id new-last-request-time]]
+           (let [old-last-request-time (get service-id->last-request-time service-id)]
+             (or (nil? old-last-request-time)
+                 (t/after? new-last-request-time old-last-request-time)))))
+       (filter
+         (fn service-id-new-last-request-time-after-stale? [[service-id new-last-request-time]]
+           (let [{:keys [stale? update-time]} (service-id->stale-info service-id)]
+             (and stale?
+                  ; assume that last-request-time is after the update time so that we don't
+                  ; miss any possible tokens that we should start a new service for
+                  (or (nil? update-time)
+                      (t/after? new-last-request-time update-time))))))
+       (map
+         (fn get-source-tokens-from-service-id
+           [[service-id _]]
+           {:service-id service-id
+            :source-tokens (->> service-id
+                                service-id->source-tokens-entries-fn
+                                vec
+                                flatten
+                                (map #(get % "token"))
+                                ; There may be many (token, version) pairs but only 1 unique token, so
+                                ; make a set with just the token values instead.
+                                set)}))
+       (filter
+         ; TODO: support the legacy token mapping use case by using individual token references
+         ; Ignore the services that map to many source tokens (legacy mapping) and
+         ; log them. Services with many:many token mapping have an edge case because
+         ; the 'service-id->stale-info' function does not consider it stale unless
+         ; ALL references to tokens are stale. This means that a service could be stale
+         ; for one token and not stale for another token, resulting in no new service
+         ; starting for the former token.
+         (fn one-source-token? [{:keys [service-id source-tokens]}]
+           (let [many-source-tokens? (> 1 (count source-tokens))]
+             (when many-source-tokens?
+               (cid/cinfo correlation-id "Skipping service-id because it maps to many source tokens."
+                          {:service-id service-id
+                           :source-tokens source-tokens}))
+             (= 1 (count source-tokens)))))
+       (map :source-tokens)
+       ; Because we previously filtered out services that did not have exactly 1 source token,
+       ; we can just pick the first one.
+       (map first)
+       set
+       (filter
+         ; TODO: support run-as-requester and parameterized services by keeping track of
+         ; original service-id and getting the run-as-user and parameters from the description. These tokens are filtered
+         ; out for now.
+         (fn token-is-not-run-as-requester-or-parameterized?-fn
+           [token]
+           (when-let
+             [{:strs [run-as-user] :as service-description-template}
+              (sd/token->service-parameter-template kv-store token :error-on-missing false)]
+             (let [supported-token?
+                   (and run-as-user ; run-as-user defaults to '*', so confirm it is defined
+                        (not (sd/run-as-requester? service-description-template))
+                        (not (sd/requires-parameters? service-description-template)))]
+               (when-not supported-token?
+                 (cid/cinfo correlation-id "Skipping token because it is either run-as-requester or parameterized."
+                            {:token token}))
+               supported-token?))))))
 
 (defn start-new-services-maintainer
   "This daemon ensures that tokens receiving requests will have the latest service corresponding to it running. Whenever there
@@ -1266,83 +1346,11 @@
                                                         (print-identity prefix obj))
                                   fallback-state @fallback-state-atom
                                   new-service-id->last-request-time
-                                  (->> (service-id->metrics-fn)
-                                       (pc/map-vals
-                                         (fn [{:strs [last-request-time]}]
-                                           last-request-time))
-                                       (utils/filterm
-                                         (fn [[_ last-request-time]]
-                                           (some? last-request-time))))
-                                  stale-service-ids-with-new-last-request-times
-                                  (->> (seq new-service-id->last-request-time)
-                                       (filter
-                                         (fn service-id-new-last-request-time? [[service-id new-last-request-time]]
-                                           (let [old-last-request-time (get service-id->last-request-time service-id)]
-                                             (or (nil? old-last-request-time)
-                                                 (t/after? new-last-request-time old-last-request-time)))))
-                                       (print-identity "1. service-ids-with-new-last-request-time")
-                                       (filter
-                                         (fn service-id-new-last-request-time-after-stale? [[service-id new-last-request-time]]
-                                           (let [{:keys [stale? update-time]} (service-id->stale-info service-id)]
-                                             (and stale?
-                                                  ; assume that last-request-time is after the update time so that we don't
-                                                  ; miss any possible tokens that we should start a new service for
-                                                  (or (nil? update-time)
-                                                      (t/after? new-last-request-time update-time))))))
-                                       (filter
-                                         ; Ignore the services that map to many source tokens (legacy mapping) and
-                                         ; log them. Services with many:many token mapping have an edge case because
-                                         ; the 'service-id->stale-info' function does not consider it stale unless
-                                         ; ALL references to tokens are stale. This means that a service could be stale
-                                         ; for one token and not stale for another token, resulting in no new service
-                                         ; starting for the former token.
-                                         (fn service-id-maps-to-one-token? [[service-id _]]
-                                           (let [source-tokens
-                                                 (->> service-id
-                                                      service-id->source-tokens-entries-fn
-                                                      vec
-                                                      flatten
-                                                      (map #(get % "token"))
-                                                      ; There may be 1 source token but many (token, version) pairs, so
-                                                      ; make a set with just the token value.
-                                                      set)
-                                                 many-source-tokens? (> 1 (count source-tokens))]
-                                             (when many-source-tokens?
-                                               (cid/cinfo correlation-id "Skipping service-id because it maps to many source tokens."
-                                                         {:service-id service-id
-                                                          :source-tokens source-tokens}))
-                                             (= 1 (count source-tokens)))))
-                                       (map first))
+                                  (create-service-id->last-request-time-from-metrics service-id->metrics-fn)
                                   tokens-with-new-last-request-times
-                                  (->> stale-service-ids-with-new-last-request-times
-                                       (map
-                                         (fn get-single-source-token-from-service-id [service-id]
-                                           (-> service-id
-                                             service-id->source-tokens-entries-fn
-                                             ; This is a doubly nested set and list. For example: #{[{"token" "foo", "version" "E-bar"}]}}
-                                             ; Because we previously filtered out services that did not have exactly 1 source token,
-                                             ; we can just pick the first one.
-                                             first
-                                             first
-                                             (get "token"))))
-                                       set
-                                       (filter
-                                         ; TODO: support run-as-requester and parameterized services by keeping track of
-                                         ; original service-id and getting the run-as-user and parameters from the description
-                                         (fn token-is-not-run-as-requester-or-parameterized?-fn
-                                           [token]
-                                           (when-let
-                                             [{:strs [run-as-user] :as service-description-template}
-                                              (sd/token->service-parameter-template kv-store token :error-on-missing false)]
-                                             (let [supported-token?
-                                                   (and run-as-user ; run-as-user defaults to '*', so confirm it is defined
-                                                        (not (sd/run-as-requester? service-description-template))
-                                                        (not (sd/requires-parameters? service-description-template)))]
-                                               (when-not supported-token?
-                                                 (cid/cinfo correlation-id "Skipping token because it is either run-as-requester or parameterized."
-                                                           {:token token}))
-                                               supported-token?))))
-                                       set)]
+                                  (get-tokens-to-start-services-for
+                                    correlation-id service-id->stale-info service-id->source-tokens-entries-fn kv-store
+                                    new-service-id->last-request-time service-id->last-request-time)]
                               (doseq [token tokens-with-new-last-request-times]
                                 (let [{:strs [run-as-user]}
                                       (sd/token->service-parameter-template kv-store token :error-on-missing false)
@@ -1360,7 +1368,6 @@
                             (catch Exception e
                               (log/error e "error while processing services in start-new-services-maintainer.")
                               current-state)))
-
                         query-chan
                         (let [{:keys [response-chan include-flags]} msg]
                           (async/put! response-chan (query-state-fn include-flags))
