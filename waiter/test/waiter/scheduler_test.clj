@@ -1442,42 +1442,42 @@
 
         (close-maintainer!! exit-chan go-chan)))
 
-    ;(testing "many rounds with no last-request-time changes, the maintainer will not attempt to start new service for tokens"
-    ;  (let [now (t/now)
-    ;        rounds (-> (repeat 10 {:clock now
-    ;                               :service-id->metrics {"s1" {"last-request-time" now}}
-    ;                               :service-id->source-tokens {"s1" [{"token" "t1"}]}
-    ;                               :token-run-as-user->descriptor
-    ;                               {{:token "t1" :run-as-user "u1"} {:latest-descriptor {:service-id "s1-1"}}}})
-    ;                 vec)
-    ;        {:keys [exit-chan fallback-state-atom go-chan kv-store start-new-service-calls-atom trigger-maintainer-refresh!! query-chan]}
-    ;        (start-new-services-maintainer-with-rounds rounds)]
-    ;    (store-service-desc-for-token-fn kv-store "t1" {"cpus" 1 "run-as-user" "u1"} {"owner" "u1"})
-    ;    (reset! fallback-state-atom {:available-service-ids #{"s1"}})
-    ;    (trigger-maintainer-refresh!!)
-    ;
-    ;    ; assert that the maintainer attempts to start the service on the initial round
-    ;    (let [res-ch (async/promise-chan)]
-    ;      (async/>!! query-chan {:response-chan res-ch :include-flags []})
-    ;      (let [{:keys [last-update-time service-id->last-request-time]} (async/<!! res-ch)]
-    ;        (is (= now last-update-time))
-    ;        (is (= {"s1" now}
-    ;               service-id->last-request-time))))
-    ;    (is (= {0 [{:service-id "s1-1"}]}
-    ;           @start-new-service-calls-atom))
-    ;
-    ;    ; there should be no new attempts to start a new service as there are no new last-request-times
-    ;    (dotimes [count 9]
-    ;      (let [round (inc count)]
-    ;        (trigger-maintainer-refresh!!)
-    ;        (let [res-ch (async/promise-chan)]
-    ;          (async/>!! query-chan {:response-chan res-ch :include-flags []})
-    ;          (let [{:keys [last-update-time service-id->last-request-time]} (async/<!! res-ch)]
-    ;            (is (= now last-update-time))
-    ;            (is (= {"s1" now}
-    ;                   service-id->last-request-time))))
-    ;        (is (nil? (get @start-new-service-calls-atom round))
-    ;            (str "service calls expected to be empty: " @start-new-service-calls-atom))))
-    ;
-    ;    (close-maintainer!! exit-chan go-chan)))
-    ))
+    (testing "many rounds with no last-request-time changes, the maintainer will not attempt to start new service for tokens"
+      (let [now (t/now)
+            rounds (-> (repeat 10 {:clock now
+                                   :service-id->metrics {"s1" {"last-request-time" now}}
+                                   :service-id->source-tokens {"s1" [{"token" "t1"}]}
+                                   :service-id->stale-info {"s1" {:stale? true :update-time now}}
+                                   :token-run-as-user->descriptor
+                                   {{:token "t1" :run-as-user "u1"} {:latest-descriptor {:service-id "s1-1"}}}})
+                     vec)
+            {:keys [exit-chan fallback-state-atom go-chan kv-store start-new-service-calls-atom trigger-maintainer-refresh!! query-chan]}
+            (start-new-services-maintainer-with-rounds rounds)]
+        (store-service-desc-for-token-fn kv-store "t1" {"cpus" 1 "run-as-user" "u1"} {"owner" "u1"})
+        (reset! fallback-state-atom {:available-service-ids #{"s1"}})
+        (trigger-maintainer-refresh!!)
+
+        ; assert that the maintainer attempts to start the service on the initial round
+        (let [res-ch (async/promise-chan)]
+          (async/>!! query-chan {:response-chan res-ch :include-flags []})
+          (let [{:keys [last-update-time service-id->last-request-time]} (async/<!! res-ch)]
+            (is (= now last-update-time))
+            (is (= {"s1" now}
+                   service-id->last-request-time))))
+        (is (= {0 [{:service-id "s1-1"}]}
+               @start-new-service-calls-atom))
+
+        ; there should be no new attempts to start a new service as there are no new last-request-times
+        (dotimes [count 9]
+          (let [round (inc count)]
+            (trigger-maintainer-refresh!!)
+            (let [res-ch (async/promise-chan)]
+              (async/>!! query-chan {:response-chan res-ch :include-flags []})
+              (let [{:keys [last-update-time service-id->last-request-time]} (async/<!! res-ch)]
+                (is (= now last-update-time))
+                (is (= {"s1" now}
+                       service-id->last-request-time))))
+            (is (nil? (get @start-new-service-calls-atom round))
+                (str "service calls expected to be empty: " @start-new-service-calls-atom))))
+
+        (close-maintainer!! exit-chan go-chan)))))
