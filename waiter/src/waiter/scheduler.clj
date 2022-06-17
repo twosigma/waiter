@@ -1324,7 +1324,7 @@
 
 (defn- start-latest-services-for-tokens
   "Given a list of tokens, try to start the latest service for the token. If an individual token errors, we skip that token
-  and continue to the next."
+  and continue to the next. Returns the error results."
   [correlation-id kv-store fallback-state start-new-service-fn retrieve-descriptor-fn tokens]
   (let [error-results (->> tokens
                            (map
@@ -1354,7 +1354,8 @@
                            doall)]
     (when (> (count error-results) 0)
       (cid/cerror correlation-id "Failed to start latest service for tokens" {:tokens (map error-results :token)
-                                                                              :sample-10-errors (take 10 error-results)}))))
+                                                                              :sample-10-errors (take 10 error-results)}))
+    error-results))
 
 (defn start-new-services-maintainer
   "This daemon ensures that tokens receiving requests will have the latest service corresponding to it running. Whenever there
