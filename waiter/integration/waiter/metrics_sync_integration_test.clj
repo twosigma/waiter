@@ -290,10 +290,6 @@
                       routers cookies metrics-payload-instance-1-updated expected-metrics-instance-1-updated
                       expected-nil-keys-list :fail-eagerly-on-nil-keys false)))))))))))
 
-(defn- get-start-new-service-maintainer-state
-  [waiter-url cookies]
-  (make-request waiter-url "/state/start-new-services-maintainer" :cookies cookies))
-
 (deftest ^:parallel ^:integration-slow test-external-metrics-updates-trigger-new-service
   (testing-using-waiter-url
     (let [cluster-name (retrieve-cluster-name waiter-url)

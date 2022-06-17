@@ -1390,3 +1390,8 @@
                (get-in [:token-config :exclusive-promotion-start-time] "2050-06-01T00:00:00.000Z")
                (du/str-to-date)
                (t/before? (t/now)))))))
+
+(defn get-start-new-service-maintainer-state
+  "Makes a request to the start-new-services-maintainer state endpoint."
+  [waiter-url cookies]
+  (make-request waiter-url "/state/start-new-services-maintainer" :cookies cookies))
