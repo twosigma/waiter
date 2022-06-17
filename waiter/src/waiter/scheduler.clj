@@ -1240,10 +1240,11 @@
          (fn service-id-new-last-request-time-after-stale? [[service-id new-last-request-time]]
            (let [{:keys [stale? update-time]} (service-id->stale-info service-id)]
              (and stale?
-                  ; assume that last-request-time is after the update time so that we don't
-                  ; miss any possible tokens that we should start a new service for
+                  ; assume that update-time is before last-request-time when update-time is nil to avoid missing
+                  ; an event to start new service.
                   (or (nil? update-time)
-                      (t/after? new-last-request-time update-time))))))
+                      (t/before? update-time new-last-request-time)
+                      (t/equal? update-time new-last-request-time))))))
        (map
          (fn get-source-tokens-from-service-id
            [[service-id _]]
@@ -1286,7 +1287,7 @@
              [{:strs [run-as-user] :as service-description-template}
               (sd/token->service-parameter-template kv-store token :error-on-missing false)]
              (let [supported-token?
-                   (and run-as-user ; run-as-user defaults to '*', so confirm it is defined
+                   (and run-as-user                         ; run-as-user defaults to '*', so confirm it is defined
                         (not (sd/run-as-requester? service-description-template))
                         (not (sd/requires-parameters? service-description-template)))]
                (when-not supported-token?
@@ -1338,13 +1339,7 @@
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "start-new-services-maintainer" "process-services")
                           (try
-                            (let [print-identity (fn [prefix obj]
-                                                   (println prefix)
-                                                   (clojure.pprint/pprint {:obj obj})
-                                                   obj)
-                                  print-post-identity (fn [obj prefix]
-                                                        (print-identity prefix obj))
-                                  fallback-state @fallback-state-atom
+                            (let [fallback-state @fallback-state-atom
                                   new-service-id->last-request-time
                                   (create-service-id->last-request-time-from-metrics service-id->metrics-fn)
                                   tokens-with-new-last-request-times
