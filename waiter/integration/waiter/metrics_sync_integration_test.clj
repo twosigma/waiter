@@ -365,12 +365,10 @@
               (let [
                     ; last-request-time is always later than current last-request-time
                     last-request-time (du/date-to-str (t/from-now (t/days 2)))
-                    metrics-payload
-                    {"cluster" cluster-name
-                     "service-metrics"
-                     {service-id {instance-id {"updated-at" last-request-time
-                                               "metrics" {"last-request-time" last-request-time
-                                                          "active-request-count" 1}}}}}
+                    metrics-payload {"cluster" cluster-name
+                                     "service-metrics" {service-id {instance-id {"updated-at" last-request-time
+                                                                                 "metrics" {"last-request-time" last-request-time
+                                                                                            "active-request-count" 1}}}}}
                     expected-metrics (get metrics-payload "service-metrics")]
                 (send-metrics-and-assert-expected-metrics routers cookies metrics-payload expected-metrics [])
 
