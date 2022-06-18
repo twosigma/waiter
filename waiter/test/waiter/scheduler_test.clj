@@ -26,6 +26,7 @@
             [slingshot.slingshot :as ss]
             [waiter.config :as config]
             [waiter.core :as core]
+            [waiter.correlation-id :as cid]
             [waiter.curator :as curator]
             [waiter.headers :as headers]
             [waiter.kv :as kv]
@@ -42,6 +43,15 @@
            (org.eclipse.jetty.client HttpClient)
            (org.eclipse.jetty.http HttpField)
            (org.joda.time DateTime)))
+
+(def ^:const history-length 5)
+(def ^:const limit-per-owner 10)
+
+(let [lock (Object.)]
+  (defn- synchronize-fn
+    [_ f]
+    (locking lock
+      (f))))
 
 (deftest test-record-Service
   (let [test-instance-1 (->Service "service1-id" 100 100 {:running 0, :healthy 0, :unhealthy 0, :staged 0})
@@ -1106,8 +1116,6 @@
     (is (= #{instance-3 instance-4} (set (get @transient-store service-id))))))
 
 (defmacro assert-service->last-request-time-from-metrics
-  "Assert the expected 'service-id->last-request-time' map return value of the
-  'create-service-id->last-request-time-from-metrics' function."
   [service-id->metrics expected-service-id->last-request-time]
   `(let [service-id->metrics# ~service-id->metrics
          expected-service-id->last-request-time# ~expected-service-id->last-request-time]
@@ -1137,6 +1145,93 @@
              "this-is-a-number" 5
              "nested" {"foo" "bar"}}}
       {"s2" 5})))
+
+(deftest test-make-service-id-new-last-request-time?-fn
+  (let [now (t/now)
+        older-than-now (t/minus now (t/millis 1))
+        newer-than-now (t/plus now (t/millis 1))
+        service-id->last-request-time {"s1" now
+                                       "s2" older-than-now}
+        service-id-new-last-request-time?-fn (make-service-id-new-last-request-time?-fn service-id->last-request-time)]
+    (testing "created function returns true if last-request-time is after previous last-request-time"
+      (is (service-id-new-last-request-time?-fn ["s1" newer-than-now])))
+    (testing "created function returns true if previous last-request-time is nil"
+      (is (service-id-new-last-request-time?-fn ["s3" now])))
+    (testing "created function returns false if last-request-time is before as the previous last-request-time"
+      (is (not (service-id-new-last-request-time?-fn ["s1" older-than-now]))))
+    (testing "created function returns false if last-request-time is the same as the previous last-request-time"
+      (is (not (service-id-new-last-request-time?-fn ["s2" older-than-now]))))))
+
+(defmacro assert-filter-factory-fn
+  "Given a factory-fn and factor-args, create the filter function. Then test the filter function with input entry against
+  expected result."
+  [factory-fn factory-args entry expected]
+  `(let [factory-fn# ~factory-fn
+         factory-args# ~factory-args
+         entry# ~entry
+         expected# ~expected
+         fn# (apply factory-fn# factory-args#)
+         actual# (fn# entry#)]
+     (is (= expected# actual#) (str "expected: " expected# " actual: " actual#))))
+
+(deftest test-make-service-id-received-request-after-becoming-stale?-fn
+  (let [now (t/now)
+        older-than-now (t/minus now (t/millis 1))
+        newer-than-now (t/plus now (t/millis 1))]
+    (testing "created function that returns true 'update-time' is nil for service's stale info"
+      (assert-filter-factory-fn make-service-id-received-request-after-becoming-stale?-fn [(constantly {:stale? true})]
+                                ["s1" older-than-now] true))
+    (testing "created function that returns true if 'last-request-time' is after the 'update-time' for service's stale info"
+      (assert-filter-factory-fn make-service-id-received-request-after-becoming-stale?-fn [(constantly {:stale? true :update-time now})]
+                                ["s1" newer-than-now] true))
+    (testing "created function that returns true if 'last-request-time' is equal to the 'update-time' for service's stale info"
+      (assert-filter-factory-fn make-service-id-received-request-after-becoming-stale?-fn [(constantly {:stale? true :update-time now})]
+                                ["s1" now] true))
+    (testing "created function that returns false when service is not stale"
+      (assert-filter-factory-fn make-service-id-received-request-after-becoming-stale?-fn [(constantly {:stale? false :update-time now})]
+                                ["s1" newer-than-now] false))
+    (testing "created function that returns false when service 'update-time' is after the 'last-request-time'"
+      (assert-filter-factory-fn make-service-id-received-request-after-becoming-stale?-fn [(constantly {:stale? false :update-time now})]
+                                ["s1" older-than-now] false))))
+
+(deftest test-make-one-source-token?-fn
+  (let [correlation-id (cid/get-correlation-id)]
+    (testing "created function that returns true if exactly 1 source token"
+      (assert-filter-factory-fn make-one-source-token?-fn [correlation-id] {:service-id "s1" :source-tokens ["t1"]} true))
+    (testing "created function that returns false more than 1 source token"
+      (assert-filter-factory-fn make-one-source-token?-fn [correlation-id] {:service-id "s1" :source-tokens ["t1" "t2" "t3"]} false))
+    (testing "created function that returns false with 0 source tokens"
+      (assert-filter-factory-fn make-one-source-token?-fn [correlation-id] {:service-id "s1" :source-tokens []} false))))
+
+(defn- store-service-desc-for-token-fn
+  "Helper function for tests to store a service-description for token in provided 'kv-store'"
+  [kv-store token service-desc token-metadata]
+  (tk/store-service-description-for-token
+    synchronize-fn kv-store history-length limit-per-owner token service-desc token-metadata))
+
+(deftest test-make-token-is-not-run-as-requester-or-parameterized?-fn
+  (let [correlation-id (cid/get-correlation-id)
+        kv-store (kv/->LocalKeyValueStore (atom {}))]
+    (store-service-desc-for-token-fn kv-store "t1" {"cpus" 1 "run-as-user" "u1"} {"owner" "u1"})
+    (store-service-desc-for-token-fn kv-store "t2" {"cpus" 1 "run-as-user" "*"} {"owner" "u1"})
+    (store-service-desc-for-token-fn kv-store "t3" {"cpus" 1} {"owner" "u1"})
+    (store-service-desc-for-token-fn
+      kv-store
+      "t4"
+      {"allowed-params" #{"PARAM_FOO"}
+       "cpus" 1
+       "run-as-user" "u1"}
+      {"owner" "u1"})
+    (testing "created a function that returns true if token is not run-as-requester or parameterized"
+      (assert-filter-factory-fn make-token-is-not-run-as-requester-or-parameterized?-fn [correlation-id kv-store] "t1" true))
+    (testing "created a function that returns false if token is run-as-requester"
+      (assert-filter-factory-fn make-token-is-not-run-as-requester-or-parameterized?-fn [correlation-id kv-store] "t2" false))
+    (testing "created a function that returns false if token is run-as-requester by default"
+      (assert-filter-factory-fn make-token-is-not-run-as-requester-or-parameterized?-fn [correlation-id kv-store] "t3" false))
+    (testing "created a function that returns false if token is parameterized"
+      (assert-filter-factory-fn make-token-is-not-run-as-requester-or-parameterized?-fn [correlation-id kv-store] "t4" false))
+    (testing "created a function that returns false if token does not have a service-description-template"
+      (assert-filter-factory-fn make-token-is-not-run-as-requester-or-parameterized?-fn [correlation-id kv-store] "t5" false))))
 
 (defn- start-new-services-maintainer-with-rounds
   "Starts a 'start-new-services-maintainer' using stubs provided at each round in the list 'rounds'. Calls to dependent
@@ -1177,20 +1272,7 @@
                                       (async/>!! trigger-ch {})))))
 
 (deftest test-start-new-services-maintainer
-  (let [lock (Object.)
-        synchronize-fn
-        (fn synchronize-fn
-          [_ f]
-          (locking lock
-            (f)))
-        history-length 5
-        limit-per-owner 10
-        store-service-desc-for-token-fn
-        (fn store-service-desc-for-token-fn
-          [kv-store token service-desc token-metadata]
-          (tk/store-service-description-for-token
-            synchronize-fn kv-store history-length limit-per-owner token service-desc token-metadata))
-        close-maintainer!!
+  (let [close-maintainer!!
         (fn close-maintainer!!
           [exit-chan go-chan]
           (async/>!! exit-chan :exit)

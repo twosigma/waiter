@@ -1225,7 +1225,7 @@
          (fn [[_ last-request-time]]
            (some? last-request-time)))))
 
-(defn- make-service-id-new-last-request-time?-fn
+(defn make-service-id-new-last-request-time?-fn
   "Returns a function that returns true if the proposed 'last-request-time' is after the last request time of value in the
   provided 'service-id->last-request-time' for the 'service-id'. If the last request time in 'service-id->last-request-time'
   map is nil, then the function will return true."
@@ -1236,7 +1236,7 @@
       (or (nil? old-last-request-time)
           (t/after? new-last-request-time old-last-request-time)))))
 
-(defn- make-service-id-received-request-after-becoming-stale?-fn
+(defn make-service-id-received-request-after-becoming-stale?-fn
   "Returns a function that returns true if the provided 'last-request-time' associated with the 'service-id' is after
   that service became stale based on its entry in the 'service-id->stale-info' map returned by the provided 'get-service-id->stale-info'.
   This is used to determine whether a service-id is stale? and received requests after becoming stale."
@@ -1251,10 +1251,10 @@
                (t/before? update-time new-last-request-time)
                (t/equal? update-time new-last-request-time))))))
 
-(defn- make-one-source-token?-fn
+(defn make-one-source-token?-fn
   "Returns a function that returns true if there is only 1 unique source token."
   [correlation-id]
-  (fn one-srouce-token?
+  (fn one-source-token?
     [{:keys [service-id source-tokens]}]
     (let [many-source-tokens? (> 1 (count source-tokens))]
       (when many-source-tokens?
@@ -1263,7 +1263,7 @@
                     :source-tokens source-tokens}))
       (= 1 (count source-tokens)))))
 
-(defn- make-token-is-not-run-as-requester-or-parameterized?-fn
+(defn make-token-is-not-run-as-requester-or-parameterized?-fn
   "Returns a function that returns true if the token is not run-as-requester or parameterized."
   [correlation-id kv-store]
   (fn token-is-not-run-as-requester-or-parameterized?
@@ -1274,7 +1274,7 @@
       (let [supported-token?
             (and
               ; run-as-user defaults to '*', so confirm it is defined
-              run-as-user
+              (some? run-as-user)
               (not (sd/run-as-requester? service-description-template))
               (not (sd/requires-parameters? service-description-template)))]
         (when-not supported-token?
