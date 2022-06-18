@@ -1105,6 +1105,39 @@
     (add-to-store-and-track-failed-instance! transient-store max-instances-to-keep service-id instance-4)
     (is (= #{instance-3 instance-4} (set (get @transient-store service-id))))))
 
+(defmacro assert-service->last-request-time-from-metrics
+  "Assert the expected 'service-id->last-request-time' map return value of the
+  'create-service-id->last-request-time-from-metrics' function."
+  [service-id->metrics expected-service-id->last-request-time]
+  `(let [service-id->metrics# ~service-id->metrics
+         expected-service-id->last-request-time# ~expected-service-id->last-request-time]
+     (is (= expected-service-id->last-request-time#
+            (create-service-id->last-request-time-from-metrics (constantly service-id->metrics#))))))
+
+(deftest test-create-service-id->last-request-time-from-metrics
+  (testing "creates map of service-id->last-request-time"
+    (assert-service->last-request-time-from-metrics
+      {"s1" {"boolean-too" true
+             "foo" "bar"
+             "last-request-time" "1"
+             "temp" "temp"
+             "this-is-a-number" 5}}
+      {"s1" "1"}))
+  (testing "filters out missing last-request-time"
+    (assert-service->last-request-time-from-metrics
+      {"s1" {"boolean-too" true
+             "foo" "bar"
+             "temp" "temp"
+             "this-is-a-number" 5
+             "nested" {"foo" "bar"}}
+       "s2" {"boolean-too" true
+             "foo" "bar"
+             "last-request-time" 5
+             "temp" "temp"
+             "this-is-a-number" 5
+             "nested" {"foo" "bar"}}}
+      {"s2" 5})))
+
 (defn- start-new-services-maintainer-with-rounds
   "Starts a 'start-new-services-maintainer' using stubs provided at each round in the list 'rounds'. Calls to dependent
   function are stubbed to return what is provided in the 'rounds' fixture."

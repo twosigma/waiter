@@ -1213,7 +1213,7 @@
     {:exit-chan exit-chan
      :query-chan query-chan}))
 
-(defn- create-service-id->last-request-time-from-metrics
+(defn create-service-id->last-request-time-from-metrics
   "Using the 'service-id->metrics-fn' which provides a map of service-id->metrics, this function creates a new map
   service-id->last-request-time."
   [service-id->metrics-fn]
