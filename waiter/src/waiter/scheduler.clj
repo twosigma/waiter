@@ -1322,7 +1322,7 @@
          ; the run-as-user and parameters from the description. These tokens are filtered out for now.
          (make-token-is-not-run-as-requester-or-parameterized?-fn correlation-id kv-store))))
 
-(defn- start-latest-services-for-tokens
+(defn start-latest-services-for-tokens
   "Given a list of tokens, try to start the latest service for the token. If an individual token errors, we skip that token
   and continue to the next. Returns the error results."
   [correlation-id kv-store fallback-state start-new-service-fn retrieve-descriptor-fn tokens]
@@ -1353,7 +1353,7 @@
                                (not success)))
                            doall)]
     (when (> (count error-results) 0)
-      (cid/cerror correlation-id "Failed to start latest service for tokens" {:tokens (map error-results :token)
+      (cid/cerror correlation-id "Failed to start latest service for tokens" {:tokens (map :token error-results)
                                                                               :sample-10-errors (take 10 error-results)}))
     error-results))
 
@@ -1401,13 +1401,12 @@
                         (timers/start-stop-time!
                           (metrics/waiter-timer "core" "start-new-services-maintainer" "process-services")
                           (try
-                            (let [fallback-state @fallback-state-atom
-                                  new-service-id->last-request-time (create-service-id->last-request-time-from-metrics service-id->metrics-fn)
+                            (let [new-service-id->last-request-time (create-service-id->last-request-time-from-metrics service-id->metrics-fn)
                                   tokens (get-tokens-to-start-services-for
                                            correlation-id service-id->stale-info service-id->source-tokens-entries-fn kv-store
                                            service-id->last-request-time new-service-id->last-request-time)]
                               (start-latest-services-for-tokens
-                                correlation-id kv-store fallback-state start-new-service-fn retrieve-descriptor-fn tokens)
+                                correlation-id kv-store @fallback-state-atom start-new-service-fn retrieve-descriptor-fn tokens)
                               (counters/inc! (metrics/waiter-counter "core" "start-new-services-maintainer" "refresh-sync"))
                               {:service-id->last-request-time new-service-id->last-request-time})
                             (catch Exception e

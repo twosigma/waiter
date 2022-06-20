@@ -1233,6 +1233,45 @@
     (testing "created a function that returns false if token does not have a service-description-template"
       (assert-filter-factory-fn make-token-is-not-run-as-requester-or-parameterized?-fn [correlation-id kv-store] "t5" false))))
 
+(defmacro assert-start-latest-services-for-tokens
+  [correlation-id kv-store fallback-state tokens expected-errors expected-descriptors-started]
+  `(let [tokens# ~tokens
+         expected-errors# ~expected-errors
+         retrieve-descriptor-fn# #(let [run-as-user# %1 token# %2]
+                                    (when (-> expected-errors# set (contains? token#))
+                                      (throw (ex-info "Force error for token" {:token token#})))
+                                    {:latest-descriptor {:run-as-user run-as-user#
+                                                         :service-id (str "s." token#)
+                                                         :token token#}})
+         actual-descriptors-started-atom# (atom [])
+         start-new-service-fn# #(swap! actual-descriptors-started-atom# conj (get % :token))
+         actual-errors# (start-latest-services-for-tokens
+                          ~correlation-id ~kv-store ~fallback-state start-new-service-fn# retrieve-descriptor-fn# tokens#)]
+     (is (= expected-errors# (map :token actual-errors#)))
+     (is (= ~expected-descriptors-started @actual-descriptors-started-atom#))))
+
+(deftest test-start-latest-services-for-tokens
+  (let [correlation-id (cid/get-correlation-id)
+        kv-store (kv/->LocalKeyValueStore (atom {}))]
+    (store-service-desc-for-token-fn kv-store "t1" {"run-as-user" "u1"} {"owner" "u1"})
+    (store-service-desc-for-token-fn kv-store "t2" {"run-as-user" "u2"} {"owner" "u1"})
+    (store-service-desc-for-token-fn kv-store "t3" {"run-as-user" "u3"} {"owner" "u1"})
+    (testing "attempts to start services for tokens that do not already resolve to a service-id in the fallback-state"
+      (let [fallback-state {:available-service-ids #{"s.t3"}}
+            tokens ["t1" "t2" "t3"]
+            expected-errors []
+            expected-descriptors-started ["t1" "t2"]]
+        (assert-start-latest-services-for-tokens
+          correlation-id kv-store fallback-state tokens expected-errors expected-descriptors-started)))
+
+    (testing "attempts to start services for tokens that do not already resolve to a service-id in the fallback-state"
+      (let [fallback-state {:available-service-ids #{"s.t3"}}
+            tokens ["t1" "t2" "t3"]
+            expected-errors ["t2" "t3"]
+            expected-descriptors-started ["t1"]]
+        (assert-start-latest-services-for-tokens
+          correlation-id kv-store fallback-state tokens expected-errors expected-descriptors-started)))))
+
 (defn- start-new-services-maintainer-with-rounds
   "Starts a 'start-new-services-maintainer' using stubs provided at each round in the list 'rounds'. Calls to dependent
   function are stubbed to return what is provided in the 'rounds' fixture."
