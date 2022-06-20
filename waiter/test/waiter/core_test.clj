@@ -1462,3 +1462,44 @@
   (is (= "WS" (request->protocol {:scheme :ws})))
   (is (= "WS" (request->protocol {:headers {} :scheme :ws})))
   (is (= "WS/13" (request->protocol {:headers {"sec-websocket-version" "13"} :scheme :ws}))))
+
+(deftest test-attach-via-header-middleware
+  (let [standard-handler (fn [{:keys [response-headers] :as request}]
+                           {:headers response-headers
+                            :request request})
+        server-name "waiter/v123456"
+        proto-version "HTTP/1.0"
+        handler (attach-via-header-middleware standard-handler server-name)
+        expected-via-header (str proto-version " " server-name)]
+
+    (testing "waiter api does not respond with via headers"
+      (let [request {:headers {"x-forwarded-proto-version" proto-version}
+                     :servlet-request (Object.)
+                     :waiter-api-call? true}
+            response (handler request)]
+        (is (nil? (get-in response [:request :headers "via"])))
+        (is (nil? (get-in response [:headers "via"])))))
+
+    (testing "missing protocol is excluded in via header"
+      (let [request {:waiter-api-call? false}
+            response (handler request)]
+        (is (= server-name (get-in response [:request :headers "via"])))
+        (is (= server-name (get-in response [:headers "via"])))))
+
+    (testing "version and name included in via headers"
+      (let [request {:headers {"x-forwarded-proto-version" proto-version}
+                     :servlet-request (Object.)
+                     :waiter-api-call? false}
+            response (handler request)]
+        (is (= expected-via-header (get-in response [:request :headers "via"])))
+        (is (= expected-via-header (get-in response [:headers "via"])))))
+
+    (testing "existing via headers respected"
+      (let [request {:headers {"via" "1.0 fred"
+                               "x-forwarded-proto-version" proto-version}
+                     :response-headers {"via" "1.1 vegur"}
+                     :servlet-request (Object.)
+                     :waiter-api-call? false}
+            response (handler request)]
+        (is (= (str "1.0 fred, " expected-via-header) (get-in response [:request :headers "via"])))
+        (is (= (str "1.1 vegur, " expected-via-header) (get-in response [:headers "via"])))))))

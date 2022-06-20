@@ -237,6 +237,14 @@
             (is (= "text/foo-bar" (get headers "content-type")) (str headers))
             (is (= body-content (str body)) (str body)))))
 
+      (testing "via headers"
+        (let [{:keys [body headers] :as response} (make-kitchen-request waiter-url request-headers :path "/request-info")
+              _ (assert-response-status response http-200-ok)
+              body-json (try-parse-json (str body))
+              expected-via-prefix "HTTP/1.1 waiter/"]
+          (is (str/starts-with? (str (get-in body-json ["headers" "via"])) expected-via-prefix) (str body))
+          (is (str/starts-with? (str (get headers "via")) expected-via-prefix) (str headers))))
+
       (testing "query-string with special characters"
         (log/info "Basic test for query-string with special characters")
         (let [bad-query-string "q=~`!@$%^&*()_-+={}[]|:;'<>,.?&foo=%12jhsdf"

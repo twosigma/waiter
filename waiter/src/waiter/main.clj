@@ -155,6 +155,7 @@
                                                         (core/wrap-debug generate-log-url-fn)
                                                         (core/attach-waiter-api-middleware waiter-request?-fn)
                                                         (core/attach-server-header-middleware server-name)
+                                                        (core/attach-via-header-middleware server-name)
                                                         rlog/wrap-log
                                                         core/correlation-id-middleware
                                                         (core/wrap-request-info router-id support-info)

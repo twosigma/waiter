@@ -294,6 +294,20 @@
           (fn wrap-request-protocols-into-response [response]
             (assoc response :internal-protocol internal-protocol)))))))
 
+(defn attach-via-header-middleware
+  "Attaches via header to the request/response for tracking message forwards for proxy requests.
+   https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Via"
+  [handler server-name]
+  (fn attach-via-header-middleware-fn [{:keys [waiter-api-call?] :as request}]
+    (let [proto-version (request->protocol request)
+          via-header-val (str/trim (str proto-version " " server-name))
+          add-via-header (fn add-via-header-fn [r]
+                           (rr/update-header r "via" (fn [v] (cond->> via-header-val (some? v) (str v ", ")))))]
+      (cond-> request
+        (not waiter-api-call?) (add-via-header)
+        true (handler)
+        (not waiter-api-call?) (ru/update-response add-via-header)))))
+
 (defn wrap-debug
   "Attaches debugging headers to requests when enabled.
    Logs any request trailers when they are provided."
