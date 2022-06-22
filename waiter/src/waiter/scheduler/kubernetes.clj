@@ -1334,10 +1334,9 @@
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
-           mem min-instances ports run-as-user termination-grace-period-secs]
-    :as service-description}
-   {:keys [container-init-commands default-container-image log-bucket-url image-aliases run-as-user-source]
-    :as context}]
+           mem min-instances ports run-as-user termination-grace-period-secs] :as service-description}
+   {:keys [container-init-commands default-container-image log-bucket-url image-aliases
+           pod-anti-affinity run-as-user-source] :as context}]
   (when-not (or image default-container-image)
     (throw (ex-info "Waiter configuration is missing a default image for Kubernetes pods" {})))
   (when (nil? run-as-user-source)
@@ -1479,6 +1478,20 @@
                                 :volumes [{:name "user-home"
                                            :emptyDir {}}]
                                 :terminationGracePeriodSeconds total-sigkill-delay-secs}}}}
+      ;; optional pod anti-affinity to avoid scheduling multiple replicas
+      ;; of the same waiter service on the same kubernetes node
+      ;; https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#inter-pod-affinity-and-anti-affinity
+      (some? pod-anti-affinity)
+      (assoc-in [:spec :template :spec :affinity :podAntiAffinity]
+                (let [affinity-type (case pod-anti-affinity
+                                      :preferred :preferredDuringSchedulingIgnoredDuringExecution
+                                      :required :requiredDuringSchedulingIgnoredDuringExecution
+                                      (throw (ex-info "misconfigured pod-anti-affinity" {:context context})))]
+                  {affinity-type [{:podAffinityTerm {:labelSelector {:matchExpressions [{:key "app"
+                                                                                         :operator "In"
+                                                                                         :values [k8s-name]}]}
+                                                     :topologyKey "kubernetes.io/hostname"}
+                                   :weight 50}]}))
       ;; enable liveness only if positive grace-period-secs is specified
       (pos? grace-period-secs)
       (update-in
