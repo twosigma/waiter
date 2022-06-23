@@ -2735,9 +2735,6 @@
       (is (= expected-pod-names (set @killed-pods))))))
 
 (deftest test-pod->ServiceInstance
-  ;; TODO SHAMS
-  ;; TODO Add test-cases and then remove comment
-  ;; TODO SHAMS
   (let [api-server-url "https://k8s-api.example/"
         service-id "test-app-1234"
         revision-timestamp-0 "2020-09-22T20:00:00.000Z"
@@ -2795,6 +2792,22 @@
         expired-instance-map (assoc instance-map :flags #{:expired})
         expired-unhealthy-instance-map (assoc expired-instance-map :healthy? false :status "Unhealthy")
         rs-revision-timestamp-path [:service-id->service service-id :k8s/replicaset-annotations :waiter/revision-timestamp]]
+
+    (testing "pod start time from main container status"
+      (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
+            container-start-time (t/minus (t/now) (t/seconds 30))
+            container-start-time-k8s-str (du/date-to-str container-start-time k8s-timestamp-format)
+            pod' (-> pod
+                     (assoc-in [:status :containerStatuses 0 :state] {:running {:startedAt container-start-time-k8s-str}}))
+            instance (pod->ServiceInstance dummy-scheduler pod')
+            expected-instance-map (assoc instance-map
+                                    :k8s/container-statuses [{:name waiter-primary-container-name
+                                                              :ready true
+                                                              :restart-count 9
+                                                              :state :running
+                                                              :type :app}]
+                                    :started-at (timestamp-str->datetime container-start-time-k8s-str))]
+        (is (= (scheduler/make-ServiceInstance expected-instance-map) instance))))
 
     (testing "pod init containers"
       (testing "succeeding"
