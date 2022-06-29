@@ -58,9 +58,7 @@
    (str-to-date-ignore-error date-str formatter-iso8601))
   (^DateTime [date-str formatter]
    (try
-     (f/parse
-       (f/with-zone formatter t/utc)
-       date-str)
+     (str-to-date date-str formatter)
      (catch Exception ex
        (log/error (str "unable to parse" date-str "with formatter" formatter) ex)))))
 
