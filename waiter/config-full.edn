@@ -447,7 +447,13 @@
                                                            :default-namespace "waiter"
                                                            ;; Map of image aliases. One of these aliases can be specified in the `image` field and the
                                                            ;; resolved image will be used.
-                                                           :image-aliases {"alias/sample-alias" "real/image"}}
+                                                           :image-aliases {"alias/sample-alias" "real/image"}
+                                                           ;; Optionally apply a pod anti-affinity strategy to prevent replicas of the same Waiter service
+                                                           ;; from being scheduled on the same Kubernetes node. This is helpful to avoid losing multiple
+                                                           ;; replicas when a node crashes or goes down for maintenance.
+                                                           ;; Valid values are :preferred, :required, or nil (default).
+                                                           ;; https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#inter-pod-affinity-and-anti-affinity
+                                                           :pod-anti-affinity :preferred}
 
                                  ;; The authorizer is used by the scheduler to verify that a user has the proper permissions
                                  ;; to create services on the underlying scheduler platform.
