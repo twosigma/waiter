@@ -55,7 +55,7 @@
 (defn str-to-date-ignore-error
   "Ignores errors when parsing date-str. If there is an error, it will log it and return nil."
   (^DateTime [date-str]
-   (str-to-date-safe date-str formatter-iso8601))
+   (str-to-date-ignore-error date-str formatter-iso8601))
   (^DateTime [date-str formatter]
    (try
      (f/parse
