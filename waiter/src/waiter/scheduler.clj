@@ -1258,7 +1258,7 @@
     [{:keys [service-id source-tokens]}]
     (let [many-source-tokens? (> 1 (count source-tokens))]
       (when many-source-tokens?
-        (cid/cinfo correlation-id "Skipping service-id because it maps to many source tokens."
+        (cid/cinfo correlation-id "skipping service-id because it maps to many source tokens."
                    {:service-id service-id
                     :source-tokens source-tokens}))
       (= 1 (count source-tokens)))))
