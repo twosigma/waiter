@@ -17,6 +17,7 @@
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data :as data]
+            [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [waiter.status-codes :refer :all]
@@ -122,19 +123,22 @@
                                               :method :post
                                               :cookies cookies
                                               :body (utils/clj->json metrics-payload)
-                                              :headers {:content-type "application/json"})
-        post-update-metrics-response (make-request first-router-url "/state/router-metrics"
-                                                   :cookies cookies
-                                                   :headers {:content-type "application/json"})]
+                                              :headers {:content-type "application/json"})]
     (assert-response-status initial-metrics-response http-200-ok)
     (assert-response-status update-metrics-response http-200-ok)
-    (assert-response-status post-update-metrics-response http-200-ok)
     (is (= {"no-op" false}
            (-> update-metrics-response :body
              try-parse-json)))
     ; expect last-update-time to be changed to later time in the post update metrics response
-    (is (t/before? (get-last-update-time-from-metrics-response first-router-id initial-metrics-response)
-                   (get-last-update-time-from-metrics-response first-router-id post-update-metrics-response))
+    (is (wait-for
+          (fn metrics-last-request-time-updated? []
+            (let [metrics-response (make-request first-router-url "/state/router-metrics"
+                                                 :cookies cookies
+                                                 :headers {:content-type "application/json"})]
+              (assert-response-status metrics-response http-200-ok)
+              (t/before? (get-last-update-time-from-metrics-response first-router-id initial-metrics-response)
+                         (get-last-update-time-from-metrics-response first-router-id metrics-response))))
+          :interval 1 :timeout 5)
         "Router metrics state did not show there was any update to the last-update-time, even though our POST /metrics/external
         request was successful.")
 
@@ -204,7 +208,7 @@
           (assert-response-status response http-200-ok)
           (is (= {"no-op" true} (try-parse-json (str body))))))
 
-      (let [; make sure raven does send external metrics for these services
+      (let [; make sure raven doesn't send external metrics for these services
             extra-headers {:content-type "application/json"
                            :x-waiter-env-raven_export_metrics "false"}
             extra-headers-1 (assoc extra-headers :x-waiter-name (rand-name))
@@ -285,6 +289,108 @@
                     (send-metrics-and-assert-expected-metrics
                       routers cookies metrics-payload-instance-1-updated expected-metrics-instance-1-updated
                       expected-nil-keys-list :fail-eagerly-on-nil-keys false)))))))))))
+
+(deftest ^:parallel ^:integration-slow test-external-metrics-updates-trigger-new-service
+  (testing-using-waiter-url
+    (let [cluster-name (retrieve-cluster-name waiter-url)
+          routers (routers waiter-url)
+          {:keys [cookies]} (make-request waiter-url "/waiter-auth")
+          token-name (create-token-name waiter-url ".")
+          post-token-req-body (assoc (kitchen-params)
+                                :token token-name
+                                :metadata {"waiter-token-expiration-date"
+                                           (du/date-to-str (t/from-now (t/days 2)) du/formatter-year-month-day)}
+                                :name (rand-name)
+                                ; we have to specify the run-as-user because the daemon does not support run-as-requester
+                                :run-as-user (retrieve-username))
+          post-token-res (post-token waiter-url post-token-req-body :cookies cookies)]
+      (assert-response-status post-token-res 200)
+      (testing "updating a token and sending new last-request-time for the token causes new service to start"
+        (try
+          (let [request-headers {"x-waiter-token" token-name}
+                {:keys [instance-id service-id] :as ping-res}
+                (make-request-with-debug-info request-headers #(make-request waiter-url "/waiter-ping" :headers %))]
+            (assert-response-status ping-res http-200-ok)
+            (with-service-cleanup
+              service-id
+              ; service-id and last-request-time should be tracked by the state maintainer
+              (is (wait-for
+                    (fn service-id-tracked-by-every-router?-fn
+                      []
+                      (every?
+                        (fn [[_ router-url]]
+                          (let [{:keys [body] :as res} (get-start-new-service-maintainer-state router-url cookies)]
+                            (assert-response-status res http-200-ok)
+                            (let [service-id-last-request-time
+                                  (some-> body
+                                          try-parse-json
+                                          (get-in ["state" "service-id->last-request-time" service-id])
+                                          du/str-to-date-safe)]
+                              (log/info "router-url start-new-services-maintainer entry for service-id:"
+                                        {:router-url router-url
+                                         :service-id service-id
+                                         :service-id-last-request-time service-id-last-request-time})
+                              (some? service-id-last-request-time))))
+                        routers))
+                    :interval 1
+                    :timeout 10)
+                  (str "Service-id was never reported in service-id->last-request-time for start-new-services-maintainer: " service-id))
+
+              ; make a dummy update to the token so that it is pointing to a new service-id
+              (let [update-token-body (assoc-in post-token-req-body [:metadata "foo"] (rand-name))
+                    update-token-res (post-token waiter-url update-token-body :cookies cookies)]
+                (assert-response-status update-token-res http-200-ok))
+
+              ; routers should never report token with multiple services because it should resolve to the same service-id.
+              ; no new services for the token should be started. 10 seconds should be sufficient in waiting to see if a
+              ; new service is started as the router maintainer runs on 5 second intervals
+              (is (not
+                    (wait-for
+                      (fn service-id-tracked-by-every-router?-fn
+                        []
+                        (every?
+                          (fn [[_ router-url]]
+                            (let [service-ids (get-services-for-token-and-assert router-url token-name cookies)]
+                              (log/info "router-url reported service-ids for token:"
+                                        {:service-ids (str/join ", " service-ids)
+                                         :router-url router-url})
+                              (not= [service-id] service-ids)))
+                          routers))
+                      :interval 1
+                      :timeout 10))
+                  (str "Waiter routers reported different service-ids for token than the expected: " service-id))
+
+              ; modify the last-request-time for the token externally, which should trigger starting of new service for
+              ; the token as it should resolve to a new service-id
+              (let [new-service-id (retrieve-service-id waiter-url {"x-waiter-token" token-name} :query-params {"latest" "true"})
+                    ; last-request-time is always later than current last-request-time
+                    last-request-time (du/date-to-str (t/from-now (t/days 2)))
+                    metrics-payload {"cluster" cluster-name
+                                     "service-metrics" {service-id {instance-id {"updated-at" last-request-time
+                                                                                 "metrics" {"last-request-time" last-request-time
+                                                                                            "active-request-count" 1}}}}}
+                    expected-metrics (get metrics-payload "service-metrics")]
+                (send-metrics-and-assert-expected-metrics routers cookies metrics-payload expected-metrics [])
+
+                ; new service is started and recognized by every router
+                (is (wait-for
+                      (fn new-service-started?-fn
+                        []
+                        (every?
+                          (fn [[_ router-url]]
+                            (let [service-ids (get-services-for-token-and-assert router-url token-name cookies)]
+                              (log/info "router-url reported service-ids for token while waiting for new service to start:"
+                                        {:expected-service-ids (str/join ", " [service-id new-service-id])
+                                         :service-ids (str/join ", " service-ids)
+                                         :router-url router-url})
+                              (= #{service-id new-service-id}
+                                 (set service-ids))))
+                          routers))
+                      :interval 5
+                      :timeout 30)
+                    (str "new service never started for token: " token-name)))))
+          (finally
+            (delete-token-and-assert waiter-url token-name)))))))
 
 (defn assert-num-queued-requests
   "Assert that all routers eventually report the correct number of queued requests for a 'service-id'"

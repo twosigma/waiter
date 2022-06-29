@@ -27,6 +27,7 @@
             [slingshot.slingshot :as ss]
             [waiter.config :as config]
             [waiter.correlation-id :as cid]
+            [waiter.descriptor :as descriptor]
             [waiter.headers :as headers]
             [waiter.metrics :as metrics]
             [waiter.request-log :as rlog]
@@ -666,46 +667,6 @@
                         service
                         (assoc instances :active-instances active-instances))))))))
 
-(defn start-new-services-daemon
-  "Listens on token-metric-chan-mult and determines whether to trigger start new services for a token. Only the leader
-  router starts new services. Tokens with new last-request-time pointing to a service descriptor that does not exist will
-  have the latest service started.
-
-  Returns a map with keys:
-  :process-token-event-ch is a channel where messages are pushed to it when a service was started for a token event."
-  [retrieve-latest-descriptor-fn service-exists? kv-store token-metric-chan-mult start-new-service-fn leader?-fn]
-  (cid/with-correlation-id
-    "start-new-services-goroutine"
-    (let [correlation-id (cid/get-correlation-id)
-          process-token-event-ch-buffer (async/sliding-buffer 1000)
-          process-events!-fn
-          (fn process-events! [events]
-            (filter
-              (fn latest-service-does-not-exist?
-                [{:keys [token]}]
-                (when (leader?-fn)
-                  (let [{:strs [run-as-user]}
-                        (sd/token->service-parameter-template kv-store token :error-on-missing false)
-                        {:keys [service-id] :as latest-descriptor}
-                        (retrieve-latest-descriptor-fn run-as-user token)
-                        service-does-not-exist? (not (service-exists? service-id))]
-                    (when service-does-not-exist?
-                      (cid/cinfo correlation-id "starting" {:service-id (get latest-descriptor :service-id)})
-                      (start-new-service-fn latest-descriptor))
-                    service-does-not-exist?)))
-              events))
-          process-token-event-ch
-          (async/chan
-            process-token-event-ch-buffer
-            (comp
-              (map process-events!-fn)
-              (filter seq))
-            (fn process-token-event-ch-ex-handler
-              [e]
-              (cid/cerror correlation-id e "unexpected error when processing new token metric")))]
-      (async/tap token-metric-chan-mult process-token-event-ch)
-      {:process-token-event-ch process-token-event-ch})))
-
 ;;
 ;; Support for tracking killed instance candidates
 ;;
@@ -1251,3 +1212,217 @@
           (log/error e "Error in launch-metrics-maintainer. Instance launch metrics will not be collected."))))
     {:exit-chan exit-chan
      :query-chan query-chan}))
+
+(defn create-service-id->last-request-time-from-metrics
+  "Using the 'service-id->metrics-fn' which provides a map of service-id->metrics, this function creates a new map
+  service-id->last-request-time."
+  [service-id->metrics-fn]
+  (->> (service-id->metrics-fn)
+       (pc/map-vals
+         (fn [{:strs [last-request-time]}]
+           last-request-time))
+       (utils/filterm
+         (fn [[_ last-request-time]]
+           (some? last-request-time)))))
+
+(defn make-service-id-new-last-request-time?-fn
+  "Returns a function that returns true if the proposed 'last-request-time' is after the last request time of value in the
+  provided 'service-id->last-request-time' for the 'service-id'. If the last request time in 'service-id->last-request-time'
+  map is nil, then the function will return true."
+  [service-id->last-request-time]
+  (fn service-id-new-last-request-time?
+    [[service-id new-last-request-time]]
+    (let [old-last-request-time (get service-id->last-request-time service-id)]
+      (or (nil? old-last-request-time)
+          (t/after? new-last-request-time old-last-request-time)))))
+
+(defn make-service-id-received-request-after-becoming-stale?-fn
+  "Returns a function that returns true if the provided 'last-request-time' associated with the 'service-id' is after
+  that service became stale based on its entry in the 'service-id->stale-info' map returned by the provided 'get-service-id->stale-info'.
+  This is used to determine whether a service-id is stale? and received requests after becoming stale."
+  [get-service-id->stale-info]
+  (fn service-id-received-request-after-becoming-stale?
+    [[service-id new-last-request-time]]
+    (let [{:keys [stale? update-time]} (get-service-id->stale-info service-id)]
+      (and stale?
+           ; assume that update-time is before last-request-time when update-time is nil to avoid missing
+           ; an event to start new service.
+           (or (nil? update-time)
+               (t/before? update-time new-last-request-time)
+               (t/equal? update-time new-last-request-time))))))
+
+(defn make-one-source-token?-fn
+  "Returns a function that returns true if there is only 1 unique source token."
+  [correlation-id]
+  (fn one-source-token?
+    [{:keys [service-id source-tokens]}]
+    (let [many-source-tokens? (> 1 (count source-tokens))]
+      (when many-source-tokens?
+        (cid/cinfo correlation-id "skipping service-id because it maps to many source tokens."
+                   {:service-id service-id
+                    :source-tokens source-tokens}))
+      (= 1 (count source-tokens)))))
+
+(defn make-token-is-not-run-as-requester-or-parameterized?-fn
+  "Returns a function that returns true if the token is not run-as-requester or parameterized."
+  [correlation-id kv-store]
+  (fn token-is-not-run-as-requester-or-parameterized?
+    [token]
+    (when-let
+      [{:strs [run-as-user] :as service-description-template}
+       (sd/token->service-parameter-template kv-store token :error-on-missing false)]
+      (let [supported-token?
+            (and
+              ; run-as-user defaults to '*', so confirm it is defined
+              (some? run-as-user)
+              (not (sd/run-as-requester? service-description-template))
+              (not (sd/requires-parameters? service-description-template)))]
+        (when-not supported-token?
+          (cid/cinfo correlation-id "skipping token because it is either run-as-requester or parameterized."
+                     {:token token}))
+        supported-token?))))
+
+(defn- get-tokens-to-start-services-for
+  "Get lazy sequence of tokens that need a service to be started for using the service-id->last-request-time maps to determine
+  which services are active."
+  [correlation-id service-id->stale-info service-id->source-tokens-entries-fn kv-store service-id->last-request-time
+   new-service-id->last-request-time]
+  (->> (seq new-service-id->last-request-time)
+       (filter (make-service-id-new-last-request-time?-fn service-id->last-request-time))
+       (filter (make-service-id-received-request-after-becoming-stale?-fn service-id->stale-info))
+       (map
+         (fn get-source-tokens-from-service-id
+           [[service-id _]]
+           {:service-id service-id
+            :source-tokens (->> service-id
+                                service-id->source-tokens-entries-fn
+                                vec
+                                flatten
+                                (map #(get % "token"))
+                                ; There may be many (token, version) pairs but only 1 unique token, so
+                                ; make a set with just the token values instead.
+                                set)}))
+       (filter
+         ; TODO: support the legacy token mapping use case by using individual token references.
+         ; For now, ignore the services that map to many source tokens (legacy mapping) and
+         ; log them. Services with many:many token mapping have an edge case because
+         ; the 'service-id->stale-info' function does not consider it stale unless
+         ; ALL references to tokens are stale. This means that a service could be stale
+         ; for one token and not stale for another token, resulting in no new service
+         ; starting for the former token.
+         (make-one-source-token?-fn correlation-id))
+       (map
+         (fn get-single-source-token [{:keys [source-tokens]}]
+           ; Because we previously filtered out services that did not have exactly 1 source token,
+           ; we can just pick the first one.
+           (first source-tokens)))
+       set
+       (filter
+         ; TODO: support run-as-requester and parameterized services by keeping track of original service-id and getting
+         ; the run-as-user and parameters from the description. These tokens are filtered out for now.
+         (make-token-is-not-run-as-requester-or-parameterized?-fn correlation-id kv-store))))
+
+(defn start-latest-services-for-tokens
+  "Given a list of tokens, try to start the latest service for the token. If an individual token errors, we skip that token
+  and continue to the next. Returns the error results."
+  [correlation-id kv-store fallback-state start-new-service-fn retrieve-descriptor-fn tokens]
+  (let [error-results (->> tokens
+                           (map
+                             (fn start-latest-service
+                               [token]
+                               (try
+                                 (let [{:strs [run-as-user]} (sd/token->service-parameter-template kv-store token :error-on-missing false)
+                                       ; we use retrieve-descriptor-fn instead of retrieve-latest-descriptor-fn because
+                                       ; it has a side effect for updating the service-id and source token references
+                                       {{:keys [service-id] :as latest-descriptor} :latest-descriptor} (retrieve-descriptor-fn run-as-user token)
+                                       should-start-service? (not (descriptor/service-exists? fallback-state service-id))]
+                                   (when should-start-service?
+                                     (cid/cinfo correlation-id "starting service due to new last-request-time"
+                                                {:service-id service-id
+                                                 :token token})
+                                     (start-new-service-fn latest-descriptor)
+                                     (meters/mark! (metrics/waiter-meter "core" "start-new-services-maintainer" "start-new-service")))
+                                   {:token token :success true})
+                                 (catch Exception e
+                                   {:token token
+                                    :success false
+                                    :error e}))))
+                           (filter
+                             (fn result-errored?
+                               [{:keys [success]}]
+                               (not success)))
+                           doall)]
+    (when (> (count error-results) 0)
+      (cid/cerror correlation-id "Failed to start latest service for tokens" {:tokens (map :token error-results)
+                                                                              :sample-10-errors (take 10 error-results)}))
+    error-results))
+
+(defn start-new-services-maintainer
+  "This daemon ensures that tokens receiving requests will have the latest service corresponding to it running. Whenever there
+   are any implicit changes to the token's service description resulting in a new service-id while that token is handling
+   requests. This daemon will start the new service corresponding to that service-id. We do this by building a map,
+   service-id->last-request-time, whenever the 'trigger-ch' is triggered, and seeing if any service-ids have a new
+   last-request-time. We then build a set of corresponding source tokens to the service-ids and see if they point to a
+   service-id that is not running. We attempt to start a new service for those tokens/service-ids (not including
+   run-as-requester or parameterized services).
+
+   Returns a map with keys:
+   :exit-chan when a message is put on the exit-chan, the daemon terminates
+   :go-chan the corresponding async/go chan of the daemon. This can be used to see if the daemon has terminated.
+   :query-chan channel that puts the state in a response-chan after the daemon processes other channels first (e.g trigger-ch)
+   :query-state-fn function that queries the current state of the daemon"
+  [clock trigger-ch service-id->source-tokens-entries-fn service-id->metrics-fn service-id->stale-info start-new-service-fn
+   retrieve-descriptor-fn fallback-state-atom kv-store]
+  (cid/with-correlation-id
+    "start-new-services-maintainer"
+    (let [correlation-id (cid/get-correlation-id)
+          exit-chan (async/promise-chan)
+          query-chan (async/chan)
+          state-atom (atom {:last-update-time nil
+                            :service-id->last-request-time {}})
+          query-state-fn (fn query-state-fn [_]
+                           (assoc @state-atom :supported-include-params []))
+          go-chan
+          (async/go
+            (try
+              (loop [{:keys [service-id->last-request-time] :as current-state} @state-atom]
+                (reset! state-atom current-state)
+                (let [[msg current-chan]
+                      (async/alts! [exit-chan trigger-ch query-chan] :priority true)
+                      next-state
+                      (condp = current-chan
+                        exit-chan
+                        (do
+                          (log/warn "stopping start-new-services-maintainer")
+                          (when (not= :exit msg)
+                            (throw (ex-info "Stopping start-new-services-maintainer" {:time (clock) :reason msg}))))
+
+                        trigger-ch
+                        (timers/start-stop-time!
+                          (metrics/waiter-timer "core" "start-new-services-maintainer" "process-services")
+                          (try
+                            (let [new-service-id->last-request-time (create-service-id->last-request-time-from-metrics service-id->metrics-fn)
+                                  tokens (get-tokens-to-start-services-for
+                                           correlation-id service-id->stale-info service-id->source-tokens-entries-fn kv-store
+                                           service-id->last-request-time new-service-id->last-request-time)]
+                              (start-latest-services-for-tokens
+                                correlation-id kv-store @fallback-state-atom start-new-service-fn retrieve-descriptor-fn tokens)
+                              (counters/inc! (metrics/waiter-counter "core" "start-new-services-maintainer" "refresh-sync"))
+                              {:service-id->last-request-time new-service-id->last-request-time})
+                            (catch Exception e
+                              (log/error e "error while processing services in start-new-services-maintainer.")
+                              current-state)))
+                        query-chan
+                        (let [{:keys [response-chan include-flags]} msg]
+                          (async/put! response-chan (query-state-fn include-flags))
+                          current-state))]
+                  (if next-state
+                    (recur (assoc next-state :last-update-time (clock)))
+                    (log/info "Stopping start-new-services-maintainer as next loop values are nil"))))
+              (catch Exception e
+                (log/error e "Fatal error in start-new-services-maintainer")
+                (System/exit 1))))]
+      {:exit-chan exit-chan
+       :go-chan go-chan
+       :query-chan query-chan
+       :query-state-fn query-state-fn})))

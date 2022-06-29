@@ -433,8 +433,8 @@
         metrics-agent (agent initial-state)]
     metrics-agent))
 
-(defn- merge-router-metrics
-  "Merges all the metrics shared among routers.
+(defn- merge-service-metrics
+  "Merges service metrics across many maps.
    last-request-time is combined using the max operator.
    Counters are combined using sum reduction."
   [& maps]
@@ -453,9 +453,13 @@
   "Retrieves aggregated view of service-id->metrics using data available from all peer routers in the agent."
   [router-metrics-agent]
   (try
-    (let [router-id->service-id->metrics (get-in @router-metrics-agent [:metrics :routers])
-          aggregate-router-metrics (fn aggregate-router-metrics [router->metrics]
-                                     (apply merge-router-metrics (vals router->metrics)))
+    (let [external-metrics (get @router-metrics-agent :external-metrics)
+          router-id->service-id->metrics (get-in @router-metrics-agent [:metrics :routers])
+          aggregate-service-metrics (fn aggregate-service-metrics [key->metrics]
+                                      (->> key->metrics
+                                           vals
+                                           (filter some?)
+                                           (apply merge-service-metrics)))
           service-ids (->> router-id->service-id->metrics
                            (vals)
                            (map keys)
@@ -469,9 +473,21 @@
                                                                     (service-id->metrics service-id))
                                                                   router-id->service-id->metrics)]
                                  (try
-                                   (->> router->metrics
-                                        (utils/filterm val)
-                                        aggregate-router-metrics)
+                                   (let [router-metrics (aggregate-service-metrics router->metrics)
+                                         ; TODO: we will also need to aggregate active-request-counts and queued-requests
+                                         ; and choose between external vs router metrics if service has bypass configured
+                                         {:strs [last-request-time]}
+                                         (some->> service-id
+                                                  (get external-metrics)
+                                                  (pc/map-vals
+                                                    (fn [{:strs [metrics]}]
+                                                      ; if there are external-metrics, then last-request-time will always be
+                                                      ; a valid ISO-8601 string
+                                                      (update metrics "last-request-time" du/str-to-date-ignore-error)))
+                                                  aggregate-service-metrics)]
+                                     (cond-> router-metrics
+                                       (some? last-request-time)
+                                       (update "last-request-time" t/max-date last-request-time)))
                                    (catch Exception e
                                      (log/error e "error in retrieving aggregated metrics for" service-id))))))
            (filter second)

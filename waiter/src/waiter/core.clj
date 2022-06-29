@@ -22,14 +22,13 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [digest]
-            [full.async :refer [<? <?? go-try]]
+            [full.async :refer [<?]]
             [metrics.counters :as counters]
             [metrics.meters :as meters]
             [metrics.timers :as timers]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [ring.middleware.basic-authentication :as basic-authentication]
-            [ring.middleware.ssl :as ssl]
             [ring.util.response :as rr]
             [waiter.async-request :as async-req]
             [waiter.auth.authentication :as auth]
@@ -86,8 +85,7 @@
            (org.apache.curator.retry BoundedExponentialBackoffRetry)
            (org.eclipse.jetty.client HttpClient)
            (org.eclipse.jetty.client.util BasicAuthentication$BasicResult)
-           (org.eclipse.jetty.websocket.client WebSocketClient)
-           (org.eclipse.jetty.websocket.servlet ServletUpgradeRequest ServletUpgradeResponse)))
+           (org.eclipse.jetty.websocket.client WebSocketClient)))
 
 (defn routes-mapper
   "Returns a map containing a keyword handler and the parsed route-params based on the request uri."
@@ -141,6 +139,7 @@
                               ["/scheduler" :state-scheduler-handler-fn]
                               ["/service-description-builder" :state-service-description-builder-handler-fn]
                               ["/service-maintainer" :state-service-maintainer-handler-fn]
+                              ["/start-new-services-maintainer" :state-start-new-services-maintainer-fn]
                               ["/statsd" :state-statsd-handler-fn]
                               ["/token-validator" :state-token-validator-fn]
                               ["/token-watch-maintainer" :state-token-watch-maintainer-fn]
@@ -1014,9 +1013,9 @@
                                                         (request-handler request)
                                                         :else
                                                         (auth-handler request)))
-                                             jwt-authenticator (jwt/wrap-auth-handler jwt-authenticator)
-                                             oidc-authenticator (oidc/wrap-auth-handler oidc-authenticator)
-                                             true (auth/wrap-auth-cookie-handler password)))))
+                                                    jwt-authenticator (jwt/wrap-auth-handler jwt-authenticator)
+                                                    oidc-authenticator (oidc/wrap-auth-handler oidc-authenticator)
+                                                    true (auth/wrap-auth-cookie-handler password)))))
    :can-run-as?-fn (pc/fnk [[:state entitlement-manager]]
                      (fn can-run-as [auth-user run-as-user]
                        (authz/run-as? entitlement-manager auth-user run-as-user)))
@@ -1167,6 +1166,11 @@
    :service-id->stale? (pc/fnk [reference-type->stale-info-fn service-id->references-fn]
                          (fn service-id->stale? [service-id]
                            (sd/service-id->stale? reference-type->stale-info-fn service-id->references-fn service-id)))
+   :service-id->stale-info (pc/fnk [service-id->references-fn reference-type->stale-info-fn]
+                             (fn service-id->stale-info
+                               [service-id]
+                               (let [references (service-id->references-fn service-id)]
+                                 (sd/references->stale-info reference-type->stale-info-fn references))))
    :service-invocation-authorized?-fn (pc/fnk [can-run-as?-fn]
                                         (fn service-invocation-authorized?-fn
                                           [auth-user descriptor]
@@ -1466,17 +1470,16 @@
                                 (async/tap router-state-push-mult state-chan)
                                 (maintainer/start-service-chan-maintainer
                                   {} state-chan query-service-maintainer-chan start-service remove-service retrieve-channel)))
-   :start-new-services-daemon (pc/fnk
-                                [[:routines retrieve-latest-descriptor-fn start-new-service-fn]
-                                 [:state kv-store fallback-state-atom leader?-fn]
-                                 metrics-consumer-maintainer]
-                                (let [{:keys [token-metric-chan-mult]} metrics-consumer-maintainer
-                                      service-exists? (fn service-exists?
-                                                        [service-id]
-                                                        (descriptor/service-exists? @fallback-state-atom service-id))]
-                                  (scheduler/start-new-services-daemon
-                                    retrieve-latest-descriptor-fn service-exists? kv-store token-metric-chan-mult
-                                    start-new-service-fn leader?-fn)))
+   :start-new-services-maintainer (pc/fnk
+                                    [[:routines retrieve-descriptor-fn router-metrics-helpers service-id->stale-info
+                                      service-id->source-tokens-entries-fn start-new-service-fn]
+                                     [:settings scheduler-start-new-services-interval-ms]
+                                     [:state clock kv-store fallback-state-atom]]
+                                    (let [{:keys [service-id->metrics-fn]} router-metrics-helpers
+                                          trigger-ch (au/timer-chan scheduler-start-new-services-interval-ms)]
+                                      (scheduler/start-new-services-maintainer
+                                        clock trigger-ch service-id->source-tokens-entries-fn service-id->metrics-fn
+                                        service-id->stale-info start-new-service-fn retrieve-descriptor-fn fallback-state-atom kv-store)))
    :state-sources (pc/fnk [[:scheduler scheduler]
                            [:state query-service-maintainer-chan]
                            autoscaler autoscaling-multiplexer gc-for-transient-metrics interstitial-maintainer
@@ -1951,6 +1954,14 @@
                                    (handler/get-service-state
                                      router-id enable-work-stealing-support? populate-maintainer-chan! local-usage-agent
                                      service-id state-sources request))))
+   :state-start-new-services-maintainer-fn (pc/fnk [[:daemons start-new-services-maintainer]
+                                                    [:state router-id]
+                                                    wrap-secure-request-fn]
+                                             (let [{:keys [query-state-fn]} start-new-services-maintainer]
+                                               (wrap-secure-request-fn
+                                                 (fn state-start-new-services-handler-fn
+                                                   [request]
+                                                   (handler/get-daemon-state router-id query-state-fn request)))))
    :state-statsd-handler-fn (pc/fnk [[:state router-id]
                                      wrap-secure-request-fn]
                               (wrap-secure-request-fn

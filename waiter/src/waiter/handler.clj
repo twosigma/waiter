@@ -273,15 +273,17 @@
 
 (defn service-id-handler
   "Retrieves the service-id of the service specified by the request."
-  [{:keys [descriptor] :as request} kv-store store-service-description-fn]
+  [{:keys [descriptor latest-service-id] :as request} kv-store store-service-description-fn]
   (try
-    (let [{:keys [service-id core-service-description]} descriptor]
+    (let [{:keys [service-id core-service-description]} descriptor
+          request-params (-> request ru/query-params-request :query-params)
+          latest (utils/request-flag request-params "latest")]
       (when (not= core-service-description (sd/fetch-core kv-store service-id))
         ; eagerly store the service description for this service-id
         (store-service-description-fn descriptor))
       (utils/attach-waiter-source
-        {:body service-id
-         :status http-200-ok }))
+        {:body (if latest latest-service-id service-id)
+         :status http-200-ok}))
     (catch Exception ex
       (utils/exception->response ex request))))
 
@@ -809,7 +811,8 @@
                                                                  "gc-broken-services" "gc-services" "gc-transient-metrics" "instance-tracker" "interstitial"
                                                                  "jwt-auth-server" "kv-store" "launch-metrics" "leader" "local-usage" "metrics-consumer"
                                                                  "maintainer" "router-metrics" "scheduler" "service-description-builder"
-                                                                 "service-maintainer" "statsd" "token-validator" "token-watch-maintainer" "work-stealing"]
+                                                                 "service-maintainer" "start-new-services-maintainer" "statsd" "token-validator" "token-watch-maintainer"
+                                                                 "work-stealing"]
                                                              (pc/map-from-keys make-url))
                                                            (pc/for-map [component-key (keys custom-components)]
                                                              (str "custom-components:" (name component-key))

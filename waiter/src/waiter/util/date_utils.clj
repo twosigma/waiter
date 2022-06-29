@@ -52,6 +52,16 @@
   (^DateTime [date-str formatter]
     (when date-str (str-to-date date-str formatter))))
 
+(defn str-to-date-ignore-error
+  "Ignores errors when parsing date-str. If there is an error, it will log it and return nil."
+  (^DateTime [date-str]
+   (str-to-date-ignore-error date-str formatter-iso8601))
+  (^DateTime [date-str formatter]
+   (try
+     (str-to-date date-str formatter)
+     (catch Exception ex
+       (log/error (str "unable to parse" date-str "with formatter" formatter) ex)))))
+
 (defn valid-date?
   "Return true if the time-str is a ISO-8601 string, and false otherwise."
   [time-str]
