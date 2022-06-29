@@ -1258,7 +1258,7 @@
     [{:keys [service-id source-tokens]}]
     (let [many-source-tokens? (> 1 (count source-tokens))]
       (when many-source-tokens?
-        (cid/cinfo correlation-id "Skipping service-id because it maps to many source tokens."
+        (cid/cinfo correlation-id "skipping service-id because it maps to many source tokens."
                    {:service-id service-id
                     :source-tokens source-tokens}))
       (= 1 (count source-tokens)))))
@@ -1278,7 +1278,7 @@
               (not (sd/run-as-requester? service-description-template))
               (not (sd/requires-parameters? service-description-template)))]
         (when-not supported-token?
-          (cid/cinfo correlation-id "Skipping token because it is either run-as-requester or parameterized."
+          (cid/cinfo correlation-id "skipping token because it is either run-as-requester or parameterized."
                      {:token token}))
         supported-token?))))
 
