@@ -327,9 +327,9 @@
                                           (get-in ["state" "service-id->last-request-time" service-id])
                                           du/str-to-date-safe)]
                               (log/info "router-url start-new-services-maintainer entry for service-id:"
-                                        {:service-id service-id
-                                         :service-id-last-request-time service-id-last-request-time
-                                         :router-url router-url})
+                                        {:router-url router-url
+                                         :service-id service-id
+                                         :service-id-last-request-time service-id-last-request-time})
                               (some? service-id-last-request-time))))
                         routers))
                     :interval 1
