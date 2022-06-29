@@ -1278,7 +1278,7 @@
               (not (sd/run-as-requester? service-description-template))
               (not (sd/requires-parameters? service-description-template)))]
         (when-not supported-token?
-          (cid/cinfo correlation-id "Skipping token because it is either run-as-requester or parameterized."
+          (cid/cinfo correlation-id "skipping token because it is either run-as-requester or parameterized."
                      {:token token}))
         supported-token?))))
 
