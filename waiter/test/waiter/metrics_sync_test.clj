@@ -474,7 +474,7 @@
 
 (deftest test-agent->service-id->metrics
   (testing "missing-router-data"
-    (is (= {} (agent->service-id->metrics (agent {})))))
+    (is (= {} (agent->service-id->metrics (agent {}) (constantly {})))))
 
   (testing "aggregation-of-router-metrics"
     (let [time-1 (DateTime. 1000)
@@ -548,7 +548,7 @@
                                  "outstanding" 3
                                  "total" 3
                                  "waiting-for-available-instance" 1}}]
-      (is (= expected-output (agent->service-id->metrics router-metrics-agent)))))
+      (is (= expected-output (agent->service-id->metrics router-metrics-agent (constantly {}))))))
 
   (testing "faulty-router-metrics"
     (let [in-router-metrics-state {:metrics {:routers {"router-0" {"s1" {"c" 0}, "s2" [], "s3" {"c" 0}}
@@ -556,7 +556,7 @@
                                                        "router-2" {"s1" {"c" 2}, "s3" {"c" 2, "e" {"d" 0}}}}}}
           router-metrics-agent (agent in-router-metrics-state)
           expected-output {"s1" {"c" 3}}]
-      (is (= expected-output (agent->service-id->metrics router-metrics-agent))))))
+      (is (= expected-output (agent->service-id->metrics router-metrics-agent (constantly {})))))))
 
 (deftest test-agent->service-id->router-id->metrics
   (let [call-counter-atom (atom 0)
