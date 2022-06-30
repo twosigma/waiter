@@ -1659,7 +1659,9 @@
                                                    (not (utils/param-contains? request-params "include" "fallback"))
                                                    (update :headers assoc "x-waiter-fallback-period-secs" "0"))]
                                      (handler request))) 
-                                 wrap-secure-request-fn 
+                                 wrap-secure-request-fn
+                                 ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
+                                 ; on the token's configuration.
                                  wrap-service-discovery-fn)))
    :process-request-fn (pc/fnk [process-request-handler-fn process-request-wrapper-fn]
                          (process-request-wrapper-fn process-request-handler-fn))
