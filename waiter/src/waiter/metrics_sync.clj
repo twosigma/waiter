@@ -492,7 +492,7 @@
                                        (some? last-request-time)
                                        (update "last-request-time" t/max-date last-request-time)
                                        service-id-bypass?
-                                       (update "outstanding" + active-request-count waiting-for-available-instance)))
+                                       (assoc "outstanding" (+ active-request-count waiting-for-available-instance))))
                                    (catch Exception e
                                      (log/error e "error in retrieving aggregated metrics for" service-id))))))
            (filter second)
