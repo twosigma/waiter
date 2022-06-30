@@ -1642,24 +1642,25 @@
                                   (oidc/oidc-enabled-request-handler oidc-authenticator waiter-hostnames request))))
    :not-found-handler-fn (pc/fnk [] handler/not-found-handler)
    :ping-service-handler (pc/fnk [[:daemons router-state-maintainer]
-                                  [:routines make-inter-router-requests-async-fn]
+                                  [:routines make-inter-router-requests-async-fn wrap-service-discovery-fn]
                                   [:settings health-check-config]
                                   [:state fallback-state-atom router-id user-agent-version]
                                   process-request-fn wrap-descriptor-for-ping-fn wrap-secure-request-fn]
                            (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                  user-agent (str "waiter-ping/" user-agent-version)
                                  handler (wrap-descriptor-for-ping-fn
-                                           (fn inner-ping-service-handler [request]
-                                             (let [retrieve-service-status-label-fn #(:service-status-label (service/retrieve-service-status-and-deployment-error % (query-state-fn)))
-                                                   service-state-fn (partial descriptor/extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn)]
-                                               (pr/ping-service user-agent process-request-fn service-state-fn health-check-config request))))]
-                             (wrap-secure-request-fn
-                               (fn ping-service-handler [request]
-                                 (let [request-params (-> request ru/query-params-request :query-params)
-                                       request (cond-> request
-                                                 (not (utils/param-contains? request-params "include" "fallback"))
-                                                 (update :headers assoc "x-waiter-fallback-period-secs" "0"))]
-                                   (handler request))))))
+                                          (fn inner-ping-service-handler [request]
+                                            (let [retrieve-service-status-label-fn #(:service-status-label (service/retrieve-service-status-and-deployment-error % (query-state-fn)))
+                                                  service-state-fn (partial descriptor/extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn)]
+                                              (pr/ping-service user-agent process-request-fn service-state-fn health-check-config request))))]
+                             (-> (fn ping-service-handler [request]
+                                   (let [request-params (-> request ru/query-params-request :query-params)
+                                         request (cond-> request
+                                                   (not (utils/param-contains? request-params "include" "fallback"))
+                                                   (update :headers assoc "x-waiter-fallback-period-secs" "0"))]
+                                     (handler request))) 
+                                 wrap-secure-request-fn 
+                                 wrap-service-discovery-fn)))
    :process-request-fn (pc/fnk [process-request-handler-fn process-request-wrapper-fn]
                          (process-request-wrapper-fn process-request-handler-fn))
    :process-request-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! post-process-async-request-response-fn]
