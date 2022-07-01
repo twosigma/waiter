@@ -88,10 +88,6 @@
            (org.eclipse.jetty.client.util BasicAuthentication$BasicResult)
            (org.eclipse.jetty.websocket.client WebSocketClient)))
 
-(def ^:const waiter-api-full-names #{auth/auth-expires-at-uri auth/auth-keep-alive-uri
-                                     oidc/oidc-enabled-uri oidc/oidc-callback-uri
-                                     "/app-name" "/service-id" "/token" "/waiter-ping"})
-
 (defn routes-mapper
   "Returns a map containing a keyword handler and the parsed route-params based on the request uri."
   ;; Please include/update a corresponding unit test anytime the routes data structure is modified
@@ -607,7 +603,10 @@
   "Creates a function that determines for a given request whether or not
   the request is intended for Waiter itself or a service of Waiter."
   [valid-waiter-hostnames]
-  (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})]
+  (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})
+        waiter-api-full-names #{auth/auth-expires-at-uri auth/auth-keep-alive-uri
+                                oidc/oidc-enabled-uri oidc/oidc-callback-uri
+                                "/app-name" "/service-id" "/token" "/waiter-ping"}]
     (fn waiter-request? [{:keys [uri headers]}]
       (let [{:strs [host]} headers]
         ; special urls that are always for Waiter (FIXME)
