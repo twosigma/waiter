@@ -30,9 +30,6 @@
                                              :kind s/Keyword
                                              s/Keyword schema/require-symbol-factory-fn}
                                             schema/contains-kind-sub-map?)
-   (s/required-key :ejection-config) {(s/required-key :eject-backoff-base-time-ms) schema/positive-int
-                                      (s/required-key :expiry-threshold) schema/positive-int
-                                      (s/required-key :max-eject-time-ms) schema/positive-int}
    (s/required-key :cors-config) (s/constrained
                                    {:kind s/Keyword
                                     (s/optional-key :exposed-headers) [schema/non-empty-string]
@@ -45,8 +42,14 @@
                                      (s/required-key :service-prefix) schema/non-empty-string}
    (s/required-key :consent-expiry-days) schema/positive-int
    (s/required-key :custom-components) {s/Keyword schema/require-symbol-factory-fn}
+   (s/required-key :debug-options) {(s/required-key :thread-dump) {(s/required-key :interval-secs) schema/non-negative-int
+                                                                   (s/required-key :show-locked-monitors) s/Bool
+                                                                   (s/required-key :show-locked-synchronizers) s/Bool}}
    (s/required-key :deployment-error-config) {(s/required-key :min-failed-instances) schema/positive-int
                                               (s/required-key :min-hosts) schema/positive-int}
+   (s/required-key :ejection-config) {(s/required-key :eject-backoff-base-time-ms) schema/positive-int
+                                      (s/required-key :expiry-threshold) schema/positive-int
+                                      (s/required-key :max-eject-time-ms) schema/positive-int}
    (s/required-key :entitlement-config) (s/constrained
                                           {:kind s/Keyword
                                            (s/optional-key :cache) {(s/required-key :threshold) schema/positive-int
@@ -301,6 +304,9 @@
                  :exposed-headers ["etag", "x-cid"]
                  :max-age 3600
                  :token-parameter {:factory-fn 'waiter.cors/token-parameter-based-validator}}
+   :debug-options {:thread-dump {:interval-secs 0
+                                 :show-locked-monitors false
+                                 :show-locked-synchronizers false}}
    :ejection-config {:eject-backoff-base-time-ms 10000
                      :expiry-threshold 5
                      :max-eject-time-ms 300000}

@@ -73,6 +73,7 @@
             [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru]
             [waiter.util.semaphore :as semaphore]
+            [waiter.util.thread-dump :as thread-dump]
             [waiter.util.utils :as utils]
             [waiter.websocket :as ws]
             [waiter.work-stealing :as work-stealing])
@@ -363,8 +364,6 @@
           response))
       (catch Exception e
         (utils/exception->response e request)))))
-
-
 
 (defn- make-eject-request
   [make-inter-router-requests-fn eject-period-ms dest-router-id dest-endpoint {:keys [id] :as instance} reason]
@@ -1502,6 +1501,8 @@
                      {{:keys [query-state-fn]} :maintainer} router-state-maintainer]
                  (statsd/start-service-instance-metrics-publisher
                    service-id->service-description-fn query-state-fn sync-instances-interval-ms))))
+   :thread-dump (pc/fnk [[:settings [:debug-options thread-dump]]]
+                  (thread-dump/start-thread-dump-daemon thread-dump))
    :token-watch-maintainer (pc/fnk
                              [[:settings
                                [:watch-config
