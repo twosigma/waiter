@@ -424,10 +424,6 @@
                               (reduce max (map :restartCount unready-init-containers-statuses))
                               primary-container-restart-count)
           pod-started-at (-> pod (get-in [:status :startTime]) timestamp-str->datetime)
-          main-container-started-at (some-> (filter #(= (get % :name) waiter-primary-container-name) app-container-statuses)
-                                      (first)
-                                      (get-in [:state :running :startedAt])
-                                      (timestamp-str->datetime))
           {:keys [waiter/revision-timestamp waiter/revision-version]} (get-in pod [:metadata :annotations])
           pod-name (k8s-object->id pod)
           primary-container-ready (true? (get primary-container-status :ready))
@@ -473,7 +469,7 @@
                               :log-directory (log-dir-path run-as-user primary-container-restart-count)
                               :port port0
                               :service-id service-id
-                              :started-at (or main-container-started-at pod-started-at)
+                              :started-at pod-started-at
                               :status status-message}
                        kube-context (assoc :k8s/context kube-context)
                        node-name (assoc :k8s/node-name node-name)
