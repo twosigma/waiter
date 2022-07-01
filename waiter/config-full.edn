@@ -477,7 +477,7 @@
                                  ;; Configure the value to 0 to disable expiring instances and removing the duration constraint on pods
                                  ;; before they transition to the running state.
                                  :container-running-grace-secs 90
-                                 
+
                                  ;; The minimum age in seconds that a k8s object must be before events may be fetched
                                  :fetch-events-k8s-object-minimum-age-secs 30
 
@@ -1054,6 +1054,16 @@
  ;; Components which contain a :query-state entry that maps to a function which takes include-flags as an argument
  ;; can have their state queries and viewed at the /state/custom-component/<name> endpoint.
  :custom-components {:in-memory-kv-store {:factory-fn waiter.kv/new-local-kv-store}}
+
+ ;; Options for configuring debugging components
+ :debug-options {;; Configures daemon that logs a snapshot of all the threads in the current program.
+                 :thread-dump {;; Configures the interval, in seconds, at which thread dumps are logged.
+                               ;; A value of zero means the thread dump daemon is disabled.
+                               :interval-secs 0
+                               ;; Configures whether to dump all locked monitors, defaults to false.
+                               :show-locked-monitors false
+                               ;; Configures whether to dump all locked ownable synchronizers, defaults to false.
+                               :show-locked-synchronizers false}}
 
  ;; Certain messages that Waiter returns can be customized:
  :messages {:backend-request-failed "Request to service backend failed"
