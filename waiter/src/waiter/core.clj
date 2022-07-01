@@ -88,6 +88,10 @@
            (org.eclipse.jetty.client.util BasicAuthentication$BasicResult)
            (org.eclipse.jetty.websocket.client WebSocketClient)))
 
+(def ^:const waiter-api-full-names #{auth/auth-expires-at-uri auth/auth-keep-alive-uri
+                                     oidc/oidc-enabled-uri oidc/oidc-callback-uri
+                                     "/app-name" "/service-id" "/token" "/waiter-ping"})
+
 (defn routes-mapper
   "Returns a map containing a keyword handler and the parsed route-params based on the request uri."
   ;; Please include/update a corresponding unit test anytime the routes data structure is modified
@@ -603,10 +607,7 @@
   "Creates a function that determines for a given request whether or not
   the request is intended for Waiter itself or a service of Waiter."
   [valid-waiter-hostnames]
-  (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})
-        waiter-api-full-names #{auth/auth-expires-at-uri auth/auth-keep-alive-uri
-                                oidc/oidc-enabled-uri oidc/oidc-callback-uri
-                                "/app-name" "/service-id" "/token" "/waiter-ping"}]
+  (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})]
     (fn waiter-request? [{:keys [uri headers]}]
       (let [{:strs [host]} headers]
         ; special urls that are always for Waiter (FIXME)
@@ -1514,8 +1515,11 @@
                                  kv-store clock tokens-update-chan-buffer-size channels-update-chan-buffer-size watch-refresh-timer-chan)))})
 
 (def request-handlers
-  {:app-name-handler-fn (pc/fnk [service-id-handler-fn]
-                          service-id-handler-fn)
+  {:app-name-handler-fn (pc/fnk [[:routines wrap-service-discovery-fn]
+                                 service-id-handler-fn]
+                          ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
+                          ; on the token's configuration.
+                          (wrap-service-discovery-fn service-id-handler-fn))
    :async-complete-handler-fn (pc/fnk [[:routines async-request-terminate-fn]
                                        wrap-router-auth-fn]
                                 (wrap-router-auth-fn
@@ -1716,21 +1720,24 @@
    :service-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
                                 [:routines admin-user?-fn allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-async-fn
                                  retrieve-token-based-fallback-fn router-metrics-helpers service-id->references-fn
-                                 service-id->service-description-fn service-id->source-tokens-entries-fn token->token-hash]
+                                 service-id->service-description-fn service-id->source-tokens-entries-fn token->token-hash wrap-service-discovery-fn]
                                 [:scheduler scheduler]
                                 [:state kv-store router-id scheduler-interactions-thread-pool fallback-state-atom]
                                 wrap-secure-request-fn]
                          (let [query-autoscaler-state-fn (:query-state-fn autoscaler)
                                {{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                {:keys [service-id->metrics-fn]} router-metrics-helpers]
-                           (wrap-secure-request-fn
-                             (fn service-handler-fn [{:as request {:keys [service-id]} :route-params}]
-                               (handler/service-handler router-id service-id scheduler kv-store admin-user?-fn allowed-to-manage-service?-fn
-                                                        generate-log-url-fn make-inter-router-requests-async-fn
-                                                        service-id->service-description-fn service-id->source-tokens-entries-fn
-                                                        service-id->references-fn query-state-fn query-autoscaler-state-fn
-                                                        service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash
-                                                        fallback-state-atom retrieve-token-based-fallback-fn request)))))
+                           (-> (fn service-handler-fn [{:as request {:keys [service-id]} :route-params}]
+                                 (handler/service-handler router-id service-id scheduler kv-store admin-user?-fn allowed-to-manage-service?-fn
+                                                          generate-log-url-fn make-inter-router-requests-async-fn
+                                                          service-id->service-description-fn service-id->source-tokens-entries-fn
+                                                          service-id->references-fn query-state-fn query-autoscaler-state-fn
+                                                          service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash
+                                                          fallback-state-atom retrieve-token-based-fallback-fn request))
+                               wrap-secure-request-fn
+                               ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
+                               ; on the token's configuration.
+                               wrap-service-discovery-fn)))
    :service-id-handler-fn (pc/fnk [[:routines store-service-description-fn]
                                    [:state kv-store]
                                    wrap-descriptor-fn wrap-secure-request-fn]
@@ -1991,17 +1998,21 @@
    :status-handler-fn (pc/fnk [] handler/status-handler)
    :token-handler-fn (pc/fnk [[:curator synchronize-fn]
                               [:daemons token-watch-maintainer]
-                              [:routines attach-service-defaults-fn make-inter-router-requests-sync-fn validate-service-description-fn]
+                              [:routines attach-service-defaults-fn make-inter-router-requests-sync-fn validate-service-description-fn 
+                               wrap-service-discovery-fn]
                               [:settings [:token-config history-length limit-per-owner]]
                               [:state clock entitlement-manager kv-store token-cluster-calculator token-root token-validator waiter-hostnames]
                               wrap-secure-request-fn]
                        (let [{:keys [tokens-update-chan]} token-watch-maintainer]
-                         (wrap-secure-request-fn
-                           (fn token-handler-fn [request]
-                             (token/handle-token-request
-                               clock synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
-                               waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
-                               attach-service-defaults-fn tokens-update-chan token-validator request)))))
+                         (-> (fn token-handler-fn [request]
+                               (token/handle-token-request
+                                clock synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
+                                waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
+                                attach-service-defaults-fn tokens-update-chan token-validator request)) 
+                             wrap-secure-request-fn
+                             ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
+                             ; on the token's configuration.
+                             wrap-service-discovery-fn)))
    :token-list-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
                                    [:routines retrieve-descriptor-fn]
                                    [:settings [:instance-request-properties streaming-timeout-ms]]
