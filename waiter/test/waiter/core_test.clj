@@ -488,7 +488,8 @@
                                   :service-id->references-fn (constantly [])
                                   :service-id->service-description-fn (constantly {})
                                   :service-id->source-tokens-entries-fn (constantly #{})
-                                  :token->token-hash identity}
+                                  :token->token-hash identity
+                                  :wrap-service-discovery-fn utils/wrap-identity}
                        :scheduler {:scheduler (reify scheduler/ServiceScheduler
                                                 (delete-service [_ _]
                                                   (let [result @delete-service-result-atom]
@@ -655,7 +656,8 @@
                                                                           (assoc "cpus" 1
                                                                                  "mem" 2048)))
                                   :service-id->source-tokens-entries-fn (constantly #{})
-                                  :token->token-hash identity}
+                                  :token->token-hash identity
+                                  :wrap-service-discovery-fn utils/wrap-identity}
                        :scheduler {:scheduler (reify scheduler/ServiceScheduler
                                                 (compute-instance-usage [_ _] {:cpus 1 :mem 2048}))}
                        :state {:kv-store nil
