@@ -1487,9 +1487,9 @@
                                       :preferred :preferredDuringSchedulingIgnoredDuringExecution
                                       :required :requiredDuringSchedulingIgnoredDuringExecution
                                       (throw (ex-info "misconfigured pod-anti-affinity" {:context context})))]
-                  {affinity-type [{:podAffinityTerm {:labelSelector {:matchExpressions [{:key "app"
-                                                                                         :operator "In"
-                                                                                         :values [k8s-name]}]}
+                  {affinity-type [{:podAffinityTerm {:labelSelector
+                                                     {:matchLabels {"waiter/cluster" cluster-name
+                                                                    "waiter/service-hash" service-hash}}
                                                      :topologyKey "kubernetes.io/hostname"}
                                    :weight 50}]}))
       ;; enable liveness only if positive grace-period-secs is specified

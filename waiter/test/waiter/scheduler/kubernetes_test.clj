@@ -244,23 +244,24 @@
           replicaset-spec ((:replicaset-spec-builder-fn scheduler)
                            scheduler "test-service-id" service-description rs-spec-builder-context)]
       {:anti-affinity-spec (get-in replicaset-spec [:spec :template :spec :affinity :podAntiAffinity])
-       :k8s-name (get-in replicaset-spec [:metadata :labels :app])})))
+       :cluster (get-in replicaset-spec [:metadata :labels :waiter/cluster])
+       :service-hash (get-in replicaset-spec [:metadata :labels :waiter/service-hash])})))
 
 (deftest test-replicaset-spec-pod-anti-affinity
-  (let [expected-spec (fn [anti-affinity-type k8s-name]
+  (let [expected-spec (fn [anti-affinity-type cluster service-hash]
                         {anti-affinity-type
-                         [{:podAffinityTerm {:labelSelector {:matchExpressions [{:key "app"
-                                                                                 :operator "In"
-                                                                                 :values [k8s-name]}]}
+                         [{:podAffinityTerm {:labelSelector
+                                             {:matchLabels {"waiter/cluster" cluster
+                                                            "waiter/service-hash" service-hash}}
                                              :topologyKey "kubernetes.io/hostname"}
                            :weight 50}]})]
     (testing "preferred pod anti-affinity"
-      (let [{:keys [anti-affinity-spec k8s-name]} (make-replica-spec-with-pod-anti-affinity :preferred)]
-        (is (= (expected-spec :preferredDuringSchedulingIgnoredDuringExecution k8s-name)
+      (let [{:keys [anti-affinity-spec cluster service-hash]} (make-replica-spec-with-pod-anti-affinity :preferred)]
+        (is (= (expected-spec :preferredDuringSchedulingIgnoredDuringExecution cluster service-hash)
                anti-affinity-spec))))
     (testing "required pod anti-affinity"
-      (let [{:keys [anti-affinity-spec k8s-name]} (make-replica-spec-with-pod-anti-affinity :required)]
-        (is (= (expected-spec :requiredDuringSchedulingIgnoredDuringExecution k8s-name)
+      (let [{:keys [anti-affinity-spec cluster service-hash]} (make-replica-spec-with-pod-anti-affinity :required)]
+        (is (= (expected-spec :requiredDuringSchedulingIgnoredDuringExecution cluster service-hash)
                anti-affinity-spec))))
     (testing "default (nil) pod anti-affinity"
       (let [{:keys [anti-affinity-spec]} (make-replica-spec-with-pod-anti-affinity nil)]

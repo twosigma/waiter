@@ -57,7 +57,8 @@
                                  :pod-sigkill-delay-secs 1
                                  :replicaset-spec-builder {:default-container-image "twosigma/waiter-test-apps"
                                                            :default-namespace "waiter"
-                                                           :image-aliases {"alias/integration" "twosigma/integration"}}
+                                                           :image-aliases {"alias/integration" "twosigma/integration"}
+                                                           :pod-anti-affinity :preferred}
                                  :restart-expiry-threshold 2
                                  :restart-kill-threshold 8
                                  :raven-sidecar {:cmd ["/opt/waiter/raven/bin/raven-start"]
