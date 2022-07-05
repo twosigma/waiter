@@ -1922,7 +1922,8 @@
      (async/go
        (try
          (log/info "starting K8s event fetcher")
-         (let [load-events (fn [k8s-object-key] (get-cached-events-chan k8s-object-key->event-cache k8s-object-key query-events scheduler options))]
+         (let [interval-ms 10000
+               load-events (fn [k8s-object-key] (get-cached-events-chan k8s-object-key->event-cache k8s-object-key query-events scheduler options))]
            (loop [iter 0]
              (cid/with-correlation-id
                (str "k8s-event-fetcher-iter-" iter)
@@ -1965,7 +1966,7 @@
                                    (async/put! fetch-events-chan events-update))))
                              (recur (dissoc event-chan->object-id current-chan))))))))))
              (update-event-fetcher-state-with event-fetcher-state {:last-successful-iteration (du/date-to-str (t/now))})
-             (utils/sleep 10000)
+             (async/<! (async/timeout interval-ms))
              (recur (inc iter))))
          (catch Throwable t
            (log/error t "unhandled error in K8s event fetcher")
