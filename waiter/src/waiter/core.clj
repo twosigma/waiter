@@ -77,7 +77,7 @@
             [waiter.util.utils :as utils]
             [waiter.websocket :as ws]
             [waiter.work-stealing :as work-stealing])
-  (:import (java.net InetAddress URI)
+  (:import (java.net URI)
            (java.util.concurrent Executors)
            (javax.servlet ServletRequest)
            (org.apache.curator.framework CuratorFrameworkFactory)
@@ -599,23 +599,29 @@
 (def waiter-request-path-pattern
   #"^/waiter-(async/(v2/)?(complete|result|status)/|auth/|consent|interstitial)")
 
+(defn request-with-valid-waiter-hostname?
+  "Returns true if the provided request 'host' header is in the list of valid-waiter-hostnames"
+  [valid-waiter-hostnames {{:strs [host]} :headers}]
+  (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})]
+    ; TODO:LAST the bug is here, is this not a set/union?
+    (valid-waiter-hostnames (-> host
+                                (str/split #":")
+                                first))))
+
 (defn waiter-request?-factory
   "Creates a function that determines for a given request whether or not
   the request is intended for Waiter itself or a service of Waiter."
   [valid-waiter-hostnames]
-  (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})
-        waiter-api-full-names #{auth/auth-expires-at-uri auth/auth-keep-alive-uri
+  (let [waiter-api-full-names #{auth/auth-expires-at-uri auth/auth-keep-alive-uri
                                 oidc/oidc-enabled-uri oidc/oidc-callback-uri
                                 "/app-name" "/service-id" "/token" "/waiter-ping"}]
-    (fn waiter-request? [{:keys [uri headers]}]
+    (fn waiter-request? [{:keys [uri headers] :as request}]
       (let [{:strs [host]} headers]
         ; special urls that are always for Waiter (FIXME)
         (or (contains? waiter-api-full-names uri)
             (and uri (some? (re-find waiter-request-path-pattern uri)))
             (and (or (str/blank? host)
-                     (valid-waiter-hostnames (-> host
-                                               (str/split #":")
-                                               first)))
+                     (request-with-valid-waiter-hostname? valid-waiter-hostnames request))
                  (not-any? #(str/starts-with? (key %) headers/waiter-header-prefix)
                            (remove #(= "x-waiter-debug" (key %)) headers))))))))
 
@@ -825,10 +831,7 @@
                               hostname
                               [hostname])))
    :waiter-request?-fn* (pc/fnk [waiter-hostnames]
-                          (let [local-router (InetAddress/getLocalHost)
-                                waiter-router-hostname (.getCanonicalHostName local-router)
-                                waiter-router-ip (.getHostAddress local-router)
-                                hostnames (conj waiter-hostnames waiter-router-hostname waiter-router-ip)]
+                          (let [hostnames (concat waiter-hostnames (utils/get-local-hostnames))]
                             (waiter-request?-factory hostnames)))
    :websocket-client (pc/fnk [[:settings [:websocket-config ws-max-binary-message-size ws-max-text-message-size]]
                               http-client-properties]
@@ -1247,13 +1250,18 @@
                                              (fn websocket-request-auth-cookie-attacher [request]
                                                (ws/inter-router-request-middleware router-id (first passwords) request)))
 
-   :wrap-service-discovery-fn (pc/fnk [discover-service-parameters-fn]
+   :wrap-service-discovery-fn (pc/fnk [[:state waiter-hostnames]
+                                       discover-service-parameters-fn]
                                 (fn wrap-service-discovery-fn
-                                  [handler]
+                                  [handler & {:keys [ignore-waiter-hostnames] :or {ignore-waiter-hostnames false}}]
                                   (fn [{:keys [headers] :as request}]
                                     ;; TODO optimization opportunity to avoid this re-computation later in the chain
-                                    (let [discovered-parameters (discover-service-parameters-fn headers)]
-                                      (handler (assoc request :waiter-discovery discovered-parameters))))))})
+                                    (let [discovered-parameters (discover-service-parameters-fn headers)
+                                          valid-waiter-hostnames (concat waiter-hostnames (utils/get-local-hostnames))]
+                                      (handler (cond-> request
+                                                 (and ignore-waiter-hostnames
+                                                      (not (request-with-valid-waiter-hostname? valid-waiter-hostnames request)))
+                                                 (assoc :waiter-discovery discovered-parameters)))))))})
 
 (def daemons
   {:autoscaler (pc/fnk [[:routines router-metrics-helpers service-id->service-description-fn service-id->stale?]
@@ -1518,7 +1526,7 @@
                                  service-id-handler-fn]
                           ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                           ; on the token's configuration.
-                          (wrap-service-discovery-fn service-id-handler-fn))
+                          (wrap-service-discovery-fn service-id-handler-fn :ignore-waiter-hostnames true))
    :async-complete-handler-fn (pc/fnk [[:routines async-request-terminate-fn]
                                        wrap-router-auth-fn]
                                 (wrap-router-auth-fn
@@ -1665,7 +1673,7 @@
                                  wrap-secure-request-fn
                                  ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                                  ; on the token's configuration.
-                                 wrap-service-discovery-fn)))
+                                 (wrap-service-discovery-fn :ignore-waiter-hostnames true))))
    :process-request-fn (pc/fnk [process-request-handler-fn process-request-wrapper-fn]
                          (process-request-wrapper-fn process-request-handler-fn))
    :process-request-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! post-process-async-request-response-fn]
@@ -1736,7 +1744,7 @@
                                wrap-secure-request-fn
                                ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                                ; on the token's configuration.
-                               wrap-service-discovery-fn)))
+                               (wrap-service-discovery-fn :ignore-waiter-hostnames true))))
    :service-id-handler-fn (pc/fnk [[:routines store-service-description-fn]
                                    [:state kv-store]
                                    wrap-descriptor-fn wrap-secure-request-fn]
@@ -2011,7 +2019,7 @@
                              wrap-secure-request-fn
                              ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                              ; on the token's configuration.
-                             wrap-service-discovery-fn)))
+                             (wrap-service-discovery-fn :ignore-waiter-hostnames true))))
    :token-list-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
                                    [:routines retrieve-descriptor-fn]
                                    [:settings [:instance-request-properties streaming-timeout-ms]]

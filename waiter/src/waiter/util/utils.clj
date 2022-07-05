@@ -33,7 +33,7 @@
            (clojure.lang ExceptionInfo)
            (java.io ByteArrayInputStream InputStreamReader OutputStreamWriter SequenceInputStream)
            (java.lang Process)
-           (java.net ServerSocket URI)
+           (java.net InetAddress ServerSocket URI)
            (java.nio ByteBuffer)
            (java.nio.charset StandardCharsets)
            (java.security MessageDigest)
@@ -844,7 +844,7 @@
 
 (defn wrap-identity
   "A wrapper middleware that does nothing."
-  [handler]
+  [handler & {}]
   handler)
 
 (defn update-exception
@@ -967,3 +967,11 @@
   "Returns true if the response is from a backend sidecar proxy."
   [response]
   (boolean (get-in response [:headers "x-raven-response-flags"])))
+
+(defn get-local-hostnames
+  "Returns the set of the local waiter hostname and ip."
+  []
+  (let [local-router (InetAddress/getLocalHost)
+        waiter-router-hostname (.getCanonicalHostName local-router)
+        waiter-router-ip (.getHostAddress local-router)]
+    #{waiter-router-hostname waiter-router-ip}))
