@@ -600,10 +600,10 @@
   #"^/waiter-(async/(v2/)?(complete|result|status)/|auth/|consent|interstitial)")
 
 (defn request-with-valid-waiter-hostname?
-  "Returns true if the provided request 'host' header is in the list of valid-waiter-hostnames"
+  "Returns true if the provided request 'host' header is in the set of valid-waiter-hostnames"
   [valid-waiter-hostnames {{:strs [host]} :headers}]
   (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})]
-    (some #{(-> host (str/split #":") first)} valid-waiter-hostnames)))
+    (valid-waiter-hostnames (-> host (str/split #":") first))))
 
 (defn waiter-request?-factory
   "Creates a function that determines for a given request whether or not
@@ -828,7 +828,7 @@
                               hostname
                               [hostname])))
    :waiter-request?-fn* (pc/fnk [waiter-hostnames]
-                          (let [hostnames (concat waiter-hostnames (utils/get-local-hostnames))]
+                          (let [hostnames (set/union waiter-hostnames (utils/get-local-hostnames))]
                             (waiter-request?-factory hostnames)))
    :websocket-client (pc/fnk [[:settings [:websocket-config ws-max-binary-message-size ws-max-text-message-size]]
                               http-client-properties]
@@ -1254,7 +1254,7 @@
                                   (fn [{:keys [headers] :as request}]
                                     ;; TODO optimization opportunity to avoid this re-computation later in the chain
                                     (let [discovered-parameters (discover-service-parameters-fn headers)
-                                          valid-waiter-hostnames (concat waiter-hostnames (utils/get-local-hostnames))]
+                                          valid-waiter-hostnames (set/union waiter-hostnames (utils/get-local-hostnames))]
                                       (handler (cond-> request
                                                  (and ignore-waiter-hostnames
                                                       (not (request-with-valid-waiter-hostname? valid-waiter-hostnames request)))
