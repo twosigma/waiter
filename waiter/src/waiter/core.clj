@@ -603,10 +603,7 @@
   "Returns true if the provided request 'host' header is in the list of valid-waiter-hostnames"
   [valid-waiter-hostnames {{:strs [host]} :headers}]
   (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})]
-    ; TODO:LAST the bug is here, is this not a set/union?
-    (valid-waiter-hostnames (-> host
-                                (str/split #":")
-                                first))))
+    (some #{(-> host (str/split #":") first)} valid-waiter-hostnames)))
 
 (defn waiter-request?-factory
   "Creates a function that determines for a given request whether or not
