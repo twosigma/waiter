@@ -1256,8 +1256,8 @@
                                     (let [discovered-parameters (discover-service-parameters-fn headers)
                                           valid-waiter-hostnames (set/union waiter-hostnames (utils/get-local-hostnames))]
                                       (handler (cond-> request
-                                                 (and ignore-waiter-hostnames
-                                                      (not (request-with-valid-waiter-hostname? valid-waiter-hostnames request)))
+                                                 (not (and ignore-waiter-hostnames
+                                                           (request-with-valid-waiter-hostname? valid-waiter-hostnames request)))
                                                  (assoc :waiter-discovery discovered-parameters)))))))})
 
 (def daemons
@@ -1666,7 +1666,7 @@
                                          request (cond-> request
                                                    (not (utils/param-contains? request-params "include" "fallback"))
                                                    (update :headers assoc "x-waiter-fallback-period-secs" "0"))]
-                                     (handler request))) 
+                                     (handler request)))
                                  wrap-secure-request-fn
                                  ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                                  ; on the token's configuration.
