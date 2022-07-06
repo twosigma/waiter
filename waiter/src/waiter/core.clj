@@ -1658,10 +1658,10 @@
                            (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                  user-agent (str "waiter-ping/" user-agent-version)
                                  handler (wrap-descriptor-for-ping-fn
-                                          (fn inner-ping-service-handler [request]
-                                            (let [retrieve-service-status-label-fn #(:service-status-label (service/retrieve-service-status-and-deployment-error % (query-state-fn)))
-                                                  service-state-fn (partial descriptor/extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn)]
-                                              (pr/ping-service user-agent process-request-fn service-state-fn health-check-config request))))]
+                                           (fn inner-ping-service-handler [request]
+                                             (let [retrieve-service-status-label-fn #(:service-status-label (service/retrieve-service-status-and-deployment-error % (query-state-fn)))
+                                                   service-state-fn (partial descriptor/extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn)]
+                                               (pr/ping-service user-agent process-request-fn service-state-fn health-check-config request))))]
                              (-> (fn ping-service-handler [request]
                                    (let [request-params (-> request ru/query-params-request :query-params)
                                          request (cond-> request
@@ -2019,8 +2019,7 @@
                              wrap-secure-request-fn
                              ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                              ; on the token's configuration.
-                           ; TODO:LAST
-                           (wrap-service-discovery-fn :ignore-waiter-hostnames true)
+                           ; TODO:LAST (wrap-service-discovery-fn :ignore-waiter-hostnames true)
                            )))
    :token-list-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
                                    [:routines retrieve-descriptor-fn]
