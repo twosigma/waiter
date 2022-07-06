@@ -1250,17 +1250,16 @@
    :wrap-service-discovery-fn (pc/fnk [[:state waiter-hostnames]
                                        discover-service-parameters-fn]
                                 (fn wrap-service-discovery-fn
-                                  [handler & {:keys [ignore-waiter-hostnames] :or {ignore-waiter-hostnames false}}]
+                                  [handler & {:keys [ignore-non-token-host] :or {ignore-non-token-host false}}]
                                   (fn [{:keys [headers] :as request}]
                                     ;; TODO optimization opportunity to avoid this re-computation later in the chain
-                                    (let [discovered-parameters (discover-service-parameters-fn headers)
+                                    (let [{:strs [host]} headers
+                                          hostname (-> host (str/split #":") first)
+                                          {:keys [token] :as discovered-parameters} (discover-service-parameters-fn headers)
                                           valid-waiter-hostnames (set/union waiter-hostnames (utils/get-local-hostnames))]
-                                      (println "request path and method" request)
-                                      (println "add waiter-discovery?" (not (and ignore-waiter-hostnames
-                                                                                 (request-with-valid-waiter-hostname? valid-waiter-hostnames request))))
                                       (handler (cond-> request
-                                                 (not (and ignore-waiter-hostnames
-                                                           (request-with-valid-waiter-hostname? valid-waiter-hostnames request)))
+                                                 (or (not ignore-non-token-host)
+                                                     (= token hostname))
                                                  (assoc :waiter-discovery discovered-parameters)))))))})
 
 (def daemons
@@ -1526,7 +1525,7 @@
                                  service-id-handler-fn]
                           ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                           ; on the token's configuration.
-                          (wrap-service-discovery-fn service-id-handler-fn :ignore-waiter-hostnames true)
+                          (wrap-service-discovery-fn service-id-handler-fn :ignore-non-token-host true)
                           service-id-handler-fn)
    :async-complete-handler-fn (pc/fnk [[:routines async-request-terminate-fn]
                                        wrap-router-auth-fn]
@@ -1674,9 +1673,7 @@
                                  wrap-secure-request-fn
                                  ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                                  ; on the token's configuration.
-                               ; TODO:LAST
-                               ; (wrap-service-discovery-fn :ignore-waiter-hostnames true)
-                               )))
+                                 (wrap-service-discovery-fn :ignore-non-token-host true))))
    :process-request-fn (pc/fnk [process-request-handler-fn process-request-wrapper-fn]
                          (process-request-wrapper-fn process-request-handler-fn))
    :process-request-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! post-process-async-request-response-fn]
@@ -1747,9 +1744,7 @@
                                wrap-secure-request-fn
                                ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                                ; on the token's configuration.
-                             ; TODO:LAST
-                             (wrap-service-discovery-fn :ignore-waiter-hostnames true)
-                             )))
+                               (wrap-service-discovery-fn :ignore-non-token-host true))))
    :service-id-handler-fn (pc/fnk [[:routines store-service-description-fn]
                                    [:state kv-store]
                                    wrap-descriptor-fn wrap-secure-request-fn]
@@ -2023,10 +2018,8 @@
                                 attach-service-defaults-fn tokens-update-chan token-validator request)) 
                              wrap-secure-request-fn
                              ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
-                             ; on the token's configuration.
-                           ; TODO:LAST
-                           (wrap-service-discovery-fn :ignore-waiter-hostnames true)
-                           )))
+                             ; on the token's configuration. 
+                             (wrap-service-discovery-fn :ignore-non-token-host true))))
    :token-list-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
                                    [:routines retrieve-descriptor-fn]
                                    [:settings [:instance-request-properties streaming-timeout-ms]]
