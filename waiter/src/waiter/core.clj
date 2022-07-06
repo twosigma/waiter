@@ -1522,10 +1522,11 @@
 (def request-handlers
   {:app-name-handler-fn (pc/fnk [[:routines wrap-service-discovery-fn]
                                  service-id-handler-fn]
-                          ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
-                          ; on the token's configuration.
-                          (wrap-service-discovery-fn service-id-handler-fn :ignore-non-token-host true)
-                          service-id-handler-fn)
+                          (-> service-id-handler-fn
+                              auth/wrap-auth-bypass
+                              ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
+                              ; on the token's configuration.
+                              (wrap-service-discovery-fn :ignore-non-token-host true)))
    :async-complete-handler-fn (pc/fnk [[:routines async-request-terminate-fn]
                                        wrap-router-auth-fn]
                                 (wrap-router-auth-fn
@@ -1670,6 +1671,7 @@
                                                    (update :headers assoc "x-waiter-fallback-period-secs" "0"))]
                                      (handler request)))
                                  wrap-secure-request-fn
+                                 auth/wrap-auth-bypass
                                  ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                                  ; on the token's configuration.
                                  (wrap-service-discovery-fn :ignore-non-token-host true))))
@@ -1741,6 +1743,7 @@
                                                           service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash
                                                           fallback-state-atom retrieve-token-based-fallback-fn request))
                                wrap-secure-request-fn
+                               auth/wrap-auth-bypass
                                ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                                ; on the token's configuration.
                                (wrap-service-discovery-fn :ignore-non-token-host true))))
@@ -2016,6 +2019,7 @@
                                 waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
                                 attach-service-defaults-fn tokens-update-chan token-validator request)) 
                              wrap-secure-request-fn
+                             auth/wrap-auth-bypass
                              ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                              ; on the token's configuration. 
                              (wrap-service-discovery-fn :ignore-non-token-host true))))

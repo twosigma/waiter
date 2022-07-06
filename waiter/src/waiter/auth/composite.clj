@@ -52,6 +52,7 @@
                        :resolved-factory-fn resolved-factory-fn})))
     authenticator))
 
+; TODO:LAST how does this get used?
 (defn composite-authenticator
   "Factory function for creating composite authenticator middleware"
   [{:keys [authentication-providers default-authentication default-authentication-provider] :as context}]
