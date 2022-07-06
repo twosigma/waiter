@@ -1257,6 +1257,7 @@
                                           hostname (-> host (str/split #":") first)
                                           {:keys [token] :as discovered-parameters} (discover-service-parameters-fn headers)]
                                       (handler (cond-> request
+                                                 ; ignore-non-token-host allows us to do waiter-disovery only when the host is a token
                                                  (or (not ignore-non-token-host)
                                                      (= token hostname))
                                                  (assoc :waiter-discovery discovered-parameters)))))))})
