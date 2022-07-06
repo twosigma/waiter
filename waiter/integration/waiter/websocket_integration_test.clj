@@ -234,6 +234,7 @@
   (testing-using-waiter-url
     (let [token (str "token-" (rand-name))
           token-description (assoc (kitchen-request-headers :prefix "")
+                              :authentication "disabled"
                               :maintenance {"message" "custom maintenance message"}
                               :metric-group "waiter_ws_test"
                               :name (rand-name)
