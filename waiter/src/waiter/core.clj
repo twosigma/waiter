@@ -77,7 +77,7 @@
             [waiter.util.utils :as utils]
             [waiter.websocket :as ws]
             [waiter.work-stealing :as work-stealing])
-  (:import (java.net URI)
+  (:import (java.net InetAddress URI)
            (java.util.concurrent Executors)
            (javax.servlet ServletRequest)
            (org.apache.curator.framework CuratorFrameworkFactory)
@@ -599,12 +599,6 @@
 (def waiter-request-path-pattern
   #"^/waiter-(async/(v2/)?(complete|result|status)/|auth/|consent|interstitial)")
 
-(defn request-with-valid-waiter-hostname?
-  "Returns true if the provided request 'host' header is in the set of valid-waiter-hostnames"
-  [valid-waiter-hostnames {{:strs [host]} :headers}]
-  (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})]
-    (valid-waiter-hostnames (-> host (str/split #":") first))))
-
 (defn waiter-request?-factory
   "Creates a function that determines for a given request whether or not
   the request is intended for Waiter itself or a service of Waiter."
@@ -612,15 +606,17 @@
   (let [waiter-api-full-names #{auth/auth-expires-at-uri auth/auth-keep-alive-uri
                                 oidc/oidc-enabled-uri oidc/oidc-callback-uri
                                 "/app-name" "/service-id" "/token" "/waiter-ping"}]
-    (fn waiter-request? [{:keys [uri headers] :as request}]
+    (fn waiter-request? [{:keys [uri headers]}]
       (let [{:strs [host]} headers]
         ; special urls that are always for Waiter (FIXME)
         (or (contains? waiter-api-full-names uri)
             (and uri (some? (re-find waiter-request-path-pattern uri)))
             (and (or (str/blank? host)
-                     (request-with-valid-waiter-hostname? valid-waiter-hostnames request))
+                     (valid-waiter-hostnames (-> host
+                                               (str/split #":")
+                                               first))))
                  (not-any? #(str/starts-with? (key %) headers/waiter-header-prefix)
-                           (remove #(= "x-waiter-debug" (key %)) headers))))))))
+                           (remove #(= "x-waiter-debug" (key %)) headers)))))))
 
 (defn leader-fn-factory
   "Creates the leader? function.
@@ -828,7 +824,10 @@
                               hostname
                               [hostname])))
    :waiter-request?-fn* (pc/fnk [waiter-hostnames]
-                          (let [hostnames (set/union waiter-hostnames (utils/get-local-hostnames))]
+                          (let [local-router (InetAddress/getLocalHost)
+                                waiter-router-hostname (.getCanonicalHostName local-router)
+                                waiter-router-ip (.getHostAddress local-router)
+                                hostnames (conj waiter-hostnames waiter-router-hostname waiter-router-ip)]
                             (waiter-request?-factory hostnames)))
    :websocket-client (pc/fnk [[:settings [:websocket-config ws-max-binary-message-size ws-max-text-message-size]]
                               http-client-properties]
@@ -1255,8 +1254,7 @@
                                     ;; TODO optimization opportunity to avoid this re-computation later in the chain
                                     (let [{:strs [host]} headers
                                           hostname (-> host (str/split #":") first)
-                                          {:keys [token] :as discovered-parameters} (discover-service-parameters-fn headers)
-                                          valid-waiter-hostnames (set/union waiter-hostnames (utils/get-local-hostnames))]
+                                          {:keys [token] :as discovered-parameters} (discover-service-parameters-fn headers)]
                                       (handler (cond-> request
                                                  (or (not ignore-non-token-host)
                                                      (= token hostname))
