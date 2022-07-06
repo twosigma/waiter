@@ -603,7 +603,8 @@
   "Creates a function that determines for a given request whether or not
   the request is intended for Waiter itself or a service of Waiter."
   [valid-waiter-hostnames]
-  (let [waiter-api-full-names #{auth/auth-expires-at-uri auth/auth-keep-alive-uri
+  (let [valid-waiter-hostnames (set/union valid-waiter-hostnames #{"localhost" "127.0.0.1"})
+        waiter-api-full-names #{auth/auth-expires-at-uri auth/auth-keep-alive-uri
                                 oidc/oidc-enabled-uri oidc/oidc-callback-uri
                                 "/app-name" "/service-id" "/token" "/waiter-ping"}]
     (fn waiter-request? [{:keys [uri headers]}]
@@ -614,9 +615,9 @@
             (and (or (str/blank? host)
                      (valid-waiter-hostnames (-> host
                                                (str/split #":")
-                                               first))))
+                                               first)))
                  (not-any? #(str/starts-with? (key %) headers/waiter-header-prefix)
-                           (remove #(= "x-waiter-debug" (key %)) headers)))))))
+                           (remove #(= "x-waiter-debug" (key %)) headers))))))))
 
 (defn leader-fn-factory
   "Creates the leader? function.

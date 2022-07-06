@@ -914,6 +914,7 @@
                       :headers (assoc request-headers "host" token)
                       :method :delete
                       :query-params (if hard-delete {"hard-delete" true} {}))]
+    (println "delete token and assert response" response-status)
     (assert-response-status response response-status)
     ; the x-waiter-operation-result header should be set if delete was successful
     (when (= response-status http-200-ok)
