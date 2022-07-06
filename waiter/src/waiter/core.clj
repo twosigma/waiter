@@ -1255,6 +1255,9 @@
                                     ;; TODO optimization opportunity to avoid this re-computation later in the chain
                                     (let [discovered-parameters (discover-service-parameters-fn headers)
                                           valid-waiter-hostnames (set/union waiter-hostnames (utils/get-local-hostnames))]
+                                      (println "request path and method" request)
+                                      (println "add waiter-discovery?" (not (and ignore-waiter-hostnames
+                                                                                 (request-with-valid-waiter-hostname? valid-waiter-hostnames request))))
                                       (handler (cond-> request
                                                  (not (and ignore-waiter-hostnames
                                                            (request-with-valid-waiter-hostname? valid-waiter-hostnames request)))
@@ -1523,7 +1526,6 @@
                                  service-id-handler-fn]
                           ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                           ; on the token's configuration.
-                          ; TODO:LAST
                           (wrap-service-discovery-fn service-id-handler-fn :ignore-waiter-hostnames true)
                           service-id-handler-fn)
    :async-complete-handler-fn (pc/fnk [[:routines async-request-terminate-fn]
