@@ -1250,16 +1250,18 @@
    :wrap-service-discovery-fn (pc/fnk [[:state waiter-hostnames]
                                        discover-service-parameters-fn]
                                 (fn wrap-service-discovery-fn
-                                  [handler & {:keys [ignore-non-token-host] :or {ignore-non-token-host false}}]
+                                  [handler & {:keys [require-bypass-token-host] :or {require-bypass-token-host false}}]
                                   (fn [{:keys [headers] :as request}]
                                     ;; TODO optimization opportunity to avoid this re-computation later in the chain
                                     (let [{:strs [host]} headers
                                           hostname (-> host (str/split #":") first)
-                                          {:keys [token] :as discovered-parameters} (discover-service-parameters-fn headers)]
+                                          {:keys [service-description-template token] :as discovered-parameters} (discover-service-parameters-fn headers)]
                                       (handler (cond-> request
-                                                 ; ignore-non-token-host allows us to do waiter-disovery only when the host is a token
-                                                 (or (not ignore-non-token-host)
-                                                     (= token hostname))
+                                                 ; require-bypass-token-host flag only does waiter discovery when the hostname is the token
+                                                 ; and the token is in bypass mode
+                                                 (or (not require-bypass-token-host)
+                                                     (and (= token hostname)
+                                                          (= "true" (get-in service-description-template ["metadata" "waiter-proxy-bypass-opt-in"]))))
                                                  (assoc :waiter-discovery discovered-parameters)))))))})
 
 (def daemons
@@ -1523,11 +1525,9 @@
 (def request-handlers
   {:app-name-handler-fn (pc/fnk [[:routines wrap-service-discovery-fn]
                                  service-id-handler-fn]
-                          (-> service-id-handler-fn
-                              auth/wrap-auth-bypass
-                              ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
-                              ; on the token's configuration.
-                              (wrap-service-discovery-fn :ignore-non-token-host true)))
+                          ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
+                          ; on the token's configuration.
+                          (wrap-service-discovery-fn service-id-handler-fn :require-bypass-token-host true))
    :async-complete-handler-fn (pc/fnk [[:routines async-request-terminate-fn]
                                        wrap-router-auth-fn]
                                 (wrap-router-auth-fn
@@ -1672,10 +1672,9 @@
                                                    (update :headers assoc "x-waiter-fallback-period-secs" "0"))]
                                      (handler request)))
                                  wrap-secure-request-fn
-                                 auth/wrap-auth-bypass
                                  ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                                  ; on the token's configuration.
-                                 (wrap-service-discovery-fn :ignore-non-token-host true))))
+                                 (wrap-service-discovery-fn :require-bypass-token-host true))))
    :process-request-fn (pc/fnk [process-request-handler-fn process-request-wrapper-fn]
                          (process-request-wrapper-fn process-request-handler-fn))
    :process-request-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! post-process-async-request-response-fn]
@@ -1744,10 +1743,9 @@
                                                           service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash
                                                           fallback-state-atom retrieve-token-based-fallback-fn request))
                                wrap-secure-request-fn
-                               auth/wrap-auth-bypass
                                ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                                ; on the token's configuration.
-                               (wrap-service-discovery-fn :ignore-non-token-host true))))
+                               (wrap-service-discovery-fn :require-bypass-token-host true))))
    :service-id-handler-fn (pc/fnk [[:routines store-service-description-fn]
                                    [:state kv-store]
                                    wrap-descriptor-fn wrap-secure-request-fn]
@@ -2020,10 +2018,9 @@
                                 waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
                                 attach-service-defaults-fn tokens-update-chan token-validator request)) 
                              wrap-secure-request-fn
-                             auth/wrap-auth-bypass
                              ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                              ; on the token's configuration. 
-                             (wrap-service-discovery-fn :ignore-non-token-host true))))
+                             (wrap-service-discovery-fn :require-bypass-token-host true))))
    :token-list-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
                                    [:routines retrieve-descriptor-fn]
                                    [:settings [:instance-request-properties streaming-timeout-ms]]
