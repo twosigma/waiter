@@ -1523,6 +1523,7 @@
                                  service-id-handler-fn]
                           ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                           ; on the token's configuration.
+                          ; TODO:LAST
                           (wrap-service-discovery-fn service-id-handler-fn :ignore-waiter-hostnames true)
                           service-id-handler-fn)
    :async-complete-handler-fn (pc/fnk [[:routines async-request-terminate-fn]
@@ -1671,7 +1672,8 @@
                                  wrap-secure-request-fn
                                  ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                                  ; on the token's configuration.
-                               ; TODO:LAST (wrap-service-discovery-fn :ignore-waiter-hostnames true)
+                               ; TODO:LAST
+                               ; (wrap-service-discovery-fn :ignore-waiter-hostnames true)
                                )))
    :process-request-fn (pc/fnk [process-request-handler-fn process-request-wrapper-fn]
                          (process-request-wrapper-fn process-request-handler-fn))
@@ -1743,7 +1745,8 @@
                                wrap-secure-request-fn
                                ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                                ; on the token's configuration.
-                             ; TODO:LAST  (wrap-service-discovery-fn :ignore-waiter-hostnames true)
+                             ; TODO:LAST
+                             (wrap-service-discovery-fn :ignore-waiter-hostnames true)
                              )))
    :service-id-handler-fn (pc/fnk [[:routines store-service-description-fn]
                                    [:state kv-store]
@@ -2019,7 +2022,8 @@
                              wrap-secure-request-fn
                              ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                              ; on the token's configuration.
-                           ; TODO:LAST (wrap-service-discovery-fn :ignore-waiter-hostnames true)
+                           ; TODO:LAST
+                           (wrap-service-discovery-fn :ignore-waiter-hostnames true)
                            )))
    :token-list-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
                                    [:routines retrieve-descriptor-fn]
