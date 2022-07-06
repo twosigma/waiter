@@ -1523,7 +1523,7 @@
                                  service-id-handler-fn]
                           ; we have to add service-descovery before authenticating because how we do kerberos authentication may depend
                           ; on the token's configuration.
-                          ; TODO:LAST (wrap-service-discovery-fn service-id-handler-fn :ignore-waiter-hostnames true)
+                          (wrap-service-discovery-fn service-id-handler-fn :ignore-waiter-hostnames true)
                           service-id-handler-fn)
    :async-complete-handler-fn (pc/fnk [[:routines async-request-terminate-fn]
                                        wrap-router-auth-fn]
