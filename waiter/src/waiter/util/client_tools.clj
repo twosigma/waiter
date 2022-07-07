@@ -1207,7 +1207,7 @@
   "Gets the token with the given name"
   [waiter-url token & {:keys [cookies query-params request-headers] :or
                        {cookies {}, query-params {"include" "metadata"}}}]
-  (let [request-headers (or request-headers {"host" token})
+  (let [request-headers (or request-headers {"x-waiter-token" token})
         token-response (make-request waiter-url "/token"
                                      :cookies cookies
                                      :headers request-headers
