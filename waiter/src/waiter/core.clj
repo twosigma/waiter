@@ -1247,8 +1247,7 @@
                                              (fn websocket-request-auth-cookie-attacher [request]
                                                (ws/inter-router-request-middleware router-id (first passwords) request)))
 
-   :wrap-service-discovery-fn (pc/fnk [[:state waiter-hostnames]
-                                       discover-service-parameters-fn]
+   :wrap-service-discovery-fn (pc/fnk [discover-service-parameters-fn]
                                 (fn wrap-service-discovery-fn
                                   [handler & {:keys [require-bypass-token-host] :or {require-bypass-token-host false}}]
                                   (fn [{:keys [headers] :as request}]

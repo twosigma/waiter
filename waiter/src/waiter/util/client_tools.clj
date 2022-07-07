@@ -911,7 +911,7 @@
                                  (and hard-delete (nil? headers)) (attach-token-etag waiter-url token))
         {response-headers :headers :as response}
         (make-request waiter-url "/token"
-                      :headers (assoc request-headers "host" token)
+                      :headers (assoc request-headers "x-waiter-token" token)
                       :method :delete
                       :query-params (if hard-delete {"hard-delete" true} {}))]
     (assert-response-status response response-status)
