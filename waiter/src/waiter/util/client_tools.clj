@@ -909,7 +909,7 @@
                        :or {hard-delete true response-status http-200-ok use-host-header true}}]
   (log/info "deleting token" token {:hard-delete hard-delete})
   (let [request-headers (cond->> headers
-                                 (and hard-delete (nil? headers)) (attach-token-etag waiter-url token :use-host-header use-host-header))
+                                 (and hard-delete (nil? headers)) (attach-token-etag waiter-url token nil :use-host-header use-host-header))
         {response-headers :headers :as response}
         (make-request waiter-url "/token"
                       :headers (assoc request-headers (if use-host-header "host" "x-waiter-token") token)
