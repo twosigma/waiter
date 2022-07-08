@@ -899,19 +899,20 @@
 
 (defn- attach-token-etag
   "Attaches the if-match etag to the headers"
-  [waiter-url token headers]
-  (let [last-modified-etag (token->etag waiter-url token)]
+  [waiter-url token headers & {:keys [use-host-header] :or {use-host-header true}}]
+  (let [last-modified-etag (token->etag waiter-url token :use-host-header use-host-header)]
     (assoc headers "if-match" last-modified-etag)))
 
 (defn delete-token-and-assert
   "Deletes and token and asserts that the delete was successful."
-  [waiter-url token & {:keys [hard-delete headers response-status] :or {hard-delete true response-status http-200-ok}}]
+  [waiter-url token & {:keys [hard-delete headers response-status use-host-header]
+                       :or {hard-delete true response-status http-200-ok use-host-header true}}]
   (log/info "deleting token" token {:hard-delete hard-delete})
   (let [request-headers (cond->> headers
-                                 (and hard-delete (nil? headers)) (attach-token-etag waiter-url token))
+                                 (and hard-delete (nil? headers)) (attach-token-etag waiter-url token :use-host-header use-host-header))
         {response-headers :headers :as response}
         (make-request waiter-url "/token"
-                      :headers (assoc request-headers "x-waiter-token" token)
+                      :headers (assoc request-headers (if use-host-header "host" "x-waiter-token") token)
                       :method :delete
                       :query-params (if hard-delete {"hard-delete" true} {}))]
     (assert-response-status response response-status)
@@ -1205,9 +1206,9 @@
 
 (defn get-token
   "Gets the token with the given name"
-  [waiter-url token & {:keys [cookies query-params request-headers] :or
-                       {cookies {}, query-params {"include" "metadata"}}}]
-  (let [request-headers (or request-headers {"x-waiter-token" token})
+  [waiter-url token & {:keys [cookies query-params request-headers use-host-header] :or
+                       {cookies {} query-params {"include" "metadata"} use-host-header true}}]
+  (let [request-headers (or request-headers {(if use-host-header "host" "x-waiter-token") token})
         token-response (make-request waiter-url "/token"
                                      :cookies cookies
                                      :headers request-headers
@@ -1318,8 +1319,8 @@
 
 (defn token->etag
   "Retrieves the etag for a token"
-  [waiter-url token & {:keys [cookies] :or {cookies {}}}]
-  (-> (get-token waiter-url token :cookies cookies :query-params {"token" token})
+  [waiter-url token & {:keys [cookies use-host-header] :or {cookies {} use-host-header true}}]
+  (-> (get-token waiter-url token :cookies cookies :use-host-header use-host-header :query-params {"token" token})
     :headers
     (get "etag")))
 
