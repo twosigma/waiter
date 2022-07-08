@@ -1019,25 +1019,6 @@
                   ;; in order for Waiter to garbage collect its metrics:
                   :transient-metrics-timeout-ms 300000}
 
- ; Configures how waiter consumes and handles metrics from an external metrics service
- ; these metrics can be used for waiter to make autoscaling decisions
- :metrics-consumer {
-                    ; max time to wait for metrics service to establish connection when watch request is made
-                    :connection-timeout-ms 5000
-
-                    ; total allowed time for inactivity on a metrics service watch response stream before terminating
-                    ; and retrying the watch request
-                    :idle-timeout-ms 10000
-
-                    ; metrics services to aggregate metrics from
-                    :metrics-services []
-
-                    ; time before retrying a new watch connection to the metrics service
-                    :retry-delay-ms 1000
-
-                    ; total number of token metrics events that can be buffered before old events are overwritten
-                    :token-metric-chan-buffer-size 4096}
-
  ; ---------- Router Config ----------
 
  :router-config {; The fully qualified domain name for this router

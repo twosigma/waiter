@@ -92,12 +92,6 @@
                                                                                       s/Any s/Any}}
                                      (s/required-key :router-update-interval-ms) schema/positive-int
                                      (s/required-key :transient-metrics-timeout-ms) schema/positive-int}
-   (s/required-key :metrics-consumer) {(s/required-key :connection-timeout-ms) schema/non-negative-num
-                                       (s/required-key :idle-timeout-ms) schema/non-negative-num
-                                       (s/required-key :metrics-services) [{(s/required-key :cluster) schema/non-empty-string
-                                                                            (s/required-key :url) schema/non-empty-string}]
-                                       (s/required-key :retry-delay-ms) schema/non-negative-num
-                                       (s/required-key :token-metric-chan-buffer-size) schema/positive-int}
    (s/required-key :password-store-config) (s/constrained
                                              {:kind s/Keyword
                                               s/Keyword schema/require-symbol-factory-fn}
@@ -376,11 +370,6 @@
                     :codahale-reporters {}
                     :router-update-interval-ms 5000
                     :transient-metrics-timeout-ms 300000}
-   :metrics-consumer {:connection-timeout-ms 5000
-                      :idle-timeout-ms 10000
-                      :metrics-services []
-                      :retry-delay-ms 1000
-                      :token-metric-chan-buffer-size 16384}
    :password-store-config {:kind :configured
                            :configured {:factory-fn 'waiter.password-store/configured-provider
                                         :passwords ["open-sesame"]}}

@@ -822,7 +822,7 @@
       (utils/clj->streaming-json-response {:details (merge (->> ["autoscaler" "autoscaling-multiplexer" "codahale-reporters"
                                                                  "ejection-expiry" "entitlement-manager" "fallback"
                                                                  "gc-broken-services" "gc-services" "gc-transient-metrics" "instance-tracker" "interstitial"
-                                                                 "jwt-auth-server" "kv-store" "launch-metrics" "leader" "local-usage" "metrics-consumer"
+                                                                 "jwt-auth-server" "kv-store" "launch-metrics" "leader" "local-usage"
                                                                  "maintainer" "router-metrics" "scheduler" "service-description-builder"
                                                                  "service-maintainer" "start-new-services-maintainer" "statsd" "token-validator" "token-watch-maintainer"
                                                                  "work-stealing"]
