@@ -1718,30 +1718,30 @@
    :service-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
                                 [:routines admin-user?-fn allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-async-fn
                                  retrieve-token-based-fallback-fn router-metrics-helpers service-id->references-fn
-                                 service-id->service-description-fn service-id->source-tokens-entries-fn token->token-hash wrap-service-discovery-fn]
+                                 service-id->service-description-fn service-id->source-tokens-entries-fn token->token-hash]
                                 [:scheduler scheduler]
                                 [:state kv-store router-id scheduler-interactions-thread-pool fallback-state-atom]
-                                wrap-ignore-disabled-auth-fn wrap-secure-request-fn]
+                                wrap-secure-request-fn]
                          (let [query-autoscaler-state-fn (:query-state-fn autoscaler)
                                {{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                {:keys [service-id->metrics-fn]} router-metrics-helpers]
-                           (-> (fn service-handler-fn [{:as request {:keys [service-id]} :route-params}]
-                                 (handler/service-handler router-id service-id scheduler kv-store admin-user?-fn allowed-to-manage-service?-fn
-                                                          generate-log-url-fn make-inter-router-requests-async-fn
-                                                          service-id->service-description-fn service-id->source-tokens-entries-fn
-                                                          service-id->references-fn query-state-fn query-autoscaler-state-fn
-                                                          service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash
-                                                          fallback-state-atom retrieve-token-based-fallback-fn request))
-                             wrap-secure-request-fn
-                             wrap-ignore-disabled-auth-fn
-                             wrap-service-discovery-fn)))
+                           (wrap-secure-request-fn
+                             (fn service-handler-fn [{:as request {:keys [service-id]} :route-params}]
+                               (handler/service-handler router-id service-id scheduler kv-store admin-user?-fn allowed-to-manage-service?-fn
+                                                        generate-log-url-fn make-inter-router-requests-async-fn
+                                                        service-id->service-description-fn service-id->source-tokens-entries-fn
+                                                        service-id->references-fn query-state-fn query-autoscaler-state-fn
+                                                        service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash
+                                                        fallback-state-atom retrieve-token-based-fallback-fn request)))))
    :service-id-handler-fn (pc/fnk [[:routines store-service-description-fn]
                                    [:state kv-store]
-                                   wrap-descriptor-fn wrap-secure-request-fn]
+                                   wrap-descriptor-fn wrap-ignore-disabled-auth-fn wrap-secure-request-fn wrap-service-discovery-fn]
                             (-> (fn service-id-handler-fn [request]
                                   (handler/service-id-handler request kv-store store-service-description-fn))
                               wrap-descriptor-fn
-                              wrap-secure-request-fn))
+                              wrap-secure-request-fn
+                              wrap-ignore-disabled-auth-fn
+                              wrap-service-discovery-fn))
    :service-list-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
                                      [:routines prepend-waiter-url retrieve-token-based-fallback-fn router-metrics-helpers
                                       service-id->references-fn service-id->service-description-fn service-id->source-tokens-entries-fn
