@@ -1249,20 +1249,11 @@
 
    :wrap-service-discovery-fn (pc/fnk [discover-service-parameters-fn]
                                 (fn wrap-service-discovery-fn
-                                  [handler & {:keys [require-bypass-token-host] :or {require-bypass-token-host false}}]
+                                  [handler]
                                   (fn [{:keys [headers] :as request}]
                                     ;; TODO optimization opportunity to avoid this re-computation later in the chain
-                                    (let [{:strs [host]} headers
-                                          hostname (-> host (str/split #":") first)
-                                          {:keys [service-description-template token] :as discovered-parameters} (discover-service-parameters-fn headers)]
-                                      (handler (cond-> request
-                                                 ; require-bypass-token-host flag only does waiter discovery when the hostname is the token
-                                                 ; and the token is in bypass mode. Usually this flag is enabled so that discovery is done before
-                                                 ; the wrap-secure-request-fn middleware because bypass tokens may authenticate differently
-                                                 (or (not require-bypass-token-host)
-                                                     (and (= token hostname)
-                                                          (= "true" (get-in service-description-template ["metadata" "waiter-proxy-bypass-opt-in"]))))
-                                                 (assoc :waiter-discovery discovered-parameters)))))))})
+                                    (let [discovered-parameters (discover-service-parameters-fn headers)]
+                                      (handler (assoc request :waiter-discovery discovered-parameters))))))})
 
 (def daemons
   {:autoscaler (pc/fnk [[:routines router-metrics-helpers service-id->service-description-fn service-id->stale?]
@@ -1524,8 +1515,10 @@
 
 (def request-handlers
   {:app-name-handler-fn (pc/fnk [[:routines wrap-service-discovery-fn]
-                                 service-id-handler-fn]
-                          (wrap-service-discovery-fn service-id-handler-fn :require-bypass-token-host true))
+                                 service-id-handler-fn wrap-ignore-disabled-auth-fn]
+                          (-> service-id-handler-fn
+                            wrap-ignore-disabled-auth-fn
+                            wrap-service-discovery-fn))
    :async-complete-handler-fn (pc/fnk [[:routines async-request-terminate-fn]
                                        wrap-router-auth-fn]
                                 (wrap-router-auth-fn
@@ -1655,7 +1648,7 @@
                                   [:routines make-inter-router-requests-async-fn wrap-service-discovery-fn]
                                   [:settings health-check-config]
                                   [:state fallback-state-atom router-id user-agent-version]
-                                  process-request-fn wrap-descriptor-for-ping-fn wrap-secure-request-fn]
+                                  process-request-fn wrap-descriptor-for-ping-fn wrap-ignore-disabled-auth-fn wrap-secure-request-fn]
                            (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                  user-agent (str "waiter-ping/" user-agent-version)
                                  handler (wrap-descriptor-for-ping-fn
@@ -1669,8 +1662,9 @@
                                                    (not (utils/param-contains? request-params "include" "fallback"))
                                                    (update :headers assoc "x-waiter-fallback-period-secs" "0"))]
                                      (handler request)))
-                                 wrap-secure-request-fn
-                                 (wrap-service-discovery-fn :require-bypass-token-host true))))
+                               wrap-secure-request-fn
+                               wrap-ignore-disabled-auth-fn
+                               wrap-service-discovery-fn)))
    :process-request-fn (pc/fnk [process-request-handler-fn process-request-wrapper-fn]
                          (process-request-wrapper-fn process-request-handler-fn))
    :process-request-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! post-process-async-request-response-fn]
@@ -1727,7 +1721,7 @@
                                  service-id->service-description-fn service-id->source-tokens-entries-fn token->token-hash wrap-service-discovery-fn]
                                 [:scheduler scheduler]
                                 [:state kv-store router-id scheduler-interactions-thread-pool fallback-state-atom]
-                                wrap-secure-request-fn]
+                                wrap-ignore-disabled-auth-fn wrap-secure-request-fn]
                          (let [query-autoscaler-state-fn (:query-state-fn autoscaler)
                                {{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                {:keys [service-id->metrics-fn]} router-metrics-helpers]
@@ -1738,8 +1732,9 @@
                                                           service-id->references-fn query-state-fn query-autoscaler-state-fn
                                                           service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash
                                                           fallback-state-atom retrieve-token-based-fallback-fn request))
-                               wrap-secure-request-fn
-                               (wrap-service-discovery-fn :require-bypass-token-host true))))
+                             wrap-secure-request-fn
+                             wrap-ignore-disabled-auth-fn
+                             wrap-service-discovery-fn)))
    :service-id-handler-fn (pc/fnk [[:routines store-service-description-fn]
                                    [:state kv-store]
                                    wrap-descriptor-fn wrap-secure-request-fn]
@@ -2000,19 +1995,20 @@
    :status-handler-fn (pc/fnk [] handler/status-handler)
    :token-handler-fn (pc/fnk [[:curator synchronize-fn]
                               [:daemons token-watch-maintainer]
-                              [:routines attach-service-defaults-fn make-inter-router-requests-sync-fn validate-service-description-fn 
+                              [:routines attach-service-defaults-fn make-inter-router-requests-sync-fn validate-service-description-fn
                                wrap-service-discovery-fn]
                               [:settings [:token-config history-length limit-per-owner]]
                               [:state clock entitlement-manager kv-store token-cluster-calculator token-root token-validator waiter-hostnames]
-                              wrap-secure-request-fn]
+                              wrap-ignore-disabled-auth-fn wrap-secure-request-fn]
                        (let [{:keys [tokens-update-chan]} token-watch-maintainer]
                          (-> (fn token-handler-fn [request]
                                (token/handle-token-request
                                 clock synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
                                 waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
-                                attach-service-defaults-fn tokens-update-chan token-validator request)) 
-                             wrap-secure-request-fn
-                             (wrap-service-discovery-fn :require-bypass-token-host true))))
+                                attach-service-defaults-fn tokens-update-chan token-validator request))
+                           wrap-secure-request-fn
+                           wrap-ignore-disabled-auth-fn
+                           wrap-service-discovery-fn)))
    :token-list-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
                                    [:routines retrieve-descriptor-fn]
                                    [:settings [:instance-request-properties streaming-timeout-ms]]
@@ -2125,6 +2121,10 @@
                                   (fn wrap-descriptor-for-ping-fn [handler]
                                     (descriptor/wrap-descriptor handler request->descriptor-fn service-invocation-authorized?-fn
                                                                 start-new-service-fn fallback-state-atom pr/exception->ping-response)))
+   :wrap-ignore-disabled-auth-fn (pc/fnk []
+                                   (fn wrap-ignore-disabled-auth-fn [handler]
+                                     (fn [request]
+                                       (handler (assoc request :ignore-disabled-auth true)))))
    :wrap-router-auth-fn (pc/fnk [[:state passwords router-id]]
                           (fn wrap-router-auth-fn [handler]
                             (fn [request]

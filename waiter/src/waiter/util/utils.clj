@@ -844,7 +844,7 @@
 
 (defn wrap-identity
   "A wrapper middleware that does nothing."
-  [handler & {}]
+  [handler]
   handler)
 
 (defn update-exception

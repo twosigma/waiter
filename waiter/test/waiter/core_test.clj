@@ -500,6 +500,7 @@
                                :router-id "router-id"
                                :scheduler-interactions-thread-pool scheduler-interactions-thread-pool
                                :fallback-state-atom (atom {:available-service-ids #{} :healthy-service-ids #{}})}
+                       :wrap-ignore-disabled-auth-fn utils/wrap-identity
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}]
 
@@ -664,6 +665,7 @@
                                :router-id "router-id"
                                :scheduler-interactions-thread-pool scheduler-interactions-thread-pool
                                :fallback-state-atom (atom nil)}
+                       :wrap-ignore-disabled-auth-fn utils/wrap-identity
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}
         ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))
