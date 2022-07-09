@@ -1733,9 +1733,9 @@
                                                         service-id->references-fn query-state-fn query-autoscaler-state-fn
                                                         service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash
                                                         fallback-state-atom retrieve-token-based-fallback-fn request)))))
-   :service-id-handler-fn (pc/fnk [[:routines store-service-description-fn]
+   :service-id-handler-fn (pc/fnk [[:routines store-service-description-fn wrap-service-discovery-fn]
                                    [:state kv-store]
-                                   wrap-descriptor-fn wrap-ignore-disabled-auth-fn wrap-secure-request-fn wrap-service-discovery-fn]
+                                   wrap-descriptor-fn wrap-ignore-disabled-auth-fn wrap-secure-request-fn]
                             (-> (fn service-id-handler-fn [request]
                                   (handler/service-id-handler request kv-store store-service-description-fn))
                               wrap-descriptor-fn
