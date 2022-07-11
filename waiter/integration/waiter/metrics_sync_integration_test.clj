@@ -492,6 +492,8 @@
         (assert-response-status response http-200-ok)
         (with-service-cleanup
           service-id
+          ; there should be no outstanding requests when service-id has no external metrics provided to it and there are no queued requests
+          (assert-num-outstanding-requests routers cookies service-id 0)
           (let [make-delayed-service-request!
                 (fn [& {:keys [delay-ms] :or {delay-ms 0}}]
                   (async/go
