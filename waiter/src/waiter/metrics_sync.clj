@@ -26,6 +26,7 @@
             [qbits.jet.client.websocket :as ws]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
+            [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
@@ -474,8 +475,6 @@
                                                                   router-id->service-id->metrics)]
                                  (try
                                    (let [service-desc (service-id->service-description-fn service-id :effective? true)
-                                         service-id-bypass? (= "true"
-                                                               (get-in service-desc ["metadata" "waiter-proxy-bypass-opt-in"]))
                                          router-metrics (aggregate-service-metrics router->metrics)
                                          waiting-for-available-instance (get router-metrics "waiting-for-available-instance" 0)
                                          {:strs [last-request-time] :as external-service-metrics}
@@ -491,7 +490,7 @@
                                      (cond-> router-metrics
                                        (some? last-request-time)
                                        (update "last-request-time" t/max-date last-request-time)
-                                       service-id-bypass?
+                                       (sd/service-description-bypass-enabled? service-desc)
                                        (assoc "outstanding" (+ active-request-count waiting-for-available-instance))))
                                    (catch Exception e
                                      (log/error e "error in retrieving aggregated metrics for" service-id))))))

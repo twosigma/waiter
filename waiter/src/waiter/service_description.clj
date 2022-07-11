@@ -1772,3 +1772,9 @@
     (fn [service-description]
       (or (empty? param-predicates)
           (every? #(%1 service-description) param-predicates)))))
+
+(defn service-description-bypass-enabled?
+  "Returns true if the provided service description has bypass enabled and false otherwise."
+  [service-desc]
+  (= "true"
+     (get-in service-desc ["metadata" "waiter-proxy-bypass-opt-in"])))
