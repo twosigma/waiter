@@ -477,12 +477,13 @@
 
 (defn assert-scale-to-instances
   "Assert number of instances for a service-id."
-  [routers service-id expected-num-instances]
+  [routers cookies service-id expected-num-instances]
   (is (wait-for
         (fn []
           (every?
             (fn router-has-expected-scale-to-instances [[router-id router-url]]
-              (let [scale-to-instances (get-in (service-state router-url service-id) [:state :autoscaler-state :scale-to-instances])]
+              (let [scale-to-instances (get-in (service-state router-url service-id :cookies cookies)
+                                               [:state :autoscaler-state :scale-to-instances])]
                 (log/info "outstanding requests reported by router" {:actual-scale-to-instances scale-to-instances
                                                                      :expected-scale-to-instances expected-num-instances
                                                                      :service-id service-id
@@ -545,7 +546,7 @@
               (assert-num-outstanding-requests routers cookies service-id expected-num-of-outstanding-requests))
 
             (testing "scale-to-instances matches the number of outstanding requests for a bypass service"
-              (assert-scale-to-instances routers service-id expected-num-of-outstanding-requests))
+              (assert-scale-to-instances routers cookies service-id expected-num-of-outstanding-requests))
 
             (testing "with no queued requests, the number of outstanding requests should be the same as the number of queued-requests"
               ; let requests terminate before confirming that the queued requests became zero as there are no longer
@@ -557,4 +558,4 @@
               (assert-num-outstanding-requests routers cookies service-id expected-num-of-active-requests))
 
             (testing "scale-to-instances matches the number outstanding requests when there are no queued requests"
-              (assert-scale-to-instances routers service-id expected-num-of-active-requests))))))))
+              (assert-scale-to-instances routers cookies service-id expected-num-of-active-requests))))))))
