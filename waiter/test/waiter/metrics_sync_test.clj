@@ -477,12 +477,27 @@
     (is (= {} (agent->service-id->metrics (agent {}) (constantly {})))))
 
   (testing "aggregation-of-router-metrics"
-    (let [time-1 (DateTime. 1000)
-          time-2 (DateTime. 2000)
-          time-3 (DateTime. 3000)
-          time-4 (DateTime. 4000)
-          time-5 (DateTime. 5000)
-          in-router-metrics-state {:metrics
+    (let [time-1 (du/str-to-date "2000-01-01T00:00:01.000Z")
+          time-2 (du/str-to-date "2000-01-01T00:00:02.000Z")
+          time-3 (du/str-to-date "2000-01-01T00:00:03.000Z")
+          time-4 (du/str-to-date "2000-01-01T00:00:04.000Z")
+          time-5 (du/str-to-date "2000-01-01T00:00:05.000Z")
+          service-id->desc {"s3" {}
+                            "s4" {"metadata" {}}
+                            "s5" {"metadata" {"waiter-proxy-bypass-opt-in" "false"}}
+                            "s6" {"metadata" {"waiter-proxy-bypass-opt-in" "true"}}}
+          service-id->service-description-fn (fn service-id->service-description [service-id & {}]
+                                               (get service-id->desc service-id))
+          in-router-metrics-state {:external-metrics {"s6" {"s6.i1" {"metrics" {"active-request-count" 3
+                                                                                "last-request-time" (du/date-to-str time-5)}
+                                                                     "updated-at" (du/date-to-str time-1)}
+                                                            "s6.i2" {"metrics" {"active-request-count" 2
+                                                                                "last-request-time" (du/date-to-str time-4)}
+                                                                     "updated-at" (du/date-to-str time-1)}
+                                                            "s6.i3" {"metrics" {"active-request-count" 1
+                                                                                "last-request-time" (du/date-to-str time-3)}
+                                                                     "updated-at" (du/date-to-str time-2)}}}
+                                   :metrics
                                    {:routers
                                     {"router-0" {"s1" {"last-request-time" time-1
                                                        "outstanding" 0
@@ -493,7 +508,10 @@
                                                        "total" 1
                                                        "waiting-for-available-instance" 0}
                                                  "s3" {"last-request-time" time-3
-                                                       "outstanding" 0}}
+                                                       "outstanding" 0}
+                                                 "s6" {"last-request-time" time-1
+                                                       "waiting-for-available-instance" 1
+                                                       "outstanding" 900}}
                                      "router-1" {"s1" {"outstanding" 1}
                                                  "s2" {"last-request-time" time-1
                                                        "outstanding" 1
@@ -518,7 +536,10 @@
                                                        "waiting-for-available-instance" 5}
                                                  "s3" {"last-request-time" time-2
                                                        "outstanding" 3
-                                                       "total" 6}}
+                                                       "total" 6}
+                                                 "s6" {"last-request-time" time-5
+                                                       "waiting-for-available-instance" 2
+                                                       "outstanding" 100}}
                                      "router-4" {"s1" {"outstanding" 4}
                                                  "s4" {"last-request-time" time-5
                                                        "outstanding" 4
@@ -547,8 +568,14 @@
                            "s5" {"last-request-time" time-2
                                  "outstanding" 3
                                  "total" 3
-                                 "waiting-for-available-instance" 1}}]
-      (is (= expected-output (agent->service-id->metrics router-metrics-agent (constantly {}))))))
+                                 "waiting-for-available-instance" 1}
+                           "s6" {"last-request-time" time-5
+                                 ; does not include router specific outstanding requests because s6 is a bypass service.
+                                 ; the only metrics added together are the active-request-counts and the waiting-for-available-instance
+                                 ; (a.k.a queued request counts).
+                                 "outstanding" 9
+                                 "waiting-for-available-instance" 3}}]
+      (is (= expected-output (agent->service-id->metrics router-metrics-agent service-id->service-description-fn)))))
 
   (testing "faulty-router-metrics"
     (let [in-router-metrics-state {:metrics {:routers {"router-0" {"s1" {"c" 0}, "s2" [], "s3" {"c" 0}}
