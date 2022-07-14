@@ -1514,8 +1514,11 @@
                                  kv-store clock tokens-update-chan-buffer-size channels-update-chan-buffer-size watch-refresh-timer-chan)))})
 
 (def request-handlers
-  {:app-name-handler-fn (pc/fnk [service-id-handler-fn]
-                          service-id-handler-fn)
+  {:app-name-handler-fn (pc/fnk [[:routines wrap-service-discovery-fn]
+                                 service-id-handler-fn wrap-ignore-disabled-auth-fn]
+                          (-> service-id-handler-fn
+                            wrap-ignore-disabled-auth-fn
+                            wrap-service-discovery-fn))
    :async-complete-handler-fn (pc/fnk [[:routines async-request-terminate-fn]
                                        wrap-router-auth-fn]
                                 (wrap-router-auth-fn
@@ -1642,10 +1645,10 @@
                                   (oidc/oidc-enabled-request-handler oidc-authenticator waiter-hostnames request))))
    :not-found-handler-fn (pc/fnk [] handler/not-found-handler)
    :ping-service-handler (pc/fnk [[:daemons router-state-maintainer]
-                                  [:routines make-inter-router-requests-async-fn]
+                                  [:routines make-inter-router-requests-async-fn wrap-service-discovery-fn]
                                   [:settings health-check-config]
                                   [:state fallback-state-atom router-id user-agent-version]
-                                  process-request-fn wrap-descriptor-for-ping-fn wrap-secure-request-fn]
+                                  process-request-fn wrap-descriptor-for-ping-fn wrap-ignore-disabled-auth-fn wrap-secure-request-fn]
                            (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                  user-agent (str "waiter-ping/" user-agent-version)
                                  handler (wrap-descriptor-for-ping-fn
@@ -1653,13 +1656,15 @@
                                              (let [retrieve-service-status-label-fn #(:service-status-label (service/retrieve-service-status-and-deployment-error % (query-state-fn)))
                                                    service-state-fn (partial descriptor/extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn)]
                                                (pr/ping-service user-agent process-request-fn service-state-fn health-check-config request))))]
-                             (wrap-secure-request-fn
-                               (fn ping-service-handler [request]
-                                 (let [request-params (-> request ru/query-params-request :query-params)
-                                       request (cond-> request
-                                                 (not (utils/param-contains? request-params "include" "fallback"))
-                                                 (update :headers assoc "x-waiter-fallback-period-secs" "0"))]
-                                   (handler request))))))
+                             (-> (fn ping-service-handler [request]
+                                   (let [request-params (-> request ru/query-params-request :query-params)
+                                         request (cond-> request
+                                                   (not (utils/param-contains? request-params "include" "fallback"))
+                                                   (update :headers assoc "x-waiter-fallback-period-secs" "0"))]
+                                     (handler request)))
+                               wrap-secure-request-fn
+                               wrap-ignore-disabled-auth-fn
+                               wrap-service-discovery-fn)))
    :process-request-fn (pc/fnk [process-request-handler-fn process-request-wrapper-fn]
                          (process-request-wrapper-fn process-request-handler-fn))
    :process-request-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! post-process-async-request-response-fn]
@@ -1728,13 +1733,15 @@
                                                         service-id->references-fn query-state-fn query-autoscaler-state-fn
                                                         service-id->metrics-fn scheduler-interactions-thread-pool token->token-hash
                                                         fallback-state-atom retrieve-token-based-fallback-fn request)))))
-   :service-id-handler-fn (pc/fnk [[:routines store-service-description-fn]
+   :service-id-handler-fn (pc/fnk [[:routines store-service-description-fn wrap-service-discovery-fn]
                                    [:state kv-store]
-                                   wrap-descriptor-fn wrap-secure-request-fn]
+                                   wrap-descriptor-fn wrap-ignore-disabled-auth-fn wrap-secure-request-fn]
                             (-> (fn service-id-handler-fn [request]
                                   (handler/service-id-handler request kv-store store-service-description-fn))
                               wrap-descriptor-fn
-                              wrap-secure-request-fn))
+                              wrap-secure-request-fn
+                              wrap-ignore-disabled-auth-fn
+                              wrap-service-discovery-fn))
    :service-list-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
                                      [:routines prepend-waiter-url retrieve-token-based-fallback-fn router-metrics-helpers
                                       service-id->references-fn service-id->service-description-fn service-id->source-tokens-entries-fn
@@ -1988,17 +1995,20 @@
    :status-handler-fn (pc/fnk [] handler/status-handler)
    :token-handler-fn (pc/fnk [[:curator synchronize-fn]
                               [:daemons token-watch-maintainer]
-                              [:routines attach-service-defaults-fn make-inter-router-requests-sync-fn validate-service-description-fn]
+                              [:routines attach-service-defaults-fn make-inter-router-requests-sync-fn validate-service-description-fn
+                               wrap-service-discovery-fn]
                               [:settings [:token-config history-length limit-per-owner]]
                               [:state clock entitlement-manager kv-store token-cluster-calculator token-root token-validator waiter-hostnames]
-                              wrap-secure-request-fn]
+                              wrap-ignore-disabled-auth-fn wrap-secure-request-fn]
                        (let [{:keys [tokens-update-chan]} token-watch-maintainer]
-                         (wrap-secure-request-fn
-                           (fn token-handler-fn [request]
-                             (token/handle-token-request
-                               clock synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
-                               waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
-                               attach-service-defaults-fn tokens-update-chan token-validator request)))))
+                         (-> (fn token-handler-fn [request]
+                               (token/handle-token-request
+                                clock synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
+                                waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
+                                attach-service-defaults-fn tokens-update-chan token-validator request))
+                           wrap-secure-request-fn
+                           wrap-ignore-disabled-auth-fn
+                           wrap-service-discovery-fn)))
    :token-list-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
                                    [:routines retrieve-descriptor-fn]
                                    [:settings [:instance-request-properties streaming-timeout-ms]]
@@ -2111,6 +2121,10 @@
                                   (fn wrap-descriptor-for-ping-fn [handler]
                                     (descriptor/wrap-descriptor handler request->descriptor-fn service-invocation-authorized?-fn
                                                                 start-new-service-fn fallback-state-atom pr/exception->ping-response)))
+   :wrap-ignore-disabled-auth-fn (pc/fnk []
+                                   (fn wrap-ignore-disabled-auth-fn [handler]
+                                     (fn [request]
+                                       (handler (assoc request :ignore-disabled-auth true)))))
    :wrap-router-auth-fn (pc/fnk [[:state passwords router-id]]
                           (fn wrap-router-auth-fn [handler]
                             (fn [request]

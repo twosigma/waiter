@@ -24,10 +24,12 @@
   auth/Authenticator
   (wrap-auth-handler [_ request-handler]
     (let [provider-name->handler (pc/map-vals #(auth/wrap-auth-handler % request-handler) provider-name->authenticator)]
-      (fn composite-authenticator-handler [request]
-        (let [authentication (or (get-in request [:waiter-discovery :service-description-template "authentication"])
-                                 ;; used by waiter api requests
-                                 default-authentication)]
+      (fn composite-authenticator-handler [{:keys [ignore-disabled-auth] :as request}]
+        (let [configured-auth (get-in request [:waiter-discovery :service-description-template "authentication"] default-authentication)
+              authentication (if (and ignore-disabled-auth
+                                      (= configured-auth "disabled"))
+                               default-authentication
+                               configured-auth)]
           (if-let [handler (get provider-name->handler authentication)]
             (handler request)
             (throw (ex-info (str "No authenticator found for " authentication " authentication.")

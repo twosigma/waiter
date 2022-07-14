@@ -488,7 +488,8 @@
                                   :service-id->references-fn (constantly [])
                                   :service-id->service-description-fn (constantly {})
                                   :service-id->source-tokens-entries-fn (constantly #{})
-                                  :token->token-hash identity}
+                                  :token->token-hash identity
+                                  :wrap-service-discovery-fn utils/wrap-identity}
                        :scheduler {:scheduler (reify scheduler/ServiceScheduler
                                                 (delete-service [_ _]
                                                   (let [result @delete-service-result-atom]
@@ -499,6 +500,7 @@
                                :router-id "router-id"
                                :scheduler-interactions-thread-pool scheduler-interactions-thread-pool
                                :fallback-state-atom (atom {:available-service-ids #{} :healthy-service-ids #{}})}
+                       :wrap-ignore-disabled-auth-fn utils/wrap-identity
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}]
 
@@ -655,13 +657,15 @@
                                                                           (assoc "cpus" 1
                                                                                  "mem" 2048)))
                                   :service-id->source-tokens-entries-fn (constantly #{})
-                                  :token->token-hash identity}
+                                  :token->token-hash identity
+                                  :wrap-service-discovery-fn utils/wrap-identity}
                        :scheduler {:scheduler (reify scheduler/ServiceScheduler
                                                 (compute-instance-usage [_ _] {:cpus 1 :mem 2048}))}
                        :state {:kv-store nil
                                :router-id "router-id"
                                :scheduler-interactions-thread-pool scheduler-interactions-thread-pool
                                :fallback-state-atom (atom nil)}
+                       :wrap-ignore-disabled-auth-fn utils/wrap-identity
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-handler-fn ((:service-handler-fn request-handlers) configuration)}
         ring-handler (wrap-handler-json-response (ring-handler-factory waiter-request?-fn handlers))
