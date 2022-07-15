@@ -168,10 +168,11 @@
    returned instead.  This middleware doesn't handle cookies for
    authentication, but that should be stacked before this handler."
   [request-handler authenticate-request-fn ^ThreadPoolExecutor thread-pool-executor max-queue-length password]
-  (fn require-gss-handler [request]
+  (fn require-gss-handler [{:keys [ignore-disabled-auth] :as request}]
     (cond
       ;; spnego auth disabled for the service
-      (= "false" (get-in request [:waiter-discovery :service-description-template "env" "USE_SPNEGO_AUTH"]))
+      (and (not ignore-disabled-auth)
+           (= "false" (get-in request [:waiter-discovery :service-description-template "env" "USE_SPNEGO_AUTH"])))
       (response-http-401-unauthorized-spnego-disabled request)
       ;; Ensure we are not already queued with lots of Kerberos auth requests
       (too-many-pending-auth-requests? thread-pool-executor max-queue-length)
