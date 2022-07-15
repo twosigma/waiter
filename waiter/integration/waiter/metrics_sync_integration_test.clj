@@ -425,6 +425,21 @@
             routers))
         :interval 1 :timeout 5)))
 
+(defn assert-num-outstanding-requests
+  "Assert that all routers report the correct number of outstanding requests for a service-id"
+  [routers cookies service-id expected-outstanding-requests]
+  (is (every?
+        (fn router-has-expected-outstanding-requests [[router-id router-url]]
+          (let [service-settings (service-settings router-url service-id :cookies cookies)
+                actual-outstanding-requests (get-in service-settings [:request-metrics :outstanding])]
+            (log/info "outstanding requests reported by router" {:actual-outstanding-requests actual-outstanding-requests
+                                                                 :expected-outstanding-requests expected-outstanding-requests
+                                                                 :service-id service-id
+                                                                 :router-id router-id
+                                                                 :router-url router-url})
+            (= expected-outstanding-requests actual-outstanding-requests)))
+        routers)))
+
 (deftest ^:parallel ^:integration-slow test-waiting-for-available-instance-metrics-syncer
   (testing-using-waiter-url
     (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
@@ -459,3 +474,88 @@
           ; any requests hitting the service
           (async/<!! result-ch)
           (assert-num-queued-requests routers cookies service-id 0))))))
+
+(defn assert-scale-to-instances
+  "Assert number of instances for a service-id."
+  [routers cookies service-id expected-num-instances]
+  (is (wait-for
+        (fn []
+          (every?
+            (fn router-has-expected-scale-to-instances [[router-id router-url]]
+              (let [scale-to-instances (get-in (service-state router-url service-id :cookies cookies)
+                                               [:state :autoscaler-state :scale-to-instances])]
+                (log/info "outstanding requests reported by router" {:actual-scale-to-instances scale-to-instances
+                                                                     :expected-scale-to-instances expected-num-instances
+                                                                     :service-id service-id
+                                                                     :router-id router-id
+                                                                     :router-url router-url})
+                (= expected-num-instances scale-to-instances)))
+            routers))
+        :interval 1 :timeout 5)))
+
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-bypass-services-use-external-metrics-for-outstanding-requests
+  (testing-using-waiter-url
+    (let [cluster-name (retrieve-cluster-name waiter-url)
+          routers (routers waiter-url)]
+
+      (let [extra-headers {:content-type "application/json"
+                           ; make sure raven doesn't send external metrics for these services
+                           :x-waiter-env-raven_export_metrics "false"
+                           :x-waiter-concurrency-level 1
+                           ; force outstanding metrics to use external metrics for outstanding metrics calculation
+                           :x-waiter-metadata-waiter-proxy-bypass-opt-in "true"
+                           :x-waiter-min-instances 1
+                           :x-waiter-name (rand-name)
+                           ; used for assertions on scale-to-instances target
+                           :x-waiter-scale-up-factor 0.99
+                           :x-waiter-scale-down-factor 0.99}
+            {:keys [cookies instance-id service-id] :as response} (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %))]
+        (assert-response-status response http-200-ok)
+        (with-service-cleanup
+          service-id
+          (let [make-delayed-service-request!
+                (fn [& {:keys [delay-ms] :or {delay-ms 0}}]
+                  (async/go
+                    (make-request-with-debug-info
+                      (assoc extra-headers :x-kitchen-delay-ms delay-ms)
+                      #(make-kitchen-request waiter-url %))))
+                expected-num-of-queued-requests 3
+                expected-num-of-active-requests 4
+                expected-num-of-outstanding-requests (+ expected-num-of-queued-requests expected-num-of-active-requests)
+                result-ch
+                (async/go
+                  ; because the concurrency-level is 1, sending a long-running request will cause requests after it to be queued
+                  (let [long-running-ch (make-delayed-service-request! :delay-ms 7000)
+                        _ (async/<!! (async/timeout 1000))
+                        request-chs (doall (repeatedly expected-num-of-queued-requests make-delayed-service-request!))]
+                    (doseq [ping-response (map async/<!! (conj request-chs long-running-ch))]
+                      (is (= service-id (:service-id ping-response)))
+                      (assert-response-status ping-response http-200-ok))))
+                metrics-payload
+                {"cluster" cluster-name
+                 "service-metrics"
+                 {service-id {instance-id {"updated-at" "3000-05-31T14:50:44.956Z"
+                                           "metrics" {"last-request-time" "2022-05-31T14:50:44.956Z"
+                                                      "active-request-count" expected-num-of-active-requests}}}}}
+                expected-metrics (get metrics-payload "service-metrics")]
+
+            (testing "outstanding requests for a bypass service should be the same as active-request-count + queued-requests"
+              (assert-num-queued-requests routers cookies service-id expected-num-of-queued-requests)
+              (send-metrics-and-assert-expected-metrics routers cookies metrics-payload expected-metrics [])
+              ; number of outstanding requests should be the number of queued requests and number of active-request-count
+              (assert-num-outstanding-requests routers cookies service-id expected-num-of-outstanding-requests))
+
+            (testing "scale-to-instances matches the number of outstanding requests for a bypass service"
+              (assert-scale-to-instances routers cookies service-id expected-num-of-outstanding-requests))
+
+            (testing "with no queued requests, the number of outstanding requests should be the same as the number of queued-requests"
+              ; let requests terminate before confirming that the queued requests became zero as there are no longer
+              ; any requests hitting the service
+              (async/<!! result-ch)
+              (assert-num-queued-requests routers cookies service-id 0)
+
+              ; no more queued requests, so outstanding requests should be the same as the active requests
+              (assert-num-outstanding-requests routers cookies service-id expected-num-of-active-requests))
+
+            (testing "scale-to-instances matches the number outstanding requests when there are no queued requests"
+              (assert-scale-to-instances routers cookies service-id expected-num-of-active-requests))))))))

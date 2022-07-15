@@ -26,6 +26,7 @@
             [qbits.jet.client.websocket :as ws]
             [waiter.correlation-id :as cid]
             [waiter.metrics :as metrics]
+            [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.date-utils :as du]
@@ -451,7 +452,7 @@
 
 (defn agent->service-id->metrics
   "Retrieves aggregated view of service-id->metrics using data available from all peer routers in the agent."
-  [router-metrics-agent]
+  [router-metrics-agent service-id->service-description-fn]
   (try
     (let [external-metrics (get @router-metrics-agent :external-metrics)
           router-id->service-id->metrics (get-in @router-metrics-agent [:metrics :routers])
@@ -473,10 +474,10 @@
                                                                     (service-id->metrics service-id))
                                                                   router-id->service-id->metrics)]
                                  (try
-                                   (let [router-metrics (aggregate-service-metrics router->metrics)
-                                         ; TODO: we will also need to aggregate active-request-counts and queued-requests
-                                         ; and choose between external vs router metrics if service has bypass configured
-                                         {:strs [last-request-time]}
+                                   (let [service-desc (service-id->service-description-fn service-id :effective? true)
+                                         router-metrics (aggregate-service-metrics router->metrics)
+                                         waiting-for-available-instance (get router-metrics "waiting-for-available-instance" 0)
+                                         {:strs [last-request-time] :as external-service-metrics}
                                          (some->> service-id
                                                   (get external-metrics)
                                                   (pc/map-vals
@@ -484,10 +485,13 @@
                                                       ; if there are external-metrics, then last-request-time will always be
                                                       ; a valid ISO-8601 string
                                                       (update metrics "last-request-time" du/str-to-date-ignore-error)))
-                                                  aggregate-service-metrics)]
+                                                  aggregate-service-metrics)
+                                         active-request-count (get external-service-metrics "active-request-count" 0)]
                                      (cond-> router-metrics
                                        (some? last-request-time)
-                                       (update "last-request-time" t/max-date last-request-time)))
+                                       (update "last-request-time" t/max-date last-request-time)
+                                       (sd/service-description-bypass-enabled? service-desc)
+                                       (assoc "outstanding" (+ active-request-count waiting-for-available-instance))))
                                    (catch Exception e
                                      (log/error e "error in retrieving aggregated metrics for" service-id))))))
            (filter second)

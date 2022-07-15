@@ -1141,12 +1141,14 @@
                                          (descriptor/retrieve-token-based-fallback
                                            retrieve-descriptor-fn service-id->service-description-fn
                                            service-id current-for-tokens)))
-   :router-metrics-helpers (pc/fnk [[:state passwords router-metrics-agent]]
+   :router-metrics-helpers (pc/fnk [[:state passwords router-metrics-agent]
+                                    service-id->service-description-fn]
                              (let [password (first passwords)]
                                {:decryptor (fn router-metrics-decryptor [data] (utils/compressed-bytes->map data password))
                                 :encryptor (fn router-metrics-encryptor [data] (utils/map->compressed-bytes data password))
                                 :router-metrics-state-fn (fn router-metrics-state [] @router-metrics-agent)
-                                :service-id->metrics-fn (fn service-id->metrics [] (metrics-sync/agent->service-id->metrics router-metrics-agent))
+                                :service-id->metrics-fn (fn service-id->metrics []
+                                                          (metrics-sync/agent->service-id->metrics router-metrics-agent service-id->service-description-fn))
                                 :service-id->router-id->metrics (fn service-id->router-id->metrics [service-id]
                                                                   (metrics-sync/agent->service-id->router-id->metrics router-metrics-agent service-id))}))
    :service->gc-time-fn (pc/fnk [attach-token-defaults-fn reference-type->stale-info-fn service-id->service-description-fn service-id->references-fn token->token-parameters]
