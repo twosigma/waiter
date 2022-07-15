@@ -499,9 +499,11 @@
           routers (routers waiter-url)]
 
       (let [extra-headers {:content-type "application/json"
+                           ; this must be simple distribution because we rely on x-kitchen-delay-ms to cause queue build up
+                           :x-waiter-distribution-scheme "simple"
+                           :x-waiter-concurrency-level 1
                            ; make sure raven doesn't send external metrics for these services
                            :x-waiter-env-raven_export_metrics "false"
-                           :x-waiter-concurrency-level 1
                            ; force outstanding metrics to use external metrics for outstanding metrics calculation
                            :x-waiter-metadata-waiter-proxy-bypass-opt-in "true"
                            :x-waiter-min-instances 1
