@@ -140,6 +140,25 @@
                            :headers {"www-authenticate" "test-token"})
                          (utils/dissoc-in response [:headers "set-cookie"]))))))
 
+            (testing "successful authentication - spnego authentication disabled with ignore-disabled-auth set to true"
+              (with-redefs [populate-gss-credentials (fn [_ _ _ response-chan]
+                                                       (async/>!! response-chan {:principal auth-principal
+                                                                                 :token "test-token"}))]
+                (let [auth-request (-> auth-request
+                                     (assoc :ignore-disabled-auth true)
+                                     (assoc-in  [:waiter-discovery :service-description-template "env" "USE_SPNEGO_AUTH"] "false"))
+                      handler (require-gss request-handler authenticate-request thread-pool max-queue-length password)
+                      response (handler auth-request)
+                      response (if (map? response)
+                                 response
+                                 (async/<!! response))]
+                  (is (= (assoc ideal-response
+                           :authorization/method :spnego
+                           :authorization/principal "user@test.com"
+                           :authorization/user "user"
+                           :headers {"www-authenticate" "test-token"})
+                         (utils/dissoc-in response [:headers "set-cookie"]))))))
+
             (testing "successful authentication - principal and token - multiple authorization header"
               (with-redefs [populate-gss-credentials (fn [_ _ _ response-chan]
                                                        (async/>!! response-chan {:principal auth-principal
