@@ -87,7 +87,7 @@
           {:keys [result]} ping-response]
       (assert-response-status response http-200-ok)
       (assert-waiter-response response)
-      (assert-response-status ping-response http-400-bad-request)
+      (assert-response-status ping-response http-404-not-found)
       (is (= "descriptor-error" result))
       (is (str/includes? (str ping-response) "Token not found")))))
 
