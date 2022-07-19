@@ -994,14 +994,14 @@
               (if error-on-missing
                 (do
                   (log/info e "Error in kv-store fetch")
-                  (throw (ex-info (str "Token not found: " token) {:status http-400-bad-request :log-level :warn} e)))
+                  (throw (ex-info (str "Token not found: " token) {:status http-404-not-found :log-level :warn} e)))
                 (log/info e "Ignoring kv-store fetch exception")))))
         token-data (when (seq token-data) ; populate token owner for backwards compatibility
                      (-> token-data
                          (utils/assoc-if-absent "owner" run-as-user)
                          (utils/assoc-if-absent "previous" {})))]
     (when (and error-on-missing (not token-data))
-      (throw (ex-info (str "Token not found: " token) {:status http-400-bad-request :log-level :warn})))
+      (throw (ex-info (str "Token not found: " token) {:status http-404-not-found :log-level :warn})))
     (log/debug "Extracted data for" token "is" token-data)
     (when (or (not deleted) include-deleted)
       (select-keys token-data allowed-keys))))
