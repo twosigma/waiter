@@ -499,3 +499,14 @@
            {:cookie-string "a=b; x-auth-expires-at-c=1234" :expected "a=b; x-auth-expires-at-c=1234"}
            {:cookie-string "x-waiter-oidc-challenge-a1b2c3=123; x-waiter-oidc-challenge-3cb2a1=321; a=b" :expected "a=b"}]]
     (is (= expected (remove-auth-cookie cookie-string)) (str test-case))))
+
+(deftest test-remove-auth-set-cookie
+  (let [headers {"fee" "fie"
+                 "lorem" "ipsum"
+                 "set-cookie" ["foo=bar"
+                               (str AUTH-COOKIE-EXPIRES-AT-ENTRY-PREFIX "123456")
+                               (str AUTH-COOKIE-NAME-ENTRY-PREFIX "a1b2c3d4e5f6")
+                               (str OIDC-CHALLENGE-COOKIE-PREFIX "1234=5678")
+                               "xyz=321"]}]
+    (is (= (assoc headers "set-cookie" ["foo=bar" "xyz=321"])
+           (remove-auth-set-cookie headers)))))

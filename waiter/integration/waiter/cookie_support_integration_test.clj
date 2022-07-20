@@ -22,21 +22,50 @@
 (deftest ^:parallel ^:integration-fast test-cookie-support
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)}
-          cookie-fn (fn [cookies name] (some #(when (= name (:name %)) (:value %)) cookies))]
-      (testing "multiple cookies sent from backend"
-        (let [headers (assoc headers :x-kitchen-cookies "test=CrazyCase,test2=lol2,test3=\"lol3\"")
-              {:keys [cookies]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-          (is (= "CrazyCase" (cookie-fn cookies "test")))
-          (is (= "lol2" (cookie-fn cookies "test2")))
-          (is (= "%22lol3%22" (cookie-fn cookies "test3")))
-          (is (cookie-fn cookies "x-waiter-auth"))))
-      (testing "single cookie sent from backend"
-        (let [headers (assoc headers :x-kitchen-cookies "test=singlecookie")
-              {:keys [cookies service-id] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-          (with-service-cleanup
-            service-id
+          cookie-fn (fn [cookies name] (some #(when (= name (:name %)) (:value %)) cookies))
+          {:keys [service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+      (with-service-cleanup
+        service-id
+        (testing "multiple cookies sent from backend"
+          (let [kitchen-cookies "test=CrazyCase,test2=lol2,test3=\"lol3\""
+                headers (assoc headers :x-kitchen-cookies kitchen-cookies)
+                {:keys [cookies] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+            (assert-response-status response http-200-ok)
+            (is (= "CrazyCase" (cookie-fn cookies "test")))
+            (is (= "lol2" (cookie-fn cookies "test2")))
+            (is (= "%22lol3%22" (cookie-fn cookies "test3")))
+            (is (cookie-fn cookies "x-waiter-auth"))
+            (is (cookie-fn cookies "x-auth-expires-at"))))
+        (testing "single cookie sent from backend"
+          (let [kitchen-cookies "test=singlecookie"
+                headers (assoc headers :x-kitchen-cookies kitchen-cookies)
+                {:keys [cookies] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+            (assert-response-status response http-200-ok)
             (is (= "singlecookie" (cookie-fn cookies "test")))
-            (is (cookie-fn cookies "x-waiter-auth"))))))))
+            (is (cookie-fn cookies "x-waiter-auth"))
+            (is (cookie-fn cookies "x-auth-expires-at"))))
+        (testing "waiter auth cookies not sent from backend"
+          (let [kitchen-cookies "lorem=ipsum,x-waiter-auth=foo,x-auth-expires-at=bar,foo=bar"
+                headers (assoc headers :x-kitchen-cookies kitchen-cookies)
+                {:keys [cookies] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+            (assert-response-status response http-200-ok)
+            (is (= "ipsum" (cookie-fn cookies "lorem")))
+            (is (= "bar" (cookie-fn cookies "foo")))
+            (is (cookie-fn cookies "x-waiter-auth"))
+            (is (not= "foo" (cookie-fn cookies "x-waiter-auth")))
+            (is (cookie-fn cookies "x-auth-expires-at"))
+            (is (not= "bar" (cookie-fn cookies "x-auth-expires-at"))))
+          (let [kitchen-cookies "x-waiter-auth=foo,x-auth-expires-at=bar,x-waiter-oidc-challenge-fee=fie"
+                headers (assoc headers :x-kitchen-cookies kitchen-cookies)
+                {:keys [cookies] :as response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+            (assert-response-status response http-200-ok)
+            (is (nil? (cookie-fn cookies "lorem")))
+            (is (nil? (cookie-fn cookies "foo")))
+            (is (cookie-fn cookies "x-waiter-auth"))
+            (is (not= "foo" (cookie-fn cookies "x-waiter-auth")))
+            (is (cookie-fn cookies "x-auth-expires-at"))
+            (is (not= "bar" (cookie-fn cookies "x-auth-expires-at")))
+            (is (nil? (cookie-fn cookies "x-waiter-oidc-challenge-fee")))))))))
 
 (deftest ^:parallel ^:integration-fast test-cookie-sent-to-backend
   (testing-using-waiter-url
