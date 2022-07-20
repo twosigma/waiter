@@ -190,3 +190,42 @@
             "proxy-connection" "keep-alive"
             "referer" "http://www.test-referer.com"}
            (dissoc-hop-by-hop-headers headers "HTTP/1.0")))))
+
+(deftest test-remove-header-entries
+  (let [headers {"fee" "fie"
+                 "foe" "fum"
+                 "foo" "bar"}]
+    (is (= headers
+           (remove-header-entries headers "lorem" ["ipsum="]))))
+  (let [headers {"h1" ["fee=fie" "foe=fum" "foo=bar"]
+                 "h2" "lorem=ipsum"}]
+    (is (= headers
+           (remove-header-entries headers "lorem" ["ipsum="]))))
+  (let [headers {"h1" ["fee=fie" "foe=fum" "foo=bar"]
+                 "h2" "lorem=ipsum"}]
+    (is (= headers
+           (remove-header-entries headers "lorem" "ipsum="))))
+  (let [headers {"h1" ["fee=fie" "foe=fum" "foo=bar"]
+                 "h2" "lorem=ipsum"}]
+    (is (= (assoc headers "h1" ["foe=fum" "foo=bar"])
+           (remove-header-entries headers "h1" ["fee="]))))
+  (let [headers {"h1" ["fee=fie" "foe=fum" "foo=bar"]
+                 "h2" "lorem=ipsum"}]
+    (is (= (assoc headers "h1" ["fee=fie" "foo=bar"])
+           (remove-header-entries headers "h1" ["foe="]))))
+  (let [headers {"h1" ["fee=fie" "foe=fum" "foo=bar"]
+                 "h2" "lorem=ipsum"}]
+    (is (= (assoc headers "h1" ["fee=fie" "foe=fum"])
+           (remove-header-entries headers "h1" ["foo="]))))
+  (let [headers {"h1" ["fee=fie" "foe=fum" "foo=bar"]
+                 "h2" "lorem=ipsum"}]
+    (is (= (assoc headers "h1" ["foe=fum"])
+           (remove-header-entries headers "h1" ["fee=" "foo="]))))
+  (let [headers {"h1" ["fee=fie" "foe=fum" "foo=bar"]
+                 "h2" "lorem=ipsum"}]
+    (is (= (dissoc headers "h1")
+           (remove-header-entries headers "h1" ["fee=" "foe=" "foo="]))))
+  (let [headers {"h1" ["fee=fie" "foe=fum" "foo=bar"]
+                 "h2" "lorem=ipsum"}]
+    (is (= (dissoc headers "h2")
+           (remove-header-entries headers "h2" ["lorem="])))))

@@ -115,6 +115,27 @@
       (seq force-remove-headers) (utils/remove-keys force-remove-headers)
       (seq connection-headers) (utils/remove-keys connection-headers))))
 
+(defn remove-header-entries
+  "Removes header entries with provided prefix values from the headers map."
+  [headers header-name prefixes]
+  (if (contains? headers header-name)
+    (let [raw-value (get headers header-name)
+          cur-values (if (string? raw-value) [raw-value] raw-value)
+          rem-values (->> cur-values
+                          (filter (fn [v] (some #(str/starts-with? v %) prefixes)))
+                          (set))]
+      (if (seq rem-values)
+        (let [new-values (->> cur-values
+                              (remove (fn [v] (contains? rem-values v)))
+                              (vec))]
+          (log/info "removed following cookies from backend response"
+                    (->> rem-values (map #(str/split % #"=")) (map first)))
+          (if (seq new-values)
+            (assoc headers header-name new-values)
+            (dissoc headers header-name)))
+        headers))
+    headers))
+
 (defn assoc-auth-headers
   "`assoc`s the x-waiter-auth-principal and x-waiter-authenticated-principal headers if the
    username and principal are non-nil, respectively."

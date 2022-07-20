@@ -14,10 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.process-request
-  (:require [clj-time.core :as t]
-            [clojure.core.async :as async]
+  (:require [clojure.core.async :as async]
             [clojure.core.async.impl.protocols :as protocols]
-            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [full.async :as fa]
@@ -908,6 +906,7 @@
                             (async/close! request-state-chan)
                             (handle-process-exception e request)))
                       (update :headers headers/dissoc-hop-by-hop-headers proto-version)
+                      (update :headers auth/remove-auth-set-cookie)
                       (assoc :get-instance-latency-ns instance-elapsed
                              :instance instance
                              :instance-proto request-proto

@@ -165,7 +165,13 @@
   [cookie-string]
   (when cookie-string
     (->> [AUTH-COOKIE-EXPIRES-AT-ENTRY-PREFIX AUTH-COOKIE-NAME-ENTRY-PREFIX OIDC-CHALLENGE-COOKIE-PREFIX]
-      (cookie-support/remove-cookies cookie-string))))
+         (cookie-support/remove-cookies cookie-string))))
+
+(defn remove-auth-set-cookie
+  "Removes the auth cookies from response headers."
+  [headers]
+  (->> [AUTH-COOKIE-EXPIRES-AT-ENTRY-PREFIX AUTH-COOKIE-NAME-ENTRY-PREFIX OIDC-CHALLENGE-COOKIE-PREFIX]
+       (headers/remove-header-entries headers "set-cookie")))
 
 (defn select-auth-header
   "Filters and return the first authorization header that passes the predicate."
