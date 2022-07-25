@@ -177,6 +177,25 @@
       (retrieve-last-update-time descriptor))
     (seq component->previous-descriptor-fns)))
 
+(defn retrieve-most-recently-updated-component-time
+  "Retrieves the most recently updated component time from the descriptor."
+  [{:keys [component->previous-descriptor-fns] :as descriptor}]
+  (some->> component->previous-descriptor-fns
+       (vals)
+       (mapv (fn [{:keys [retrieve-last-update-time]}]
+              (retrieve-last-update-time descriptor)))
+       (apply max)
+       (tc/from-long)))
+
+(defn retrieve-component-update-time
+  "Retrieves the update time from the descriptor for the given component."
+  [component {:keys [component->previous-descriptor-fns] :as descriptor}]
+  (some-> component->previous-descriptor-fns
+          (get component)
+          (:retrieve-last-update-time)
+          (deliver descriptor)
+          (tc/from-long)))
+
 (defn retrieve-fallback-descriptor
   "Computes the fallback descriptor with a healthy instance based on the provided descriptor.
    Fallback descriptors can only be computed for token-based descriptors.
@@ -300,12 +319,15 @@
 
 (defn descriptor->previous-descriptor
   "Creates a valid previous version of the descriptor from the provided descriptor.
+   Uses cutoff? to limit previous descriptors only to edits since the token was created.
    The result map contains the following elements:
    {:keys [component->previous-descriptor-fns core-service-description passthrough-headers
            service-id service-description sources suspended-state waiter-headers]}"
-  [kv-store service-description-builder descriptor]
-  (loop [{:keys [component->previous-descriptor-fns] :as descriptor} descriptor]
-    (when-let [component-entry (and (seq component->previous-descriptor-fns)
+  ([kv-store service-description-builder descriptor]
+   (descriptor->previous-descriptor kv-store service-description-builder descriptor false))
+  ([kv-store service-description-builder descriptor cutoff?]
+   (loop [{:keys [component->previous-descriptor-fns] :as descriptor} descriptor]
+     (when-let [component-entry (and (seq component->previous-descriptor-fns)
                                     (retrieve-most-recently-updated-component-entry descriptor))]
       (let [component (key component-entry)
             {:keys [retrieve-previous-descriptor]} (val component-entry)]
@@ -317,7 +339,55 @@
               (log/info (:service-id descriptor) "has previous descriptor with service-id"
                         (:service-id previous-descriptor) "computed using" component)
               previous-descriptor))
-          (recur (utils/dissoc-in descriptor [:component->previous-descriptor-fns component])))))))
+          (when-not cutoff?
+            (recur (utils/dissoc-in descriptor [:component->previous-descriptor-fns component])))))))))
+
+(defn- descriptor->existent-previous-descriptor
+  "Helper wrapper function that creates a valid previous version of the descriptor from the provided descriptor
+   that actually existed, filtering out faulty insertions of newer build versions in history as applicable."
+  [kv-store service-description-builder descriptor]
+  (let [component (-> descriptor retrieve-most-recently-updated-component-entry key)
+        current-desc-time (retrieve-component-update-time component descriptor)]
+    ;; cutoff? true in descriptor->previous-descriptor call ensures no pre-token deployment/image history retrieved
+    (loop [prev-desc (descriptor->previous-descriptor kv-store service-description-builder descriptor true)]
+      (when prev-desc
+        ;; the following condition ensures that underlying build edits are not artificially applied retroactively to existing token edits
+        (if (t/after? (retrieve-most-recently-updated-component-time prev-desc) current-desc-time)
+          (recur (descriptor->previous-descriptor kv-store service-description-builder prev-desc true))
+          (with-meta prev-desc {:source-component component}))))))
+
+(defn descriptor->comprehensive-history
+  "Returns a vector of the comprehensive history of a token using its descriptors, up to a depth of max-history-length,
+   where returned entries have the following keys: core-service-description, service-id, source-component, update-time"
+  [kv-store service-description-builder max-history-length token descriptor]
+  (loop [loop-descriptor descriptor
+         desc-history []
+         iter 0]
+    (let [{:strs [image version]} (-> descriptor :sources :token->token-data (get token))]
+      (if (>= iter max-history-length)
+        desc-history
+        (let [csd-image-str (-> loop-descriptor :core-service-description (get "image"))
+              csd-version-str (-> loop-descriptor :core-service-description (get "version"))
+              loop-descriptor' (cond-> (select-keys loop-descriptor [:core-service-description :service-id])
+                                 ;; only add "-effective" fields when image/version changed
+                                 (and csd-image-str (not= csd-image-str image))
+                                 (update :core-service-description assoc
+                                         "image-effective" csd-image-str
+                                         "image" image)
+                                 (and csd-version-str (not= csd-version-str version))
+                                 (update :core-service-description assoc
+                                         "version-effective" csd-version-str
+                                         "version" version))]
+          (if-let [prev-desc (descriptor->existent-previous-descriptor kv-store service-description-builder loop-descriptor)]
+            (let [source (-> prev-desc meta :source-component)
+                  update-time (retrieve-component-update-time source loop-descriptor)
+                  loop-descriptor'' (assoc loop-descriptor'
+                                           :source-component source
+                                           :update-time update-time)]
+              (recur prev-desc (conj desc-history loop-descriptor'') (inc iter)))
+            (conj desc-history (assoc loop-descriptor'
+                                      :source-component :token
+                                      :update-time (retrieve-component-update-time :token loop-descriptor)))))))))
 
 (defn perform-authorization-checks
   "Performs authorization checks on whether the currently authenticated user is allowed to invoke the service."
