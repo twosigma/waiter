@@ -188,6 +188,7 @@
    (s/required-key :support-info) [{(s/required-key :label) schema/non-empty-string
                                     (s/required-key :link) {(s/required-key :type) s/Keyword
                                                             (s/required-key :value) schema/non-empty-string}}]
+   (s/required-key :tags) #{schema/non-empty-string}
    (s/required-key :token-config) {(s/required-key :cluster-calculator) (s/constrained
                                                                           {:kind s/Keyword
                                                                            s/Keyword schema/require-symbol-factory-fn}
@@ -502,6 +503,7 @@
    :support-info [{:label "Waiter on GitHub"
                    :link {:type :url
                           :value "http://github.com/twosigma/waiter"}}]
+   :tags #{}
    :token-config {:cluster-calculator {:kind :configured
                                        :configured {:factory-fn 'waiter.token/new-configured-cluster-calculator
                                                     :host->cluster {}}}
