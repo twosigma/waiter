@@ -747,6 +747,19 @@
       (catch Exception ex
         (utils/exception->response ex request)))))
 
+(defn get-comprehensive-history [attach-service-defaults-fn attach-token-defaults-fn service-id-prefix kv-store waiter-hostnames {:keys [headers] :as request}
+                                 service-description-builder assoc-run-as-user-approved?]
+  (let [request-params (-> request ru/query-params-request :query-params)
+        token (or (get request-params "token")
+                  (:token (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)))
+        modif-request (assoc-in request [:headers "x-waiter-token"] token)
+        descriptor (descriptor/compute-descriptor attach-service-defaults-fn attach-token-defaults-fn service-id-prefix kv-store waiter-hostnames
+                                       modif-request service-description-builder assoc-run-as-user-approved?)
+        default-history-length 10
+        history-length (if-let [length-str (get request-params "length")]
+                         (Integer/parseInt length-str) default-history-length)]
+    (descriptor/descriptor->comprehensive-history kv-store service-description-builder history-length token descriptor)))
+
 (defn work-stealing-handler
   "Handles work-stealing offers of instances for load-balancing work on the current router."
   [populate-maintainer-chan! request]

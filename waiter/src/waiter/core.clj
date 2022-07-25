@@ -152,6 +152,7 @@
                                "/owners" :token-owners-handler-fn
                                "/refresh" :token-refresh-handler-fn
                                "/reindex" :token-reindex-handler-fn}
+                     "token-history" :token-history-fn
                      "waiter-async" {;; async api version 1
                                      ["/complete/" :request-id "/" :service-id] :async-complete-handler-fn
                                      ["/result/" :request-id "/" :router-id "/" :service-id "/" :host "/" :port "/" [#".+" :location]]
@@ -2011,6 +2012,13 @@
                            wrap-secure-request-fn
                            wrap-ignore-disabled-auth-fn
                            wrap-service-discovery-fn)))
+   :token-history-fn (pc/fnk [[:routines attach-service-defaults-fn attach-token-defaults-fn assoc-run-as-user-approved?]
+                              [:state service-id-prefix kv-store waiter-hostnames service-description-builder] wrap-secure-request-fn]
+                             (wrap-secure-request-fn
+                              (fn token-history-fn [request]
+                                (utils/clj->json-response
+                                 (handler/get-comprehensive-history attach-service-defaults-fn attach-token-defaults-fn service-id-prefix kv-store
+                                                                       waiter-hostnames request service-description-builder assoc-run-as-user-approved?)))))
    :token-list-handler-fn (pc/fnk [[:daemons token-watch-maintainer]
                                    [:routines retrieve-descriptor-fn]
                                    [:settings [:instance-request-properties streaming-timeout-ms]]
