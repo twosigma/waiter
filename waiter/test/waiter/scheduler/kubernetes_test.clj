@@ -1557,13 +1557,19 @@
         partial-expected {:instance-id instance-id :killed? false :service-id service-id}]
     (with-redefs [service-id->service (constantly service)]
       (testing "successful-delete"
-        (let [actual (with-redefs [api-request (constantly {:status "OK"})]
+        (let [pod-marked-for-scale-down?-atom (atom false)
+              mark-pod-for-scale-down-mock (fn mark-pod-for-scale-down-fn [_ _ _]
+                                             (reset! pod-marked-for-scale-down?-atom true))
+              actual (with-redefs [api-request (constantly {:status "OK"})
+                                   mark-pod-for-scale-down mark-pod-for-scale-down-mock]
                        (scheduler/kill-instance dummy-scheduler instance))]
           (is (= (assoc partial-expected
                         :killed? true
                         :message "Successfully killed instance"
                         :status http-200-ok)
-                 actual))))
+                 actual))
+          (is (not @pod-marked-for-scale-down?-atom)
+              "service is not in bypass, so pod should not be marked for two phase scale down!")))
       (testing "unsuccessful-delete: forbidden"
         (let [actual (with-redefs [api-request (fn mocked-api-request [_ _ & {:keys [request-method]}]
                                                  (when (= request-method :delete)
@@ -1600,7 +1606,28 @@
           (is (= (assoc partial-expected
                         :message "Error while killing instance"
                         :status http-500-internal-server-error)
-                 actual)))))))
+                 actual))))
+      (testing "succesful-delete: service is in bypass"
+        (let [service-id->service-description-fn
+              (constantly {"metadata" {"waiter-proxy-bypass-opt-in" "true"}})
+              dummy-scheduler (assoc dummy-scheduler :service-id->service-description-fn service-id->service-description-fn)
+              pod-marked-for-scale-down?-atom (atom false)
+              mark-pod-for-scale-down-mock (fn mark-pod-for-scale-down-fn [_ _ _]
+                                             (reset! pod-marked-for-scale-down?-atom true))
+              instances-killed?-fn (atom false)
+              hard-delete-service-instance-mock (fn hard-delete-service-instance-fn [_ _]
+                                                  (reset! instances-killed?-fn true))
+              actual (with-redefs [api-request (constantly {:status "OK"})
+                                   mark-pod-for-scale-down mark-pod-for-scale-down-mock
+                                   hard-delete-service-instance hard-delete-service-instance-mock]
+                       (scheduler/kill-instance dummy-scheduler instance))]
+          (is (= (assoc partial-expected
+                        :killed? true
+                        :message "Successfully killed instance"
+                        :status http-200-ok)
+                 actual))
+          (is @pod-marked-for-scale-down?-atom)
+          (is (not @instances-killed?-fn)))))))
 
 (deftest test-scheduler-service-exists?
   (let [service-id "test-app-1234"
@@ -2006,6 +2033,9 @@
                     :max-patch-retries 5
                     :max-name-length 63
                     :pod-base-port 8080
+                    :pod-cleanup-grace-buffer-ms 15000
+                    :pod-cleanup-interval-ms 5000
+                    :pod-cleanup-scale-down-timeout-secs 120
                     :pod-sigkill-delay-secs 3
                     :pod-suffix-length default-pod-suffix-length
                     :replicaset-api-version "apps/v1"
@@ -3393,3 +3423,67 @@
         (is (= 1 (count events)))
         (is (= simple-event (first events)))
         (is (true? (cu/cache-contains? (:k8s-object-key->event-cache dummy-scheduler) {:namespace namespace :k8s-object-name service-a-name})))))))
+
+(defn create-generic-pod
+  [id service-id]
+  {:metadata {:name id
+              :namespace "myself"
+              :labels {:app service-id
+                       :waiter/cluster "waiter"
+                       :waiter/service-hash service-id}
+              :annotations {:waiter/port-count "1"
+                            :waiter/port-onto-protocol (utils/clj->json {:p1234 "http"})
+                            :waiter/revision-timestamp "2020-09-22T20:00:00.000Z"
+                            :waiter/service-id service-id}}
+   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+   :status {:podIP "10.141.141.11"
+            :startTime "2020-09-22T10:00:00Z"
+            :containerStatuses [{:name waiter-primary-container-name
+                                 :ready true
+                                 :restartCount 0}]}})
+
+(defn create-killable-pod
+  [id service-id now timeout-secs]
+  (-> (create-generic-pod id service-id)
+      (assoc-in [:metadata :labels :app] app-drain-label)
+      (assoc-in [:metadata :annotations :prepared-to-scale-down-at] (du/date-to-str (t/minus now (t/seconds (+ timeout-secs 1)))))))
+
+(defn create-scale-down-pod
+  [id service-id now grace-buffer-ms]
+  (-> (create-generic-pod id service-id)
+      (assoc-in [:metadata :labels :app] app-drain-label)
+      (assoc-in [:metadata :annotations :prepared-to-scale-down-at] (du/date-to-str (t/minus now (t/millis (+ grace-buffer-ms 1)))))))
+
+(deftest test-cleanup-killable-pods
+  (let [now (t/now)
+        grace-buffer-ms 15000
+        timeout-secs 120
+        service-id->pod-id->pod
+        {"s1" {"s1.p1" (create-killable-pod "p1" "s1" now timeout-secs)
+               "s1.p2" (create-killable-pod "p2" "s1" now timeout-secs)
+               "s1.p3" (create-scale-down-pod "p3" "s1" now grace-buffer-ms)
+               "s1.p4" (create-generic-pod "p4" "s1")}
+         "s2" {"s2.p1" (create-scale-down-pod "p1" "s2" now grace-buffer-ms)
+               "s2.p2" (create-generic-pod "p2" "s2")
+               "s2.p3" (create-killable-pod "p3" "s2" now timeout-secs)
+               "s2.p4" (create-killable-pod "p4" "s2" now timeout-secs)}
+         "s3" {}}
+        killable-instances #{"s1.p1-0" "s1.p2-0" "s2.p3-0" "s2.p4-0"}
+        test-cleanup-killable-pods-fn
+        (fn test-cleanup-killable-pods [leader?-fn expected-killed-instances]
+          (let [{:keys [watch-state] :as scheduler} (make-dummy-scheduler ["s1" "s2" "s3"])
+                instances-killed-atom (atom #{})
+                hard-delete-service-instance-mock
+                (fn hard-delete-service-instance-fn
+                  [_ instance]
+                  (swap! instances-killed-atom conj (:id instance)))]
+            (reset! watch-state {:service-id->pod-id->pod service-id->pod-id->pod})
+            (with-redefs [hard-delete-service-instance hard-delete-service-instance-mock
+                          t/now (constantly now)]
+              (cleanup-killable-pods scheduler leader?-fn grace-buffer-ms timeout-secs)
+              (is (= expected-killed-instances @instances-killed-atom)))))]
+    (testing "attempts to delete killable pods"
+      (test-cleanup-killable-pods-fn (constantly true) killable-instances))
+
+    (testing "does not attempt to delete killable pods when not the leader"
+      (test-cleanup-killable-pods-fn (constantly false) #{}))))

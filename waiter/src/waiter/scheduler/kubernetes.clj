@@ -66,6 +66,7 @@
 (def ^:const waiter-primary-container-name "waiter-app")
 (def ^:const waiter-fileserver-sidecar-name "waiter-fileserver")
 (def ^:const waiter-raven-sidecar-name "waiter-raven-sidecar")
+(def ^:const app-drain-label "draining")
 
 (defn timestamp-str->datetime
   "Parse a Kubernetes API timestamp string."
@@ -388,6 +389,11 @@
                    (false? ready)
                    (= "CrashLoopBackOff" reason))]
     name))
+
+(defn- pod->scaling-down?
+  "Returns whether or not the pod is in the process of scaling down, which is phase 1 of safe scale down."
+  [pod]
+  (= (get-in pod [:metadata :labels :app]) app-drain-label))
 
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
@@ -771,11 +777,23 @@
       (catch Throwable t
         (log/error t "Error force-killing pod")))))
 
+(defn mark-pod-for-scale-down
+  "Marks the pod for scale down by modifying the 'app' label and adding an annotation 'prepared-to-scale-down-at'.
+   We modify the 'app' label so the pod is no longer owned by the replicaset and thus will not be counted in the
+   'instances' field of the Service which relies on the 'replicas' configuration."
+  [{:keys [api-server-url] :as scheduler} instance timestamp]
+  (let [pod-url (instance->pod-url api-server-url instance)]
+    (patch-object-json pod-url
+                       [{:op :add :path "/metadata/labels/app" :value app-drain-label}
+                        {:op :add :path "/metadata/annotations/prepared-to-scale-down-at" :value timestamp}]
+                       scheduler)))
+
 (defn kill-service-instance
   "Safely kill the Kubernetes pod corresponding to the given Waiter Service Instance.
    Also adjusts the ReplicaSet replica count to prevent a replacement pod from being started.
-   Returns nil on success, but throws on failure."
-  [{:keys [api-server-url] :as scheduler} {:keys [service-id] :as instance} service]
+   Returns nil if pod is successfully killed and throws on failure. If the instance is a part of a bypass service
+   then add a label (prepare-to-kill-since: milliseconds-since-epoch) to the pod."
+  [{:keys [api-server-url service-id->service-description-fn] :as scheduler} {:keys [id service-id] :as instance} service]
   ;; SAFE DELETION STRATEGY:
   ;; 1) Delete the target pod with a grace period of 5 minutes
   ;;    Since the target pod is currently in the "Terminating" state,
@@ -793,21 +811,35 @@
   ;; we assume we're already so far out of sync that the possibility of non-atomic scaling
   ;; doesn't hurt us significantly. If it takes more than 5 minutes to get from step 1
   ;; to step 3, then the pod was already deleted, and the force-delete is no longer needed.
-  ;; The force-delete can fail with a 404 (object not found), but this operation still succeeds.
-  (let [pod-url (instance->pod-url api-server-url instance)]
-    ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
-    (api-request pod-url scheduler :request-method :delete
-                 :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds 300}))
-    ; scale down the replicaset to reflect removal of this instance
+  ;; The force-delete can fail with a 404 (object not found), but this operation still succeeds. 
+  (let [pod-url (instance->pod-url api-server-url instance)
+        desc (service-id->service-description-fn service-id)
+        ; services with bypass enabled must be scaled down in two phases because there may be
+        ; external load balancers that continue to send requests to the pods. The pod does not actually
+        ; get hard deleted by this function call, and is handled later in the pod-cleanup daemon.
+        two-phase-scale-down? (sd/service-description-bypass-enabled? desc)
+        prepared-to-scale-down-at (du/date-to-str (t/now))]
+    (when (not two-phase-scale-down?)
+      ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
+      (api-request pod-url scheduler :request-method :delete
+                   :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds 300})))
     (try
+      (when two-phase-scale-down?
+        (log/info "marking instance for scale down" {:instance-id id})
+        (mark-pod-for-scale-down scheduler instance prepared-to-scale-down-at))
+
+      ; Scale down the replicaset to reflect removal of this instance. This has to be done after the selector labels are changed
+      ; on the pod, otherwise the replicaset will set the pod to terminating state.
       (scale-service-by-delta scheduler service -1)
       (catch Throwable t
         (log/error t "Error while scaling down ReplicaSet after pod termination")))
-    ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
-    ; (note that the pod's default grace period is different from the 300s period set above)
-    (hard-delete-service-instance scheduler instance)
-    (comment "Success! Even if the scale-down or force-kill operation failed,
-              the pod will be force-killed after the grace period is up.")))
+
+    (when (not two-phase-scale-down?)
+      ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
+      ; (note that the pod's default grace period is different from the 300s period set above)
+      (hard-delete-service-instance scheduler instance)
+      (comment "Success! Even if the scale-down or force-kill operation failed,
+              the pod will be force-killed after the grace period is up."))))
 
 (defn invoke-replicaset-spec-builder-fn
   "Helper function to invoke replicaset-spec-builder-fn and ensure arity is maintained in invocation."
@@ -2016,12 +2048,79 @@
   [{:keys [fileserver]} _ _ _]
   (-> fileserver :port integer?))
 
+(defn- killable-pod?
+  "Determine if the pod can be moved to phase 2 of scale down where it is terminated immediately."
+  [pod grace-buffer-ms scale-down-timeout-secs]
+  (let [prepared-to-scale-down-at (some-> pod (get-in [:metadata :annotations :prepared-to-scale-down-at]) du/str-to-date-ignore-error)
+        now (t/now)]
+    (if (some? prepared-to-scale-down-at)
+      (and (t/before? (t/plus prepared-to-scale-down-at (t/millis grace-buffer-ms)) now)
+           ; TODO: need to include outstanding requests check
+           (t/after? now (t/plus prepared-to-scale-down-at (t/seconds scale-down-timeout-secs))))
+      (do
+        (log/error "Could not compute when the pod was attempted to scale down" {:pod pod})
+        false))))
+
+(def retry-start-pod-cleaner
+  "Configure run-with-retries helper for use in long-running pod-cleaner"
+  (utils/async-retry-strategy {:delay-multiplier 1.5 
+                               :initial-delay-ms 2000 
+                               :max-delay-ms 60000 
+                               :max-retries Long/MAX_VALUE}))
+
+(defn cleanup-killable-pods
+  "Iterates through the list of all pods being tracked by the scheduler and hard deletes pods that are ready
+   to go to phase 2 of safe scale down."
+  [{:keys [watch-state] :as scheduler} leader?-fn grace-buffer-ms scale-down-timeout-secs]
+  (let [service-id->pod-id->pod (-> watch-state deref :service-id->pod-id->pod)
+        pods-scaling-down (->> service-id->pod-id->pod
+                               vals
+                               (map vals)
+                               flatten
+                               (filter pod->scaling-down?))
+        now (t/now)
+        instances-to-kill (->> pods-scaling-down
+                               (filter (fn killable-pod?-fn [pod]
+                                         (killable-pod? pod grace-buffer-ms scale-down-timeout-secs)))
+                               (map (fn pod->ServiceInstance-fn [pod]
+                                      (pod->ServiceInstance scheduler pod))))
+        leader? (leader?-fn)]
+    (log/info "cleaning pods summary" {:leader? leader?
+                                       :now now
+                                       :num-pods-scaling-down (count pods-scaling-down)})
+    (when leader?
+      (when (pos? (count instances-to-kill))
+        (log/info "hard deleting pods as they are now killable" {:instances-ids (map :id instances-to-kill)}))
+      (doseq [instance instances-to-kill]
+        (hard-delete-service-instance scheduler instance)))))
+
+(defn start-pod-cleaner!
+  "On an interval, iterates through the list of all pods that have the 'prepared-to-scale-down-at' annotation and
+   deletes the pod if is no longer serving any requests or the timeout has reached. This handles phase 2 of safe
+   scale down for services with requests that bypass the waiter routers."
+  [scheduler leader?-fn daemon-interval-ms grace-buffer-ms scale-down-timeout-secs]
+  (cid/with-correlation-id
+    "k8s-pod-cleaner"
+    (retry-start-pod-cleaner
+     (fn pod-cleaner-thunk []
+       (async/go
+         (try
+           (loop [iteration 0]
+             (log/info "k8s pod cleaner iteration:" {:iteration iteration})
+             (cleanup-killable-pods scheduler leader?-fn grace-buffer-ms scale-down-timeout-secs)
+             (async/<! (async/timeout daemon-interval-ms))
+             (recur (inc iteration)))
+           (catch Throwable t
+             (log/error t "unhandled error in k8s pod cleaner")
+             t)))))))
+
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
   [{:keys [authenticate-health-checks? authentication authorizer cluster-name container-running-grace-secs custom-options 
            fetch-events-k8s-object-minimum-age-secs http-options determine-replicaset-namespace-fn kube-context leader?-fn log-bucket-sync-secs
-           log-bucket-url max-patch-retries max-name-length namespace pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
+           log-bucket-url max-patch-retries max-name-length namespace pdb-api-version pdb-spec-builder pod-base-port
+           pod-cleanup-grace-buffer-ms pod-cleanup-interval-ms pod-cleanup-scale-down-timeout-secs pod-sigkill-delay-secs
            pod-suffix-length replicaset-api-version response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold
            raven-sidecar scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
            service-id->password-fn start-scheduler-syncer-fn url watch-chan-throttle-interval-ms watch-connect-timeout-ms watch-init-timeout-ms
@@ -2058,6 +2157,9 @@
          (or (nil? pdb-spec-builder) (symbol? (:factory-fn pdb-spec-builder)))
          (integer? pod-base-port)
          (< 0 pod-base-port 65527) ; max port is 65535, and we need to reserve up to 10 ports
+         (pos-int? pod-cleanup-grace-buffer-ms)
+         (pos-int? pod-cleanup-interval-ms)
+         (pos-int? pod-cleanup-scale-down-timeout-secs)
          (integer? pod-sigkill-delay-secs)
          (<= 0 pod-sigkill-delay-secs 300)
          (pos-int? pod-suffix-length)
@@ -2213,4 +2315,5 @@
               "ensure all fields in scheduler-config are present in KubernetesScheduler")
       (wait-for-watches scheduler watch-options)
       (start-event-fetcher! scheduler fetch-events-options)
+      (start-pod-cleaner! scheduler leader?-fn pod-cleanup-interval-ms pod-cleanup-grace-buffer-ms pod-cleanup-scale-down-timeout-secs)
       scheduler)))

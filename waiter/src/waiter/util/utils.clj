@@ -735,6 +735,16 @@
       (log/info "cannot convert value to an int:" value)
       nil)))
 
+(defn parse-long
+  "Returns either the input as a long or nil if there was an error in parsing."
+  [value]
+  (try
+    (when value
+      (Long/parseLong (str value)))
+    (catch Exception e
+      (log/info "cannot convert value to a long:" value)
+      nil)))
+
 (defn parse-double
   "Returns either the input as an double or nil if there was an error in parsing."
   ([value]

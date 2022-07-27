@@ -1,11 +1,14 @@
 (ns waiter.kubernetes-scheduler-integration-test
-  (:require [clojure.data.json :as json]
+  (:require [clj-time.core :as t]
+            [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
+            [waiter.scheduler.kubernetes :refer :all]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
+            [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils]))
 
 (deftest ^:parallel ^:integration-fast test-k8s-service-and-instance-fields
@@ -503,3 +506,108 @@
                                 pod-spec (-> watch-state-json (get-in ["service-id->pod-id->pod" service-id]) vals first)]
                             (and (contains? rs-spec "k8s/events")
                                  (contains? pod-spec "k8s/events"))))))))))))))
+
+(deftest ^:parallel ^:integration-slow ^:resource-heavy test-instance-draining-mode-on-scale-down
+  (testing-using-waiter-url
+   (when (using-k8s? waiter-url)
+     (testing "service with bypass enabled puts instances in draining mode before deleting the pod when scaling down"
+       (let [cluster-name (retrieve-cluster-name waiter-url)
+             {:keys [pod-cleanup-grace-buffer-ms pod-cleanup-scale-down-timeout-secs]} (get-kubernetes-scheduler-settings waiter-url) 
+             extra-headers {:content-type "application/json"
+                            ; this must be simple distribution because we rely on x-kitchen-delay-ms to cause queue build up
+                            :x-waiter-distribution-scheme "simple"
+                            :x-waiter-concurrency-level 1
+                            ; make sure raven doesn't send external metrics for these services
+                            :x-waiter-env-raven_export_metrics "false"
+                            ; force outstanding metrics to use external metrics for outstanding metrics calculation
+                            :x-waiter-metadata-waiter-proxy-bypass-opt-in "true"
+                            :x-waiter-min-instances 1
+                            :x-waiter-name (rand-name)
+                            ; used for assertions on scale-to-instances target
+                            :x-waiter-scale-up-factor 0.99
+                            :x-waiter-scale-down-factor 0.99}
+             {:keys [cookies instance-id service-id] :as response} (make-request-with-debug-info extra-headers #(make-kitchen-request waiter-url %))
+             metrics-payload
+             {"cluster" cluster-name
+              "service-metrics"
+              {service-id {instance-id {"updated-at" (du/date-to-str (t/now))
+                                        "metrics" {"last-request-time" (du/date-to-str (t/now))
+                                                   "active-request-count" 2}}}}}]
+         (assert-response-status response http-200-ok)
+         (with-service-cleanup
+           service-id
+           (let [update-metrics-response (make-request waiter-url "/metrics/external"
+                                                       :method :post
+                                                       :body (utils/clj->json metrics-payload)
+                                                       :headers {:content-type "application/json"})]
+             (assert-response-status update-metrics-response http-200-ok)
+
+             ; wait for two instances to scale up for the service
+             (is (wait-for
+                   (fn two-instances-on-waiter? []
+                     (let [instances (active-instances waiter-url service-id)]
+                       (log/info "waiting for two instances total:" {:instances instances
+                                                                     :service-id service-id})
+                       (= 2 (count instances))))
+                   :timeout 300))
+
+             ; set outstanding requests to 1
+             (let [metrics-with-one-request
+                   {"cluster" cluster-name
+                    "service-metrics"
+                    {service-id {instance-id {"updated-at" (du/date-to-str (t/now))
+                                              "metrics" {"last-request-time" (du/date-to-str (t/now))
+                                                         "active-request-count" 1}}}}}
+                   update-metrics-response (make-request waiter-url "/metrics/external"
+                                                         :method :post
+                                                         :body (utils/clj->json metrics-with-one-request)
+                                                         :headers {:content-type "application/json"})]
+               (assert-response-status update-metrics-response http-200-ok))
+
+             ; wait for instance that is prepared to be killed for scale down, which is marked as a killed instance
+             (let [{:keys [k8s/pod-name] :as killed-instance}
+                   (wait-for
+                     (fn get-killed-instance []
+                       (let [instances (killed-instances waiter-url service-id)]
+                         (log/info "waiting for a killed instance:" {:killed-instances instances
+                                                                     :service-id service-id})
+                         (first instances)))
+                     :interval 5
+                     :timeout 30)]
+               (is (some? killed-instance))
+
+               ; the pod should still exist, but is currently draining
+               ; check the label and annotation on that one instance
+               (let [watch-state-json (get-k8s-watch-state waiter-url cookies)
+                     pod-spec (get-in watch-state-json ["service-id->pod-id->pod" service-id pod-name])
+                     app-label (get-in pod-spec ["metadata" "labels" "app"])
+                     prepared-to-scale-down-at (some-> pod-spec
+                                                       (get-in ["metadata" "annotations" "prepared-to-scale-down-at"])
+                                                       du/str-to-date)
+                     assert-deleted-buffer-secs 30]
+                 (log/info "killed instance in phase 1" {:app-label app-label
+                                                         :pod-spec pod-spec
+                                                         :prepared-to-scale-down-at prepared-to-scale-down-at})
+                 (is (some? pod-spec))
+                 (is (= app-label app-drain-label))
+                 (is (some? prepared-to-scale-down-at))
+
+                 ; prepared-to-scale-down-at should be set to when the waiter router determined to scale it down
+                 ; which should be before the current time
+                 (is (t/before? prepared-to-scale-down-at (t/now)))
+
+                 ; wait for the pod to be deleted on kuberenetes
+                 (is (wait-for
+                      (fn pod-gced? []
+                        (let [watch-state-json (get-k8s-watch-state waiter-url cookies)
+                              pod-spec (get-in watch-state-json ["service-id->pod-id->pod" service-id pod-name])]
+                          (log/info "waiting for pod to terminate" {:pod-spec pod-spec})
+                          (nil? pod-spec)))
+                      :interval 5
+                      :timeout (+ pod-cleanup-scale-down-timeout-secs assert-deleted-buffer-secs)))
+
+                 (let [pod-deleted-at (t/now)]
+                   ; pod should not be deleted before grace period
+                   (is (t/before? (t/plus prepared-to-scale-down-at (t/millis pod-cleanup-grace-buffer-ms)) pod-deleted-at))
+                   ; pod should be deleted after the timeout is reached
+                   (is (t/after? pod-deleted-at (t/plus prepared-to-scale-down-at (t/seconds pod-cleanup-scale-down-timeout-secs))))))))))))))

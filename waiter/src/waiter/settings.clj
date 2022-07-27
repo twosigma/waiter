@@ -417,6 +417,9 @@
                                    :max-patch-retries 5
                                    :max-name-length 63
                                    :pod-base-port 31000
+                                   :pod-cleanup-grace-buffer-ms 15000
+                                   :pod-cleanup-interval-ms 5000
+                                   :pod-cleanup-scale-down-timeout-secs 120
                                    ; Marathon also defaults this value to 3 seconds:
                                    ; https://mesosphere.github.io/marathon/docs/health-checks.html#taskkillgraceperiodseconds
                                    :pod-sigkill-delay-secs 3
