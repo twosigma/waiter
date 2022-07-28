@@ -131,9 +131,6 @@ echo 'Done deleting old k8s objects.'
 echo 'Cleaning up old logs...'
 rm -f log/{request.log,scheduler.log,waiter-error.log,waiter.log,waiter-tests.log}
 
-#echo 'Cleaning up old kv-store...'
-#rm -f kv-store/store.bin
-
 # Squelch reflective access warning from javassist package
 # https://www.javassist.org/html/javassist/util/proxy/DefineClassHelper.html#toClass(java.lang.Class,byte%5B%5D)
 export JVM_OPTS='--add-opens java.base/java.lang=ALL-UNNAMED'
