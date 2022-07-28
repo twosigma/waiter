@@ -229,6 +229,7 @@
           requests-per-thread 20
           request-delay-ms 2000
           custom-headers {:x-kitchen-delay-ms request-delay-ms
+                          :x-waiter-grace-period-secs 600  ;; avoid triggering expired instances on slow startup
                           :x-waiter-max-instances 5
                           :x-waiter-min-instances 2
                           :x-waiter-name (rand-name)
@@ -241,18 +242,16 @@
           _ (log/info "making canary request...")
           {:keys [cookies service-id]} (request-fn)
           get-target-instances
-          (fn []
-            (let [instances
-                  (loop [routers (routers waiter-url)
-                         target-instances 0]
-                    (if-let [[_ router-url] (first routers)]
-                      (let [{:keys [state]} (service-state router-url service-id :cookies cookies)]
-                        (recur (rest routers)
-                               (max target-instances
-                                    (int (get-in state [:autoscaler-state :scale-to-instances] 0)))))
-                      target-instances))]
-              (log/debug "target instances:" instances)
-              instances))]
+          (fn get-target-instances []
+            (let [router-urls (->> waiter-url routers (mapv second))
+                  router-target-instances (for [router-url router-urls]
+                                            (-> router-url
+                                                (service-state service-id :cookies cookies)
+                                                (get-in [:state :autoscaler-state :scale-to-instances] 0)
+                                                int))
+                  max-target-instances (reduce max router-target-instances)]
+              (log/debug "target instances:" max-target-instances)
+              max-target-instances))]
       (with-service-cleanup
         service-id
         (log/info "waiting up to 20 seconds for autoscaler to catch up for" service-id)
