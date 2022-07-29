@@ -111,7 +111,7 @@
         (is (= 1 (count token-history)))
         (is (= time-1 (-> token-history first :update-time)))
         (is (= :token (-> token-history first :source-component)))
-        (is (= service-description-1 (-> token-history first :core-service-description)))
+        (is (= service-description-1 (-> token-history first :service-description)))
         (is (= (:service-id descriptor) (-> token-history first :service-id)))))
 
     (testing "token with no updates and different image-effective"
@@ -126,7 +126,7 @@
         (is (= time-1 (-> token-history first :update-time)))
         (is (= :token (-> token-history first :source-component)))
         (is (= {"cmd" "ls" "cpus" 1 "mem" 32 "run-as-user" "ru" "version" "na" "cmd-type" "shell" "image" image "image-effective" image-effective}
-               (-> token-history first :core-service-description)))
+               (-> token-history first :service-description)))
         (is (= (:service-id descriptor) (-> token-history first :service-id)))))
 
     (testing "token with history of exclusively direct updates"
@@ -137,7 +137,7 @@
         (is (= 3 (count token-history)))
         (is (= [time-3 time-2 time-1] (mapv :update-time token-history)))
         (is (= [:token :token :token] (mapv :source-component token-history)))
-        (is (= [service-description-3 service-description-2 service-description-1] (mapv :core-service-description token-history)))
+        (is (= [service-description-3 service-description-2 service-description-1] (mapv :service-description token-history)))
         ))
 
     (testing "token with history of exclusively indirect updates (with effective expansion)"
@@ -156,10 +156,10 @@
         (is (= time-1 (-> token-history second :update-time)))
         (is (= :image (-> token-history first :source-component)))
         (is (= :token (-> token-history second :source-component)))
-        (let [orig-core-serv-desc (assoc service-description-1 "image-effective" image-effective-1)
-              new-core-serv-desc (assoc service-description-1 "image-effective" image-effective-2)]
-          (is (= new-core-serv-desc (-> token-history first :core-service-description)))
-          (is (= orig-core-serv-desc (-> token-history second :core-service-description))))))
+        (let [orig-serv-desc (assoc service-description-1 "image-effective" image-effective-1)
+              new-serv-desc (assoc service-description-1 "image-effective" image-effective-2)]
+          (is (= new-serv-desc (-> token-history first :service-description)))
+          (is (= orig-serv-desc (-> token-history second :service-description))))))
 
     (testing "token with mixed direct/indirect update history"
       (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -187,11 +187,11 @@
         (is (= 4 (count token-history)))
         (is (= [time-4 time-3 time-2 time-1] (mapv :update-time token-history)))
         (is (= [:token :image :token :token] (mapv :source-component token-history)))
-        (let [core-serv-desc-1 (assoc service-description-1 "image-effective" image-effective-1)
-              core-serv-desc-2 (assoc service-description-2 "image-effective" image-effective-1)
-              core-serv-desc-3 (assoc service-description-2 "image-effective" image-effective-2)
-              core-serv-desc-4 (assoc service-description-4 "image-effective" image-effective-2)]
-          (is (= [core-serv-desc-4 core-serv-desc-3 core-serv-desc-2 core-serv-desc-1] (mapv :core-service-description token-history))))))
+        (let [serv-desc-1 (assoc service-description-1 "image-effective" image-effective-1)
+              serv-desc-2 (assoc service-description-2 "image-effective" image-effective-1)
+              serv-desc-3 (assoc service-description-2 "image-effective" image-effective-2)
+              serv-desc-4 (assoc service-description-4 "image-effective" image-effective-2)]
+          (is (= [serv-desc-4 serv-desc-3 serv-desc-2 serv-desc-1] (mapv :service-description token-history))))))
 
      (testing "token where history gets cut off due to max-history"
        (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -205,5 +205,5 @@
          (is (= time-2 (-> token-history second :update-time)))
          (is (= :token (-> token-history first :source-component)))
          (is (= :token (-> token-history second :source-component)))
-         (is (= service-description-3 (-> token-history first :core-service-description)))
-         (is (= service-description-2 (-> token-history second :core-service-description)))))))
+         (is (= service-description-3 (-> token-history first :service-description)))
+         (is (= service-description-2 (-> token-history second :service-description)))))))

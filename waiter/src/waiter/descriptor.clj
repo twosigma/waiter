@@ -368,14 +368,16 @@
         desc-history
         (let [csd-image-str (-> loop-descriptor :core-service-description (get "image"))
               csd-version-str (-> loop-descriptor :core-service-description (get "version"))
-              loop-descriptor' (cond-> (select-keys loop-descriptor [:core-service-description :service-id])
+              loop-descriptor' (cond-> (-> loop-descriptor 
+                                           (select-keys [:core-service-description :service-id])
+                                           (set/rename-keys {:core-service-description :service-description}))
                                  ;; only add "-effective" fields when image/version changed
                                  (and csd-image-str (not= csd-image-str image))
-                                 (update :core-service-description assoc
+                                 (update :service-description assoc
                                          "image-effective" csd-image-str
                                          "image" image)
                                  (and csd-version-str (not= csd-version-str version))
-                                 (update :core-service-description assoc
+                                 (update :service-description assoc
                                          "version-effective" csd-version-str
                                          "version" version))]
           (if-let [prev-desc (descriptor->existent-previous-descriptor kv-store service-description-builder loop-descriptor)]
