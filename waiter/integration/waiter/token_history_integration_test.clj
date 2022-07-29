@@ -56,7 +56,7 @@
          (assert-response-status history-response http-200-ok)
          (is (= 1 (count token-history)))
          (let [descriptor (first token-history)]
-           (is (-> descriptor :core-service-description some?))
+           (is (-> descriptor :service-description some?))
            (is (-> descriptor :source-component (= "token")))
            (is (-> descriptor :update-time some?))
            (is (-> descriptor :service-id some?)))))
@@ -78,8 +78,8 @@
            (is (= "token" (:source-component descriptor-2)))
            (is (-> descriptor-1 :service-id some?))
            (is (-> descriptor-2 :service-id some?))
-           (is (-> descriptor-1 :core-service-description some?))
-           (is (-> descriptor-2 :core-service-description some?)))))
+           (is (-> descriptor-1 :service-description some?))
+           (is (-> descriptor-2 :service-description some?)))))
 
      (delete-token-and-assert waiter-url token)
      (testing "querying endpoint after deleting token"
