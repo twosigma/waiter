@@ -2016,19 +2016,17 @@
                             :version "1"}]
       (try
         (testing (str "token creation with increased min-instances")
-          (testing "with default namespace"
-            (let [token-description (assoc base-description :min-instances 50)
-                  {:keys [body] :as register-response} (post-token waiter-url token-description)]
-              (assert-response-status register-response http-400-bad-request)
-              (is (str/includes? (str body) "min-instances (50) in the default namespace must be less than or equal to 4"))))
-
-          (testing "with provided namespace"
-            (let [token-description (assoc base-description :min-instances 50 :namespace current-user)
-                  register-response (post-token waiter-url token-description)]
-              (assert-response-status register-response http-200-ok)
-              (let [{:keys [body]} (get-token waiter-url token :query-params {})
-                    parsed-description (some-> body str json/read-str walk/keywordize-keys)]
-                (is (= (-> token-description (dissoc :token) (assoc :owner current-user)) parsed-description))))))
+          (doseq [{:keys [test-name token-description]}
+                  [{:test-name "with missing namespace"
+                    :token-description (assoc base-description :min-instances 50)}
+                   {:test-name "with provided namespace"
+                    :token-description (assoc base-description :min-instances 50 :namespace current-user)}]]
+            (testing test-name
+              (let [register-response (post-token waiter-url token-description)]
+                (assert-response-status register-response http-200-ok)
+                (let [{:keys [body]} (get-token waiter-url token :query-params {})
+                      parsed-description (some-> body str json/read-str walk/keywordize-keys)]
+                  (is (= (-> token-description (dissoc :token) (assoc :owner current-user)) parsed-description)))))))
         (finally
           (delete-token-and-assert waiter-url token))))))
 

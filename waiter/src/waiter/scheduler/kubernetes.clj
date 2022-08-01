@@ -1345,6 +1345,8 @@
   (when (nil? run-as-user-source)
     (throw (ex-info "ReplicaSet spec builder context is missing run-as-user-source" {:context context})))
   (let [rs-namespace (determine-replicaset-namespace-fn scheduler service-id service-description context)
+        _ (when (not= rs-namespace run-as-user)
+            (sd/validate-default-namespace-min-instances min-instances))
         work-path (str "/home/" run-as-user)
         home-path (str work-path "/latest")
         base-env (scheduler/environment service-id service-description
