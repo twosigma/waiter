@@ -742,21 +742,22 @@
                        :status http-400-bad-request
                        :log-level :info})))
 
-    ;; when using the default namespace, there are stricter restrictions on min-instances
-    (let [{:strs [min-instances namespace]} service-description-to-use]
-      (when (and (nil? namespace)
-                 (integer? min-instances)
-                 (> min-instances maximum-default-namespace-min-instances))
-        (sling/throw+ {:type :service-description-error
-                       :friendly-error-message (str "min-instances (" min-instances ") in the default namespace "
-                                                    "must be less than or equal to " maximum-default-namespace-min-instances)
-                       :status http-400-bad-request
-                       :log-level :info})))
-
     ; validate the profile when it is configured
     (let [{:strs [profile]} service-description-to-use]
       (when-not (str/blank? profile)
         (validate-profile-parameter profile->defaults profile)))))
+
+(defn validate-default-namespace-min-instances
+  "When using the default namespace, there are stricter restrictions on min-instances on allowed values."
+  [min-instances]
+  (when (and (integer? min-instances)
+             (> min-instances maximum-default-namespace-min-instances))
+    (let [error-message (str "min-instances (" min-instances ") in the default namespace "
+                             "must be less than or equal to " maximum-default-namespace-min-instances)]
+      (throw (ex-info error-message {:type :service-description-error
+                                     :friendly-error-message error-message
+                                     :status http-400-bad-request
+                                     :log-level :info})))))
 
 (defprotocol ServiceDescriptionBuilder
   "A protocol for constructing a service description from the various sources. Implementations

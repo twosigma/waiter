@@ -644,7 +644,27 @@
               replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler service-id dummy-service-description rs-spec-builder-context)]
           (is (nil? (scheduler/validate-service scheduler service-id)))
           (is (= dummy-scheduler-default-namespace (get-in replicaset-spec [:metadata :namespace])))
-          (is (false? (get-in replicaset-spec [:spec :template :spec :automountServiceAccountToken])))))
+          (is (false? (get-in replicaset-spec [:spec :template :spec :automountServiceAccountToken]))))
+        (testing "service validation"
+          (let [rs-spec-builder-context {:run-as-user-source "unknown"}]
+            (let [service-description (assoc dummy-service-description "max-instances" 10 "min-instances" 4)
+                  scheduler (make-dummy-scheduler [service-id]
+                                                  {:service-id->service-description-fn (constantly service-description)})]
+              (is (map? ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description rs-spec-builder-context))))
+            (let [service-description (assoc dummy-service-description "max-instances" 10 "min-instances" 5)
+                  scheduler (make-dummy-scheduler [service-id]
+                                                  {:service-id->service-description-fn (constantly service-description)})]
+              (is (thrown-with-msg? ExceptionInfo #"min-instances \(5\) in the default namespace must be less than or equal to 4"
+                                    ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description rs-spec-builder-context))))
+            (let [service-description (assoc dummy-service-description "max-instances" 10 "min-instances" 5 "namespace" "default")
+                  scheduler (make-dummy-scheduler [service-id]
+                                                  {:service-id->service-description-fn (constantly service-description)})]
+              (is (thrown-with-msg? ExceptionInfo #"min-instances \(5\) in the default namespace must be less than or equal to 4"
+                                    ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description rs-spec-builder-context))))
+            (let [service-description (assoc dummy-service-description "max-instances" 10 "min-instances" 5 "namespace" "myself")
+                  scheduler (make-dummy-scheduler [service-id]
+                                                  {:service-id->service-description-fn (constantly service-description)})]
+              (is (map? ((:replicaset-spec-builder-fn scheduler) scheduler service-id service-description rs-spec-builder-context)))))))
       (testing "Override namespace"
         (let [scheduler (make-dummy-scheduler [service-id]
                                               {:service-id->service-description-fn (constantly dummy-service-description)})
