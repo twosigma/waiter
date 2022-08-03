@@ -37,7 +37,7 @@
                                     (s/optional-key :ttl) schema/positive-int
                                     s/Keyword schema/require-symbol-factory-fn}
                                    schema/contains-kind-sub-map?)
-   (s/required-key :cluster-config) {(s/required-key :bypass-supported?) schema/non-empty-string
+   (s/required-key :cluster-config) {(s/required-key :bypass-supported?) s/Bool
                                      (s/required-key :min-routers) schema/positive-int
                                      (s/required-key :name) schema/non-empty-string
                                      (s/required-key :service-prefix) schema/non-empty-string}
@@ -308,7 +308,7 @@
    ;; To be considered part of the same cluster, routers need to
    ;; 1. have the same leader-latch-path to participate in leadership election
    ;; 2. have the same discovery path with the same cluster name to allow computing router endpoints
-   :cluster-config {:bypass-supported? "false"
+   :cluster-config {:bypass-supported? false
                     :min-routers 1
                     :name "waiter"
                     :service-prefix "waiter-service-"}

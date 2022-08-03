@@ -44,9 +44,8 @@
  ;; 2. Have the same :zookeeper :base-path and :discovery-relative-path to allow computing router endpoints
  ;; 3. Have the same :zookeeper :base-path and :leader-latch-relative-path to participate in leadership election
 
- :cluster-config {
-                  ;; Determines if Waiter supports requests bypassing the waiter routers.
-                  :bypass-supported? "false"
+ :cluster-config {;; Determines if Waiter supports requests bypassing the waiter routers.
+                  :bypass-supported? false
 
                   ;; Number of routers required in order for leader election to take place;
                   ;; it's a good idea to set this to an odd number:
