@@ -1143,10 +1143,10 @@
   (and (using-k8s? waiter-url)
        (contains? (get-kubernetes-scheduler-settings waiter-url) :raven-sidecar)))
 
-(defn using-metrics-service?
-  "Returns true if Waiter is configured to use external metrics services"
+(defn supports-bypass?
+  "Returns true if Waiter is configured to support bypass."
   [waiter-url]
-  (< 0 (count (setting waiter-url [:metrics-consumer :metrics-services]))))
+  (= (setting waiter-url [:cluster-config :bypass-supported?]) true))
 
 (defn get-raven-sidecar-flag
   "Fetches (from the k8s scheduler config) the env var name for enabling the raven sidecar."

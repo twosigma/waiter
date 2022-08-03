@@ -44,7 +44,9 @@
  ;; 2. Have the same :zookeeper :base-path and :discovery-relative-path to allow computing router endpoints
  ;; 3. Have the same :zookeeper :base-path and :leader-latch-relative-path to participate in leadership election
 
- :cluster-config {
+ :cluster-config {;; Determines if Waiter supports requests bypassing the waiter routers.
+                  :bypass-supported? false
+
                   ;; Number of routers required in order for leader election to take place;
                   ;; it's a good idea to set this to an odd number:
                   :min-routers 3
@@ -1018,25 +1020,6 @@
                   ;; The amount of time that must pass since a service's metrics have changed
                   ;; in order for Waiter to garbage collect its metrics:
                   :transient-metrics-timeout-ms 300000}
-
- ; Configures how waiter consumes and handles metrics from an external metrics service
- ; these metrics can be used for waiter to make autoscaling decisions
- :metrics-consumer {
-                    ; max time to wait for metrics service to establish connection when watch request is made
-                    :connection-timeout-ms 5000
-
-                    ; total allowed time for inactivity on a metrics service watch response stream before terminating
-                    ; and retrying the watch request
-                    :idle-timeout-ms 10000
-
-                    ; metrics services to aggregate metrics from
-                    :metrics-services []
-
-                    ; time before retrying a new watch connection to the metrics service
-                    :retry-delay-ms 1000
-
-                    ; total number of token metrics events that can be buffered before old events are overwritten
-                    :token-metric-chan-buffer-size 4096}
 
  ; ---------- Router Config ----------
 
