@@ -46,7 +46,7 @@
 
  :cluster-config {
                   ;; Determines if Waiter supports requests bypassing the waiter routers.
-                  :bypass "false"
+                  :bypass-supported? "false"
 
                   ;; Number of routers required in order for leader election to take place;
                   ;; it's a good idea to set this to an odd number:
