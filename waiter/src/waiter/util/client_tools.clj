@@ -1146,7 +1146,7 @@
 (defn supports-bypass?
   "Returns true if Waiter is configured to support bypass."
   [waiter-url]
-  (contains? (set (setting waiter-url [:tags])) "bypass"))
+  (= (setting waiter-url [:cluster-config :bypass]) "true"))
 
 (defn get-raven-sidecar-flag
   "Fetches (from the k8s scheduler config) the env var name for enabling the raven sidecar."

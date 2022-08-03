@@ -37,7 +37,8 @@
                                     (s/optional-key :ttl) schema/positive-int
                                     s/Keyword schema/require-symbol-factory-fn}
                                    schema/contains-kind-sub-map?)
-   (s/required-key :cluster-config) {(s/required-key :min-routers) schema/positive-int
+   (s/required-key :cluster-config) {(s/required-key :bypass) schema/non-empty-string
+                                     (s/required-key :min-routers) schema/positive-int
                                      (s/required-key :name) schema/non-empty-string
                                      (s/required-key :service-prefix) schema/non-empty-string}
    (s/required-key :consent-expiry-days) schema/positive-int
@@ -188,7 +189,6 @@
    (s/required-key :support-info) [{(s/required-key :label) schema/non-empty-string
                                     (s/required-key :link) {(s/required-key :type) s/Keyword
                                                             (s/required-key :value) schema/non-empty-string}}]
-   (s/required-key :tags) #{schema/non-empty-string}
    (s/required-key :token-config) {(s/required-key :cluster-calculator) (s/constrained
                                                                           {:kind s/Keyword
                                                                            s/Keyword schema/require-symbol-factory-fn}
@@ -308,7 +308,8 @@
    ;; To be considered part of the same cluster, routers need to
    ;; 1. have the same leader-latch-path to participate in leadership election
    ;; 2. have the same discovery path with the same cluster name to allow computing router endpoints
-   :cluster-config {:min-routers 1
+   :cluster-config {:bypass "false"
+                    :min-routers 1
                     :name "waiter"
                     :service-prefix "waiter-service-"}
    :consent-expiry-days 90
@@ -503,7 +504,6 @@
    :support-info [{:label "Waiter on GitHub"
                    :link {:type :url
                           :value "http://github.com/twosigma/waiter"}}]
-   :tags #{}
    :token-config {:cluster-calculator {:kind :configured
                                        :configured {:factory-fn 'waiter.token/new-configured-cluster-calculator
                                                     :host->cluster {}}}
