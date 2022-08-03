@@ -45,6 +45,9 @@
  ;; 3. Have the same :zookeeper :base-path and :leader-latch-relative-path to participate in leadership election
 
  :cluster-config {
+                  ;; Determines if Waiter supports requests bypassing the waiter routers.
+                  :bypass "false"
+
                   ;; Number of routers required in order for leader election to take place;
                   ;; it's a good idea to set this to an odd number:
                   :min-routers 3
@@ -1104,9 +1107,6 @@
                :request-headers #{"accept-encoding" "transfer-encoding"}
                ;; response headers to include in the request log prefixed by 'response-header-'
                :response-headers #{"content-encoding" "transfer-encoding"}}
-
- ;; Configure set of strings to tag the Waiter Cluster
- :tags #{}
 
  :token-config {
                 ;; Define the calculator that compute the root assigned to a token when they are created.
