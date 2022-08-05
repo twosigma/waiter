@@ -1200,11 +1200,11 @@
 (defn post-token
   "Sends a POST request with the given token definition"
   [waiter-url {:keys [token] :as token-map} &
-   {:keys [cookies headers query-params use-host-header] :or {cookies [] headers {} query-params {} use-host-header true}}]
+   {:keys [cookies headers query-params] :or {cookies [] headers {} query-params {}}}]
   (make-request waiter-url "/token"
                 :body (utils/clj->json token-map)
                 :cookies cookies
-                :headers (assoc headers (if use-host-header "host" "x-waiter-token") token)
+                :headers (assoc headers "x-waiter-token" token)
                 :method :post
                 :query-params query-params))
 
