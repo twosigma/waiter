@@ -372,12 +372,13 @@
 
 (defn make-request
   ([waiter-url path &
-    {:keys [async? body client cookies content-type disable-auth form-params headers
-            method multipart protocol query-params scheme trailers-fn verbose]
+    {:keys [async? body client cookies content-type disable-auth form-params follow-redirects? headers
+            method multipart protocol query-params scheme server-principal trailers-fn verbose]
      :or {async? false
           body nil
           cookies []
           disable-auth nil
+          follow-redirects? false
           headers {}
           method :get
           query-params {}
@@ -395,6 +396,9 @@
                          (str scheme "://"))
                        (strip-trailing-slash waiter-url)
                        path)
+         server-principal (if (some? server-principal)
+                            (str scheme "://" server-principal)
+                            request-url)
          request-headers (walk/stringify-keys (ensure-cid-in-headers headers))]
      (try
        (when verbose
@@ -409,13 +413,13 @@
                           client
                           (cond-> {:body body
                                    :fold-chunked-response? (not async?)
-                                   :follow-redirects? false
+                                   :follow-redirects? follow-redirects?
                                    :headers request-headers
                                    :method method
                                    :query-string query-params
                                    :url request-url}
                             multipart (assoc :multipart multipart)
-                            add-spnego-auth (assoc :auth (hu/spnego-authentication (URI. request-url)))
+                            add-spnego-auth (assoc :auth (hu/spnego-authentication (URI. server-principal)))
                             form-params (assoc :form-params form-params)
                             (not (str/blank? content-type)) (assoc :content-type content-type)
                             cookies (assoc :cookies (map (fn [c] [(:name c) (:value c)]) cookies))
@@ -1200,7 +1204,7 @@
   (make-request waiter-url "/token"
                 :body (utils/clj->json token-map)
                 :cookies cookies
-                :headers (assoc headers "host" token)
+                :headers (assoc headers "x-waiter-token" token)
                 :method :post
                 :query-params query-params))
 
