@@ -105,6 +105,7 @@
                              ["/" :service-id "/refresh"] :service-refresh-handler-fn
                              ["/" :service-id "/resume"] :service-resume-handler-fn
                              ["/" :service-id "/suspend"] :service-suspend-handler-fn}
+                     "drain" :drain-handler-fn
                      "eject" :eject-instance-handler-fn
                      "ejected" {["/" :service-id] :ejected-instances-list-handler-fn}
                      "favicon.ico" :favicon-handler-fn
@@ -664,6 +665,12 @@
                 (let [{:keys [router-fqdn router-ssl-port]} router-config]
                   (discovery/register router-id curator name (str base-path "/" discovery-relative-path)
                                       {:host host :port (primary-port port) :router-fqdn router-fqdn :router-ssl-port router-ssl-port})))
+   :drain-atom (pc/fnk [] (atom {}))
+   :drain-mode?-fn (pc/fnk [clock drain-atom]
+                     (fn drain-mode?-fn []
+                       (let [{:keys [drain-until]} @drain-atom]
+                         (and (some? drain-until)
+                              (t/after? drain-until (clock))))))
    :ejection-expiry-tracker (pc/fnk [[:settings [:ejection-config expiry-threshold]]]
                               (let [service-id->instance-ids-atom (atom {})]
                                 (ejection-expiry/->EjectionExpiryTracker expiry-threshold service-id->instance-ids-atom)))
@@ -1575,6 +1582,11 @@
                                   (wrap-secure-request-fn
                                     (fn display-settings-handler-fn [_]
                                       (settings/display-settings settings))))
+   :drain-handler-fn (pc/fnk [[:state clock drain-atom drain-mode?-fn]
+                              wrap-secure-request-fn]
+                       (wrap-secure-request-fn
+                         (fn drain-handler-fn [request]
+                           (handler/drain-handler clock drain-atom drain-mode?-fn request))))
    :eject-instance-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! router-state-maintainer]
                                        wrap-router-auth-fn]
                                 (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]
@@ -1970,7 +1982,10 @@
                                      (wrap-secure-request-fn
                                        (fn state-work-stealing-handler-fn [request]
                                          (handler/get-work-stealing-state offers-allowed-semaphore router-id request))))
-   :status-handler-fn (pc/fnk [] handler/status-handler)
+   :status-handler-fn (pc/fnk [[:state drain-mode?-fn]]
+                        (fn status-handler-fn
+                          [request]
+                          (handler/status-handler drain-mode?-fn request)))
    :token-handler-fn (pc/fnk [[:curator synchronize-fn]
                               [:daemons token-watch-maintainer]
                               [:routines attach-service-defaults-fn make-inter-router-requests-sync-fn validate-service-description-fn

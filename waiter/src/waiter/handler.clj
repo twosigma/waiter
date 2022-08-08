@@ -1174,14 +1174,43 @@
   [request]
   (utils/exception->response (ex-info (utils/message :not-found) {:log-level :info :status http-404-not-found}) request))
 
+(defn drain-handler
+  "Handles Post /drain requests and sets the last-drain-time for the router. This will cause the /status health check to
+  fail and remove the router in general load balancers."
+  [clock drain-atom drain-mode?-fn {:keys [request-method] :as request}]
+  (try
+    (case request-method
+      :get (utils/clj->json-response {:result @drain-atom
+                                      :drain-mode? (drain-mode?-fn)})
+      :post (let [{:strs [drain-timeout-ms] :or {drain-timeout-ms "120000"} :as request-params} (-> request ru/query-params-request :query-params)
+                  drain-timeout-ms (utils/parse-int drain-timeout-ms)
+                  crash-process? (utils/request-flag request-params "crash")
+                  now (clock)
+                  drain-until (t/plus now (t/millis drain-timeout-ms))]
+              (log/warn "Putting router into drain mode! It should begin failing health checks.")
+              (swap! drain-atom assoc :drain-until drain-until :crash-process? crash-process?)
+              (when crash-process?
+                (log/warn "Going to attempt to kill router process after timeout." {:drain-timeout-ms drain-timeout-ms})
+                (async/go
+                  (async/<! (async/timeout drain-timeout-ms))
+                  (log/fatal "Drain timeout finished. Kill waiter process now!")
+                  (System/exit 1)))
+              (utils/clj->json-response {:result @drain-atom}))
+      (throw (ex-info "Only POST supported" {:log-level :info :status http-405-method-not-allowed})))
+    (catch Exception ex
+      (utils/exception->response ex request))))
+
 (defn status-handler
   "Responds with an 'ok' status.
-   Includes representation of request if requested using the include=request-info query param."
-  [{:keys [body trailers-fn] :as request}]
+   Includes representation of request if requested using the include=request-info query param.
+   If the router is in drain mode then return 503 server error."
+  [drain-mode?-fn {:keys [body trailers-fn] :as request}]
   (try
     (when (instance? InputStream body)
       (log/info "consuming request body before rendering response")
       (slurp body))
+    (when (drain-mode?-fn)
+      (throw (ex-info "Router is in drain mode. All health checks will fail during this period" {})))
     (let [request-params (-> request ru/query-params-request :query-params)
           include-request-info (utils/param-contains? request-params "include" "request-info")
           include-server-info (utils/param-contains? request-params "include" "server-info")]
