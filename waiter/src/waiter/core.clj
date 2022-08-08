@@ -1582,11 +1582,12 @@
                                   (wrap-secure-request-fn
                                     (fn display-settings-handler-fn [_]
                                       (settings/display-settings settings))))
-   :drain-handler-fn (pc/fnk [[:state clock drain-atom drain-mode?-fn]
+   :drain-handler-fn (pc/fnk [[:routines admin-user?-fn]
+                              [:state clock drain-atom drain-mode?-fn]
                               wrap-secure-request-fn]
                        (wrap-secure-request-fn
                          (fn drain-handler-fn [request]
-                           (handler/drain-handler clock drain-atom drain-mode?-fn request))))
+                           (handler/drain-handler clock drain-atom admin-user?-fn drain-mode?-fn request))))
    :eject-instance-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! router-state-maintainer]
                                        wrap-router-auth-fn]
                                 (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]

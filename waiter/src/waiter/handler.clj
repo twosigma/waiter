@@ -1177,16 +1177,20 @@
 (defn drain-handler
   "Handles Post /drain requests and sets the last-drain-time for the router. This will cause the /status health check to
   fail and remove the router in general load balancers."
-  [clock drain-atom drain-mode?-fn {:keys [request-method] :as request}]
+  [clock drain-atom admin-user?-fn drain-mode?-fn {:keys [request-method] :as request}]
   (try
     (case request-method
       :get (utils/clj->json-response {:result @drain-atom
                                       :drain-mode? (drain-mode?-fn)})
       :post (let [{:strs [drain-timeout-ms] :or {drain-timeout-ms "120000"} :as request-params} (-> request ru/query-params-request :query-params)
+                  auth-user (get request :authorization/user)
                   drain-timeout-ms (utils/parse-int drain-timeout-ms)
                   crash-process? (utils/request-flag request-params "crash")
                   now (clock)
                   drain-until (t/plus now (t/millis drain-timeout-ms))]
+              (when (not (admin-user?-fn auth-user))
+                (throw (ex-info "Must be an admin to use this endpoint."
+                                {:auth-user auth-user :log-level :info :status http-401-unauthorized})))
               (log/warn "Putting router into drain mode! It should begin failing health checks.")
               (swap! drain-atom assoc :drain-until drain-until :crash-process? crash-process?)
               (when crash-process?
