@@ -1181,7 +1181,7 @@
   load balancers. The request may have the 'crash' query parameter, which when true, will cause the router to exit after
   the provided timeout. You can cancel the 'crash' request by sending a subsequent request setting it back to false before
   the 'drain-timeout-ms' is reached."
-  [clock drain-atom admin-user?-fn drain-mode?-fn {:keys [request-method] :as request}]
+  [clock drain-atom admin-user?-fn crash-fn drain-mode?-fn {:keys [request-method] :as request}]
   (try
     (case request-method
       :get (utils/clj->json-response {:result @drain-atom
@@ -1202,12 +1202,10 @@
                 (async/go
                   (async/<! (async/timeout drain-timeout-ms))
                   (if (:crash-process? @drain-atom)
-                    (do
-                      (log/fatal "Drain timeout finished. Kill waiter process now!")
-                      (System/exit 1))
+                    (crash-fn)
                     (log/warn "Cancelled attempt to kill waiter process!"))))
               (utils/clj->json-response {:result @drain-atom}))
-      (throw (ex-info "Only POST supported" {:log-level :info :status http-405-method-not-allowed})))
+      (throw (ex-info "Unsupported request method" {:log-level :info :method request-method :status http-405-method-not-allowed})))
     (catch Exception ex
       (utils/exception->response ex request))))
 
