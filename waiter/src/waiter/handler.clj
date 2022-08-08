@@ -1175,8 +1175,12 @@
   (utils/exception->response (ex-info (utils/message :not-found) {:log-level :info :status http-404-not-found}) request))
 
 (defn drain-handler
-  "Handles Post /drain requests and sets the last-drain-time for the router. This will cause the /status health check to
-  fail and remove the router in general load balancers."
+  "Handles Get /drain requests by providing the current drain state.
+  Handles Post /drain requests and sets the drain-until for the router based on the provided 'drain-timeout-ms' query
+  param which defaults to 120 seconds. This will cause the /status health check to fail and remove the router in general
+  load balancers. The request may have the 'crash' query parameter, which when true, will cause the router to exit after
+  the provided timeout. You can cancel the 'crash' request by sending a subsequent request setting it back to false before
+  the 'drain-timeout-ms' is reached."
   [clock drain-atom admin-user?-fn drain-mode?-fn {:keys [request-method] :as request}]
   (try
     (case request-method
@@ -1197,8 +1201,11 @@
                 (log/warn "Going to attempt to kill router process after timeout." {:drain-timeout-ms drain-timeout-ms})
                 (async/go
                   (async/<! (async/timeout drain-timeout-ms))
-                  (log/fatal "Drain timeout finished. Kill waiter process now!")
-                  (System/exit 1)))
+                  (if (:crash-process? @drain-atom)
+                    (do
+                      (log/fatal "Drain timeout finished. Kill waiter process now!")
+                      (System/exit 1))
+                    (log/warn "Cancelled attempt to kill waiter process!"))))
               (utils/clj->json-response {:result @drain-atom}))
       (throw (ex-info "Only POST supported" {:log-level :info :status http-405-method-not-allowed})))
     (catch Exception ex
