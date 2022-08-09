@@ -1196,15 +1196,15 @@
                 (throw (ex-info "Must be an admin to use this endpoint."
                                 {:auth-user auth-user :log-level :info :status http-403-forbidden})))
               (log/warn "Putting router into drain mode! It should begin failing health checks.")
-              (swap! drain-atom assoc :drain-until drain-until :crash-process? crash-process?)
-              (when crash-process?
-                (log/warn "Going to attempt to kill router process after timeout." {:drain-timeout-secs drain-timeout-secs})
-                (async/go
-                  (async/<! (async/timeout drain-timeout-secs))
-                  (if (:crash-process? @drain-atom)
-                    (crash-fn)
-                    (log/warn "Cancelled attempt to kill waiter process!"))))
-              (utils/clj->json-response {:result @drain-atom}))
+              (let [result (swap! drain-atom assoc :drain-until drain-until :crash-process? crash-process?)]
+                (when crash-process?
+                  (log/warn "Going to attempt to kill router process after timeout." {:drain-timeout-secs drain-timeout-secs})
+                  (async/go
+                    (async/<! (async/timeout drain-timeout-secs))
+                    (if (:crash-process? @drain-atom)
+                      (crash-fn)
+                      (log/warn "Cancelled attempt to kill waiter process!"))))
+                (utils/clj->json-response {:result result})))
       (throw (ex-info "Unsupported request method" {:log-level :info :method request-method :status http-405-method-not-allowed})))
     (catch Exception ex
       (utils/exception->response ex request))))
