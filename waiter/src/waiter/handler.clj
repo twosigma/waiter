@@ -1218,26 +1218,26 @@
     (when (instance? InputStream body)
       (log/info "consuming request body before rendering response")
       (slurp body))
-    (when (drain-mode?-fn)
-      (throw (ex-info "Router is in drain mode. All health checks will fail during this period" {})))
-    (let [request-params (-> request ru/query-params-request :query-params)
-          include-request-info (utils/param-contains? request-params "include" "request-info")
-          include-server-info (utils/param-contains? request-params "include" "server-info")]
-      (-> (cond-> {:status "ok"}
-            include-request-info
-            (assoc
-              :request-info
-              (let [request-keys [:character-encoding :client-protocol :content-length :content-type :headers
-                                  :internal-protocol :query-string :request-id :request-method :request-time :router-id
-                                  :scheme :uri]
-                    trailers (when trailers-fn (trailers-fn))]
-                (cond-> (-> (select-keys request request-keys)
+    (if (drain-mode?-fn)
+      (utils/clj->json-response {:message "Router is in drain mode."} :status http-503-service-unavailable)
+      (let [request-params (-> request ru/query-params-request :query-params)
+            include-request-info (utils/param-contains? request-params "include" "request-info")
+            include-server-info (utils/param-contains? request-params "include" "server-info")]
+        (-> (cond-> {:status "ok"}
+              include-request-info
+              (assoc
+                :request-info
+                (let [request-keys [:character-encoding :client-protocol :content-length :content-type :headers
+                                    :internal-protocol :query-string :request-id :request-method :request-time :router-id
+                                    :scheme :uri]
+                      trailers (when trailers-fn (trailers-fn))]
+                  (cond-> (-> (select-keys request request-keys)
                             (update :headers headers/truncate-header-values))
-                  (seq trailers)
-                  (assoc :trailers (headers/truncate-header-values trailers)))))
-            include-server-info (assoc :server-info {:java-version (System/getProperty "java.version")
-                                                     :jetty-version Jetty/VERSION}))
-          utils/clj->json-response))
+                    (seq trailers)
+                    (assoc :trailers (headers/truncate-header-values trailers)))))
+              include-server-info (assoc :server-info {:java-version (System/getProperty "java.version")
+                                                       :jetty-version Jetty/VERSION}))
+          utils/clj->json-response)))
     (catch Throwable th
       (utils/exception->response th request))))
 

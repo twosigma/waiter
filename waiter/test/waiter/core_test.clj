@@ -926,8 +926,9 @@
           waiter-request?-fn (fn [_] true)
           handlers {:status-handler-fn ((:status-handler-fn request-handlers) {:state {:drain-mode?-fn (constantly true)}})
                     :waiter-request?-fn (constantly true)}
-          {:keys [status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
-      (is (= http-500-internal-server-error status)))))
+          {:keys [body status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+      (is (= http-503-service-unavailable status))
+      (is (= {"message" "Router is in drain mode."} (json/read-str body))))))
 
 (deftest test-leader-fn-factory
   (with-redefs [discovery/cluster-size int]
