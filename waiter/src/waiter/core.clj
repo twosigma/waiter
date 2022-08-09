@@ -1589,7 +1589,7 @@
                          (fn drain-handler-fn [request]
                            (let [crash-fn (fn crash-fn []
                                             (log/fatal "Drain timeout finished. Kill waiter process now!")
-                                            (System/exit 1))]
+                                            (System/exit 0))]
                              (handler/drain-handler clock drain-atom admin-user?-fn crash-fn drain-mode?-fn request)))))
    :eject-instance-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! router-state-maintainer]
                                        wrap-router-auth-fn]
