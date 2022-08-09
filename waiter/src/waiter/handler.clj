@@ -1200,7 +1200,7 @@
                 (when crash-process?
                   (log/warn "Going to attempt to kill router process after timeout." {:drain-timeout-secs drain-timeout-secs})
                   (async/go
-                    (async/<! (async/timeout drain-timeout-secs))
+                    (async/<! (async/timeout (* 1000 drain-timeout-secs)))
                     (if (:crash-process? @drain-atom)
                       (crash-fn)
                       (log/warn "Cancelled attempt to kill waiter process!"))))
