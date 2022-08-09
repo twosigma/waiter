@@ -2067,28 +2067,28 @@
                  "drain-until" now-str}}
                (utils/try-parse-json body)))))
 
-    (testing ":post updates :drain-until using the 'drain-timeout-ms'"
-      (let [request {:query-string "drain-timeout-ms=10000&crash=false"
+    (testing ":post updates :drain-until using the 'drain-timeout-secs'"
+      (let [request {:query-string "drain-timeout-secs=10&crash=false"
                      :request-method :post}
             drain-atom (atom {})
             {:keys [status]} (drain-handler clock-fn drain-atom (constantly true) (constantly nil) (constantly true) request)]
         (is (= status http-200-ok))
         (is (= @drain-atom
                {:crash-process? false
-                :drain-until (t/plus now (t/millis 10000))}))))
+                :drain-until (t/plus now (t/seconds 10))}))))
 
     (testing ":post overrides crash to false if query param 'crash' is not 'true'"
-      (let [request {:query-string "drain-timeout-ms=10000&crash=foobar"
+      (let [request {:query-string "drain-timeout-secs=10&crash=foobar"
                      :request-method :post}
             drain-atom (atom {:crash-process? true})
             {:keys [status]} (drain-handler clock-fn drain-atom (constantly true) (constantly nil) (constantly true) request)]
         (is (= status http-200-ok))
         (is (= @drain-atom
                {:crash-process? false
-                :drain-until (t/plus now (t/millis 10000))}))))
+                :drain-until (t/plus now (t/seconds 10))}))))
 
-    (testing ":post will attempt to crash if 'crash' is 'true' after the provided 'drain-timeout-ms'"
-      (let [request {:query-string "drain-timeout-ms=1000&crash=true"
+    (testing ":post will attempt to crash if 'crash' is 'true' after the provided 'drain-timeout-secs'"
+      (let [request {:query-string "drain-timeout-secs=1&crash=true"
                      :request-method :post}
             crash-fn-called?-atom (atom false)
             drain-atom (atom {:crash-process? false})
@@ -2097,13 +2097,13 @@
         (is (not @crash-fn-called?-atom))
         (is (= @drain-atom
                {:crash-process? true
-                :drain-until (t/plus now (t/millis 1000))}))
+                :drain-until (t/plus now (t/seconds 1))}))
 
         (utils/sleep 1100)
         (is @crash-fn-called?-atom)))
 
     (testing ":post will attempt to stop process from crashing if set 'crash' false before previous timeout reached."
-      (let [request {:query-string "drain-timeout-ms=1000&crash=true"
+      (let [request {:query-string "drain-timeout-secs=1&crash=true"
                      :request-method :post}
             crash-fn-called?-atom (atom false)
             drain-atom (atom {:crash-process? false})
@@ -2112,10 +2112,10 @@
         (is (not @crash-fn-called?-atom))
         (is (= @drain-atom
                {:crash-process? true
-                :drain-until (t/plus now (t/millis 1000))}))
+                :drain-until (t/plus now (t/seconds 1))}))
 
         ; override the previous crash by cancelling it
-        (let [cancel-req {:query-string "drain-timeout-ms=1000&crash=false"
+        (let [cancel-req {:query-string "drain-timeout-secs=1&crash=false"
                           :request-method :post}
               {:keys [status]} (drain-handler clock-fn drain-atom (constantly true) #(reset! crash-fn-called?-atom true) (constantly true) cancel-req)]
           (is (= status http-200-ok)))

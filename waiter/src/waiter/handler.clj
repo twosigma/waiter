@@ -1176,31 +1176,31 @@
 
 (defn drain-handler
   "Handles Get /drain requests by providing the current drain state.
-  Handles Post /drain requests and sets the drain-until for the router based on the provided 'drain-timeout-ms' query
+  Handles Post /drain requests and sets the drain-until for the router based on the provided 'drain-timeout-secs' query
   param which defaults to 120 seconds. This will cause the /status health check to fail and remove the router in general
   load balancers. The request may have the 'crash' query parameter, which when true, will cause the router to exit after
   the provided timeout. You can cancel the 'crash' request by sending a subsequent request setting it back to false before
-  the 'drain-timeout-ms' is reached."
+  the 'drain-timeout-secs' is reached."
   [clock drain-atom admin-user?-fn crash-fn drain-mode?-fn {:keys [request-method] :as request}]
   (try
     (case request-method
       :get (utils/clj->json-response {:result @drain-atom
                                       :drain-mode? (drain-mode?-fn)})
-      :post (let [{:strs [drain-timeout-ms] :or {drain-timeout-ms "120000"} :as request-params} (-> request ru/query-params-request :query-params)
+      :post (let [{:strs [drain-timeout-secs] :or {drain-timeout-secs "120"} :as request-params} (-> request ru/query-params-request :query-params)
                   auth-user (get request :authorization/user)
-                  drain-timeout-ms (utils/parse-int drain-timeout-ms)
+                  drain-timeout-secs (utils/parse-int drain-timeout-secs)
                   crash-process? (utils/request-flag request-params "crash")
                   now (clock)
-                  drain-until (t/plus now (t/millis drain-timeout-ms))]
+                  drain-until (t/plus now (t/seconds drain-timeout-secs))]
               (when (not (admin-user?-fn auth-user))
                 (throw (ex-info "Must be an admin to use this endpoint."
                                 {:auth-user auth-user :log-level :info :status http-403-forbidden})))
               (log/warn "Putting router into drain mode! It should begin failing health checks.")
               (swap! drain-atom assoc :drain-until drain-until :crash-process? crash-process?)
               (when crash-process?
-                (log/warn "Going to attempt to kill router process after timeout." {:drain-timeout-ms drain-timeout-ms})
+                (log/warn "Going to attempt to kill router process after timeout." {:drain-timeout-secs drain-timeout-secs})
                 (async/go
-                  (async/<! (async/timeout drain-timeout-ms))
+                  (async/<! (async/timeout drain-timeout-secs))
                   (if (:crash-process? @drain-atom)
                     (crash-fn)
                     (log/warn "Cancelled attempt to kill waiter process!"))))
