@@ -1174,32 +1174,70 @@
   [request]
   (utils/exception->response (ex-info (utils/message :not-found) {:log-level :info :status http-404-not-found}) request))
 
+(defn drain-handler
+  "Handles Get /drain requests by providing the current drain state.
+  Handles Post /drain requests and sets the drain-until for the router based on the provided 'drain-timeout-secs' query
+  param which defaults to 120 seconds. This will cause the /status health check to fail and remove the router in general
+  load balancers. The request may have the 'crash' query parameter, which when true, will cause the router to exit after
+  the provided timeout. You can cancel the 'crash' request by sending a subsequent request setting it back to false before
+  the 'drain-timeout-secs' is reached."
+  [clock drain-atom admin-user?-fn crash-fn drain-mode?-fn {:keys [request-method] :as request}]
+  (try
+    (case request-method
+      :get (utils/clj->json-response {:result @drain-atom
+                                      :drain-mode? (drain-mode?-fn)})
+      :post (let [{:strs [drain-timeout-secs] :or {drain-timeout-secs "120"} :as request-params} (-> request ru/query-params-request :query-params)
+                  auth-user (get request :authorization/user)
+                  drain-timeout-secs (utils/parse-int drain-timeout-secs)
+                  crash-process? (utils/request-flag request-params "crash")
+                  now (clock)
+                  drain-until (t/plus now (t/seconds drain-timeout-secs))]
+              (when (not (admin-user?-fn auth-user))
+                (throw (ex-info "Must be an admin to use this endpoint."
+                                {:auth-user auth-user :log-level :info :status http-403-forbidden})))
+              (log/warn "Putting router into drain mode! It should begin failing health checks.")
+              (let [result (swap! drain-atom assoc :drain-until drain-until :crash-process? crash-process?)]
+                (when crash-process?
+                  (log/warn "Going to attempt to kill router process after timeout." {:drain-timeout-secs drain-timeout-secs})
+                  (async/go
+                    (async/<! (async/timeout (* 1000 drain-timeout-secs)))
+                    (if (:crash-process? @drain-atom)
+                      (crash-fn)
+                      (log/warn "Cancelled attempt to kill waiter process!"))))
+                (utils/clj->json-response {:result result})))
+      (throw (ex-info "Unsupported request method" {:log-level :info :method request-method :status http-405-method-not-allowed})))
+    (catch Exception ex
+      (utils/exception->response ex request))))
+
 (defn status-handler
   "Responds with an 'ok' status.
-   Includes representation of request if requested using the include=request-info query param."
-  [{:keys [body trailers-fn] :as request}]
+   Includes representation of request if requested using the include=request-info query param.
+   If the router is in drain mode then return 503 server error."
+  [drain-mode?-fn {:keys [body trailers-fn] :as request}]
   (try
     (when (instance? InputStream body)
       (log/info "consuming request body before rendering response")
       (slurp body))
-    (let [request-params (-> request ru/query-params-request :query-params)
-          include-request-info (utils/param-contains? request-params "include" "request-info")
-          include-server-info (utils/param-contains? request-params "include" "server-info")]
-      (-> (cond-> {:status "ok"}
-            include-request-info
-            (assoc
-              :request-info
-              (let [request-keys [:character-encoding :client-protocol :content-length :content-type :headers
-                                  :internal-protocol :query-string :request-id :request-method :request-time :router-id
-                                  :scheme :uri]
-                    trailers (when trailers-fn (trailers-fn))]
-                (cond-> (-> (select-keys request request-keys)
+    (if (drain-mode?-fn)
+      (utils/clj->json-response {:message "Router is in drain mode."} :status http-503-service-unavailable)
+      (let [request-params (-> request ru/query-params-request :query-params)
+            include-request-info (utils/param-contains? request-params "include" "request-info")
+            include-server-info (utils/param-contains? request-params "include" "server-info")]
+        (-> (cond-> {:status "ok"}
+              include-request-info
+              (assoc
+                :request-info
+                (let [request-keys [:character-encoding :client-protocol :content-length :content-type :headers
+                                    :internal-protocol :query-string :request-id :request-method :request-time :router-id
+                                    :scheme :uri]
+                      trailers (when trailers-fn (trailers-fn))]
+                  (cond-> (-> (select-keys request request-keys)
                             (update :headers headers/truncate-header-values))
-                  (seq trailers)
-                  (assoc :trailers (headers/truncate-header-values trailers)))))
-            include-server-info (assoc :server-info {:java-version (System/getProperty "java.version")
-                                                     :jetty-version Jetty/VERSION}))
-          utils/clj->json-response))
+                    (seq trailers)
+                    (assoc :trailers (headers/truncate-header-values trailers)))))
+              include-server-info (assoc :server-info {:java-version (System/getProperty "java.version")
+                                                       :jetty-version Jetty/VERSION}))
+          utils/clj->json-response)))
     (catch Throwable th
       (utils/exception->response th request))))
 

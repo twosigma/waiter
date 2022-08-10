@@ -913,12 +913,22 @@
   (testing "health-check-handler:status-ok"
     (let [request {:request-method :get, :uri "/status"}
           waiter-request?-fn (fn [_] true)
-          handlers {:status-handler-fn ((:status-handler-fn request-handlers) {})
+          handlers {:status-handler-fn ((:status-handler-fn request-handlers) {:state {:drain-mode?-fn (constantly false)}})
                     :waiter-request?-fn (constantly true)}
           {:keys [body headers status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
       (is (= http-200-ok status))
       (is (= expected-json-response-headers headers))
       (is (= {"status" "ok"} (json/read-str body))))))
+
+(deftest test-health-check-handler-handler-drain-mode
+  (testing "health-check-handler:status-ok"
+    (let [request {:request-method :get, :uri "/status"}
+          waiter-request?-fn (fn [_] true)
+          handlers {:status-handler-fn ((:status-handler-fn request-handlers) {:state {:drain-mode?-fn (constantly true)}})
+                    :waiter-request?-fn (constantly true)}
+          {:keys [body status]} ((ring-handler-factory waiter-request?-fn handlers) request)]
+      (is (= http-503-service-unavailable status))
+      (is (= {"message" "Router is in drain mode."} (json/read-str body))))))
 
 (deftest test-leader-fn-factory
   (with-redefs [discovery/cluster-size int]
