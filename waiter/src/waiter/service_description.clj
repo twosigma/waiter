@@ -89,13 +89,19 @@
    ; start-up related
    (s/optional-key "grace-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
    (s/optional-key "health-check-authentication") schema/valid-health-check-authentication
-   (s/optional-key "health-check-interval-secs") (s/both s/Int (s/pred #(<= 5 % 60) 'between-5-seconds-and-1-minute))
-   (s/optional-key "health-check-max-consecutive-failures") (s/both s/Int (s/pred #(<= 1 % 15) 'at-most-fifteen))
+   (s/optional-key "health-check-interval-secs") (s/both s/Int (s/pred #(<= 5 % 600) 'between-5-seconds-and-10-minutes))
+   (s/optional-key "health-check-max-consecutive-failures") (s/both s/Int (s/pred #(<= 1 % 36) 'at-most-36))
    (s/optional-key "health-check-port-index") schema/valid-health-check-port-index
    (s/optional-key "health-check-proto") schema/valid-health-check-proto
    (s/optional-key "health-check-url") schema/non-empty-string
    (s/optional-key "idle-timeout-mins") (s/both s/Int (s/pred #(<= 0 % (t/in-minutes (t/days 30))) 'between-0-minute-and-30-days))
    (s/optional-key "interstitial-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
+   (s/optional-key "liveness-check-authentication") schema/valid-health-check-authentication
+   (s/optional-key "liveness-check-interval-secs") (s/both s/Int (s/pred #(<= 5 % 600) 'between-5-seconds-and-10-minutes))
+   (s/optional-key "liveness-check-max-consecutive-failures") (s/both s/Int (s/pred #(<= 1 % 36) 'at-most-36))
+   (s/optional-key "liveness-check-port-index") schema/valid-health-check-port-index
+   (s/optional-key "liveness-check-proto") schema/valid-health-check-proto
+   (s/optional-key "liveness-check-url") schema/non-empty-string
    (s/optional-key "restart-backoff-factor") schema/positive-number-greater-than-or-equal-to-1
    (s/optional-key "scheduler") schema/non-empty-string
    (s/optional-key "termination-grace-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/minutes 5))) 'at-most-5-minutes))
