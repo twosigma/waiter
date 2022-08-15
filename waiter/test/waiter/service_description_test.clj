@@ -2573,6 +2573,42 @@
                                          "ports" 2)
                                        constraints-schema profile->defaults config)))))))
 
+    (testing "testing invalid health check authentication"
+      (run-validate-schema-test
+        (assoc valid-description "authentication" "disabled" "health-check-authentication" "standard")
+        constraints-schema profile->defaults config
+        "The health check authentication (standard) cannot be enabled when authentication (disabled) is disabled"))
+
+    (testing "testing invalid health check port index"
+      (run-validate-schema-test
+        (assoc valid-description "health-check-port-index" 1 "ports" 1)
+        constraints-schema profile->defaults config
+        "The health check port index (1) must be smaller than ports (1)")
+      (run-validate-schema-test
+        (assoc valid-description "health-check-port-index" 5 "ports" 3)
+        constraints-schema profile->defaults config
+        "The health check port index (5) must be smaller than ports (3)"))
+
+    (testing "testing invalid backend proto and health check proto combination"
+      (let [supported-protocols #{"http" "https" "h2c" "h2"}]
+        (doseq [backend-proto supported-protocols
+                health-check-proto (disj supported-protocols backend-proto)]
+          (do
+            (run-validate-schema-test
+              (assoc valid-description
+                     "backend-proto" backend-proto
+                     "health-check-port-index" 0
+                     "health-check-proto" health-check-proto)
+              constraints-schema profile->defaults config
+              (str "The backend-proto (" backend-proto ") and health check proto (" health-check-proto
+                   ") must match when health-check-port-index is zero"))
+            (is (nil? (validate-schema (assoc valid-description
+                                              "backend-proto" backend-proto
+                                              "health-check-port-index" 1
+                                              "health-check-proto" health-check-proto
+                                              "ports" 2)
+                                       constraints-schema profile->defaults config)))))))
+
     (testing "testing invalid metric-group"
       (run-validate-schema-test
         (assoc valid-description "metric-group" (str/join "" (repeat 100 "m")))

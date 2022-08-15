@@ -142,13 +142,15 @@
   #{"authentication" "concurrency-level" "distribution-scheme" "expired-instance-restart-rate"
     "grace-period-secs" "health-check-interval-secs" "health-check-max-consecutive-failures"
     "idle-timeout-mins" "instance-expiry-mins" "interstitial-secs" "jitter-threshold"
-    "load-balancing" "max-queue-length" "min-instances" "max-instances" "restart-backoff-factor"
+    "liveness-check-interval-secs" "liveness-check-max-consecutive-failures" "load-balancing"
+    "max-queue-length" "min-instances" "max-instances" "restart-backoff-factor"
     "scale-down-factor" "scale-factor" "scale-up-factor" "termination-grace-period-secs"})
 
 (def ^:const service-non-override-keys
   #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env"
     "health-check-authentication" "health-check-port-index" "health-check-proto" "health-check-url"
-    "image" "mem" "metadata" "metric-group" "name" "namespace" "permitted-user" "ports" "profile"
+    "image" "liveness-check-authentication" "liveness-check-port-index" "liveness-check-proto" "liveness-check-url"
+    "mem" "metadata" "metric-group" "name" "namespace" "permitted-user" "ports" "profile"
     "run-as-user" "scheduler" "version"})
 
 ; keys used as parameters in the service description
@@ -628,6 +630,17 @@
                                              parameter->issues :idle-timeout-mins
                                              "idle-timeout-mins must be an integer in the range [0, 43200].")
                                            (attach-error-message-for-parameter
+                                             parameter->issues :liveness-check-authentication
+                                             "liveness-check-authentication must be one of standard or disabled.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :liveness-check-port-index
+                                             "liveness-check-port-index must be an integer in the range [0, 9].")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :liveness-check-proto
+                                             "liveness-check-proto, when provided, must be one of h2, h2c, http, or https.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :liveness-check-url "liveness-check-url must be a non-empty string.")
+                                           (attach-error-message-for-parameter
                                              parameter->issues :load-balancing
                                              (str "load-balancing must be one of 'oldest', 'youngest' or 'random'."))
                                            (attach-error-message-for-parameter
@@ -742,6 +755,37 @@
         (sling/throw+ {:type :service-description-error
                        :friendly-error-message (str "The backend-proto (" backend-proto ") and health check proto (" health-check-proto ") "
                                                     "must match when health-check-port-index is zero")
+                       :status http-400-bad-request
+                       :log-level :info})))
+
+    ; validate authentication and liveness-check-authentication combination
+    (let [{:strs [authentication liveness-check-authentication]} service-description-to-use]
+      (when (and authentication
+                 liveness-check-authentication
+                 (= authentication "disabled")
+                 (= liveness-check-authentication "standard"))
+        (sling/throw+ {:type :service-description-error
+                       :friendly-error-message (str "The liveness check authentication (" liveness-check-authentication ") "
+                                                    "cannot be enabled when authentication (" authentication ") is disabled")
+                       :status http-400-bad-request
+                       :log-level :info})))
+
+    ; validate the liveness-check-port-index
+    (let [{:strs [liveness-check-port-index ports]} service-description-to-use]
+      (when (and liveness-check-port-index ports (>= liveness-check-port-index ports))
+        (sling/throw+ {:type :service-description-error
+                       :friendly-error-message (str "The liveness check port index (" liveness-check-port-index ") "
+                                                    "must be smaller than ports (" ports ")")
+                       :status http-400-bad-request
+                       :log-level :info})))
+
+    ; validate the backend-proto and liveness-check-proto combination on same port
+    (let [{:strs [backend-proto liveness-check-port-index liveness-check-proto]} service-description-to-use]
+      (when (and backend-proto liveness-check-port-index liveness-check-proto
+                 (zero? liveness-check-port-index) (not= backend-proto liveness-check-proto))
+        (sling/throw+ {:type :service-description-error
+                       :friendly-error-message (str "The backend-proto (" backend-proto ") and liveness check proto (" liveness-check-proto ") "
+                                                    "must match when liveness-check-port-index is zero")
                        :status http-400-bad-request
                        :log-level :info})))
 
