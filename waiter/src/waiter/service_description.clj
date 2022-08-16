@@ -186,6 +186,15 @@
 ; keys allowed in the token data
 (def ^:const token-data-keys (set/union service-parameter-keys token-metadata-keys))
 
+; parameter names that should get default values from the parameters they map to
+(def ^:const param-to-param-default-mapping
+  {"liveness-check-authentication" "health-check-authentication"
+   "liveness-check-interval-secs" "health-check-interval-secs"
+   "liveness-check-max-consecutive-failures" "health-check-max-consecutive-failures"
+   "liveness-check-port-index" "health-check-port-index"
+   "liveness-check-proto" "health-check-proto"
+   "liveness-check-url" "health-check-url"})
+
 (defn transform-allowed-params-header
   "Converts allowed-params comma-separated string in the service-description to a set."
   [service-description]
@@ -447,21 +456,39 @@
   (compute-profile-defaults
     user-metadata-keys token-defaults profile->defaults profile))
 
+(defn apply-param-to-param-defaults
+  "Returns a service description where any parameter that is a key in the given parameter
+   default mapping and has no value in the service description will be given a value from
+   another parameter in the service description (the parameter name that the original
+   parameter name maps to in the parameter default mapping)."
+  [service-description-defaults param-default-mapping]
+  ; TODO verify validation for defaulted + explicit combinations. When does validation occur?
+  (let [valid-mapping-parms (map key (filter (fn [[_ mapped-param]] (contains? service-description-defaults mapped-param)) param-default-mapping))
+        all-params (into (sorted-set) (concat (keys service-description-defaults) valid-mapping-parms))]
+    (pc/map-from-keys (fn [param-name] (or (get service-description-defaults param-name)
+                                           (get service-description-defaults (get param-default-mapping param-name))))
+                      all-params)))
+
 (defn merge-defaults
   "Merges the defaults into the existing service description."
-  [{:strs [profile] :as service-description-without-defaults} service-description-defaults profile->defaults metric-group-mappings]
-  (-> service-description-defaults
-    (compute-service-defaults profile->defaults profile)
-    (adjust-default-min-instances service-description-without-defaults)
-    (merge-parameters service-description-without-defaults)
-    (metric-group-filter metric-group-mappings)))
+  ([service-description-without-defaults service-description-defaults profile->defaults metric-group-mappings]
+   (merge-defaults service-description-without-defaults service-description-defaults profile->defaults metric-group-mappings {}))
+  ([{:strs [profile] :as service-description-without-defaults} service-description-defaults profile->defaults metric-group-mappings param-default-mapping]
+   (-> service-description-defaults
+       (compute-service-defaults profile->defaults profile)
+       (adjust-default-min-instances service-description-without-defaults)
+       (merge-parameters service-description-without-defaults)
+       (metric-group-filter metric-group-mappings)
+       (apply-param-to-param-defaults param-default-mapping))))
 
 (defn default-and-override
   "Adds defaults and overrides to the provided service-description"
-  [service-description service-description-defaults profile->defaults metric-group-mappings kv-store service-id]
-  (-> service-description
-      (merge-defaults service-description-defaults profile->defaults metric-group-mappings)
-      (merge-overrides (:overrides (service-id->overrides kv-store service-id)))))
+  ([service-description service-description-defaults profile->defaults metric-group-mappings kv-store service-id]
+   (default-and-override service-description service-description-defaults profile->defaults metric-group-mappings kv-store service-id {}))
+  ([service-description service-description-defaults profile->defaults metric-group-mappings kv-store service-id param-default-mapping]
+   (-> service-description
+       (merge-defaults service-description-defaults profile->defaults metric-group-mappings param-default-mapping)
+       (merge-overrides (:overrides (service-id->overrides kv-store service-id))))))
 
 (defn parameters->id
   "Generates a deterministic ID from the input parameter map."
@@ -974,7 +1001,7 @@
     ;; attaches defaults and overrides to the core service description
     (default-and-override
       core-service-description service-description-defaults profile->defaults
-      metric-group-mappings kv-store service-id))
+      metric-group-mappings kv-store service-id param-to-param-default-mapping))
 
   (retrieve-reference-type->stale-info-fn [_ {:keys [token->token-hash token->token-parameters]}]
     {:token (fn [{:keys [sources]}] (retrieve-token-stale-info token->token-hash token->token-parameters sources))})
