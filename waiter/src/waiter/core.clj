@@ -2074,14 +2074,16 @@
                                               "x-waiter-auth-principal" (str principal)
                                               "x-waiter-auth-user" (str user)}
                                     :status http-200-ok}))))
-   :waiter-request-consent-handler-fn (pc/fnk [[:routines request->consent-service-id token->service-description-template]
+   :waiter-request-consent-handler-fn (pc/fnk [[:routines request->consent-service-id token->service-description-template wrap-service-discovery-fn]
                                                [:settings consent-expiry-days]
-                                               wrap-secure-request-fn]
-                                        (wrap-secure-request-fn
-                                          (fn waiter-request-consent-handler-fn [request]
-                                            (handler/request-consent-handler
-                                              token->service-description-template request->consent-service-id
-                                              consent-expiry-days request))))
+                                               wrap-ignore-disabled-auth-fn wrap-secure-request-fn]
+                                        (-> (fn waiter-request-consent-handler-fn [request]
+                                              (handler/request-consent-handler
+                                               token->service-description-template request->consent-service-id
+                                               consent-expiry-days request))
+                                            wrap-secure-request-fn
+                                            wrap-ignore-disabled-auth-fn
+                                            wrap-service-discovery-fn))
    :waiter-request-interstitial-handler-fn (pc/fnk [wrap-secure-request-fn]
                                              (wrap-secure-request-fn
                                                (fn waiter-request-interstitial-handler-fn [request]
