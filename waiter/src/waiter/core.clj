@@ -2045,22 +2045,25 @@
                                    (token/handle-reindex-tokens-request synchronize-fn make-inter-router-requests-sync-fn
                                                                         kv-store list-tokens-fn request))))
    :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines request->consent-service-id token->service-description-template
-                                                    token->token-metadata]
+                                                    wrap-service-discovery-fn token->token-metadata]
                                                    [:settings consent-expiry-days]
                                                    [:state clock passwords]
-                                                   wrap-secure-request-fn]
+                                                   wrap-ignore-disabled-auth-fn wrap-secure-request-fn]
                                             (let [password (first passwords)]
                                               (letfn [(add-encoded-cookie [response cookie-name value expiry-days]
                                                         (let [age-in-seconds (-> expiry-days t/days t/in-seconds)]
                                                           (cookie-support/add-encoded-cookie response password cookie-name value age-in-seconds nil)))
                                                       (consent-cookie-value [mode service-id token token-metadata]
                                                         (sd/consent-cookie-value clock mode service-id token token-metadata))]
-                                                (wrap-secure-request-fn
+                                                (->
                                                   (fn inner-waiter-acknowledge-consent-handler-fn [request]
                                                     (handler/acknowledge-consent-handler
                                                       token->service-description-template token->token-metadata
                                                       request->consent-service-id consent-cookie-value add-encoded-cookie
-                                                      consent-expiry-days request))))))
+                                                      consent-expiry-days request))
+                                                  wrap-secure-request-fn
+                                                  wrap-ignore-disabled-auth-fn
+                                                  wrap-service-discovery-fn))))
    :waiter-auth-handler-fn (pc/fnk [wrap-secure-request-fn]
                              (wrap-secure-request-fn
                                (fn waiter-auth-handler-fn
