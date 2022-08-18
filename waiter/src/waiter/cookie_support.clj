@@ -19,8 +19,10 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [taoensso.nippy :as nippy]
+            [waiter.status-codes :refer :all]
             [waiter.util.cache-utils :as cu]
-            [waiter.util.ring-utils :as ru])
+            [waiter.util.ring-utils :as ru]
+            [waiter.util.utils :as utils])
   (:import clojure.lang.ExceptionInfo
            org.eclipse.jetty.util.UrlEncoded))
 
@@ -112,3 +114,20 @@
     (cu/cache-get-or-load
       cookie-cache waiter-cookie
       (fn [] (decode-cookie waiter-cookie password)))))
+
+(defn consent-cookie-handler
+  "Request handler that decodes the request cookie and returns it as a json."
+  [password cookie-name value->data {:keys [headers request-method] :as request}]
+  (if-not (= :get request-method)
+    (-> {:message "Only GET supported"
+         :status http-405-method-not-allowed}
+        (utils/data->error-response  request))
+    (try
+      (let [{:strs [cookie]} headers
+            encoded-cookie-value (cookie-value cookie cookie-name)
+            cookie-value (decode-cookie-cached encoded-cookie-value password)]
+        (-> {cookie-name (cond-> {"raw-content" cookie-value}
+                           (some? cookie-value) (assoc "formatted-content" (value->data cookie-value)))}
+            (utils/clj->json-response)))
+      (catch Throwable th
+        (utils/exception->response th request)))))

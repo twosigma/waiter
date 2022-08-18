@@ -2770,6 +2770,19 @@
     (is (= ["token" current-time-ms] (consent-cookie-value clock "token" nil "token-id" {})))
     (is (= ["token" current-time-ms "token-id" "user"] (consent-cookie-value clock "token" nil "token-id" {"owner" "user"})))))
 
+(deftest test-consent-cookie->map
+  (let [current-time (t/now)
+        current-time-ms (.getMillis ^DateTime current-time)]
+    (is (= {} (consent-cookie->map nil)))
+    (is (= {"issue-time" current-time-ms "mode" "unknown"}
+           (consent-cookie->map ["unknown" current-time-ms])))
+    (is (= {"issue-time" current-time-ms "mode" "service" "service-id" "service-id-1"}
+           (consent-cookie->map ["service" current-time-ms "service-id-1"])))
+    (is (= {"issue-time" current-time-ms "mode" "token" "token" "token-1"}
+           (consent-cookie->map ["token" current-time-ms "token-1"])))
+    (is (= {"issue-time" current-time-ms "mode" "token" "owner" "john" "token" "token-1"}
+           (consent-cookie->map ["token" current-time-ms "token-1" "john"])))))
+
 (deftest test-assoc-run-as-user-approved?
   (let [current-time (t/now)
         current-time-ms (.getMillis ^DateTime current-time)

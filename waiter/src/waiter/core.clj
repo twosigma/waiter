@@ -165,6 +165,7 @@
                      "waiter-auth" :waiter-auth-handler-fn
                      "waiter-consent" {"" :waiter-acknowledge-consent-handler-fn
                                        ["/" [#".*" :path]] :waiter-request-consent-handler-fn}
+                     "waiter-consent-cookie" :waiter-consent-cookie-handler-fn
                      "waiter-interstitial" {["/" [#".*" :path]] :waiter-request-interstitial-handler-fn}
                      "waiter-kill-instance" {["/" :service-id] :kill-instance-handler-fn}
                      "waiter-ping" :ping-service-handler
@@ -2074,6 +2075,17 @@
                                               "x-waiter-auth-principal" (str principal)
                                               "x-waiter-auth-user" (str user)}
                                     :status http-200-ok}))))
+   :waiter-consent-cookie-handler-fn (pc/fnk [[:routines wrap-service-discovery-fn]
+                                              [:state passwords]
+                                              wrap-ignore-disabled-auth-fn wrap-secure-request-fn]
+                                       (let [password (first passwords)]
+                                         (->
+                                           (fn inner-waiter-consent-cookie-handler-fn [request]
+                                             (cookie-support/consent-cookie-handler
+                                               password "x-waiter-consent" sd/consent-cookie->map request))
+                                           wrap-secure-request-fn
+                                           wrap-ignore-disabled-auth-fn
+                                           wrap-service-discovery-fn)))
    :waiter-request-consent-handler-fn (pc/fnk [[:routines request->consent-service-id token->service-description-template wrap-service-discovery-fn]
                                                [:settings consent-expiry-days]
                                                wrap-ignore-disabled-auth-fn wrap-secure-request-fn]
