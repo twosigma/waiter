@@ -564,8 +564,8 @@
           #(nat-int? %) service-metrics [service-id instance-id "metrics" "active-request-count"] "Must be non-negative integer.")))
 
     (log/info "received service metrics from external source." {:service-ids-preview (take 10 (keys service-metrics))
-                                                                :service-metrics (take 10 (vals service-metrics))
-                                                                :service-ids-count (count (keys service-metrics))})
+                                                                :service-ids-count (count (keys service-metrics))
+                                                                :service-metrics (take 10 (vals service-metrics))})
     (let [clean-service-metrics (clean-service-id->instance-id->metric query-state-fn service-metrics)]
       (log/info "removed irrelevant services and instances." {:service-ids-preview (take 10 (keys clean-service-metrics))
                                                               :service-ids-count (count (keys clean-service-metrics))})
