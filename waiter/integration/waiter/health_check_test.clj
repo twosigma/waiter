@@ -333,3 +333,46 @@
                 (is (= (str "Hello " (retrieve-username)) (-> backend-response :body str))))))
           (finally
             (delete-token-and-assert waiter-url token)))))))
+
+(deftest ^:parallel ^:integration-fast test-ping-request-counts
+  (testing-using-waiter-url
+    (let [token (rand-name)
+          cid-prefix (rand-name)
+          backend-proto "http"
+          request-headers {:x-waiter-debug true
+                           :x-waiter-token token}
+          token-description (-> (kitchen-request-headers :prefix "")
+                                (assoc :backend-proto backend-proto
+                                       :health-check-url "/status?include=request-info"
+                                       :idle-timeout-mins 1
+                                       :name token
+                                       :token token
+                                       :version "version-foo"))]
+      (try
+        (assert-response-status (post-token waiter-url token-description) http-200-ok)
+        (let [request-headers (assoc request-headers :cid (str cid-prefix "-base"))
+              ping-response (make-request waiter-url "/waiter-ping" :headers request-headers)
+              service-id (get-in ping-response [:headers "x-waiter-service-id"])
+              num-additional-health-checks 200]
+          (with-service-cleanup
+            service-id
+            (assert-ping-response waiter-url backend-proto nil service-id ping-response)
+            (dotimes [index num-additional-health-checks]
+              (let [request-headers (assoc request-headers :cid (str cid-prefix "-" index))
+                    ping-response (make-request waiter-url "/waiter-ping" :headers request-headers)]
+                (assert-ping-response waiter-url backend-proto nil service-id ping-response)
+                (utils/sleep 10)))
+            (utils/sleep 2500) ;; allow time for routers to sync metrics
+            (let [service-settings (service-settings waiter-url service-id :query-params {"include" "metrics"})
+                  aggregate-metrics (get-in service-settings [:metrics :aggregate])
+                  assertion-msg (str aggregate-metrics)
+                  total-health-checks (inc num-additional-health-checks)]
+              (is (zero? (get-in aggregate-metrics [:counters :request-counts :outstanding])) assertion-msg)
+              (is (zero? (get-in aggregate-metrics [:counters :request-counts :streaming])) assertion-msg)
+              (is (= total-health-checks (get-in aggregate-metrics [:counters :request-counts :successful])) assertion-msg)
+              (is (= total-health-checks (get-in aggregate-metrics [:counters :request-counts :total])) assertion-msg)
+              (is (zero? (get-in aggregate-metrics [:counters :request-counts :waiting-to-stream])) assertion-msg)
+              (is (zero? (get-in aggregate-metrics [:counters :request-counts :waiting-for-available-instance])) assertion-msg)
+              (is (= total-health-checks (get-in aggregate-metrics [:counters :response-status :200])) assertion-msg))))
+        (finally
+          (delete-token-and-assert waiter-url token))))))
