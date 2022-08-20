@@ -2,6 +2,10 @@
 
 set -eu
 
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+WAITER_DIR=${DIR}/../..
+CONFIG_K8S=${WAITER_DIR}/config-k8s.edn
+
 echo 'Checking k8s-in-docker (kind) status...'
 if ! kind get clusters | grep -q kind; then
     echo 'INFO: k8s-in-docker is not running' >&2
@@ -135,7 +139,15 @@ rm -f log/{request.log,scheduler.log,waiter-error.log,waiter.log,waiter-tests.lo
 # https://www.javassist.org/html/javassist/util/proxy/DefineClassHelper.html#toClass(java.lang.Class,byte%5B%5D)
 export JVM_OPTS='--add-opens java.base/java.lang=ALL-UNNAMED'
 
+# Setup JWKS server
+JWKS_PORT=6666
+${WAITER_DIR}/bin/ci/jwks-server-setup.sh ${JWKS_PORT}
+export JWKS_SERVER_URL="http://127.0.0.1:${JWKS_PORT}/keys"
+export OIDC_AUTHORIZE_URL="http://127.0.0.1:${JWKS_PORT}/authorize"
+export OIDC_TOKEN_URL="http://127.0.0.1:${JWKS_PORT}/id-token"
+export WAITER_TEST_JWT_ACCESS_TOKEN_URL="http://127.0.0.1:${JWKS_PORT}/get-token?host={HOST}"
+
 # Start waiter
 echo 'Starting Waiter...'
-WAITER_PORT=9091 WAITER_AUTH_RUN_AS_USER=$USER lein run ${WAITER_CONFIG:-config-k8s.edn}
+WAITER_PORT=9091 WAITER_AUTH_RUN_AS_USER=$USER lein run ${WAITER_CONFIG:-$CONFIG_K8S}
 echo "DONE: Waiter exited with code $?"
