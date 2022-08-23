@@ -2113,6 +2113,9 @@
     "k8s-pod-cleaner"
     (retry-start-pod-cleaner
      (fn pod-cleaner-thunk []
+       (log/info "starting pod cleaner with configuration:" {:daemon-interval-ms daemon-interval-ms
+                                                             :grace-buffer-ms grace-buffer-ms
+                                                             :scale-down-timeout-secs scale-down-timeout-secs})
        (async/go
          (try
            (loop [iteration 0]
