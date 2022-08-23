@@ -572,7 +572,7 @@
                                                                      :killed-instances killed-instances
                                                                      :service-id service-id})
                          (and
-                           ; non of the active instances should be preparing to scale down
+                           ; none of the active instances should be preparing to scale down
                            (every?
                              (fn is-not-prepared-to-scale-down [{:keys [k8s/prepared-to-scale-down-at]}]
                                (nil? prepared-to-scale-down-at))
