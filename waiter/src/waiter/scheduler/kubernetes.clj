@@ -1025,12 +1025,12 @@
   (scale-service [this service-id scale-to-instances _]
     (ss/try+
       (if-let [service (service-id->service this service-id)]
-        (do
-          (scale-service-up-to this service scale-to-instances)
+        (let [scale-to-instances-int (int scale-to-instances)]
+          (scale-service-up-to this service scale-to-instances-int)
           {:success true
            :status http-200-ok
            :result :scaled
-           :message (str "Scaled to " scale-to-instances)})
+           :message (str "Scaled to " scale-to-instances-int)})
         (do
           (log/error "cannot scale missing service" service-id)
           {:success false

@@ -1811,13 +1811,25 @@
         dummy-scheduler (assoc (make-dummy-scheduler [service-id]) :watch-state service-state)]
     (with-redefs [service-id->service (constantly service)]
       (testing "successful-scale"
-        (let [actual (with-redefs [api-request (constantly {:status "OK"})]
-                       (scheduler/scale-service dummy-scheduler service-id instances' false))]
-          (is (= {:success true
-                  :status http-200-ok
-                  :result :scaled
-                  :message (str "Scaled to " instances')}
-                 actual))))
+        (with-redefs [api-request (fn [url _ & {:keys [body content-type request-method]}]
+                                    (is (= "https://k8s-api.example//apis/apps/v1/namespaces/myself/replicasets/test-service-id" url))
+                                    (is (= "application/json-patch+json" content-type))
+                                    (is (= :patch request-method))
+                                    (is (= [{"op" "test" "path" "/spec/replicas" "value" 1}
+                                            {"op" "replace" "path" "/spec/replicas" "value" 4}]
+                                           (json/read-str (str body))))
+                                    {:status "OK"})]
+          (testing "integer value"
+            (let [actual (scheduler/scale-service dummy-scheduler service-id 4 false)]
+              (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual))))
+          (testing "double value"
+            (let [actual (scheduler/scale-service dummy-scheduler service-id 4.0 false)]
+              (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual)))
+            (let [actual (scheduler/scale-service dummy-scheduler service-id 4.2 false)]
+              (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual)))
+            (let [actual (scheduler/scale-service dummy-scheduler service-id 4.8 false)]
+              (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual))))))
+
       (testing "unsuccessful-scale: service not found"
         (let [actual (with-redefs [service-id->service (constantly nil)]
                        (scheduler/scale-service dummy-scheduler service-id instances' false))]
