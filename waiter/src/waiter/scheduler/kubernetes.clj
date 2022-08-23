@@ -435,6 +435,7 @@
           main-container-last-terminated-at (some-> main-container-status (get-in [:lastState :terminated :finishedAt]) (timestamp-str->datetime))
           {:keys [waiter/revision-timestamp waiter/revision-version]} (get-in pod [:metadata :annotations])
           pod-name (k8s-object->id pod)
+          prepared-to-scaled-down-at (some-> pod (get-in [:metadata :annotations :waiter/prepared-to-scale-down-at]) du/str-to-date-ignore-error)
           primary-container-ready (true? (get primary-container-status :ready))
           healthy? (and primary-container-ready
                         ;; Note that when exceeded-restart-kill-threshold? becomes true, the container *just* restarted and is non-ready,
@@ -483,6 +484,7 @@
                        kube-context (assoc :k8s/context kube-context)
                        node-name (assoc :k8s/node-name node-name)
                        phase (assoc :k8s/pod-phase phase)
+                       prepared-to-scaled-down-at (assoc :k8s/prepared-to-scale-down-at prepared-to-scaled-down-at)
                        revision-timestamp (assoc :k8s/revision-timestamp revision-timestamp)
                        revision-version (assoc :k8s/revision-version revision-version)
                        (seq pod-container-statuses) (assoc :k8s/container-statuses pod-container-statuses)))]
@@ -673,7 +675,12 @@
                           (track-failed-instances! service-instance scheduler pod)
                           service-instance))
         {active-instances false failed-instances true}
-        (->> all-instances (remove nil?) (group-by #(-> % :k8s/pod-phase (= "Failed")) ))]
+        (->> all-instances
+             (remove nil?)
+             ;; filter out instances that are prepared-to-scale-down-at, they should not be considered
+             ;; active-instances and thus should not have any requests routed to them
+             (remove :k8s/prepared-to-scale-down-at)
+             (group-by #(-> % :k8s/pod-phase (= "Failed")) ))]
     ;; pods with Failed phase are treated as failed instances
     (doseq [{:keys [service-id] :as failed-instance} failed-instances]
       (->> (assoc failed-instance :healthy? false :status "Failed")
@@ -778,14 +785,17 @@
         (log/error t "Error force-killing pod")))))
 
 (defn mark-pod-for-scale-down
-  "Marks the pod for scale down by modifying the 'app' label and adding an annotation 'prepared-to-scale-down-at'.
+  "Marks the pod for scale down by modifying the 'app' label and adding an annotation 'waiter/prepared-to-scale-down-at'.
    We modify the 'app' label so the pod is no longer owned by the replicaset and thus will not be counted in the
    'instances' field of the Service which relies on the 'replicas' configuration."
   [{:keys [api-server-url] :as scheduler} instance timestamp]
   (let [pod-url (instance->pod-url api-server-url instance)]
     (patch-object-json pod-url
                        [{:op :add :path "/metadata/labels/app" :value app-drain-label}
-                        {:op :add :path "/metadata/annotations/prepared-to-scale-down-at" :value timestamp}]
+                        ;; The backslash becomes "~1" so "waiter/prepared-to-scale-down-at" becomes "waiter~1prepared-to-scale-down-at"
+                        ;; Source https://stackoverflow.com/questions/55573724/create-a-patch-to-add-a-kubernetes-annotation
+                        ;; Here is the RFC-6901 reference https://www.rfc-editor.org/rfc/rfc6901#section-3
+                        {:op :add :path "/metadata/annotations/waiter~1prepared-to-scale-down-at" :value timestamp}]
                        scheduler)))
 
 (defn kill-service-instance
@@ -2051,7 +2061,7 @@
 (defn- killable-pod?
   "Determine if the pod can be moved to phase 2 of scale down where it is terminated immediately."
   [pod grace-buffer-ms scale-down-timeout-secs]
-  (let [prepared-to-scale-down-at (some-> pod (get-in [:metadata :annotations :prepared-to-scale-down-at]) du/str-to-date-ignore-error)
+  (let [prepared-to-scale-down-at (some-> pod (get-in [:metadata :annotations :waiter/prepared-to-scale-down-at]) du/str-to-date-ignore-error)
         now (t/now)]
     (if (some? prepared-to-scale-down-at)
       (and (t/before? (t/plus prepared-to-scale-down-at (t/millis grace-buffer-ms)) now)
@@ -2095,7 +2105,7 @@
         (hard-delete-service-instance scheduler instance)))))
 
 (defn start-pod-cleaner!
-  "On an interval, iterates through the list of all pods that have the 'prepared-to-scale-down-at' annotation and
+  "On an interval, iterates through the list of all pods that have the 'waiter/prepared-to-scale-down-at' annotation and
    deletes the pod if is no longer serving any requests or the timeout has reached. This handles phase 2 of safe
    scale down for services with requests that bypass the waiter routers."
   [scheduler leader?-fn daemon-interval-ms grace-buffer-ms scale-down-timeout-secs]

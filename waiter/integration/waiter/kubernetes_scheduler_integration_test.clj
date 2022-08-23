@@ -568,10 +568,18 @@
              (let [{:keys [k8s/pod-name] :as killed-instance}
                    (wait-for
                      (fn get-killed-instance []
-                       (let [instances (killed-instances waiter-url service-id)]
-                         (log/info "waiting for a killed instance:" {:killed-instances instances
+                       (let [active-instances (active-instances waiter-url service-id)
+                             killed-instances (killed-instances waiter-url service-id)]
+                         (log/info "waiting for a killed instance:" {:active-instances active-instances
+                                                                     :killed-instances killed-instances
                                                                      :service-id service-id})
-                         (first instances)))
+                         (and
+                           ; non of the active instances should be preparing to scale down
+                           (every?
+                             (fn is-not-prepared-to-scale-down [{:keys [k8s/prepared-to-scale-down-at]}]
+                               (nil? prepared-to-scale-down-at))
+                             active-instances)
+                           (first killed-instances))))
                      :interval 5
                      :timeout 30)]
                (is (some? killed-instance))
@@ -582,7 +590,7 @@
                      pod-spec (get-in watch-state-json ["service-id->pod-id->pod" service-id pod-name])
                      app-label (get-in pod-spec ["metadata" "labels" "app"])
                      prepared-to-scale-down-at (some-> pod-spec
-                                                       (get-in ["metadata" "annotations" "prepared-to-scale-down-at"])
+                                                       (get-in ["metadata" "annotations" "waiter/prepared-to-scale-down-at"])
                                                        du/str-to-date)
                      assert-deleted-buffer-secs 30]
                  (log/info "killed instance in phase 1" {:app-label app-label

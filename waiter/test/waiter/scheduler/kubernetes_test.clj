@@ -1348,6 +1348,23 @@
                                                 :restartCount 0}]
                            :initContainerStatuses [{:name "waiter-setup"
                                                     :ready false
+                                                    :restartCount 200}]}}
+                 {:metadata {:name "test-app-6789-abcd5"
+                             :namespace "myself"
+                             :labels {:app app-drain-label
+                                      :waiter/cluster "waiter"
+                                      :waiter/user "myself"
+                                      :waiter/service-hash "test-app-6789"}
+                             :annotations {:waiter/prepared-to-scale-down-at (du/date-to-str (t/now))
+                                           :waiter/port-count "1"
+                                           :waiter/service-id "test-app-6789"}}
+                  :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
+                  :status {:podIP "10.141.141.16"
+                           :startTime "2014-09-13T00:24:48Z"
+                           :containerStatuses [{:name waiter-primary-container-name
+                                                :restartCount 0}]
+                           :initContainerStatuses [{:name "waiter-setup"
+                                                    :ready false
                                                     :restartCount 200}]}}]}
 
         expected (hash-map
@@ -3149,6 +3166,22 @@
                 instance (pod->ServiceInstance dummy-scheduler pod)]
             (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))))
 
+    (testing "pod with waiter/prepared-to-scale-down-at annotation"
+      (testing "annotation is valid ISO-8601 string"
+        (let [now (t/now)
+              now-str (du/date-to-str now)
+              pod' (-> pod
+                       (assoc-in [:metadata :annotations :waiter/prepared-to-scale-down-at] now-str))
+              instance (pod->ServiceInstance base-scheduler pod')
+              expected-instance-map (assoc instance-map :k8s/prepared-to-scale-down-at now)]
+          (is (= (scheduler/make-ServiceInstance expected-instance-map) instance))))
+
+      (testing "annotation is NOT a valid ISO-8601 string so it is ignored"
+        (let [pod' (-> pod
+                       (assoc-in [:metadata :annotations :waiter/prepared-to-scale-down-at] "not-a-iso-8601-string"))
+              instance (pod->ServiceInstance base-scheduler pod')]
+          (is (= (scheduler/make-ServiceInstance instance-map) instance)))))
+
     (testing "match timestamps with different revision version combinations"
       (let [pod-revision-version-path [:metadata :annotations :waiter/revision-version]
             rs-revision-version-path [:service-id->service service-id :k8s/replicaset-annotations :waiter/revision-version]
@@ -3446,13 +3479,13 @@
   [id service-id now timeout-secs]
   (-> (create-generic-pod id service-id)
       (assoc-in [:metadata :labels :app] app-drain-label)
-      (assoc-in [:metadata :annotations :prepared-to-scale-down-at] (du/date-to-str (t/minus now (t/seconds (+ timeout-secs 1)))))))
+      (assoc-in [:metadata :annotations :waiter/prepared-to-scale-down-at] (du/date-to-str (t/minus now (t/seconds (+ timeout-secs 1)))))))
 
 (defn create-scale-down-pod
   [id service-id now grace-buffer-ms]
   (-> (create-generic-pod id service-id)
       (assoc-in [:metadata :labels :app] app-drain-label)
-      (assoc-in [:metadata :annotations :prepared-to-scale-down-at] (du/date-to-str (t/minus now (t/millis (+ grace-buffer-ms 1)))))))
+      (assoc-in [:metadata :annotations :waiter/prepared-to-scale-down-at] (du/date-to-str (t/minus now (t/millis (+ grace-buffer-ms 1)))))))
 
 (deftest test-cleanup-killable-pods
   (let [now (t/now)
