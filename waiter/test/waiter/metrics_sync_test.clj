@@ -26,9 +26,9 @@
             [waiter.test-helpers :as test-helpers]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
-  (:import (org.eclipse.jetty.websocket.client WebSocketClient)
-           (org.joda.time DateTime)
-           (qbits.jet.websocket WebSocket)))
+  (:import [org.eclipse.jetty.websocket.client WebSocketClient]
+           [org.joda.time DateTime]
+           [qbits.jet.websocket WebSocket]))
 
 (defn- keyset
   "Returns the keys of the map as a set."
@@ -485,7 +485,8 @@
           service-id->desc {"s3" {}
                             "s4" {"metadata" {}}
                             "s5" {"metadata" {"waiter-proxy-bypass-opt-in" "false"}}
-                            "s6" {"metadata" {"waiter-proxy-bypass-opt-in" "true"}}}
+                            "s6" {"metadata" {"waiter-proxy-bypass-opt-in" "true"}}
+                            "s7" {"metadata" {"waiter-proxy-bypass-opt-in" "true"}}}
           service-id->service-description-fn (fn service-id->service-description [service-id & {}]
                                                (get service-id->desc service-id))
           in-router-metrics-state {:external-metrics {"s6" {"s6.i1" {"metrics" {"active-request-count" 3
@@ -496,7 +497,10 @@
                                                                      "updated-at" (du/date-to-str time-1)}
                                                             "s6.i3" {"metrics" {"active-request-count" 1
                                                                                 "last-request-time" (du/date-to-str time-3)}
-                                                                     "updated-at" (du/date-to-str time-2)}}}
+                                                                     "updated-at" (du/date-to-str time-2)}}
+                                                      "s7" {"s7.i1" {"metrics" {"active-request-count" 3
+                                                                                "last-request-time" (du/date-to-str time-5)}
+                                                                     "updated-at" (du/date-to-str time-1)}}}
                                    :metrics
                                    {:routers
                                     {"router-0" {"s1" {"last-request-time" time-1
@@ -511,7 +515,10 @@
                                                        "outstanding" 0}
                                                  "s6" {"last-request-time" time-1
                                                        "waiting-for-available-instance" 1
-                                                       "outstanding" 900}}
+                                                       "outstanding" 900}
+                                                 "s7" {"last-request-time" nil
+                                                       "waiting-for-available-instance" 0
+                                                       "outstanding" 0}}
                                      "router-1" {"s1" {"outstanding" 1}
                                                  "s2" {"last-request-time" time-1
                                                        "outstanding" 1
@@ -574,7 +581,10 @@
                                  ; the only metrics added together are the active-request-counts and the waiting-for-available-instance
                                  ; (a.k.a queued request counts).
                                  "outstanding" 9
-                                 "waiting-for-available-instance" 3}}]
+                                 "waiting-for-available-instance" 3}
+                           "s7" {"last-request-time" time-5
+                                 "outstanding" 3
+                                 "waiting-for-available-instance" 0}}]
       (is (= expected-output (agent->service-id->metrics router-metrics-agent service-id->service-description-fn)))))
 
   (testing "faulty-router-metrics"

@@ -489,7 +489,7 @@
                                          active-request-count (get external-service-metrics "active-request-count" 0)]
                                      (cond-> router-metrics
                                        (some? last-request-time)
-                                       (update "last-request-time" t/max-date last-request-time)
+                                       (update "last-request-time" du/max-time last-request-time)
                                        (sd/service-description-bypass-enabled? service-desc)
                                        (assoc "outstanding" (+ active-request-count waiting-for-available-instance))))
                                    (catch Exception e
