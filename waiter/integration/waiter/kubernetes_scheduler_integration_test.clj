@@ -567,15 +567,20 @@
                    (wait-for
                      (fn get-killed-instance []
                        (let [active-instances (active-instances waiter-url service-id)
-                             killed-instances (killed-instances waiter-url service-id)]
+                             killed-instances (killed-instances waiter-url service-id)
+                             killed-instance-id (some-> killed-instances first :id)
+                             num-killed-instances (count killed-instances)]
                          (log/info "waiting for a killed instance:" {:active-instances active-instances
                                                                      :killed-instances killed-instances
                                                                      :service-id service-id})
+                         (when (< 1 num-killed-instances)
+                           (throw (ex-info "There should only be one killed instance!" {:killed-instances killed-instances
+                                                                                        :service-id service-id})))
                          (and
-                           ; none of the active instances should be preparing to scale down
+                           ; none of the active instances should have the killed instance
                            (every?
-                             (fn is-not-prepared-to-scale-down [{:keys [k8s/prepared-to-scale-down-at]}]
-                               (nil? prepared-to-scale-down-at))
+                             (fn is-not-prepared-to-scale-down [{:keys [id]}]
+                               (not= id killed-instance-id))
                              active-instances)
                            (first killed-instances))))
                      :interval 5
