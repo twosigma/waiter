@@ -2490,6 +2490,17 @@
         (assoc valid-description "cmd" (str/join "" (repeat 150 "c")))
         constraints-schema profile->defaults config "cmd must be at most 100 characters"))
 
+    (testing "testing scaling parameters"
+      (run-validate-schema-test
+        (assoc valid-description "scale-down-factor" 10)
+        constraints-schema profile->defaults config "scale-down-factor must be a double in the range (0, 1)")
+      (run-validate-schema-test
+        (assoc valid-description "scale-factor" 10)
+        constraints-schema profile->defaults config "scale-factor must be a double in the range (0, 2]")
+      (run-validate-schema-test
+        (assoc valid-description "scale-up-factor" 10)
+        constraints-schema profile->defaults config "scale-up-factor must be a double in the range (0, 1)"))
+
     (testing "testing grace-period-secs"
       (doseq [grace-period-secs [9000 "5" -1]]
         (run-validate-schema-test

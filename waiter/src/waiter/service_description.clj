@@ -107,8 +107,8 @@
    (s/optional-key "load-balancing") schema/valid-load-balancing
    (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= minimum-min-instances % 1000) 'between-one-and-1000))
    (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= minimum-min-instances % 1000) 'between-one-and-1000))
-   (s/optional-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-2
    (s/optional-key "scale-down-factor") schema/positive-fraction-less-than-1
+   (s/optional-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-2
    (s/optional-key "scale-up-factor") schema/positive-fraction-less-than-1
    ; per-request related
    (s/optional-key "max-queue-length") schema/positive-int
@@ -649,6 +649,12 @@
                                              parameter->issues :profile
                                              (str "profile must be a non-empty string"
                                                   (compute-valid-profiles-str profile->defaults)))
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :scale-down-factor "scale-down-factor must be a double in the range (0, 1).")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :scale-factor "scale-factor must be a double in the range (0, 2].")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :scale-up-factor "scale-up-factor must be a double in the range (0, 1).")
                                            (attach-error-message-for-parameter
                                              parameter->issues :termination-grace-period-secs
                                              "termination-grace-period-secs must be an integer in the range [0, 300].")
