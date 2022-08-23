@@ -1350,14 +1350,15 @@
         (let [service-name (rand-name)
               token (create-token-name waiter-url ".")
               service-description (-> (kitchen-request-headers :prefix "")
-                                    (assoc :name service-name :permitted-user "*" :service-mapping service-mapping)
-                                    (dissoc :run-as-user))
+                                      (assoc :name service-name :permitted-user "*" :service-mapping service-mapping)
+                                      (dissoc :run-as-user))
               waiter-port (.getPort (URL. (str "http://" waiter-url)))
               waiter-port (if (neg? waiter-port) 80 waiter-port)
               host-header (str token ":" waiter-port)
               has-x-waiter-consent? (partial some #(= (:name %) "x-waiter-consent"))
               token-root (retrieve-token-root waiter-url)
-              token-cluster (retrieve-token-cluster waiter-url)]
+              token-cluster (retrieve-token-cluster waiter-url)
+              current-user (retrieve-username)]
           (try
             (testing "token creation"
               (let [token-description (assoc service-description :token token)
@@ -1371,8 +1372,8 @@
                 (is (contains? response-body :last-update-time))
                 (is (= (assoc service-description
                          :cluster token-cluster
-                         :last-update-user (retrieve-username)
-                         :owner (retrieve-username)
+                         :last-update-user current-user
+                         :owner current-user
                          :previous {}
                          :root token-root)
                        (dissoc response-body :last-update-time)))))
@@ -1409,6 +1410,14 @@
                       ; x-waiter-consent should be emitted Waiter
                       (is (has-x-waiter-consent? cookies))
                       (assert-response-status response http-200-ok)))
+
+                  (testing "consent cookie decoding"
+                    (let [{:keys [body] :as response} (make-request waiter-url "/waiter-consent-cookie" :cookies @cookies-atom)
+                          body-json (try-parse-json body)]
+                      (assert-response-status response http-200-ok)
+                      (is (some? (get-in body-json ["x-waiter-consent" "formatted-content" "issue-time"])) (str body))
+                      (is (= "service" (get-in body-json ["x-waiter-consent" "formatted-content" "mode"])) (str body))
+                      (is (= service-id (get-in body-json ["x-waiter-consent" "formatted-content" "service-id"])) (str body))))
 
                   (testing "auto run-as-user population on expected service-id"
                     (let [service-id-atom (atom nil)]
@@ -1460,6 +1469,15 @@
                       ; x-waiter-consent should be emitted Waiter
                       (is (has-x-waiter-consent? cookies))
                       (assert-response-status response http-200-ok)))
+
+                  (testing "consent cookie decoding"
+                    (let [{:keys [body] :as response} (make-request waiter-url "/waiter-consent-cookie" :cookies @cookies-atom)
+                          body-json (try-parse-json body)]
+                      (assert-response-status response http-200-ok)
+                      (is (some? (get-in body-json ["x-waiter-consent" "formatted-content" "issue-time"])) (str body))
+                      (is (= "token" (get-in body-json ["x-waiter-consent" "formatted-content" "mode"])) (str body))
+                      (is (= current-user (get-in body-json ["x-waiter-consent" "formatted-content" "owner"])) (str body))
+                      (is (= token (get-in body-json ["x-waiter-consent" "formatted-content" "token"])) (str body))))
 
                   (testing "auto run-as-user population on approved token"
                     (let [service-id-atom (atom nil)]

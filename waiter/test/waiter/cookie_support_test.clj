@@ -17,12 +17,14 @@
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
             [clojure.data.codec.base64 :as b64]
+            [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
             [taoensso.nippy :as nippy]
-            [waiter.cookie-support :refer :all])
-  (:import (clojure.lang ExceptionInfo)
-           (org.eclipse.jetty.util UrlEncoded)))
+            [waiter.cookie-support :refer :all]
+            [waiter.status-codes :refer :all])
+  (:import [clojure.lang ExceptionInfo]
+           [org.eclipse.jetty.util UrlEncoded]))
 
 (deftest test-url-decode
   (is (= "testtest" (url-decode "testtest")))
@@ -31,11 +33,11 @@
 
 (deftest test-cookie-value
   (let [cookie-string "user=john; mode=test; product-name=waiter; special=\"quotes\"abound\""]
-    (is (nil? (cookie-value cookie-string #"username")))
-    (is (= "john" (cookie-value cookie-string #"user")))
-    (is (= "test" (cookie-value cookie-string #"mode")))
-    (is (= "waiter" (cookie-value cookie-string #"product-name")))
-    (is (= "quotes\"abound" (cookie-value cookie-string #"special")))))
+    (is (nil? (cookie-value cookie-string "username")))
+    (is (= "john" (cookie-value cookie-string "user")))
+    (is (= "test" (cookie-value cookie-string "mode")))
+    (is (= "waiter" (cookie-value cookie-string "product-name")))
+    (is (= "quotes\"abound" (cookie-value cookie-string "special")))))
 
 (deftest test-remove-cookie
   (is (= "" (remove-cookies "x-waiter-auth=foo" ["x-waiter-auth="])))
@@ -99,3 +101,32 @@
       (is (= (str "data:" first-key) (decode-cookie-cached first-key [:cached "password"]))))
     (is (= (str "data:" first-key) (decode-cookie-cached first-key [:cached "password"])))
     (is (thrown? Exception (decode-cookie-cached second-key [:cached "password"])))))
+
+(deftest test-consent-cookie-handler
+  (let [password [:cached "password"]
+        cookie-string "user=john; mode=test; product-name=waiter"
+        value->data (fn [v] {"value" v})]
+    (with-redefs [decode-cookie-cached (fn [value in-password]
+                                         (is (= password in-password))
+                                         value)]
+      (testing "unsupported request method"
+        (let [request {:request-method :post}
+              {:keys [body status]} (consent-cookie-handler password "cookie-name" value->data request)]
+          (is (= http-405-method-not-allowed status))
+          (is (str/includes? body "Only GET supported"))))
+
+      (testing "valid cookie lookup"
+        (let [request {:headers {"cookie" cookie-string}
+                       :request-method :get}
+              {:keys [body status]} (consent-cookie-handler password "user" value->data request)]
+          (is (= http-200-ok status))
+          (is (= {"user" {"formatted-content" {"value" "john"} "raw-content" "john"}}
+                 (json/read-str body)))))
+
+      (testing "invalid cookie lookup"
+        (let [request {:headers {"cookie" cookie-string}
+                       :request-method :get}
+              {:keys [body status]} (consent-cookie-handler password "product" value->data request)]
+          (is (= http-200-ok status))
+          (is (= {"product" {"raw-content" nil}}
+                 (json/read-str body))))))))

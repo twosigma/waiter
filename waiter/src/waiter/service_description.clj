@@ -1513,6 +1513,17 @@
                   nil))
         (vec))))
 
+(defn consent-cookie->map
+  "Converts the consent cookie value to a map"
+  [cookie-value]
+  (let [[mode issue-time service-id-or-token owner] cookie-value]
+    (cond-> {}
+      issue-time (assoc "issue-time" issue-time)
+      mode (assoc "mode" mode)
+      (= mode "service") (assoc "service-id" service-id-or-token)
+      (= mode "token") (assoc "token" service-id-or-token)
+      owner (assoc "owner" owner))))
+
 (defn assoc-run-as-user-approved?
   "Deconstructs the decoded cookie and validates whether the service has been pre-approved.
    The validation step includes:
