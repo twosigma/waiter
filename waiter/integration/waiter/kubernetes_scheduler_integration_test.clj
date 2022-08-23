@@ -514,8 +514,6 @@
        (let [cluster-name (retrieve-cluster-name waiter-url)
              {:keys [pod-cleanup-grace-buffer-ms pod-cleanup-scale-down-timeout-secs]} (get-kubernetes-scheduler-settings waiter-url) 
              extra-headers {:content-type "application/json"
-                            ; this must be simple distribution because we rely on x-kitchen-delay-ms to cause queue build up
-                            :x-waiter-distribution-scheme "simple"
                             :x-waiter-concurrency-level 1
                             ; make sure raven doesn't send external metrics for these services
                             :x-waiter-env-raven_export_metrics "false"
