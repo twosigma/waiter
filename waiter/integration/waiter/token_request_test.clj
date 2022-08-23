@@ -48,6 +48,7 @@
         cluster-calculator-config (-> settings-json
                                       (get-in [:token-config :cluster-calculator])
                                       (update :kind keyword)
+                                      (update-in [:configured :host->cluster] walk/stringify-keys)
                                       (as-> $ (update-in $ [(:kind $) :factory-fn] symbol)))
         cluster-calculator (utils/create-component cluster-calculator-config
                                                    :context {:default-cluster default-cluster})]
