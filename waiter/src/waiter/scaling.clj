@@ -424,18 +424,23 @@
               ; if we don't have a target instance count, default to the number of tasks
               target-instances (get-in service-id->scale-state [service-id :target-instances] task-count)
               service-description (get service-id->service-description service-id)
+              default-scaling-result {:scale-to-instances instances :target-instances target-instances :scale-amount 0}
               {:keys [target-instances scale-to-instances scale-amount]}
               (if (and target-instances scale-ticks)
-                (scale-service-fn (assoc service-description "scale-ticks" scale-ticks)
-                                  {:healthy-instances healthy-instances
-                                   :expired-instances expired-instances
-                                   :outstanding-requests outstanding-requests
-                                   :target-instances target-instances
-                                   :total-instances instances})
+                (try
+                  (scale-service-fn (assoc service-description "scale-ticks" scale-ticks)
+                                    {:healthy-instances healthy-instances
+                                     :expired-instances expired-instances
+                                     :outstanding-requests outstanding-requests
+                                     :target-instances target-instances
+                                     :total-instances instances})
+                  (catch Throwable th
+                    (log/error th (str "error in scaling service " service-id))
+                    default-scaling-result))
                 (do
                   (log/info "no target instances available for service"
                             {:scheduler-state scheduler-state, :service-id service-id})
-                  {:scale-to-instances instances :target-instances target-instances :scale-amount 0}))]
+                  default-scaling-result))]
           (when (< instances (service-description "min-instances"))
             (log/warn "scheduler reported service had fewer instances than min-instances"
                       {:service-id service-id :instances instances :min-instances (service-description "min-instances")}))
@@ -455,8 +460,8 @@
            :scale-to-instances scale-to-instances
            :scale-amount scale-amount}))
       service-ids)
-    (catch Exception e
-      (log/error e "exception in scale-services")
+    (catch Throwable th
+      (log/error th "exception in scale-services")
       service-id->scale-state)))
 
 (defn- difference-in-millis
