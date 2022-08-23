@@ -18,6 +18,7 @@
             [clojure.core.async :as async]
             [clojure.data.json :as json]
             [clojure.java.io :as io]
+            [clojure.set :as set]
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
@@ -646,12 +647,13 @@
 
 (defn override-service-handler
   "Handles overrides for a service."
-  [kv-store allowed-to-manage-service? make-inter-router-requests-fn service-id {:keys [request-method] :as request}]
+  [kv-store allowed-to-manage-service? make-inter-router-requests-fn validate-service-description-fn
+   service-id {:keys [request-method] :as request}]
   (when (str/blank? service-id)
     (throw (ex-info "Missing service-id" {:log-level :info :status http-400-bad-request})))
   ; throw exception if no service description for service-id exists
-  (sd/fetch-core kv-store service-id :refresh true :nil-on-missing? false)
-  (let [auth-user (get request :authorization/user)]
+  (let [core-service-description (sd/fetch-core kv-store service-id :refresh true :nil-on-missing? false)
+        auth-user (get request :authorization/user)]
     (case request-method
       :delete
       (do
@@ -677,7 +679,12 @@
         (log/info auth-user "wants to update overrides for" service-id)
         (if (allowed-to-manage-service? service-id auth-user)
           (do
-            (let [service-description-overrides (-> request ru/json-request :body)]
+            (let [service-description-overrides (-> request ru/json-request :body)
+                  unsupported-keys (set/difference (utils/keyset service-description-overrides) sd/service-override-keys)]
+              (when (seq unsupported-keys)
+                (throw (ex-info (str "Cannot override the following parameter(s): " (str/join ", " (sort unsupported-keys)))
+                                {:log-level :info :service-id service-id :status http-400-bad-request :unsupported-keys unsupported-keys})))
+              (validate-service-description-fn (merge core-service-description service-description-overrides))
               (sd/store-service-description-overrides kv-store service-id auth-user service-description-overrides))
             (trigger-service-refresh make-inter-router-requests-fn service-id)
             (utils/clj->json-response {:service-id service-id, :success true}))

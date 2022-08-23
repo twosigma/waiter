@@ -53,6 +53,11 @@
                  m))
              {} m))
 
+(defn keyset
+  "Returns a set that contains the keys of the map."
+  [m]
+  (-> m (keys) (set)))
+
 (defn keys->nested-map
   "Takes a map with string keys and returns a map with a nested structure where
    the string keys were split using the regex `key-split` to create the nested

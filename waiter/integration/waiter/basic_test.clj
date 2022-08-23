@@ -903,31 +903,49 @@
 (deftest ^:parallel ^:integration-fast test-override
   (testing-using-waiter-url
     (let [waiter-headers {:x-waiter-name (rand-name)}
-          overrides {:max-instances 100
-                     :min-instances 2
-                     :scale-factor 0.3}
           {:keys [service-id]} (make-request-with-debug-info waiter-headers #(make-kitchen-request waiter-url %))
           override-endpoint (str "/apps/" service-id "/override")]
       (with-service-cleanup
         service-id
-        (-> (make-request waiter-url override-endpoint :body (utils/clj->json overrides) :method :post)
-            (assert-response-status http-200-ok))
-        (let [{:keys [body] :as response}
-              (make-request waiter-url override-endpoint :body (utils/clj->json overrides) :method :get)]
-          (assert-response-status response http-200-ok)
-          (let [response-data (-> body str try-parse-json walk/keywordize-keys)]
-            (is (= (retrieve-username) (:last-updated-by response-data)))
-            (is (= overrides (:overrides response-data)))
-            (is (= service-id (:service-id response-data)))
-            (is (contains? response-data :time))))
-        (let [service-settings (service-settings waiter-url service-id)
-              service-description-overrides (-> service-settings :service-description-overrides :overrides)]
-          (is (= overrides service-description-overrides)))
-        (-> (make-request waiter-url override-endpoint :method :delete)
-            (assert-response-status http-200-ok))
-        (let [service-settings (service-settings waiter-url service-id)
-              service-description-overrides (-> service-settings :service-description-overrides :overrides)]
-          (is (not service-description-overrides)))))))
+
+        (testing "failed overrides"
+          (let [overrides {:cmd "lorem ipsum" :max-instances 100 :min-instances 2 :scale-factor 0.3}
+                {:keys [body] :as response} (make-request waiter-url override-endpoint :body (utils/clj->json overrides) :method :post)]
+            (assert-response-status response http-400-bad-request)
+            (is (str/includes? (str body) "Cannot override the following parameter(s): cmd") (str body)))
+          (let [overrides {:cmd "lorem ipsum" :cpus 5 :mem 1024 :max-instances 100 :min-instances 2 :scale-factor 0.3}
+                {:keys [body] :as response} (make-request waiter-url override-endpoint :body (utils/clj->json overrides) :method :post)]
+            (assert-response-status response http-400-bad-request)
+            (is (str/includes? (str body) "Cannot override the following parameter(s): cmd, cpus, mem") (str body)))
+          (let [overrides {:max-instances 5 :min-instances 10}
+                {:keys [body] :as response} (make-request waiter-url override-endpoint :body (utils/clj->json overrides) :method :post)]
+            (assert-response-status response http-400-bad-request)
+            (is (str/includes? (str body) "min-instances (10) must be less than or equal to max-instances (5)") (str body)))
+          (let [overrides {:max-instances 100 :min-instances 2 :scale-factor 0}
+                {:keys [body] :as response} (make-request waiter-url override-endpoint :body (utils/clj->json overrides) :method :post)]
+            (assert-response-status response http-400-bad-request)
+            (is (str/includes? (str body) "scale-factor must be a double in the range (0, 2]") (str body))))
+
+        (testing "successful override"
+          (let [overrides {:max-instances 20 :min-instances 5 :scale-factor 0.3}]
+            (-> (make-request waiter-url override-endpoint :body (utils/clj->json overrides) :method :post)
+                (assert-response-status http-200-ok))
+            (let [{:keys [body] :as response}
+                  (make-request waiter-url override-endpoint :body (utils/clj->json overrides) :method :get)]
+              (assert-response-status response http-200-ok)
+              (let [response-data (-> body str try-parse-json walk/keywordize-keys)]
+                (is (= (retrieve-username) (:last-updated-by response-data)))
+                (is (= overrides (:overrides response-data)))
+                (is (= service-id (:service-id response-data)))
+                (is (contains? response-data :time))))
+            (let [service-settings (service-settings waiter-url service-id)
+                  service-description-overrides (-> service-settings :service-description-overrides :overrides)]
+              (is (= overrides service-description-overrides)))
+            (-> (make-request waiter-url override-endpoint :method :delete)
+                (assert-response-status http-200-ok))
+            (let [service-settings (service-settings waiter-url service-id)
+                  service-description-overrides (-> service-settings :service-description-overrides :overrides)]
+              (is (not service-description-overrides)))))))))
 
 (deftest ^:parallel ^:integration-fast basic-waiter-auth-test
   (testing-using-waiter-url

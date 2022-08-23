@@ -22,6 +22,7 @@
             [clojure.walk :as walk]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
+            [schema.core :as s]
             [waiter.auth.authentication :as auth]
             [waiter.auth.jwt :as jwt]
             [waiter.auth.oidc :as oidc]
@@ -220,6 +221,7 @@
 (deftest test-override-service-handler
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         service-description-defaults {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "run-as-user" "tu1", "permitted-user" "tu2"}
+        validate-service-description-fn (fn [service-description] (sd/validate-schema service-description {s/Str s/Any} {} nil))
         waiter-request?-fn (fn [_] true)
         entitlement-manager (reify authz/EntitlementManager
                               (authorized? [_ subject _ {:keys [user]}] (= subject user)))
@@ -228,7 +230,8 @@
         make-inter-router-requests-sync-fn (fn [path _ _] (is (str/includes? path "service-id-")))
         configuration {:routines {:allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :make-inter-router-requests-sync-fn make-inter-router-requests-sync-fn
-                                  :service-description-defaults service-description-defaults}
+                                  :service-description-defaults service-description-defaults
+                                  :validate-service-description-fn validate-service-description-fn}
                        :state {:kv-store kv-store}
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:service-override-handler-fn ((:service-override-handler-fn request-handlers) configuration)}
@@ -238,7 +241,25 @@
     (testing "override-service-handler"
       (let [user "tu1"
             request {:authorization/user user
+                     :body (StringBufferInputStream. (utils/clj->json {"scale-factor" 0}))
+                     :request-method :post
+                     :uri (str "/apps/" test-service-id "/override")}
+            {:keys [status body]} (request-handler request)]
+        (is (= http-400-bad-request status))
+        (is (str/includes? (str body) "scale-factor must be a double in the range (0, 2]"))
+        (is (nil? (:overrides (sd/service-id->overrides kv-store test-service-id)))))
+      (let [user "tu1"
+            request {:authorization/user user
                      :body (StringBufferInputStream. (utils/clj->json {"scale-factor" 0.3, "cmd" "overridden-cmd"}))
+                     :request-method :post
+                     :uri (str "/apps/" test-service-id "/override")}
+            {:keys [status body]} (request-handler request)]
+        (is (= http-400-bad-request status))
+        (is (str/includes? (str body) "Cannot override the following parameter(s): cmd"))
+        (is (nil? (:overrides (sd/service-id->overrides kv-store test-service-id)))))
+      (let [user "tu1"
+            request {:authorization/user user
+                     :body (StringBufferInputStream. (utils/clj->json {"scale-factor" 0.3}))
                      :request-method :post
                      :uri (str "/apps/" test-service-id "/override")}
             {:keys [status body]} (request-handler request)]

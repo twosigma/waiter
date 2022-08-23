@@ -1760,13 +1760,15 @@
                                       retrieve-token-based-fallback-fn service-id->service-description-fn
                                       service-id->metrics-fn service-id->references-fn service-id->source-tokens-entries-fn
                                       token->token-hash request)))))
-   :service-override-handler-fn (pc/fnk [[:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn]
+   :service-override-handler-fn (pc/fnk [[:routines allowed-to-manage-service?-fn make-inter-router-requests-sync-fn
+                                          validate-service-description-fn]
                                          [:state kv-store]
                                          wrap-secure-request-fn]
                                   (wrap-secure-request-fn
                                     (fn service-override-handler-fn [{:as request {:keys [service-id]} :route-params}]
                                       (handler/override-service-handler kv-store allowed-to-manage-service?-fn
-                                                                        make-inter-router-requests-sync-fn service-id request))))
+                                                                        make-inter-router-requests-sync-fn validate-service-description-fn
+                                                                        service-id request))))
    :service-refresh-handler-fn (pc/fnk [[:state kv-store]
                                         wrap-router-auth-fn]
                                  (wrap-router-auth-fn
