@@ -249,6 +249,7 @@
 (deftest test-compute-scale-amount-restricted-by-quanta
   (is (= 1 (compute-scale-amount-restricted-by-quanta {"cpus" 10 "mem" 1024} {:cpus 32 :mem 4608} 1)))
   (is (= 3 (compute-scale-amount-restricted-by-quanta {"cpus" 10 "mem" 1024} {:cpus 32 :mem 4608} 3)))
+  (is (= 3 (compute-scale-amount-restricted-by-quanta {"cpus" 10.0 "mem" 1024} {:cpus 32.0 :mem 4608} 3)))
   (is (= 4 (compute-scale-amount-restricted-by-quanta {"cpus" 5 "mem" 1024} {:cpus 32 :mem 4608} 8)))
   (is (= 3 (compute-scale-amount-restricted-by-quanta {"cpus" 10 "mem" 1024} {:cpus 32 :mem 4608} 8)))
   (is (= 2 (compute-scale-amount-restricted-by-quanta {"cpus" 10 "mem" 2048} {:cpus 32 :mem 4608} 8)))

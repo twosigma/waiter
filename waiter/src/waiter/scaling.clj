@@ -197,7 +197,7 @@
 
 (defn compute-scale-amount-restricted-by-quanta
   "Computes the new scale amount subject to quanta restrictions.
-   The returned value is guaranteed to be at least 1."
+   The returned value is guaranteed to be at least 1 and an integer."
   [service-description quanta-constraints scale-amount]
   {:pre [(seq service-description)
          (pos? scale-amount)
@@ -206,7 +206,8 @@
   (-> scale-amount
       (min (quot (:cpus quanta-constraints) (get service-description "cpus"))
            (quot (:mem quanta-constraints) (get service-description "mem")))
-      (max 1)))
+      (max 1)
+      (int)))
 
 (defn service-scaling-executor
   "The scaling executor that scales individual services up or down.
