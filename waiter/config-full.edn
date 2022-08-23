@@ -526,15 +526,15 @@
                                  :pod-base-port 31000
 
                                  ;; Determines the interval the pod cleanup daemon should check for pods in phase 1 of safe scale down
-                                 ;; to phase 2 where the pod is deleted.
+                                 ;; and hard delete any killable pods.
                                  :pod-cleanup-interval-ms 5000
 
-                                 ;; The minimum amount of time that needs to pass before the pod cleanup daemon can considering deleting
+                                 ;; The minimum amount of time that needs to pass before the pod cleanup daemon can consider deleting
                                  ;; the pod. This allows for some lingering metrics from raven to be tracked by waiter routers, before knowing
                                  ;; if a pod is no longer serving any active requests.
                                  :pod-cleanup-grace-buffer-ms 15000
 
-                                 ;; The pod daemon will delete the pod after this timeout is reached even if it is still serving requests
+                                 ;; The pod daemon will delete the pod after this timeout is reached even if it is still serving requests.
                                  :pod-cleanup-scale-down-timeout-secs 120
 
                                  ;; The number of seconds between the SIGTERM and SIGKILL signals sent to a pod on shutdown.
