@@ -493,7 +493,8 @@
             routers))
         :interval 1 :timeout 5)))
 
-(deftest ^:parallel ^:integration-slow ^:resource-heavy test-bypass-services-use-external-metrics-for-outstanding-requests
+;; Test is marked explicit because it is known to be flaky
+(deftest ^:explicit ^:parallel ^:integration-slow ^:resource-heavy test-bypass-services-use-external-metrics-for-outstanding-requests
   (testing-using-waiter-url
     (let [cluster-name (retrieve-cluster-name waiter-url)
           routers (routers waiter-url)]
