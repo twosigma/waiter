@@ -1370,7 +1370,11 @@
      (is (every? (partial str/includes? message#) invalid-keys#) message#)))
 
 (deftest test-post-failure-in-handle-token-request
-  (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-parameter-keys))))]
+  (with-redefs [sd/service-description->service-id (fn [prefix sd] (str prefix (hash (select-keys sd sd/service-parameter-keys))))
+                utils/message (fn [k]
+                                (if (= :cannot-run-as-user k)
+                                  "{role} '{role-user}' cannot run as user '{run-as-user}'"
+                                  (name k)))]
     (let [entitlement-manager (authz/->SimpleEntitlementManager nil)
           make-peer-requests-fn (fn [endpoint & _]
                                   (and (str/starts-with? endpoint "token/")
@@ -1456,7 +1460,7 @@
                  :headers {"x-waiter-token" token}
                  :request-method :post})]
           (is (= http-403-forbidden status))
-          (is (str/includes? body "Cannot run as user: tu0"))))
+          (is (str/includes? body "Authenticated user 'tu1' cannot run as user 'tu0'"))))
 
       (testing "post:new-service-description:edit-unauthorized-owner"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -1675,7 +1679,7 @@
                  :body (StringBufferInputStream. (utils/clj->json service-description))
                  :request-method :post})]
           (is (= http-403-forbidden status))
-          (is (str/includes? body "Owner: tu-onr cannot run as user: tu-rau"))))
+          (is (str/includes? body "Owner 'tu-onr' cannot run as user 'tu-rau'"))))
 
       (testing "post:new-service-description:cannot-modify-root"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
@@ -2195,7 +2199,7 @@
                  :headers {}
                  :request-method :post})]
           (is (= http-403-forbidden status))
-          (is (str/includes? body "Cannot run as user: to2A"))))
+          (is (str/includes? body "Authenticated user 'te2' cannot run as user 'to2A'"))))
 
       (testing "post:edit-service-description:editor-privileges:failure"
         (let [token (str token "-editor-test-edit-fail")
@@ -2217,7 +2221,7 @@
                  :headers {}
                  :request-method :post})]
           (is (= http-403-forbidden status))
-          (is (str/includes? body "Cannot run as user: to1"))))
+          (is (str/includes? body "Authenticated user 'te2' cannot run as user 'to1'"))))
 
       (testing "post:edit-service-description:editor-privileges:edit-restricted-field-owner"
         (let [token (str token "-editor-test")

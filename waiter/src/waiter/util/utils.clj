@@ -698,6 +698,17 @@
     [key]
     (@messages key))
 
+  (defn formatted-message
+    "Returns the message corresponding to the provided key with placeholders from the context replaced."
+    [key context]
+    (when-let [template-message (message key)]
+      (loop [[[k v] & remaining-context] (seq context)
+             loop-message template-message]
+        (if (nil? k)
+          loop-message
+          (recur remaining-context
+                 (str/replace loop-message (str "{" k "}") v))))))
+
   (defn load-messages
     "Loads m into the messages map"
     [m]
