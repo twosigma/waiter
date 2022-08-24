@@ -120,8 +120,11 @@
   "Replaces instances of `PatternLayout` in appenders with instance of `CidEnhancedPatternLayout`."
   []
   (let [logger (Logger/getRootLogger)
-        appenders (.getAllAppenders logger)]
-    (doseq [^Appender appender (seq (Collections/list appenders))]
+        scheduler-logger (Logger/getLogger "Scheduler")
+        scheduler-appender (some-> scheduler-logger (.getAppender "SchedulerAppender"))
+        appenders (cond-> (seq (Collections/list (.getAllAppenders logger)))
+                    scheduler-appender (conj scheduler-appender))]
+    (doseq [^Appender appender appenders]
       (let [layout (.getLayout ^Appender appender)]
         (when (instance? PatternLayout layout)
           (println "Replacing the layout in" (.getName appender) (.getClass appender))
