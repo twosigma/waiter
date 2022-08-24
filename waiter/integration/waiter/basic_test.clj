@@ -157,6 +157,9 @@
                              (merge (select-keys profile-config-defaults (map keyword sd/service-parameter-keys))
                                     base-service-description
                                     {:profile (name profile)})
+                             (walk/stringify-keys)
+                             (sd/apply-param-to-param-defaults sd/param-to-param-default-mapping)
+                             (walk/keywordize-keys)
                              (merge-parameters extra-parameters))
                            effective-service-description)
                         (str {:extra-parameters extra-parameters

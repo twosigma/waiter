@@ -462,12 +462,11 @@
    another parameter in the service description (the parameter name that the original
    parameter name maps to in the parameter default mapping)."
   [service-description-defaults param-default-mapping]
-  ; TODO verify validation for defaulted + explicit combinations. When does validation occur?
   (let [valid-mapping-parms (map key (filter (fn [[_ mapped-param]] (contains? service-description-defaults mapped-param)) param-default-mapping))
-        all-params (into (sorted-set) (concat (keys service-description-defaults) valid-mapping-parms))]
+        new-params (into (sorted-set) (concat (keys service-description-defaults) valid-mapping-parms))]
     (pc/map-from-keys (fn [param-name] (or (get service-description-defaults param-name)
                                            (get service-description-defaults (get param-default-mapping param-name))))
-                      all-params)))
+                      new-params)))
 
 (defn merge-defaults
   "Merges the defaults into the existing service description."
