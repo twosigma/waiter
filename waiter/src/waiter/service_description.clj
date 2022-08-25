@@ -470,24 +470,20 @@
 
 (defn merge-defaults
   "Merges the defaults into the existing service description."
-  ([service-description-without-defaults service-description-defaults profile->defaults metric-group-mappings]
-   (merge-defaults service-description-without-defaults service-description-defaults profile->defaults metric-group-mappings {}))
-  ([{:strs [profile] :as service-description-without-defaults} service-description-defaults profile->defaults metric-group-mappings param-default-mapping]
-   (-> service-description-defaults
-       (compute-service-defaults profile->defaults profile)
-       (adjust-default-min-instances service-description-without-defaults)
-       (merge-parameters service-description-without-defaults)
-       (metric-group-filter metric-group-mappings)
-       (apply-param-to-param-defaults param-default-mapping))))
+  [{:strs [profile] :as service-description-without-defaults} service-description-defaults profile->defaults metric-group-mappings param-default-mapping]
+  (-> service-description-defaults
+      (compute-service-defaults profile->defaults profile)
+      (adjust-default-min-instances service-description-without-defaults)
+      (merge-parameters service-description-without-defaults)
+      (metric-group-filter metric-group-mappings)
+      (apply-param-to-param-defaults param-default-mapping)))
 
 (defn default-and-override
   "Adds defaults and overrides to the provided service-description"
-  ([service-description service-description-defaults profile->defaults metric-group-mappings kv-store service-id]
-   (default-and-override service-description service-description-defaults profile->defaults metric-group-mappings kv-store service-id {}))
-  ([service-description service-description-defaults profile->defaults metric-group-mappings kv-store service-id param-default-mapping]
-   (-> service-description
-       (merge-defaults service-description-defaults profile->defaults metric-group-mappings param-default-mapping)
-       (merge-overrides (:overrides (service-id->overrides kv-store service-id))))))
+  [service-description service-description-defaults profile->defaults metric-group-mappings kv-store service-id param-default-mapping]
+  (-> service-description
+      (merge-defaults service-description-defaults profile->defaults metric-group-mappings param-default-mapping)
+      (merge-overrides (:overrides (service-id->overrides kv-store service-id)))))
 
 (defn parameters->id
   "Generates a deterministic ID from the input parameter map."

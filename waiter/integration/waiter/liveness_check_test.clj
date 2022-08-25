@@ -79,8 +79,9 @@
            (is (wait-for #(check-filtered-instances router-url remove) :timeout 60 :interval 5))
            (is (= 1 (count (active-instances router-url service-id :cookies cookies)))))
          ; issue a request that will be queued until service reports as healthy (waiting on default-status-timeout)
-         (let [response (make-kitchen-request waiter-url request-headers :path "/hello")]
-           (assert-response-status response http-200-ok))
+         (let [response (make-request-with-debug-info request-headers #(make-kitchen-request waiter-url % :path "/hello"))]
+           (assert-response-status response http-200-ok)
+           (is (= instance-id (:instance-id response))))
          ; verify instance shows as healthy on all routers
          (doseq [[_ router-url] (routers waiter-url)]
            (is (wait-for #(check-filtered-instances router-url filter)))
@@ -124,25 +125,30 @@
          (doseq [[_ router-url] (routers waiter-url)]
            (is (wait-for #(check-filtered-instances router-url filter)))
            (is (= 1 (count (active-instances router-url service-id :cookies cookies)))))
-         ; set default-status-value to 400 to trigger failing liveness checks
-         (let [request-headers (assoc request-headers
-                                      :x-kitchen-default-status-timeout 600000
-                                      :x-kitchen-default-status-value http-400-bad-request)
-               response (make-request-with-debug-info request-headers #(make-kitchen-request waiter-url % :path "/hello"))]
-           (assert-response-status response http-400-bad-request)
-           (assert-backend-response response)
-           (is (= instance-id (:instance-id response))))
-         ; wait for service to respond 200 (instance should restart before the default-status-timeout above)
-         (is (wait-for #(= http-200-ok (:status (make-kitchen-request waiter-url request-headers :path "/hello")))
-                       :timeout 120))
-         ; verify instance did experience restarts
-         (doseq [[_ router-url] (routers waiter-url)]
-           (is (wait-for #(let [instances (active-instances router-url service-id :cookies cookies)]
-                             (and (= 1 (count instances))
-                                  (let [instance (first instances)]
-                                    (and (pos? (:k8s/restart-count instance))
-                                         (not= instance-id (:id instance))))))
-                         :timeout 120))))))))
+         (let [original-instances (active-instances waiter-url service-id :cookies cookies)
+               original-pod-name (-> original-instances
+                                     first
+                                     :k8s/pod-name)]
+           ; set default-status-value to 400 to trigger failing liveness checks
+           (let [request-headers (assoc request-headers
+                                        :x-kitchen-default-status-timeout 600000
+                                        :x-kitchen-default-status-value http-400-bad-request)
+                 response (make-request-with-debug-info request-headers #(make-kitchen-request waiter-url % :path "/hello"))]
+             (assert-response-status response http-400-bad-request)
+             (assert-backend-response response)
+             (is (= instance-id (:instance-id response))))
+           ; wait for service to respond 200 (instance should restart before the default-status-timeout above)
+           (is (wait-for #(= http-200-ok (:status (make-kitchen-request waiter-url request-headers :path "/hello")))
+                         :timeout 120))
+           ; verify instance did experience restarts
+           (doseq [[_ router-url] (routers waiter-url)]
+             (is (wait-for #(let [instances (active-instances router-url service-id :cookies cookies)]
+                              (and (= 1 (count instances))
+                                   (let [instance (first instances)]
+                                     (and (pos? (:k8s/restart-count instance))
+                                          (not= instance-id (:id instance))
+                                          (= original-pod-name (:k8s/pod-name instance))))))
+                           :timeout 120)))))))))
 
 (deftest ^:parallel ^:integration-fast test-liveness-recovers-without-restart
   (testing-using-waiter-url

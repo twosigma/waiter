@@ -341,7 +341,7 @@
             token-defaults {"fallback-period-secs" 300
                             "service-mapping" "legacy"}
             metric-group-mappings []
-            attach-service-defaults-fn #(merge-defaults % service-description-defaults profile->defaults metric-group-mappings)
+            attach-service-defaults-fn #(merge-defaults % service-description-defaults profile->defaults metric-group-mappings {})
             attach-token-defaults-fn #(attach-token-defaults % token-defaults profile->defaults)
             test-cases (list
                          {:name "prepare-service-description-sources:WITH Service Desc specific Waiter Headers except run-as-user"
@@ -885,7 +885,7 @@
         service-description-defaults {}
         profile->defaults {}
         metric-group-mappings []
-        attach-service-defaults-fn #(merge-defaults % service-description-defaults profile->defaults metric-group-mappings)
+        attach-service-defaults-fn #(merge-defaults % service-description-defaults profile->defaults metric-group-mappings {})
         token-defaults {"fallback-period-secs" 300}
         attach-token-defaults-fn #(merge token-defaults %)]
     (testing "authentication-disabled token"
@@ -2769,19 +2769,19 @@
           metric-group-mappings [[#"r.*" "bar"]]]
       (is (= {"cpus" 3 "env" {"AFFINITY" "none"} "mem" 2048 "metric-group" "other" "permitted-user" "john.doe" "version" "v1"}
              (-> {"cpus" 3 "permitted-user" "john.doe" "version" "v1"}
-               (merge-defaults service-description-defaults profile->defaults metric-group-mappings))))
+               (merge-defaults service-description-defaults profile->defaults metric-group-mappings {}))))
       (is (= {"cpus" 3 "env" {"AFFINITY" "none"} "mem" 1024 "metric-group" "other" "permitted-user" "john.doe" "profile" "basic"}
              (-> {"cpus" 3 "permitted-user" "john.doe" "profile" "basic"}
-               (merge-defaults service-description-defaults profile->defaults metric-group-mappings))))
+               (merge-defaults service-description-defaults profile->defaults metric-group-mappings {}))))
       (is (= {"cpus" 3 "env" {"AFFINITY" "none" "REGION" "west" "ZONE" "lax"} "mem" 2048 "metadata" {"style" "grpc"} "metric-group" "other" "permitted-user" "john.doe" "profile" "rpc"}
              (-> {"cpus" 3 "permitted-user" "john.doe" "profile" "rpc"}
-               (merge-defaults service-description-defaults profile->defaults metric-group-mappings))))
+               (merge-defaults service-description-defaults profile->defaults metric-group-mappings {}))))
       (is (= {"concurrency-level" 30 "cpus" 3 "env" {"AFFINITY" "none" "REGION" "central"} "mem" 2048 "metric-group" "other" "permitted-user" "john.doe" "profile" "service"}
              (-> {"cpus" 3 "permitted-user" "john.doe" "profile" "service"}
-               (merge-defaults service-description-defaults profile->defaults metric-group-mappings))))
+               (merge-defaults service-description-defaults profile->defaults metric-group-mappings {}))))
       (is (= {"concurrency-level" 120 "cpus" 3 "env" {"AFFINITY" "none" "REGION" "east"} "mem" 2048 "metadata" {"framework" "spring" "type" "webapp"} "metric-group" "other" "permitted-user" "john.doe" "profile" "webapp"}
              (-> {"cpus" 3 "permitted-user" "john.doe" "profile" "webapp"}
-               (merge-defaults service-description-defaults profile->defaults metric-group-mappings))))))
+               (merge-defaults service-description-defaults profile->defaults metric-group-mappings {}))))))
   (testing "Merging defaults into service description"
     (let [profile->defaults {"webapp" {"concurrency-level" 120
                                        "fallback-period-secs" 100}}
@@ -2792,12 +2792,12 @@
                 "name" "lorem"
                 "profile" "webapp"}
                (merge-defaults {"name" "lorem", "profile" "webapp"} {}
-                               profile->defaults metric-group-mappings))))
+                               profile->defaults metric-group-mappings {}))))
       (testing "should incorporate metric group mappings"
         (is (= {"metric-group" "bar"
                 "name" "foo"}
                (merge-defaults {"name" "foo"} {}
-                               profile->defaults metric-group-mappings))))
+                               profile->defaults metric-group-mappings {}))))
       (testing "should incorporate defaults, profile, and metric-group"
         (is (= {"concurrency-level" 120
                 "metric-group" "bar"
@@ -2805,18 +2805,18 @@
                 "ports" 2
                 "profile" "webapp"}
                (merge-defaults {"name" "foo", "profile" "webapp"} {"concurrency-level" 30, "ports" 2}
-                               profile->defaults metric-group-mappings))))
+                               profile->defaults metric-group-mappings {}))))
       (testing "min-instances default missing but only max-instances provided"
         (is (= {"max-instances" 2
                 "metric-group" "other"}
                (merge-defaults {"max-instances" 2} {}
-                               profile->defaults metric-group-mappings))))
+                               profile->defaults metric-group-mappings {}))))
       (testing "min-instances should be updated when not provided"
         (is (= {"max-instances" 2
                 "metric-group" "other"
                 "min-instances" 2}
                (merge-defaults {"max-instances" 2} {"min-instances" 3}
-                               profile->defaults metric-group-mappings))))
+                               profile->defaults metric-group-mappings {}))))
       (testing "min-instances should be adjusted when only max-instances provided in profile"
         (is (= {"max-instances" 2
                 "metric-group" "other"
@@ -2825,7 +2825,7 @@
                (let [profile->defaults (assoc profile->defaults
                                          "test-profile" {"max-instances" 2})]
                  (merge-defaults {"profile" "test-profile"} {"min-instances" 3}
-                                 profile->defaults metric-group-mappings))))
+                                 profile->defaults metric-group-mappings {}))))
         (is (= {"max-instances" 2
                 "metric-group" "other"
                 "min-instances" 1
@@ -2833,18 +2833,18 @@
                (let [profile->defaults (assoc profile->defaults
                                          "test-profile" {"max-instances" 2})]
                  (merge-defaults {"profile" "test-profile"} {"min-instances" 1}
-                                 profile->defaults metric-group-mappings)))))
+                                 profile->defaults metric-group-mappings {})))))
       (testing "min-instances should not be updated when provided without max-instances"
         (is (= {"metric-group" "other"
                 "min-instances" 4}
                (merge-defaults {"min-instances" 4} {"min-instances" 3}
-                               profile->defaults metric-group-mappings))))
+                               profile->defaults metric-group-mappings {}))))
       (testing "min-instances should not be updated when provided with max-instances"
         (is (= {"max-instances" 2
                 "metric-group" "other"
                 "min-instances" 4}
                (merge-defaults {"max-instances" 2 "min-instances" 4} {"min-instances" 3}
-                               profile->defaults metric-group-mappings)))))))
+                               profile->defaults metric-group-mappings {})))))))
 
 (deftest test-validate-cmd-type
   (testing "DefaultServiceDescriptionBuilder validation"
