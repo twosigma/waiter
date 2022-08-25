@@ -681,8 +681,13 @@
                             (utils/create-component entitlement-config :context context)))
    :fallback-state-atom (pc/fnk [] (atom {:available-service-ids #{}
                                           :healthy-service-ids #{}}))
-   :http-client-properties (pc/fnk [[:settings [:instance-request-properties client-buffer-size client-connection-idle-timeout-ms connection-timeout-ms]]]
-                             {:client-name "waiter-client"
+   :http-client-properties (pc/fnk [[:settings [:instance-request-properties
+                                                byte-buffer-capacity-factor byte-buffer-heap-percent byte-buffer-max-queue-length
+                                                client-buffer-size client-connection-idle-timeout-ms connection-timeout-ms]]]
+                             {:byte-buffer-capacity-factor byte-buffer-capacity-factor
+                              :byte-buffer-heap-percent byte-buffer-heap-percent
+                              :byte-buffer-max-queue-length byte-buffer-max-queue-length
+                              :client-name "waiter-client"
                               :conn-timeout connection-timeout-ms
                               :follow-redirects? false
                               :request-buffer-size client-buffer-size

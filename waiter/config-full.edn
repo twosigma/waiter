@@ -853,6 +853,15 @@
                                ;; x-waiter-async-request-timeout request header:
                                :async-request-timeout-ms 60000
 
+                               ;; The capacity factor (an int) of the MappedByteBufferPool.
+                               :byte-buffer-capacity-factor 2048
+
+                               ;; The percentage of the JVM heap that can be used in the MappedByteBufferPool max heap memory in individual clients.
+                               :byte-buffer-heap-percent 0.25
+
+                               ;; The maximum MappedByteBufferPool queue length.
+                               :byte-buffer-max-queue-length 32
+
                                ;; Size in the size of the buffer used to write/read individual request/response fragments to/from the backend.
                                ;; The value must be a positive integer, defaults to 32 KiB.
                                :client-buffer-size 32768
