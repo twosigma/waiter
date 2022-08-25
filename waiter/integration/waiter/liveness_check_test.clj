@@ -45,7 +45,7 @@
              :x-waiter-grace-period-secs 5
              :x-waiter-health-check-interval-secs 5
              :x-waiter-health-check-max-consecutive-failures 10
-             :x-waiter-health-check-url "/default-status"           ; depends on ktichen's default-status-value
+             :x-waiter-health-check-url "/default-status"           ; depends on kitchen's default-status-value
              :x-waiter-liveness-check-interval-secs 5
              :x-waiter-liveness-check-max-consecutive-failures 2
              :x-waiter-liveness-check-url "/bad-status?status=200"  ; always 200
@@ -70,8 +70,10 @@
          (let [request-headers (assoc request-headers
                                       :x-kitchen-default-status-timeout 45000
                                       :x-kitchen-default-status-value http-400-bad-request)
-               response (make-kitchen-request waiter-url request-headers :path "/hello")]
-           (assert-response-status response http-400-bad-request))
+               response (make-request-with-debug-info request-headers #(make-kitchen-request waiter-url % :path "/hello"))]
+           (assert-response-status response http-400-bad-request)
+           (assert-backend-response response)
+           (is (= instance-id (:instance-id response))))
          ; wait for instance to show as unhealthy on all routers
          (doseq [[_ router-url] (routers waiter-url)]
            (is (wait-for #(check-filtered-instances router-url remove) :timeout 60 :interval 5))
@@ -87,9 +89,9 @@
          (doseq [[_ router-url] (routers waiter-url)]
            (let [instances (active-instances router-url service-id :cookies cookies)]
              (is (= 1 (count instances)))
-             (is (zero? (-> instances
-                            first
-                            :k8s/restart-count))))))))))
+             (let [instance (first instances)]
+               (is (zero? (:k8s/restart-count instance)))
+               (is (= instance-id (:id instance)))))))))))
 
 (deftest ^:parallel ^:integration-fast test-liveness-triggered-restart
   (testing-using-waiter-url
@@ -104,7 +106,7 @@
              :x-waiter-health-check-url "/bad-status?status=200"  ; always 200
              :x-waiter-liveness-check-interval-secs 5
              :x-waiter-liveness-check-max-consecutive-failures 2
-             :x-waiter-liveness-check-url "/default-status"       ; depends on ktichen's default-status-value
+             :x-waiter-liveness-check-url "/default-status"       ; depends on kitchen's default-status-value
              :x-waiter-max-instances 1
              :x-waiter-min-instances 1
              :x-waiter-name (rand-name)}
@@ -126,18 +128,20 @@
          (let [request-headers (assoc request-headers
                                       :x-kitchen-default-status-timeout 600000
                                       :x-kitchen-default-status-value http-400-bad-request)
-               response (make-kitchen-request waiter-url request-headers :path "/hello")]
-           (assert-response-status response http-400-bad-request))
+               response (make-request-with-debug-info request-headers #(make-kitchen-request waiter-url % :path "/hello"))]
+           (assert-response-status response http-400-bad-request)
+           (assert-backend-response response)
+           (is (= instance-id (:instance-id response))))
          ; wait for service to respond 200 (instance should restart before the default-status-timeout above)
          (is (wait-for #(= http-200-ok (:status (make-kitchen-request waiter-url request-headers :path "/hello")))
                        :timeout 120))
-         ; verify instance did not experience restarts
+         ; verify instance did experience restarts
          (doseq [[_ router-url] (routers waiter-url)]
            (is (wait-for #(let [instances (active-instances router-url service-id :cookies cookies)]
                              (and (= 1 (count instances))
-                                  (pos? (-> instances
-                                            first
-                                            :k8s/restart-count))))
+                                  (let [instance (first instances)]
+                                    (and (pos? (:k8s/restart-count instance))
+                                         (not= instance-id (:id instance))))))
                          :timeout 120))))))))
 
 (deftest ^:parallel ^:integration-fast test-liveness-recovers-without-restart
@@ -153,7 +157,7 @@
              :x-waiter-health-check-url "/bad-status?status=200"  ; always 200
              :x-waiter-liveness-check-interval-secs 5
              :x-waiter-liveness-check-max-consecutive-failures 36
-             :x-waiter-liveness-check-url "/default-status"       ; depends on ktichen's default-status-value
+             :x-waiter-liveness-check-url "/default-status"       ; depends on kitchen's default-status-value
              :x-waiter-max-instances 1
              :x-waiter-min-instances 1
              :x-waiter-name (rand-name)}
@@ -175,8 +179,10 @@
          (let [request-headers (assoc request-headers
                                       :x-kitchen-default-status-timeout 20000
                                       :x-kitchen-default-status-value http-400-bad-request)
-               response (make-kitchen-request waiter-url request-headers :path "/hello")]
-           (assert-response-status response http-400-bad-request))
+               response (make-request-with-debug-info request-headers #(make-kitchen-request waiter-url % :path "/hello"))]
+           (assert-response-status response http-400-bad-request)
+           (assert-backend-response response)
+           (is (= instance-id (:instance-id response))))
          ; wait for service to respond 200 (instance should recover after the default-status-timeout above)
          (is (wait-for #(= http-200-ok (:status (make-kitchen-request waiter-url request-headers :path "/hello")))
                        :timeout 35))
@@ -184,9 +190,9 @@
          (doseq [[_ router-url] (routers waiter-url)]
            (let [instances (active-instances router-url service-id :cookies cookies)]
              (is (= 1 (count instances)))
-             (is (zero? (-> instances
-                            first
-                            :k8s/restart-count))))))))))
+             (let [instance (first instances)]
+               (is (zero? (:k8s/restart-count instance)))
+               (is (= instance-id (:id instance)))))))))))
 
 (deftest ^:parallel ^:integration-fast test-liveness-explicit-proto-conflict-default-port-index
   (testing-using-waiter-url
