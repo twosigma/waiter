@@ -769,7 +769,7 @@
                                        :name service-id-prefix
                                        :owner (retrieve-username)
                                        :token token}
-                    response (post-token waiter-url token-description :headers {"host" token})]
+                    response (post-token waiter-url token-description :token token)]
                 (assert-response-status response http-200-ok))
 
               (let [{:keys [body headers]} (get-token waiter-url token)
