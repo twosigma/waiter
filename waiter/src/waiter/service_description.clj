@@ -89,13 +89,19 @@
    ; start-up related
    (s/optional-key "grace-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
    (s/optional-key "health-check-authentication") schema/valid-health-check-authentication
-   (s/optional-key "health-check-interval-secs") (s/both s/Int (s/pred #(<= 5 % 60) 'between-5-seconds-and-1-minute))
-   (s/optional-key "health-check-max-consecutive-failures") (s/both s/Int (s/pred #(<= 1 % 15) 'at-most-fifteen))
+   (s/optional-key "health-check-interval-secs") (s/both s/Int (s/pred #(<= 5 % 600) 'between-5-seconds-and-10-minutes))
+   (s/optional-key "health-check-max-consecutive-failures") (s/both s/Int (s/pred #(<= 1 % 36) 'at-most-36))
    (s/optional-key "health-check-port-index") schema/valid-health-check-port-index
    (s/optional-key "health-check-proto") schema/valid-health-check-proto
    (s/optional-key "health-check-url") schema/non-empty-string
    (s/optional-key "idle-timeout-mins") (s/both s/Int (s/pred #(<= 0 % (t/in-minutes (t/days 30))) 'between-0-minute-and-30-days))
    (s/optional-key "interstitial-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
+   (s/optional-key "liveness-check-authentication") schema/valid-health-check-authentication
+   (s/optional-key "liveness-check-interval-secs") (s/both s/Int (s/pred #(<= 5 % 600) 'between-5-seconds-and-10-minutes))
+   (s/optional-key "liveness-check-max-consecutive-failures") (s/both s/Int (s/pred #(<= 1 % 36) 'at-most-36))
+   (s/optional-key "liveness-check-port-index") schema/valid-health-check-port-index
+   (s/optional-key "liveness-check-proto") schema/valid-health-check-proto
+   (s/optional-key "liveness-check-url") schema/non-empty-string
    (s/optional-key "restart-backoff-factor") schema/positive-number-greater-than-or-equal-to-1
    (s/optional-key "scheduler") schema/non-empty-string
    (s/optional-key "termination-grace-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/minutes 5))) 'at-most-5-minutes))
@@ -136,13 +142,15 @@
   #{"authentication" "concurrency-level" "distribution-scheme" "expired-instance-restart-rate"
     "grace-period-secs" "health-check-interval-secs" "health-check-max-consecutive-failures"
     "idle-timeout-mins" "instance-expiry-mins" "interstitial-secs" "jitter-threshold"
-    "load-balancing" "max-queue-length" "min-instances" "max-instances" "restart-backoff-factor"
+    "liveness-check-interval-secs" "liveness-check-max-consecutive-failures" "load-balancing"
+    "max-queue-length" "min-instances" "max-instances" "restart-backoff-factor"
     "scale-down-factor" "scale-factor" "scale-up-factor" "termination-grace-period-secs"})
 
 (def ^:const service-non-override-keys
   #{"allowed-params" "backend-proto" "cmd" "cmd-type" "cpus" "env"
     "health-check-authentication" "health-check-port-index" "health-check-proto" "health-check-url"
-    "image" "mem" "metadata" "metric-group" "name" "namespace" "permitted-user" "ports" "profile"
+    "image" "liveness-check-authentication" "liveness-check-port-index" "liveness-check-proto" "liveness-check-url"
+    "mem" "metadata" "metric-group" "name" "namespace" "permitted-user" "ports" "profile"
     "run-as-user" "scheduler" "version"})
 
 ; keys used as parameters in the service description
@@ -177,6 +185,15 @@
 
 ; keys allowed in the token data
 (def ^:const token-data-keys (set/union service-parameter-keys token-metadata-keys))
+
+; parameter names that should get default values from the parameters they map to
+(def ^:const param-to-param-default-mapping
+  {"liveness-check-authentication" "health-check-authentication"
+   "liveness-check-interval-secs" "health-check-interval-secs"
+   "liveness-check-max-consecutive-failures" "health-check-max-consecutive-failures"
+   "liveness-check-port-index" "health-check-port-index"
+   "liveness-check-proto" "health-check-proto"
+   "liveness-check-url" "health-check-url"})
 
 (defn transform-allowed-params-header
   "Converts allowed-params comma-separated string in the service-description to a set."
@@ -439,20 +456,33 @@
   (compute-profile-defaults
     user-metadata-keys token-defaults profile->defaults profile))
 
+(defn apply-param-to-param-defaults
+  "Returns a service description where any parameter that is a key in the given parameter
+   default mapping and has no value in the service description will be given a value from
+   another parameter in the service description (the parameter name that the original
+   parameter name maps to in the parameter default mapping)."
+  [service-description-defaults param-default-mapping]
+  (let [valid-mapping-parms (map key (filter (fn [[_ mapped-param]] (contains? service-description-defaults mapped-param)) param-default-mapping))
+        new-params (into (sorted-set) (concat (keys service-description-defaults) valid-mapping-parms))]
+    (pc/map-from-keys (fn [param-name] (or (get service-description-defaults param-name)
+                                           (get service-description-defaults (get param-default-mapping param-name))))
+                      new-params)))
+
 (defn merge-defaults
   "Merges the defaults into the existing service description."
-  [{:strs [profile] :as service-description-without-defaults} service-description-defaults profile->defaults metric-group-mappings]
+  [{:strs [profile] :as service-description-without-defaults} service-description-defaults profile->defaults metric-group-mappings param-default-mapping]
   (-> service-description-defaults
-    (compute-service-defaults profile->defaults profile)
-    (adjust-default-min-instances service-description-without-defaults)
-    (merge-parameters service-description-without-defaults)
-    (metric-group-filter metric-group-mappings)))
+      (compute-service-defaults profile->defaults profile)
+      (adjust-default-min-instances service-description-without-defaults)
+      (merge-parameters service-description-without-defaults)
+      (metric-group-filter metric-group-mappings)
+      (apply-param-to-param-defaults param-default-mapping)))
 
 (defn default-and-override
   "Adds defaults and overrides to the provided service-description"
-  [service-description service-description-defaults profile->defaults metric-group-mappings kv-store service-id]
+  [service-description service-description-defaults profile->defaults metric-group-mappings kv-store service-id param-default-mapping]
   (-> service-description
-      (merge-defaults service-description-defaults profile->defaults metric-group-mappings)
+      (merge-defaults service-description-defaults profile->defaults metric-group-mappings param-default-mapping)
       (merge-overrides (:overrides (service-id->overrides kv-store service-id)))))
 
 (defn parameters->id
@@ -622,6 +652,17 @@
                                              parameter->issues :idle-timeout-mins
                                              "idle-timeout-mins must be an integer in the range [0, 43200].")
                                            (attach-error-message-for-parameter
+                                             parameter->issues :liveness-check-authentication
+                                             "liveness-check-authentication must be one of standard or disabled.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :liveness-check-port-index
+                                             "liveness-check-port-index must be an integer in the range [0, 9].")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :liveness-check-proto
+                                             "liveness-check-proto, when provided, must be one of h2, h2c, http, or https.")
+                                           (attach-error-message-for-parameter
+                                             parameter->issues :liveness-check-url "liveness-check-url must be a non-empty string.")
+                                           (attach-error-message-for-parameter
                                              parameter->issues :load-balancing
                                              (str "load-balancing must be one of 'oldest', 'youngest' or 'random'."))
                                            (attach-error-message-for-parameter
@@ -736,6 +777,37 @@
         (sling/throw+ {:type :service-description-error
                        :friendly-error-message (str "The backend-proto (" backend-proto ") and health check proto (" health-check-proto ") "
                                                     "must match when health-check-port-index is zero")
+                       :status http-400-bad-request
+                       :log-level :info})))
+
+    ; validate authentication and liveness-check-authentication combination
+    (let [{:strs [authentication liveness-check-authentication]} service-description-to-use]
+      (when (and authentication
+                 liveness-check-authentication
+                 (= authentication "disabled")
+                 (= liveness-check-authentication "standard"))
+        (sling/throw+ {:type :service-description-error
+                       :friendly-error-message (str "The liveness check authentication (" liveness-check-authentication ") "
+                                                    "cannot be enabled when authentication (" authentication ") is disabled")
+                       :status http-400-bad-request
+                       :log-level :info})))
+
+    ; validate the liveness-check-port-index
+    (let [{:strs [liveness-check-port-index ports]} service-description-to-use]
+      (when (and liveness-check-port-index ports (>= liveness-check-port-index ports))
+        (sling/throw+ {:type :service-description-error
+                       :friendly-error-message (str "The liveness check port index (" liveness-check-port-index ") "
+                                                    "must be smaller than ports (" ports ")")
+                       :status http-400-bad-request
+                       :log-level :info})))
+
+    ; validate the backend-proto and liveness-check-proto combination on same port
+    (let [{:strs [backend-proto liveness-check-port-index liveness-check-proto]} service-description-to-use]
+      (when (and backend-proto liveness-check-port-index liveness-check-proto
+                 (zero? liveness-check-port-index) (not= backend-proto liveness-check-proto))
+        (sling/throw+ {:type :service-description-error
+                       :friendly-error-message (str "The backend-proto (" backend-proto ") and liveness check proto (" liveness-check-proto ") "
+                                                    "must match when liveness-check-port-index is zero")
                        :status http-400-bad-request
                        :log-level :info})))
 
@@ -924,7 +996,7 @@
     ;; attaches defaults and overrides to the core service description
     (default-and-override
       core-service-description service-description-defaults profile->defaults
-      metric-group-mappings kv-store service-id))
+      metric-group-mappings kv-store service-id param-to-param-default-mapping))
 
   (retrieve-reference-type->stale-info-fn [_ {:keys [token->token-hash token->token-parameters]}]
     {:token (fn [{:keys [sources]}] (retrieve-token-stale-info token->token-hash token->token-parameters sources))})

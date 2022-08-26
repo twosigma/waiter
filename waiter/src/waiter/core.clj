@@ -1000,7 +1000,8 @@
    :attach-service-defaults-fn (pc/fnk [[:settings metric-group-mappings service-description-defaults]
                                         [:state profile->defaults]]
                                  (fn attach-service-defaults-fn [service-description]
-                                   (sd/merge-defaults service-description service-description-defaults profile->defaults metric-group-mappings)))
+                                   (sd/merge-defaults service-description service-description-defaults profile->defaults metric-group-mappings
+                                                      sd/param-to-param-default-mapping)))
    :attach-token-defaults-fn (pc/fnk [[:settings [:token-config token-defaults]]
                                       [:state profile->defaults]]
                                (fn attach-token-defaults-fn [token-parameters]

@@ -1337,7 +1337,9 @@
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
-           mem min-instances ports run-as-user termination-grace-period-secs] :as service-description}
+           liveness-check-interval-secs liveness-check-max-consecutive-failures liveness-check-port-index
+           liveness-check-proto liveness-check-url mem min-instances ports run-as-user
+           termination-grace-period-secs] :as service-description}
    {:keys [container-init-commands default-container-image log-bucket-url image-aliases
            pod-anti-affinity run-as-user-source] :as context}]
   (when-not (or image default-container-image)
@@ -1382,6 +1384,9 @@
                                     actual-backend-proto
                                     (cond-> (or health-check-proto backend-proto)
                                       raven-force-downstream-tls? proto->tls-proto))
+        liveness-check-port (if (some? liveness-check-port-index)
+                              (+ port0 liveness-check-port-index)
+                              (+ port0 health-check-port-index))
         ;; NOTE: the work-stealing handler passes instance objects around as JSON,
         ;; and since the deserializer there assumes that all map keys are keywords,
         ;; these port->protocol map keys must also be keywords.
@@ -1410,9 +1415,10 @@
         revision-timestamp (du/date-to-str (t/now)) ;; we use a monotonically increasing version string
         revision-version "0"
         authenticate-health-check? (retrieve-use-authenticated-health-checks? scheduler service-id)
-        liveness-scheme (-> (or health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
+        liveness-scheme (-> (or liveness-check-proto health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
         readiness-scheme (-> (or actual-health-check-proto backend-proto) hu/backend-proto->scheme str/upper-case)
         health-check-url (sd/service-description->health-check-url service-description)
+        liveness-check-url (or liveness-check-url health-check-url)
         memory (str mem "Mi")
         service-hash (service-id->service-hash service-id)
         fileserver-predicate-fn (-> fileserver :predicate-fn)
@@ -1504,14 +1510,15 @@
         assoc :livenessProbe (-> (prepare-health-check-probe
                                    service-id->password-fn service-id
                                    authenticate-health-check?
-                                   liveness-scheme health-check-url
-                                   (+ port0 health-check-port-index)
-                                   health-check-interval-secs)
+                                   liveness-scheme liveness-check-url
+                                   liveness-check-port
+                                   (or liveness-check-interval-secs health-check-interval-secs))
                                (assoc
                                  ;; We increment the threshold value to match Marathon behavior.
                                  ;; Marathon treats this as a retry count,
                                  ;; whereas Kubernetes treats it as a run count.
-                                 :failureThreshold (inc health-check-max-consecutive-failures)
+                                 :failureThreshold (inc (or liveness-check-max-consecutive-failures
+                                                            health-check-max-consecutive-failures))
                                  :initialDelaySeconds grace-period-secs)))
       ;; Optional fileserver sidecar container
       ;; fileserver port must be provided and the container must be enabled on the service

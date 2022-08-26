@@ -303,7 +303,7 @@
                                                   {:metric-group-mappings metric-group-mappings
                                                    :profile->defaults profile->defaults
                                                    :service-description-defaults service-description-defaults}))
-                attach-service-defaults-fn #(sd/merge-defaults % service-description-defaults profile->defaults metric-group-mappings)
+                attach-service-defaults-fn #(sd/merge-defaults % service-description-defaults profile->defaults metric-group-mappings {})
                 attach-token-defaults-fn #(sd/attach-token-defaults % token-defaults profile->defaults)]
             (request->descriptor
               assoc-run-as-user-approved? can-run-as? attach-service-defaults-fn attach-token-defaults-fn fallback-state-atom
@@ -525,7 +525,7 @@
       token-defaults {"fallback-period-secs" 300
                       "service-mapping" "legacy"}
       metric-group-mappings []
-      attach-service-defaults-fn #(sd/merge-defaults % service-description-defaults profile->defaults metric-group-mappings)
+      attach-service-defaults-fn #(sd/merge-defaults % service-description-defaults profile->defaults metric-group-mappings {})
       attach-token-defaults-fn #(sd/attach-token-defaults % token-defaults profile->defaults)
       username "test-user"
       metric-group-mappings []

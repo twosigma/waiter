@@ -139,7 +139,7 @@
                                       "permitted-user" "*"}}
         token-defaults {"fallback-period-secs" 300
                         "https-redirect" false}
-        attach-service-defaults-fn #(sd/merge-defaults % service-description-defaults profile->defaults metric-group-mappings)
+        attach-service-defaults-fn #(sd/merge-defaults % service-description-defaults profile->defaults metric-group-mappings {})
         attach-token-defaults-fn #(sd/attach-token-defaults % token-defaults profile->defaults)
         waiter-hostnames #{"www.waiter-router.com"}
         handler-response (Object.)

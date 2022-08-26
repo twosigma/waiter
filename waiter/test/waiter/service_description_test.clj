@@ -341,7 +341,7 @@
             token-defaults {"fallback-period-secs" 300
                             "service-mapping" "legacy"}
             metric-group-mappings []
-            attach-service-defaults-fn #(merge-defaults % service-description-defaults profile->defaults metric-group-mappings)
+            attach-service-defaults-fn #(merge-defaults % service-description-defaults profile->defaults metric-group-mappings {})
             attach-token-defaults-fn #(attach-token-defaults % token-defaults profile->defaults)
             test-cases (list
                          {:name "prepare-service-description-sources:WITH Service Desc specific Waiter Headers except run-as-user"
@@ -885,7 +885,7 @@
         service-description-defaults {}
         profile->defaults {}
         metric-group-mappings []
-        attach-service-defaults-fn #(merge-defaults % service-description-defaults profile->defaults metric-group-mappings)
+        attach-service-defaults-fn #(merge-defaults % service-description-defaults profile->defaults metric-group-mappings {})
         token-defaults {"fallback-period-secs" 300}
         attach-token-defaults-fn #(merge token-defaults %)]
     (testing "authentication-disabled token"
@@ -1029,6 +1029,7 @@
         service-id-prefix "test-service-"
         test-token "test-token"
         service-description-defaults {"health-check-url" "/ping"
+                                      "liveness-check-url" "/ping"
                                       "metric-group" "test-group"
                                       "permitted-user" "bob"}
         profile-defaults {"health-check-url" "/pong"
@@ -1221,6 +1222,7 @@
     (testing "only token from host with permitted-user in defaults"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "bob"}
              (service-description {:service-description-template {"cmd" "token-cmd"}}
                                   :expected-run-as-user-source "unknown"
@@ -1230,7 +1232,8 @@
 
     (testing "only token from host without permitted-user in defaults"
       (is (= {"cmd" "token-cmd"
-              "health-check-url" "/ping"}
+              "health-check-url" "/ping"
+              "liveness-check-url" "/ping"}
              (service-description {:service-description-template {"cmd" "token-cmd"}}
                                   :expected-run-as-user-source "unknown"
                                   :profile->defaults {"webapp" {"concurrency-level" 120}}
@@ -1239,6 +1242,7 @@
     (testing "only token from header without permitted-user"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "current-request-user"
               "run-as-user" "current-request-user"}
              (service-description {:service-description-template {"cmd" "token-cmd"}}
@@ -1251,6 +1255,7 @@
     (testing "only token from header with permitted-user"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "token-user"
               "run-as-user" "token-user"}
              (service-description {:service-description-template {"cmd" "token-cmd"
@@ -1265,6 +1270,7 @@
     (testing "token and run-as-user from header with permitted-user"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "current-request-user"
               "run-as-user" "on-the-fly-ru"}
              (service-description {:headers {"run-as-user" "on-the-fly-ru"}
@@ -1280,7 +1286,8 @@
 
     (testing "only token from host with defaults missing permitted user"
       (is (= {"cmd" "token-cmd"
-              "health-check-url" "/ping"}
+              "health-check-url" "/ping"
+              "liveness-check-url" "/ping"}
              (service-description {:service-description-template {"cmd" "token-cmd"}}
                                   :expected-run-as-user-source "unknown"
                                   :profile->defaults {"webapp" {"concurrency-level" 120}}
@@ -1289,6 +1296,7 @@
     (testing "only token from header with defaults missing permitted user"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "current-request-user"
               "run-as-user" "current-request-user"}
              (service-description {:service-description-template {"cmd" "token-cmd"}}
@@ -1299,7 +1307,8 @@
 
     (testing "only token from host with dummy header"
       (is (= {"cmd" "token-cmd"
-              "health-check-url" "/ping"}
+              "health-check-url" "/ping"
+              "liveness-check-url" "/ping"}
              (service-description {:service-description-template {"cmd" "token-cmd"}}
                                   :expected-run-as-user-source "unknown"
                                   :profile->defaults {"webapp" {"concurrency-level" 120}}
@@ -1309,6 +1318,7 @@
     (testing "only on-the-fly"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "bob"
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"}}
@@ -1320,6 +1330,7 @@
     (testing "token host with non-intersecting values"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "bob"
               "run-as-user" "current-request-user"
               "version" "on-the-fly-version"}
@@ -1334,6 +1345,7 @@
       (is (= {"cmd" "token-cmd"
               "concurrency-level" 5
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "bob"
               "run-as-user" "current-request-user"
               "version" "on-the-fly-version"}
@@ -1352,6 +1364,7 @@
               "env" {"VAR_1" "VALUE-1"
                      "VAR_2" "VALUE-2"}
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "bob"
               "run-as-user" "current-request-user"
               "version" "on-the-fly-version"}
@@ -1376,6 +1389,7 @@
                      "VAR_3" "VALUE-3p"
                      "VAR_4" "VALUE-4p"}
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "bob"
               "run-as-user" "current-request-user"
               "version" "on-the-fly-version"}
@@ -1401,6 +1415,7 @@
                      "VAR_2" "VALUE-2p"
                      "VAR_3" "VALUE-3p"}
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "bob"
               "run-as-user" "current-request-user"
               "version" "on-the-fly-version"}
@@ -1429,6 +1444,7 @@
                           "env" {"VAR_1" "VALUE-1"
                                  "VAR_2" "VALUE-2"}
                           "health-check-url" "/ping"
+                          "liveness-check-url" "/ping"
                           "permitted-user" "bob"
                           "run-as-user" "test-user"}
                    exclusive-mode? (assoc-in ["env" "WAITER_CONFIG_TOKEN"] test-token))
@@ -1454,6 +1470,7 @@
                                  "VAR_3" "VALUE-3p"
                                  "VAR_4" "VALUE-4p"}
                           "health-check-url" "/ping"
+                          "liveness-check-url" "/ping"
                           "permitted-user" "bob"
                           "run-as-user" "test-user"}
                    exclusive-mode? (assoc-in ["env" "WAITER_CONFIG_TOKEN"] test-token))
@@ -1480,6 +1497,7 @@
                                  "VAR_2" "VALUE-2p"
                                  "VAR_3" "VALUE-3p"}
                           "health-check-url" "/ping"
+                          "liveness-check-url" "/ping"
                           "permitted-user" "bob"
                           "run-as-user" "test-user"}
                    exclusive-mode? (assoc-in ["env" "WAITER_CONFIG_TOKEN"] test-token))
@@ -1502,6 +1520,7 @@
       (is (= {"cmd" "on-the-fly-cmd"
               "concurrency-level" 6
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "bob"
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
@@ -1515,6 +1534,7 @@
     (testing "token header with intersecting values"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "bob"
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"}
@@ -1527,6 +1547,7 @@
     (testing "intersecting values with additional fields"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "name" "token-name"
               "permitted-user" "bob"
               "run-as-user" "current-request-user"
@@ -1543,6 +1564,7 @@
     (testing "permitted user from token"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "token-pu"
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"}
@@ -1554,6 +1576,7 @@
     (testing "permitted user from on-the-fly"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "on-the-fly-pu"
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
@@ -1565,6 +1588,7 @@
     (testing "permitted user intersecting"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "on-the-fly-pu"
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
@@ -1577,6 +1601,7 @@
     (testing "run as user and permitted user only in token"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "token-pu"
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"}
@@ -1589,6 +1614,7 @@
     (testing "run as user and permitted user only in token with run-as-user matching request user"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "token-pu"
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"}
@@ -1601,6 +1627,7 @@
     (testing "run as user and permitted user from token and no on-the-fly headers"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "token-pu"
               "run-as-user" "token-ru"}
              (service-description {:service-description-template {"cmd" "token-cmd"
@@ -1613,6 +1640,7 @@
     (testing "missing permitted user in token"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "bob"
               "run-as-user" "token-ru"}
              (service-description {:service-description-template {"cmd" "token-cmd"
@@ -1625,6 +1653,7 @@
     (testing "run as user from on-the-fly"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "current-request-user"
               "run-as-user" "on-the-fly-ru"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
@@ -1639,6 +1668,7 @@
     (testing "run as user intersecting"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "current-request-user"
               "run-as-user" "on-the-fly-ru"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
@@ -1654,6 +1684,7 @@
     (testing "run as user provided from on-the-fly header with hostname token"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "current-request-user"
               "run-as-user" "chris"}
              (service-description {:headers {"run-as-user" "chris"}
@@ -1668,6 +1699,7 @@
     (testing "run as user star from on-the-fly header with hostname token"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "current-request-user"
               "run-as-user" "current-request-user"}
              (service-description {:headers {"run-as-user" "*"}
@@ -1682,6 +1714,7 @@
     (testing "run as user star from hostname token"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "bob"}
              (service-description {:headers {}
                                    :service-description-template {"cmd" "token-cmd"
@@ -1695,6 +1728,7 @@
     (testing "run as user star from on-the-fly token"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "current-request-user"
               "run-as-user" "current-request-user"}
              (service-description {:headers {}
@@ -1708,6 +1742,7 @@
     (testing "run as user star from on-the-fly headers without permitted-user"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "current-request-user"
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
@@ -1723,6 +1758,7 @@
     (testing "run as user star from on-the-fly headers with permitted-user"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "alice"
               "run-as-user" "current-request-user"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
@@ -1740,6 +1776,7 @@
     (testing "run as user in headers with permitted-user * in tokens"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "current-request-user"
               "run-as-user" "header-user"}
              (service-description {:headers {"run-as-user" "header-user"}
@@ -1765,6 +1802,7 @@
             {"scale-factor" 0.3})
           (is (= (assoc basic-service-description
                    "health-check-url" "/ping"
+                   "liveness-check-url" "/ping"
                    "permitted-user" "bob"
                    "scale-factor" 0.3)
                  (service-description {:headers {"cmd" "on-the-fly-cmd"
@@ -1783,6 +1821,7 @@
             "current-request-user")
           (is (= (assoc basic-service-description
                    "health-check-url" "/ping"
+                   "liveness-check-url" "/ping"
                    "permitted-user" "bob")
                  (service-description {:headers {"cmd" "on-the-fly-cmd"
                                                  "run-as-user" "on-the-fly-ru"}}
@@ -1795,6 +1834,7 @@
     (testing "override token metadata from headers"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "bob"
               "run-as-user" "current-request-user"
               "metadata" {"e" "f"}}
@@ -1809,6 +1849,7 @@
     (testing "sanitize metadata"
       (is (= {"cmd" "token-cmd"
               "health-check-url" "/ping"
+              "liveness-check-url" "/ping"
               "permitted-user" "current-request-user"
               "run-as-user" "current-request-user"
               "metadata" {"abc" "DEF"}}
@@ -1822,6 +1863,7 @@
     (testing "metric group from token"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/health"
+              "liveness-check-url" "/health"
               "run-as-user" "current-request-user"
               "metric-group" "token-mg"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"}
@@ -1833,6 +1875,7 @@
     (testing "metric group from on-the-fly"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/health"
+              "liveness-check-url" "/health"
               "run-as-user" "current-request-user"
               "metric-group" "on-the-fly-mg"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
@@ -1844,6 +1887,7 @@
     (testing "metric group intersecting"
       (is (= {"cmd" "on-the-fly-cmd"
               "health-check-url" "/health"
+              "liveness-check-url" "/health"
               "run-as-user" "current-request-user"
               "metric-group" "on-the-fly-mg"}
              (service-description {:headers {"cmd" "on-the-fly-cmd"
@@ -1856,6 +1900,7 @@
     (testing "auto-populate run-as-user"
       (is (= {"cmd" "some-cmd"
               "health-check-url" "/health"
+              "liveness-check-url" "/health"
               "run-as-user" "current-request-user"
               "permitted-user" "current-request-user"
               "metric-group" "token-mg"}
@@ -1869,6 +1914,7 @@
     (testing "disable instance-expiry"
       (is (= {"cmd" "some-cmd"
               "health-check-url" "/health"
+              "liveness-check-url" "/health"
               "instance-expiry-mins" 0}
              (service-description {:service-description-template {"cmd" "some-cmd"
                                                                   "instance-expiry-mins" 0}}
@@ -1883,6 +1929,7 @@
         (testing "from token"
           (is (= {"cmd" "web-cmd"
                   "health-check-url" "/ping"
+                  "liveness-check-url" "/ping"
                   "profile" "webapp"}
                  (service-description {:headers {}
                                        :service-description-template {"profile" "webapp"}}
@@ -1891,6 +1938,7 @@
                                       :service-description-defaults service-description-defaults)))
           (is (= {"cmd" "token-cmd"
                   "health-check-url" "/ping"
+                  "liveness-check-url" "/ping"
                   "profile" "webapp"}
                  (service-description {:headers {}
                                        :service-description-template {"cmd" "token-cmd"
@@ -1900,6 +1948,7 @@
                                       :service-description-defaults service-description-defaults)))
           (is (= {"cmd" "on-the-fly-cmd"
                   "health-check-url" "/ping"
+                  "liveness-check-url" "/ping"
                   "profile" "webapp"
                   "run-as-user" "current-request-user"}
                  (service-description {:headers {"cmd" "on-the-fly-cmd"}
@@ -1912,6 +1961,7 @@
         (testing "from on-the-fly"
           (is (= {"cmd" "web-cmd"
                   "health-check-url" "/ping"
+                  "liveness-check-url" "/ping"
                   "profile" "webapp"
                   "run-as-user" "current-request-user"}
                  (service-description {:headers {"profile" "webapp"}}
@@ -1920,6 +1970,7 @@
                                       :service-description-defaults service-description-defaults)))
           (is (= {"cmd" "on-the-fly-cmd"
                   "health-check-url" "/ping"
+                  "liveness-check-url" "/ping"
                   "profile" "webapp"
                   "run-as-user" "current-request-user"}
                  (service-description {:headers {"cmd" "on-the-fly-cmd"
@@ -2573,6 +2624,42 @@
                                          "ports" 2)
                                        constraints-schema profile->defaults config)))))))
 
+    (testing "testing invalid health check authentication"
+      (run-validate-schema-test
+        (assoc valid-description "authentication" "disabled" "health-check-authentication" "standard")
+        constraints-schema profile->defaults config
+        "The health check authentication (standard) cannot be enabled when authentication (disabled) is disabled"))
+
+    (testing "testing invalid health check port index"
+      (run-validate-schema-test
+        (assoc valid-description "health-check-port-index" 1 "ports" 1)
+        constraints-schema profile->defaults config
+        "The health check port index (1) must be smaller than ports (1)")
+      (run-validate-schema-test
+        (assoc valid-description "health-check-port-index" 5 "ports" 3)
+        constraints-schema profile->defaults config
+        "The health check port index (5) must be smaller than ports (3)"))
+
+    (testing "testing invalid backend proto and health check proto combination"
+      (let [supported-protocols #{"http" "https" "h2c" "h2"}]
+        (doseq [backend-proto supported-protocols
+                health-check-proto (disj supported-protocols backend-proto)]
+          (do
+            (run-validate-schema-test
+              (assoc valid-description
+                     "backend-proto" backend-proto
+                     "health-check-port-index" 0
+                     "health-check-proto" health-check-proto)
+              constraints-schema profile->defaults config
+              (str "The backend-proto (" backend-proto ") and health check proto (" health-check-proto
+                   ") must match when health-check-port-index is zero"))
+            (is (nil? (validate-schema (assoc valid-description
+                                              "backend-proto" backend-proto
+                                              "health-check-port-index" 1
+                                              "health-check-proto" health-check-proto
+                                              "ports" 2)
+                                       constraints-schema profile->defaults config)))))))
+
     (testing "testing invalid metric-group"
       (run-validate-schema-test
         (assoc valid-description "metric-group" (str/join "" (repeat 100 "m")))
@@ -2682,19 +2769,19 @@
           metric-group-mappings [[#"r.*" "bar"]]]
       (is (= {"cpus" 3 "env" {"AFFINITY" "none"} "mem" 2048 "metric-group" "other" "permitted-user" "john.doe" "version" "v1"}
              (-> {"cpus" 3 "permitted-user" "john.doe" "version" "v1"}
-               (merge-defaults service-description-defaults profile->defaults metric-group-mappings))))
+               (merge-defaults service-description-defaults profile->defaults metric-group-mappings {}))))
       (is (= {"cpus" 3 "env" {"AFFINITY" "none"} "mem" 1024 "metric-group" "other" "permitted-user" "john.doe" "profile" "basic"}
              (-> {"cpus" 3 "permitted-user" "john.doe" "profile" "basic"}
-               (merge-defaults service-description-defaults profile->defaults metric-group-mappings))))
+               (merge-defaults service-description-defaults profile->defaults metric-group-mappings {}))))
       (is (= {"cpus" 3 "env" {"AFFINITY" "none" "REGION" "west" "ZONE" "lax"} "mem" 2048 "metadata" {"style" "grpc"} "metric-group" "other" "permitted-user" "john.doe" "profile" "rpc"}
              (-> {"cpus" 3 "permitted-user" "john.doe" "profile" "rpc"}
-               (merge-defaults service-description-defaults profile->defaults metric-group-mappings))))
+               (merge-defaults service-description-defaults profile->defaults metric-group-mappings {}))))
       (is (= {"concurrency-level" 30 "cpus" 3 "env" {"AFFINITY" "none" "REGION" "central"} "mem" 2048 "metric-group" "other" "permitted-user" "john.doe" "profile" "service"}
              (-> {"cpus" 3 "permitted-user" "john.doe" "profile" "service"}
-               (merge-defaults service-description-defaults profile->defaults metric-group-mappings))))
+               (merge-defaults service-description-defaults profile->defaults metric-group-mappings {}))))
       (is (= {"concurrency-level" 120 "cpus" 3 "env" {"AFFINITY" "none" "REGION" "east"} "mem" 2048 "metadata" {"framework" "spring" "type" "webapp"} "metric-group" "other" "permitted-user" "john.doe" "profile" "webapp"}
              (-> {"cpus" 3 "permitted-user" "john.doe" "profile" "webapp"}
-               (merge-defaults service-description-defaults profile->defaults metric-group-mappings))))))
+               (merge-defaults service-description-defaults profile->defaults metric-group-mappings {}))))))
   (testing "Merging defaults into service description"
     (let [profile->defaults {"webapp" {"concurrency-level" 120
                                        "fallback-period-secs" 100}}
@@ -2705,12 +2792,12 @@
                 "name" "lorem"
                 "profile" "webapp"}
                (merge-defaults {"name" "lorem", "profile" "webapp"} {}
-                               profile->defaults metric-group-mappings))))
+                               profile->defaults metric-group-mappings {}))))
       (testing "should incorporate metric group mappings"
         (is (= {"metric-group" "bar"
                 "name" "foo"}
                (merge-defaults {"name" "foo"} {}
-                               profile->defaults metric-group-mappings))))
+                               profile->defaults metric-group-mappings {}))))
       (testing "should incorporate defaults, profile, and metric-group"
         (is (= {"concurrency-level" 120
                 "metric-group" "bar"
@@ -2718,18 +2805,18 @@
                 "ports" 2
                 "profile" "webapp"}
                (merge-defaults {"name" "foo", "profile" "webapp"} {"concurrency-level" 30, "ports" 2}
-                               profile->defaults metric-group-mappings))))
+                               profile->defaults metric-group-mappings {}))))
       (testing "min-instances default missing but only max-instances provided"
         (is (= {"max-instances" 2
                 "metric-group" "other"}
                (merge-defaults {"max-instances" 2} {}
-                               profile->defaults metric-group-mappings))))
+                               profile->defaults metric-group-mappings {}))))
       (testing "min-instances should be updated when not provided"
         (is (= {"max-instances" 2
                 "metric-group" "other"
                 "min-instances" 2}
                (merge-defaults {"max-instances" 2} {"min-instances" 3}
-                               profile->defaults metric-group-mappings))))
+                               profile->defaults metric-group-mappings {}))))
       (testing "min-instances should be adjusted when only max-instances provided in profile"
         (is (= {"max-instances" 2
                 "metric-group" "other"
@@ -2738,7 +2825,7 @@
                (let [profile->defaults (assoc profile->defaults
                                          "test-profile" {"max-instances" 2})]
                  (merge-defaults {"profile" "test-profile"} {"min-instances" 3}
-                                 profile->defaults metric-group-mappings))))
+                                 profile->defaults metric-group-mappings {}))))
         (is (= {"max-instances" 2
                 "metric-group" "other"
                 "min-instances" 1
@@ -2746,18 +2833,18 @@
                (let [profile->defaults (assoc profile->defaults
                                          "test-profile" {"max-instances" 2})]
                  (merge-defaults {"profile" "test-profile"} {"min-instances" 1}
-                                 profile->defaults metric-group-mappings)))))
+                                 profile->defaults metric-group-mappings {})))))
       (testing "min-instances should not be updated when provided without max-instances"
         (is (= {"metric-group" "other"
                 "min-instances" 4}
                (merge-defaults {"min-instances" 4} {"min-instances" 3}
-                               profile->defaults metric-group-mappings))))
+                               profile->defaults metric-group-mappings {}))))
       (testing "min-instances should not be updated when provided with max-instances"
         (is (= {"max-instances" 2
                 "metric-group" "other"
                 "min-instances" 4}
                (merge-defaults {"max-instances" 2 "min-instances" 4} {"min-instances" 3}
-                               profile->defaults metric-group-mappings)))))))
+                               profile->defaults metric-group-mappings {})))))))
 
 (deftest test-validate-cmd-type
   (testing "DefaultServiceDescriptionBuilder validation"
@@ -3697,3 +3784,14 @@
             "permitted-user" "*"
             "service-mapping" "legacy"}
            (token-sequence->merged-data token->token-data ["service" "webapp" "rpc"])))))
+
+(deftest test-apply-param-to-param-defaults
+  (let [data {"alpha" 1 "beta" 2 "gamma" nil}]
+    (is (= (apply-param-to-param-defaults data {"gamma" "beta"})
+           {"alpha" 1 "beta" 2 "gamma" 2}))
+    (is (= (apply-param-to-param-defaults data {"delta" "alpha"})
+           {"alpha" 1 "beta" 2 "gamma" nil "delta" 1}))
+    (is (= (apply-param-to-param-defaults data {"delta" "epsilon"})
+           {"alpha" 1 "beta" 2 "gamma" nil}))
+    (is (= (apply-param-to-param-defaults data {"alpha" "beta"})
+           data))))

@@ -53,7 +53,7 @@
          token-defaults {"fallback-period-secs" 300
                          "service-mapping" "legacy"}
          metric-group-mappings []
-         attach-service-defaults-fn #(sd/merge-defaults % service-description-defaults profile->defaults metric-group-mappings)
+         attach-service-defaults-fn #(sd/merge-defaults % service-description-defaults profile->defaults metric-group-mappings {})
          attach-token-defaults-fn #(sd/attach-token-defaults % token-defaults profile->defaults)
          username "test-user"
          assoc-run-as-user-approved? (constantly false)

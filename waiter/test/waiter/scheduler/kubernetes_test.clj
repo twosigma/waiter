@@ -602,16 +602,36 @@
     (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                   config/retrieve-waiter-principal (constantly "waiter@test.com")]
 
-      (testing "liveness enabled"
+      (testing "liveness enabled, uses health check config for defaults"
         (let [service-description dummy-service-description
               scheduler (make-dummy-scheduler ["test-service-id"]
                                               {:service-id->service-description-fn (constantly service-description)})
               rs-spec-builder-context {:run-as-user-source "unknown"}
               replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description rs-spec-builder-context)
               waiter-app-container (get-in replicaset-spec [:spec :template :spec :containers 0])]
-          (is (= (assoc basic-probe :failureThreshold 3 :initialDelaySeconds 7)
-                 (:livenessProbe waiter-app-container)))
-          (is (= basic-probe (:readinessProbe waiter-app-container)))))
+          (is (= basic-probe (:readinessProbe waiter-app-container)))
+          (is (= (assoc (:readinessProbe waiter-app-container) :failureThreshold 3 :initialDelaySeconds 7)
+                 (:livenessProbe waiter-app-container)))))
+      
+      (testing "liveness enabled, uses explicit config"
+        (let [service-description (assoc dummy-service-description
+                                         "liveness-check-interval-secs" 600
+                                         "liveness-check-max-consecutive-failures" 36
+                                         "liveness-check-port-index" 1
+                                         "liveness-check-proto" "https"
+                                         "liveness-check-url" "/liveness")
+              scheduler (make-dummy-scheduler ["test-service-id"]
+                                              {:service-id->service-description-fn (constantly service-description)})
+              rs-spec-builder-context {:run-as-user-source "unknown"}
+              replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description rs-spec-builder-context)
+              waiter-app-container (get-in replicaset-spec [:spec :template :spec :containers 0])]
+          (is (= basic-probe (:readinessProbe waiter-app-container)))
+          (is (= (-> basic-probe
+                     (assoc :failureThreshold 37 :initialDelaySeconds 7 :periodSeconds 600)
+                     (assoc-in [:httpGet :path] "/liveness")
+                     (assoc-in [:httpGet :port] 8331)
+                     (assoc-in [:httpGet :scheme] "HTTPS"))
+                 (:livenessProbe waiter-app-container)))))
 
       (testing "liveness disabled"
         (let [service-description (assoc dummy-service-description "grace-period-secs" 0)
