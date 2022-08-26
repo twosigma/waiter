@@ -352,6 +352,7 @@
               :bad-socket "Backend is closing socket without responding (ensure backend-proto is correctly configured)"
               :bad-startup-command "Invalid startup command"
               :cannot-connect "Unable to connect to run health checks"
+              :cannot-run-as-user "{role} '{role-user}' cannot run as user '{run-as-user}'"
               :cannot-identify-service "Unable to identify service using waiter headers/token"
               :health-check-requires-authentication "Health check requires authentication"
               :health-check-timed-out "Health check timed out"

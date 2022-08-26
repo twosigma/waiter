@@ -4,7 +4,8 @@
             [clojure.tools.logging :as log]
             [waiter.authorization :as authz]
             [waiter.service-description :as sd]
-            [waiter.status-codes :refer :all]))
+            [waiter.status-codes :refer :all]
+            [waiter.util.utils :as utils]))
 
 (defprotocol TokenValidator
   "A protocol for validating a new token configuration"
@@ -112,7 +113,7 @@
           ;; only check run-as-user rules when not running as editor, editor cannot change run-as-user from previous check
           (when (and (not editing?) run-as-user (not= "*" run-as-user))
             (when-not (authz/run-as? entitlement-manager authenticated-user run-as-user)
-              (throw (ex-info (str "Cannot run as user: " run-as-user)
+              (throw (ex-info (utils/formatted-message :cannot-run-as-user {"role" "Authenticated user" "role-user" authenticated-user "run-as-user" run-as-user})
                               {:authenticated-user authenticated-user
                                :run-as-user run-as-user
                                :status http-403-forbidden
@@ -148,7 +149,7 @@
           ;; owner must be able to run as run-as-user
           (when (and run-as-user (not= "*" run-as-user))
             (when-not (authz/own? entitlement-manager owner run-as-user)
-              (throw (ex-info (str "Owner: " owner " cannot run as user: " run-as-user)
+              (throw (ex-info (utils/formatted-message :cannot-run-as-user {"role" "Owner" "role-user" owner "run-as-user" run-as-user})
                               {:authenticated-user authenticated-user
                                :owner owner
                                :run-as-user run-as-user

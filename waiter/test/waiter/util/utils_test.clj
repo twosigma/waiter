@@ -28,11 +28,11 @@
             [waiter.util.cache-utils :refer :all]
             [waiter.util.date-utils :refer :all]
             [waiter.util.utils :refer :all])
-  (:import (clojure.lang ExceptionInfo)
-           (java.net ServerSocket)
-           (java.util UUID)
-           (waiter.cors PatternBasedCorsValidator)
-           (waiter.service_description DefaultServiceDescriptionBuilder)))
+  (:import [clojure.lang ExceptionInfo]
+           [java.net ServerSocket]
+           [java.util UUID]
+           [waiter.cors PatternBasedCorsValidator]
+           [waiter.service_description DefaultServiceDescriptionBuilder]))
 
 (deftest test-is-uuid?
   (testing "invalid value"
@@ -912,3 +912,29 @@
       (async/close! chan)
       (async/close! result-ch)
       (async/<!! go-ch))))
+
+(deftest test-formatted-message
+  (let [input-key :test-key]
+    (with-redefs [message (fn [k]
+                            (is (= input-key k))
+                            "{role}: {role-user} cannot run as user: {run-as-user}")]
+      (is (= "{role}: {role-user} cannot run as user: {run-as-user}"
+             (formatted-message input-key nil)))
+      (is (= "{role}: {role-user} cannot run as user: {run-as-user}"
+             (formatted-message input-key {})))
+      (is (= "Authenticated user: {role-user} cannot run as user: {run-as-user}"
+             (formatted-message input-key {"role" "Authenticated user"})))
+      (is (= "Authenticated user: john cannot run as user: {run-as-user}"
+             (formatted-message input-key {"role" "Authenticated user"
+                                           "role-user" "john"})))
+      (is (= "Authenticated user: john cannot run as user: jane"
+             (formatted-message input-key {"role" "Authenticated user"
+                                           "role-user" "john"
+                                           "run-as-user" "jane"}))))
+    (with-redefs [message (fn [k]
+                            (is (= input-key k))
+                            "{role}: {role-user} cannot run as user: {run-as-user}, please update permissions for {role-user}")]
+      (is (= "Authenticated user: john cannot run as user: jane, please update permissions for john"
+             (formatted-message input-key {"role" "Authenticated user"
+                                           "role-user" "john"
+                                           "run-as-user" "jane"}))))))
