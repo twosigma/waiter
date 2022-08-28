@@ -66,7 +66,6 @@
 (def ^:const waiter-primary-container-name "waiter-app")
 (def ^:const waiter-fileserver-sidecar-name "waiter-fileserver")
 (def ^:const waiter-raven-sidecar-name "waiter-raven-sidecar")
-(def ^:const app-drain-label "draining")
 
 (defn timestamp-str->datetime
   "Parse a Kubernetes API timestamp string."
@@ -143,14 +142,20 @@
     (str/ends-with? quantity "m") (-> quantity (str/replace "m" "") (utils/parse-double) (/ 1e3))
     :else (-> (utils/parse-double quantity))))
 
+(defn- pod->scaling-down?
+  "Returns whether or not the pod is in the process of scaling down, which is phase 1 of safe scale down."
+  [pod]
+  (some? (some-> pod (get-in [:metadata :annotations :waiter/prepared-to-scale-down-at]) du/str-to-date-ignore-error)))
+
 (defn replicaset->Service
   "Convert a Kubernetes ReplicaSet JSON response into a Waiter Service record."
-  [replicaset-json]
+  [replicaset-json service-id->pod-id->pod]
   (try
     (pc/letk
       [[spec
         [:metadata name namespace uid [:annotations waiter/service-id]]
         [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]] replicaset-json
+       pods (some->> service-id (get service-id->pod-id->pod) vals)
        ;; for backward compatibility where the revision timestamp is missing we cannot use the destructuring above
        rs-annotations (get-in replicaset-json [:metadata :annotations] nil)
        rs-pod-annotations (get-in replicaset-json [:spec :template :metadata :annotations] nil)
@@ -163,11 +168,12 @@
                                          :name name}))
                                     containers)
        rs-creation-timestamp (some-> replicaset-json (get-in [:metadata :creationTimestamp]) (timestamp-str->datetime) (du/date-to-str))
+       num-pods-draining (count (filter pod->scaling-down? pods))
        requested (get spec :replicas 0)
        staged (- replicas (+ availableReplicas unavailableReplicas))]
       (scheduler/make-Service
         {:id service-id
-         :instances requested
+         :instances (- requested num-pods-draining)
          :k8s/app-name name
          :k8s/container-resources rs-container-resources
          :k8s/containers rs-containers
@@ -389,11 +395,6 @@
                    (false? ready)
                    (= "CrashLoopBackOff" reason))]
     name))
-
-(defn- pod->scaling-down?
-  "Returns whether or not the pod is in the process of scaling down, which is phase 1 of safe scale down."
-  [pod]
-  (= (get-in pod [:metadata :labels :app]) app-drain-label))
 
 (defn pod->ServiceInstance
   "Convert a Kubernetes Pod JSON response into a Waiter Service Instance record."
@@ -788,21 +789,27 @@
   "Marks the pod for scale down by modifying the 'app' label and adding an annotation 'waiter/prepared-to-scale-down-at'.
    We modify the 'app' label so the pod is no longer owned by the replicaset and thus will not be counted in the
    'instances' field of the Service which relies on the 'replicas' configuration."
-  [{:keys [api-server-url] :as scheduler} instance timestamp]
+  [{:keys [api-server-url watch-state] :as scheduler} {:keys [id service-id] :as instance} timestamp]
   (let [pod-url (instance->pod-url api-server-url instance)]
+    (log/info "marking instance for scale down" {:instance-id id})
     (patch-object-json pod-url
-                       [{:op :add :path "/metadata/labels/app" :value app-drain-label}
-                        ;; The backslash becomes "~1" so "waiter/prepared-to-scale-down-at" becomes "waiter~1prepared-to-scale-down-at"
+                       [;; The backslash becomes "~1" so "waiter/prepared-to-scale-down-at" becomes "waiter~1prepared-to-scale-down-at"
                         ;; Source https://stackoverflow.com/questions/55573724/create-a-patch-to-add-a-kubernetes-annotation
                         ;; Here is the RFC-6901 reference https://www.rfc-editor.org/rfc/rfc6901#section-3
                         {:op :add :path "/metadata/annotations/waiter~1prepared-to-scale-down-at" :value timestamp}]
-                       scheduler)))
+                       scheduler)
+    ;; decrement the number of instances on the service to adjust the scaling algorithm and prevent
+    ;; race condition where we wait on watches to update the service-id Service object
+    (swap! watch-state
+           update-in
+           [:service-id->service service-id :instances]
+           dec)))
 
 (defn kill-service-instance
   "Safely kill the Kubernetes pod corresponding to the given Waiter Service Instance.
    Also adjusts the ReplicaSet replica count to prevent a replacement pod from being started.
    Returns nil if pod is successfully killed and throws on failure. If the instance is a part of a bypass service
-   then add a label (prepare-to-kill-since: milliseconds-since-epoch) to the pod."
+   then add a label (prepared-to-scale-down-at: milliseconds-since-epoch) to the pod."
   [{:keys [api-server-url service-id->service-description-fn] :as scheduler} {:keys [id service-id] :as instance} service]
   ;; SAFE DELETION STRATEGY:
   ;; 1) Delete the target pod with a grace period of 5 minutes
@@ -829,27 +836,24 @@
         ; get hard deleted by this function call, and is handled later in the pod-cleanup daemon.
         two-phase-scale-down? (sd/service-description-bypass-enabled? desc)
         prepared-to-scale-down-at (du/date-to-str (t/now))]
-    (when (not two-phase-scale-down?)
-      ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
-      (api-request pod-url scheduler :request-method :delete
-                   :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds 300})))
-    (try
-      (when two-phase-scale-down?
-        (log/info "marking instance for scale down" {:instance-id id})
-        (mark-pod-for-scale-down scheduler instance prepared-to-scale-down-at))
+    (if two-phase-scale-down?
+      (mark-pod-for-scale-down scheduler instance prepared-to-scale-down-at)
+      (do
+        ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
+        (api-request pod-url scheduler :request-method :delete
+                     :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds 300}))
+        (try
+          ; Scale down the replicaset to reflect removal of this instance. This has to be done after the selector labels are changed
+          ; on the pod, otherwise the replicaset will set the pod to terminating state.
+          (scale-service-by-delta scheduler service -1)
+          (catch Throwable t
+            (log/error t "Error while scaling down ReplicaSet after pod termination")))
 
-      ; Scale down the replicaset to reflect removal of this instance. This has to be done after the selector labels are changed
-      ; on the pod, otherwise the replicaset will set the pod to terminating state.
-      (scale-service-by-delta scheduler service -1)
-      (catch Throwable t
-        (log/error t "Error while scaling down ReplicaSet after pod termination")))
-
-    (when (not two-phase-scale-down?)
-      ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
-      ; (note that the pod's default grace period is different from the 300s period set above)
-      (hard-delete-service-instance scheduler instance)
-      (comment "Success! Even if the scale-down or force-kill operation failed,
-              the pod will be force-killed after the grace period is up."))))
+        ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
+        ; (note that the pod's default grace period is different from the 300s period set above)
+        (hard-delete-service-instance scheduler instance)
+        (comment "Success! Even if the scale-down or force-kill operation failed,
+                  the pod will be force-killed after the grace period is up.")))))
 
 (defn invoke-replicaset-spec-builder-fn
   "Helper function to invoke replicaset-spec-builder-fn and ensure arity is maintained in invocation."
@@ -860,7 +864,7 @@
   "Reify a Waiter Service as a Kubernetes ReplicaSet."
   [{:keys [run-as-user-source service-description service-id]}
    {:keys [api-server-url pdb-api-version pdb-spec-builder-fn replicaset-api-version
-           response->deployment-error-msg-fn service-id->deployment-error-cache] :as scheduler}]
+           response->deployment-error-msg-fn service-id->deployment-error-cache watch-state] :as scheduler}]
   (let [{:strs [cmd-type]} service-description]
     (when (= "docker" cmd-type)
       (throw (ex-info "Unsupported command type on service"
@@ -884,7 +888,7 @@
                                                                    :service-id service-id})
                 (cu/cache-put! service-id->deployment-error-cache service-id deployment-error)))
             (ss/throw+ response)))
-        {:keys [k8s/replicaset-uid] :as service} (some-> response-json replicaset->Service)]
+        {:keys [k8s/replicaset-uid] :as service} (some-> response-json (replicaset->Service (some-> watch-state deref :service-id->pod-id->pod)))]
     (if service
       (cu/cache-evict service-id->deployment-error-cache service-id)
       (throw (ex-info "failed to create service"
@@ -1801,10 +1805,11 @@
 
 (defn global-rs-state-query
   "Query K8s for all Waiter-managed ReplicaSets"
-  [scheduler options rs-url]
+  [{:keys [watch-state] :as scheduler} options rs-url]
   (let [{:keys [items version]} (global-state-query scheduler options "get-rs-state" rs-url)
         service-id->service (->> items
-                              (map replicaset->Service)
+                              (map (fn [rs-json]
+                                     (replicaset->Service rs-json (some-> watch-state deref :service-id->pod-id->pod))))
                               (filter some?)
                               (pc/map-from-vals :id))]
     {:service-id->service service-id->service
@@ -1827,7 +1832,7 @@
        :metadata-key :rs-metadata
        :update-fn (fn rs-watch-update [{rs :object update-type :type}]
                     (let [now (t/now)
-                          {service-id :id :as service} (replicaset->Service rs)
+                          {service-id :id :as service} (replicaset->Service rs (some-> watch-state deref :service-id->pod-id->pod))
                           version (k8s-object->resource-version rs)]
                       (when service
                         (scheduler/log "rs state update:" update-type version service)

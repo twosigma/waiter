@@ -574,7 +574,7 @@
                                                                      :killed-instances killed-instances
                                                                      :service-id service-id})
                          (when (< 1 num-killed-instances)
-                           (throw (ex-info "There should only be one killed instance!" {:killed-instances killed-instances
+                           (throw (ex-info "There should only be one killed instance!" {:killed-instances (map :id killed-instances)
                                                                                         :service-id service-id})))
                          (and
                            ; none of the active instances should have the killed instance
@@ -600,14 +600,13 @@
                                                          :pod-spec pod-spec
                                                          :prepared-to-scale-down-at prepared-to-scale-down-at})
                  (is (some? pod-spec))
-                 (is (= app-label app-drain-label))
                  (is (some? prepared-to-scale-down-at))
 
                  ; prepared-to-scale-down-at should be set to when the waiter router determined to scale it down
                  ; which should be before the current time
                  (is (t/before? prepared-to-scale-down-at (t/now)))
 
-                 ; wait for the pod to be deleted on kuberenetes
+                 ; wait for the pod to be deleted on kubernetes
                  (is (wait-for
                       (fn pod-gced? []
                         (let [watch-state-json (get-k8s-watch-state waiter-url cookies)

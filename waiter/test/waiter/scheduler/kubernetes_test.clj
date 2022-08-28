@@ -1351,8 +1351,7 @@
                                                     :restartCount 200}]}}
                  {:metadata {:name "test-app-6789-abcd5"
                              :namespace "myself"
-                             :labels {:app app-drain-label
-                                      :waiter/cluster "waiter"
+                             :labels {:waiter/cluster "waiter"
                                       :waiter/user "myself"
                                       :waiter/service-hash "test-app-6789"}
                              :annotations {:waiter/prepared-to-scale-down-at (du/date-to-str (t/now))
@@ -3478,13 +3477,11 @@
 (defn create-killable-pod
   [id service-id now timeout-secs]
   (-> (create-generic-pod id service-id)
-      (assoc-in [:metadata :labels :app] app-drain-label)
       (assoc-in [:metadata :annotations :waiter/prepared-to-scale-down-at] (du/date-to-str (t/minus now (t/seconds (+ timeout-secs 1)))))))
 
 (defn create-scale-down-pod
   [id service-id now grace-buffer-ms]
   (-> (create-generic-pod id service-id)
-      (assoc-in [:metadata :labels :app] app-drain-label)
       (assoc-in [:metadata :annotations :waiter/prepared-to-scale-down-at] (du/date-to-str (t/minus now (t/millis (+ grace-buffer-ms 1)))))))
 
 (deftest test-cleanup-killable-pods
