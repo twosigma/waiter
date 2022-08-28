@@ -1756,7 +1756,7 @@
             (testing "removes previously created deployment error"
               (let [api-calls-atom (atom [])
                     actual (with-redefs [api-request (make-api-request api-calls-atom)
-                                         replicaset->Service identity]
+                                         replicaset->Service (fn get-first-arg-fn [rs-json & _] rs-json)]
                              (scheduler/create-service-if-new dummy-scheduler descriptor))
                     api-calls @api-calls-atom
                     services (scheduler/get-services dummy-scheduler)]
@@ -1771,7 +1771,7 @@
             (testing "without pod disruption budget"
               (let [api-calls-atom (atom [])
                     actual (with-redefs [api-request (make-api-request api-calls-atom)
-                                         replicaset->Service identity]
+                                         replicaset->Service (fn get-first-arg-fn [rs-json & _] rs-json)]
                              (scheduler/create-service-if-new dummy-scheduler descriptor))
                     api-calls @api-calls-atom]
                 (is (= 1 (count api-calls)))
@@ -1785,7 +1785,7 @@
                     api-calls-atom (atom [])
                     dummy-scheduler (make-dummy-scheduler [service-id] {:pdb-spec-builder-fn nil})
                     actual (with-redefs [api-request (make-api-request api-calls-atom)
-                                         replicaset->Service identity]
+                                         replicaset->Service (fn get-first-arg-fn [rs-json & _] rs-json)]
                              (scheduler/create-service-if-new dummy-scheduler descriptor))
                     api-calls @api-calls-atom]
                 (is (= 1 (count api-calls)))
@@ -1799,7 +1799,7 @@
               (let [descriptor (assoc-in descriptor [:service-description "min-instances"] 2)
                     api-calls-atom (atom [])
                     actual (with-redefs [api-request (make-api-request api-calls-atom)
-                                         replicaset->Service identity]
+                                         replicaset->Service (fn get-first-arg-fn [rs-json & _] rs-json)]
                              (scheduler/create-service-if-new dummy-scheduler descriptor))
                     api-calls @api-calls-atom]
                 (is (= 2 (count api-calls)))
@@ -1828,7 +1828,7 @@
                                             (-> (base-spec-builder-fn scheduler service-id service-description context)
                                                 (assoc-in [:metadata :annotations] {:waiter/x :waiter/y}))))))]
         (let [spec-json (with-redefs [api-request (fn [_ _ & {:keys [body]}] body)
-                                      replicaset->Service identity]
+                                      replicaset->Service (fn get-first-arg-fn [rs-json & _] rs-json)]
                           (create-service descriptor dummy-scheduler))]
           (is (str/includes? spec-json "\"annotations\":{\"waiter/x\":\"waiter/y\"}")))))))
 
