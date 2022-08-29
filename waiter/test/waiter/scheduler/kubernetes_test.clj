@@ -1643,7 +1643,8 @@
                         :status http-200-ok)
                  actual))
           (is @pod-marked-for-scale-down?-atom)
-          (is (not @instances-killed?-fn)))))))
+          (is (not @instances-killed?-fn)
+              "Instance should not be killed fully, that is handled by the pod cleanup daemon separately."))))))
 
 (deftest test-scheduler-service-exists?
   (let [service-id "test-app-1234"
