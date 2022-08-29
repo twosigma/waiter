@@ -616,6 +616,14 @@
                       :interval 5
                       :timeout (+ pod-cleanup-scale-down-timeout-secs assert-deleted-buffer-secs)))
 
+                 ; Note that I tried to set up several long running requests with the header 'x-kitchen-delay-ms' equal to
+                 ; 'pod-cleanup-scale-down-timeout-secs' and assert that the requests were successful even during pod two phase scale down.
+                 ; I was unable to do this because the responder does not consider instances actively serving requests (uses 'slots-used' metric)
+                 ; as 'killable?'. This means that the autoscaler will be unable to kill any of the instances if the long running requests
+                 ; are routed by the Waiter routers. One way to test this is to have the requests go to the pods directly, but that currently
+                 ; isn't supported. I think asserting that the pod marked for scale down continues to run even when they are tracked as killed
+                 ; instance should imply that long running requests that bypass the routers would still be handled prior to the
+                 ; 'pod-cleanup-scale-down-timeout-secs'.
                  (let [pod-deleted-at (t/now)]
                    ; pod should not be deleted before grace period
                    (is (t/before? (t/plus prepared-to-scale-down-at (t/millis pod-cleanup-grace-buffer-ms)) pod-deleted-at))
