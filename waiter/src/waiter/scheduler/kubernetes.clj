@@ -147,6 +147,11 @@
   [pod]
   (some? (some-> pod (get-in [:metadata :annotations :waiter/prepared-to-scale-down-at]) du/str-to-date-ignore-error)))
 
+(defn- get-num-pods-scaling-down
+  "Returns the number of pods for a service-id that are in the process of scaling down."
+  [service-id service-id->pod-id->pod]
+  (->> service-id (get service-id->pod-id->pod) vals (filter pod->scaling-down?) count))
+
 (defn replicaset->Service
   "Convert a Kubernetes ReplicaSet JSON response into a Waiter Service record."
   [replicaset-json service-id->pod-id->pod]
@@ -155,7 +160,6 @@
       [[spec
         [:metadata name namespace uid [:annotations waiter/service-id]]
         [:status {replicas 0} {availableReplicas 0} {readyReplicas 0} {unavailableReplicas 0}]] replicaset-json
-       pods (some->> service-id (get service-id->pod-id->pod) vals)
        ;; for backward compatibility where the revision timestamp is missing we cannot use the destructuring above
        rs-annotations (get-in replicaset-json [:metadata :annotations] nil)
        rs-pod-annotations (get-in replicaset-json [:spec :template :metadata :annotations] nil)
@@ -168,9 +172,9 @@
                                          :name name}))
                                     containers)
        rs-creation-timestamp (some-> replicaset-json (get-in [:metadata :creationTimestamp]) (timestamp-str->datetime) (du/date-to-str))
-       num-pods-draining (count (filter pod->scaling-down? pods))
        requested (get spec :replicas 0)
-       staged (- replicas (+ availableReplicas unavailableReplicas))]
+       staged (- replicas (+ availableReplicas unavailableReplicas))
+       num-pods-draining (get-num-pods-scaling-down service-id service-id->pod-id->pod)]
       (scheduler/make-Service
         {:id service-id
          :instances (- requested num-pods-draining)
@@ -181,6 +185,7 @@
          :k8s/replicaset-annotations (dissoc rs-annotations :waiter/service-id)
          :k8s/replicaset-creation-timestamp rs-creation-timestamp
          :k8s/replicaset-pod-annotations (dissoc rs-pod-annotations :waiter/service-id)
+         :k8s/replicaset-replicas requested
          :k8s/replicaset-uid uid
          :task-count replicas
          :task-stats {:healthy readyReplicas
@@ -189,6 +194,12 @@
                       :unhealthy (- replicas readyReplicas staged)}}))
     (catch Throwable t
       (log/error t "error converting ReplicaSet to Waiter Service"))))
+
+(defn update-service-with-pods
+  "Recalculates the instances count based on changes to the number of pods that are actively draining."
+  [{:keys [k8s/replicaset-replicas] service-id :id :as service} service-id->pod-id->pod]
+  (let [num-pods-draining (get-num-pods-scaling-down service-id service-id->pod-id->pod)]
+    (assoc service :instances (- replicaset-replicas num-pods-draining))))
 
 (defn create-empty-service
   "Creates an instance of an empty service"
@@ -715,7 +726,12 @@
 
 (defn- get-replica-count
   "Query the current requested replica count for the given Kubernetes object."
-  [{:keys [watch-state] :as scheduler} service-id]
+  [{:keys [watch-state]} service-id]
+  (-> watch-state deref :service-id->service (get service-id) :k8s/replicaset-replicas))
+
+(defn- get-instances-count
+  "Query the current requested instances count, which is the replcas minus the number of pods scaling down."
+  [{:keys [watch-state]} service-id]
   (-> watch-state deref :service-id->service (get service-id) :instances))
 
 (defmacro k8s-patch-with-retries
@@ -744,28 +760,34 @@
 (defn- scale-service-up-to
   "Scale the number of instances for a given service to a specific number.
    Only used for upward scaling. No-op if it would result in downward scaling."
-  [{:keys [max-patch-retries] :as scheduler} {service-id :id :as service} instances']
+  [{:keys [max-patch-retries watch-state] :as scheduler} {:keys [k8s/replicaset-replicas] service-id :id :as service} instances']
   (let [replicaset-url (build-replicaset-url scheduler service)]
     (loop [attempt 1
-           instances (:instances service)]
-      (if (<= instances' instances)
-        (log/warn "skipping non-upward scale-up request on" service-id
-                  "from" instances "to" instances')
-        (k8s-patch-with-retries
-          (patch-object-replicas replicaset-url instances instances' scheduler)
-          (<= attempt max-patch-retries)
-          (recur (inc attempt) (get-replica-count scheduler service-id)))))))
+           replicas replicaset-replicas]
+      (let [instances (get-instances-count scheduler service-id)]
+        (if (<= instances' instances)
+          (log/warn "skipping non-upward scale-up request on" service-id
+                    "from" instances "to" instances')
+          (let [delta (- instances' instances)
+                ;; New replica count needs to be the previous replcas + the scaling delta.
+                ;; We can't directly use :instances as the replicas because they are not the same.
+                ;; 'instances' omits pods that are scaling down, but replicas includes them.
+                replicas' (+ replicaset-replicas delta)]
+            (k8s-patch-with-retries
+              (patch-object-replicas replicaset-url replicas replicas' scheduler)
+              (<= attempt max-patch-retries)
+              (recur (inc attempt) (get-replica-count scheduler service-id)))))))))
 
 (defn- scale-service-by-delta
   "Scale the number of instances for a given service by a given delta.
    Can scale either upward (positive delta) or downward (negative delta)."
-  [{:keys [max-patch-retries] :as scheduler} {service-id :id :as service} instances-delta]
+  [{:keys [max-patch-retries] :as scheduler} {:keys [k8s/replicaset-replicas] service-id :id :as service} instances-delta]
   (let [replicaset-url (build-replicaset-url scheduler service)]
     (loop [attempt 1
-           instances (:instances service)]
-      (let [instances' (+ instances instances-delta)]
+           replicas replicaset-replicas]
+      (let [replicas' (+ replicas instances-delta)]
         (k8s-patch-with-retries
-          (patch-object-replicas replicaset-url instances instances' scheduler)
+          (patch-object-replicas replicaset-url replicas replicas' scheduler)
           (<= attempt max-patch-retries)
           (recur (inc attempt) (get-replica-count scheduler service-id)))))))
 
@@ -797,20 +819,14 @@
                         ;; Source https://stackoverflow.com/questions/55573724/create-a-patch-to-add-a-kubernetes-annotation
                         ;; Here is the RFC-6901 reference https://www.rfc-editor.org/rfc/rfc6901#section-3
                         {:op :add :path "/metadata/annotations/waiter~1prepared-to-scale-down-at" :value timestamp}]
-                       scheduler)
-    ;; decrement the number of instances on the service to adjust the scaling algorithm and prevent
-    ;; race condition where we wait on watches to update the service-id Service object
-    (swap! watch-state
-           update-in
-           [:service-id->service service-id :instances]
-           dec)))
+                       scheduler)))
 
 (defn kill-service-instance
   "Safely kill the Kubernetes pod corresponding to the given Waiter Service Instance.
    Also adjusts the ReplicaSet replica count to prevent a replacement pod from being started.
    Returns nil if pod is successfully killed and throws on failure. If the instance is a part of a bypass service
    then add a label (prepared-to-scale-down-at: milliseconds-since-epoch) to the pod."
-  [{:keys [api-server-url service-id->service-description-fn] :as scheduler} {:keys [id service-id] :as instance} service]
+  [{:keys [api-server-url service-id->service-description-fn] :as scheduler} {:keys [id service-id] :as instance} service & {:keys [force-kill] :or {force-kill false}}]
   ;; SAFE DELETION STRATEGY:
   ;; 1) Delete the target pod with a grace period of 5 minutes
   ;;    Since the target pod is currently in the "Terminating" state,
@@ -836,7 +852,7 @@
         ; get hard deleted by this function call, and is handled later in the pod-cleanup daemon.
         two-phase-scale-down? (sd/service-description-bypass-enabled? desc)
         prepared-to-scale-down-at (du/date-to-str (t/now))]
-    (if two-phase-scale-down?
+    (if (and two-phase-scale-down? (not force-kill))
       (mark-pod-for-scale-down scheduler instance prepared-to-scale-down-at)
       (do
         ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
@@ -1795,7 +1811,10 @@
                                   "MODIFIED" (assoc-in state [:service-id->pod-id->pod service-id pod-id] pod)
                                   "DELETED" (utils/dissoc-in state [:service-id->pod-id->pod service-id pod-id]))
                                 (assoc-in state [:pods-metadata :timestamp :watch] now)
-                                (assoc-in state [:pods-metadata :version :watch] version)))
+                                (assoc-in state [:pods-metadata :version :watch] version)
+                                ;; We have to update the Service because the :instances field depends on number of pods that are
+                                ;; marked as prepared-to-scale-down-at annotation
+                                (update-in state [:service-id->service service-id] update-service-with-pods (:service-id->pod-id->pod state))))
                       (let [old-pod (get-in old-state [:service-id->pod-id->pod service-id pod-id])
                             [pod-fields pod-fields'] (data/diff old-pod pod)
                             pod-ns (k8s-object->namespace pod)
@@ -2106,8 +2125,12 @@
     (when leader?
       (when (pos? (count instances-to-kill))
         (log/info "hard deleting pods as they are now killable" {:instances-ids (map :id instances-to-kill)}))
-      (doseq [instance instances-to-kill]
-        (hard-delete-service-instance scheduler instance)))))
+      (doseq [{:keys [service-id] :as instance} instances-to-kill]
+        (ss/try+
+          (let [service (-> watch-state deref (get-in [:service-id->service service-id]))]
+            (kill-service-instance scheduler instance service :force-kill true))
+          (catch Object ex
+            (log/error "Failed to kill service instance in pod cleaner" ex)))))))
 
 (defn start-pod-cleaner!
   "On an interval, iterates through the list of all pods that have the 'waiter/prepared-to-scale-down-at' annotation and
