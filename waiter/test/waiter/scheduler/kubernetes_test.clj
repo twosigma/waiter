@@ -918,6 +918,7 @@
                                     :k8s/replicaset-creation-timestamp "2019-08-01T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :k8s/replicaset-pod-annotations {}
+                                    :k8s/replicaset-replicas 2
                                     :task-count 2
                                     :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
            (scheduler/make-Service {:id "test-app-6789"
@@ -927,6 +928,7 @@
                                     :k8s/replicaset-creation-timestamp "2019-08-05T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :k8s/replicaset-pod-annotations {}
+                                    :k8s/replicaset-replicas 3
                                     :task-count 3
                                     :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})]}
          {:api-server-response
@@ -978,6 +980,7 @@
                                     :k8s/replicaset-creation-timestamp "2019-09-07T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :k8s/replicaset-pod-annotations {}
+                                    :k8s/replicaset-replicas 2
                                     :task-count 2
                                     :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
            (scheduler/make-Service {:id "test-app-wxyz"
@@ -988,6 +991,7 @@
                                     :k8s/replicaset-creation-timestamp "2019-10-15T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :k8s/replicaset-pod-annotations {}
+                                    :k8s/replicaset-replicas 3
                                     :task-count 3
                                     :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})]}
 
@@ -1026,6 +1030,7 @@
                                     :k8s/replicaset-creation-timestamp "2020-03-04T05:06:07.000Z"
                                     :k8s/replicaset-annotations {}
                                     :k8s/replicaset-pod-annotations {}
+                                    :k8s/replicaset-replicas 3
                                     :task-count 3
                                     :task-stats {:running 2 :healthy 1 :unhealthy 1 :staged 1}})]}
 
@@ -1059,6 +1064,7 @@
                                     :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                     :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"}
                                     :k8s/replicaset-pod-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"}
+                                    :k8s/replicaset-replicas 0
                                     :task-count 0
                                     :task-stats {:running 0, :healthy 0, :unhealthy 0, :staged 0}})]}
 
@@ -1096,6 +1102,7 @@
                                                                  :waiter/revision-version "3"}
                                     :k8s/replicaset-pod-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"
                                                                      :waiter/revision-version "3"}
+                                    :k8s/replicaset-replicas 0
                                     :task-count 0
                                     :task-stats {:running 0, :healthy 0, :unhealthy 0, :staged 0}})]}
 
@@ -1351,10 +1358,11 @@
                                                     :restartCount 200}]}}
                  {:metadata {:name "test-app-6789-abcd5"
                              :namespace "myself"
-                             :labels {:waiter/cluster "waiter"
+                             :labels {:app "test-app-6789"
+                                      :waiter/cluster "waiter"
                                       :waiter/user "myself"
                                       :waiter/service-hash "test-app-6789"}
-                             :annotations {:waiter/prepared-to-scale-down-at (du/date-to-str (t/now))
+                             :annotations {:waiter/prepared-to-scale-down-at "2020-09-22T20:11:11.000Z"
                                            :waiter/port-count "1"
                                            :waiter/service-id "test-app-6789"}}
                   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
@@ -1375,6 +1383,7 @@
                                            :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                            :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"}
                                            :k8s/replicaset-pod-annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"}
+                                           :k8s/replicaset-replicas 2
                                            :task-count 2
                                            :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
                   {:active-instances
@@ -1460,6 +1469,7 @@
                                            :k8s/replicaset-creation-timestamp "2020-09-08T07:06:05.000Z"
                                            :k8s/replicaset-annotations {}
                                            :k8s/replicaset-pod-annotations {}
+                                           :k8s/replicaset-replicas 3
                                            :task-count 3
                                            :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})
                   {:active-instances
@@ -1870,62 +1880,77 @@
 (deftest test-scale-service
   (let [instances' 4
         service-id "test-service-id"
-        service (scheduler/make-Service {:id service-id :instances 1 :k8s/app-name service-id :k8s/namespace "myself"})
-        service-state (atom {:service-id->service {service-id service}})
-        dummy-scheduler (assoc (make-dummy-scheduler [service-id]) :watch-state service-state)]
-    (with-redefs [service-id->service (constantly service)]
-      (testing "successful-scale"
-        (with-redefs [api-request (fn [url _ & {:keys [body content-type request-method]}]
-                                    (is (= "https://k8s-api.example//apis/apps/v1/namespaces/myself/replicasets/test-service-id" url))
-                                    (is (= "application/json-patch+json" content-type))
-                                    (is (= :patch request-method))
-                                    (is (= [{"op" "test" "path" "/spec/replicas" "value" 1}
-                                            {"op" "replace" "path" "/spec/replicas" "value" 4}]
-                                           (json/read-str (str body))))
-                                    {:status "OK"})]
-          (testing "integer value"
-            (let [actual (scheduler/scale-service dummy-scheduler service-id 4 false)]
-              (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual))))
-          (testing "double value"
-            (let [actual (scheduler/scale-service dummy-scheduler service-id 4.0 false)]
-              (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual)))
-            (let [actual (scheduler/scale-service dummy-scheduler service-id 4.2 false)]
-              (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual)))
-            (let [actual (scheduler/scale-service dummy-scheduler service-id 4.8 false)]
-              (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual))))))
+        service (scheduler/make-Service {:id service-id :instances 1 :k8s/app-name service-id :k8s/namespace "myself" :k8s/replicaset-replicas 1})
+        service-id-with-scale-down "test-service-id-scale-down"
+        service-scale-down (scheduler/make-Service {:id service-id-with-scale-down :instances 1 :k8s/app-name service-id :k8s/namespace "myself" :k8s/replicaset-replicas 2})
+        service-state (atom {:service-id->service {service-id service
+                                                   service-id-with-scale-down service-scale-down}})
+        dummy-scheduler (assoc (make-dummy-scheduler [service-id service-id-with-scale-down]) :watch-state service-state)]
+    (testing "successful-scale"
+      (with-redefs [api-request (fn [url _ & {:keys [body content-type request-method]}]
+                                  (is (= "https://k8s-api.example//apis/apps/v1/namespaces/myself/replicasets/test-service-id" url))
+                                  (is (= "application/json-patch+json" content-type))
+                                  (is (= :patch request-method))
+                                  (is (= [{"op" "test" "path" "/spec/replicas" "value" 1}
+                                          {"op" "replace" "path" "/spec/replicas" "value" 4}]
+                                         (json/read-str (str body))))
+                                  {:status "OK"})]
+        (testing "integer value"
+          (let [actual (scheduler/scale-service dummy-scheduler service-id 4 false)]
+            (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual))))
+        (testing "double value"
+          (let [actual (scheduler/scale-service dummy-scheduler service-id 4.0 false)]
+            (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual)))
+          (let [actual (scheduler/scale-service dummy-scheduler service-id 4.2 false)]
+            (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual)))
+          (let [actual (scheduler/scale-service dummy-scheduler service-id 4.8 false)]
+            (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual))))))
 
-      (testing "unsuccessful-scale: service not found"
-        (let [actual (with-redefs [service-id->service (constantly nil)]
-                       (scheduler/scale-service dummy-scheduler service-id instances' false))]
-          (is (= {:success false
-                  :status http-404-not-found
-                  :result :no-such-service-exists
-                  :message "Failed to scale missing service"}
-                 actual))))
-      (testing "unsuccessful-scale: forbidden"
-        (let [actual (with-redefs [api-request (fn [& _] (ss/throw+ {:status http-403-forbidden}))]
-                       (scheduler/scale-service dummy-scheduler service-id instances' false))]
-          (is (= {:success false
-                  :status http-500-internal-server-error
-                  :result :failed
-                  :message "Error while scaling waiter service"}
-                 actual))))
-      (testing "unsuccessful-scale: patch conflict"
-        (let [actual (with-redefs [api-request (fn [& _] (ss/throw+ {:status http-409-conflict}))]
-                       (scheduler/scale-service dummy-scheduler service-id instances' false))]
-          (is (= {:success false
-                  :status http-409-conflict
-                  :result :conflict
-                  :message "Scaling failed due to repeated patch conflicts"}
-                 actual))))
-      (testing "unsuccessful-scale: internal error"
-        (let [actual (with-redefs [api-request (fn [& _] (throw-exception))]
-                       (scheduler/scale-service dummy-scheduler service-id instances' false))]
-          (is (= {:success false
-                  :status http-500-internal-server-error
-                  :result :failed
-                  :message "Error while scaling waiter service"}
-                 actual)))))))
+    (testing "successful-scale for service with pods that are marked for scale down"
+      (with-redefs [api-request (fn [url _ & {:keys [body content-type request-method]}]
+                                  (is (= "https://k8s-api.example//apis/apps/v1/namespaces/myself/replicasets/test-service-id" url))
+                                  (is (= "application/json-patch+json" content-type))
+                                  (is (= :patch request-method))
+                                  (is (= [{"op" "test" "path" "/spec/replicas" "value" 2}
+                                          {"op" "replace" "path" "/spec/replicas" "value" 5}]
+                                         (json/read-str (str body))))
+                                  {:status "OK"})]
+        (testing "integer value"
+          (let [actual (scheduler/scale-service dummy-scheduler service-id-with-scale-down 4 false)]
+            (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual))))))
+
+    (testing "unsuccessful-scale: service not found"
+      (let [actual (with-redefs [service-id->service (constantly nil)]
+                     (scheduler/scale-service dummy-scheduler service-id instances' false))]
+        (is (= {:success false
+                :status http-404-not-found
+                :result :no-such-service-exists
+                :message "Failed to scale missing service"}
+               actual))))
+    (testing "unsuccessful-scale: forbidden"
+      (let [actual (with-redefs [api-request (fn [& _] (ss/throw+ {:status http-403-forbidden}))]
+                     (scheduler/scale-service dummy-scheduler service-id instances' false))]
+        (is (= {:success false
+                :status http-500-internal-server-error
+                :result :failed
+                :message "Error while scaling waiter service"}
+               actual))))
+    (testing "unsuccessful-scale: patch conflict"
+      (let [actual (with-redefs [api-request (fn [& _] (ss/throw+ {:status http-409-conflict}))]
+                     (scheduler/scale-service dummy-scheduler service-id instances' false))]
+        (is (= {:success false
+                :status http-409-conflict
+                :result :conflict
+                :message "Scaling failed due to repeated patch conflicts"}
+               actual))))
+    (testing "unsuccessful-scale: internal error"
+      (let [actual (with-redefs [api-request (fn [& _] (throw-exception))]
+                     (scheduler/scale-service dummy-scheduler service-id instances' false))]
+        (is (= {:success false
+                :status http-500-internal-server-error
+                :result :failed
+                :message "Error while scaling waiter service"}
+               actual))))))
 
 (deftest test-retrieve-directory-content
   ;; Killed pod
@@ -3504,12 +3529,12 @@
         (fn test-cleanup-killable-pods [leader?-fn expected-killed-instances]
           (let [{:keys [watch-state] :as scheduler} (make-dummy-scheduler ["s1" "s2" "s3"])
                 instances-killed-atom (atom #{})
-                hard-delete-service-instance-mock
-                (fn hard-delete-service-instance-fn
-                  [_ instance]
+                kill-service-instance-mock
+                (fn kill-service-instance-fn
+                  [_ instance & _]
                   (swap! instances-killed-atom conj (:id instance)))]
             (reset! watch-state {:service-id->pod-id->pod service-id->pod-id->pod})
-            (with-redefs [hard-delete-service-instance hard-delete-service-instance-mock
+            (with-redefs [kill-service-instance kill-service-instance-mock
                           t/now (constantly now)]
               (cleanup-killable-pods scheduler leader?-fn grace-buffer-ms timeout-secs)
               (is (= expected-killed-instances @instances-killed-atom)))))]

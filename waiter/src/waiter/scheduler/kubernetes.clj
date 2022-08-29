@@ -730,7 +730,7 @@
   (-> watch-state deref :service-id->service (get service-id) :k8s/replicaset-replicas))
 
 (defn- get-instances-count
-  "Query the current requested instances count, which is the replcas minus the number of pods scaling down."
+  "Query the current requested instances count, which is the replicas minus the number of pods scaling down."
   [{:keys [watch-state]} service-id]
   (-> watch-state deref :service-id->service (get service-id) :instances))
 
@@ -760,7 +760,7 @@
 (defn- scale-service-up-to
   "Scale the number of instances for a given service to a specific number.
    Only used for upward scaling. No-op if it would result in downward scaling."
-  [{:keys [max-patch-retries watch-state] :as scheduler} {:keys [k8s/replicaset-replicas] service-id :id :as service} instances']
+  [{:keys [max-patch-retries] :as scheduler} {:keys [k8s/replicaset-replicas] service-id :id :as service} instances']
   (let [replicaset-url (build-replicaset-url scheduler service)]
     (loop [attempt 1
            replicas replicaset-replicas]
