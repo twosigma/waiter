@@ -876,7 +876,8 @@
       (mark-pod-for-scale-down scheduler instance prepared-to-scale-down-at)
       (do
         (when two-phase-scale-down?
-          ; pod needs to be marked so that the calculation of pods scaling down is accurate
+          ; Pod needs to be marked so that kubernetes watches will receive event that the pod is moving in phase 2 of
+          ; scale down. This is important as each router will need to update their :instances field for the service.
           (mark-pod-with-delete-triggered scheduler instance))
 
         ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
