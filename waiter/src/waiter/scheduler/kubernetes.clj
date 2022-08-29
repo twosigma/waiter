@@ -142,10 +142,16 @@
     (str/ends-with? quantity "m") (-> quantity (str/replace "m" "") (utils/parse-double) (/ 1e3))
     :else (-> (utils/parse-double quantity))))
 
+(defn- pod-marked-for-delete-triggered?
+  "Returns whether or not the pod deletion has been triggered."
+  [pod]
+  (= "true" (some-> pod (get-in [:metadata :annotations :waiter/delete-triggered]))))
+
 (defn- pod->scaling-down?
   "Returns whether or not the pod is in the process of scaling down, which is phase 1 of safe scale down."
   [pod]
-  (some? (some-> pod (get-in [:metadata :annotations :waiter/prepared-to-scale-down-at]) du/str-to-date-ignore-error)))
+  (and (some? (some-> pod (get-in [:metadata :annotations :waiter/prepared-to-scale-down-at]) du/str-to-date-ignore-error))
+       (not (pod-marked-for-delete-triggered? pod))))
 
 (defn- get-num-pods-scaling-down
   "Returns the number of pods for a service-id that are in the process of scaling down."
@@ -811,7 +817,7 @@
   "Marks the pod for scale down by modifying the 'app' label and adding an annotation 'waiter/prepared-to-scale-down-at'.
    We modify the 'app' label so the pod is no longer owned by the replicaset and thus will not be counted in the
    'instances' field of the Service which relies on the 'replicas' configuration."
-  [{:keys [api-server-url watch-state] :as scheduler} {:keys [id service-id] :as instance} timestamp]
+  [{:keys [api-server-url] :as scheduler} {:keys [id] :as instance} timestamp]
   (let [pod-url (instance->pod-url api-server-url instance)]
     (log/info "marking instance for scale down" {:instance-id id})
     (patch-object-json pod-url
@@ -819,6 +825,20 @@
                         ;; Source https://stackoverflow.com/questions/55573724/create-a-patch-to-add-a-kubernetes-annotation
                         ;; Here is the RFC-6901 reference https://www.rfc-editor.org/rfc/rfc6901#section-3
                         {:op :add :path "/metadata/annotations/waiter~1prepared-to-scale-down-at" :value timestamp}]
+                       scheduler)))
+
+(defn mark-pod-with-delete-triggered
+  "Marks the pod as deleted via an annotation 'waiter/delete-triggered'. The k8s watches do not get updates for pods that are in 'Terminating' status,
+   and only receive the 'DELETE' event when the pod is fully deleted. We have to mark the pod with an extra annotation so that the pod watches are updated
+   immediately so that the fn 'get-num-pods-scaling-down' is accurate."
+  [{:keys [api-server-url] :as scheduler} {:keys [id] :as instance}]
+  (let [pod-url (instance->pod-url api-server-url instance)]
+    (log/info "marking instance that delete was triggered" {:instance-id id})
+    (patch-object-json pod-url
+                       [;; The backslash becomes "~1" so "waiter/get-num-pods-scaling-down" becomes "waiter~1prepared-to-scale-down-at"
+                        ;; Source https://stackoverflow.com/questions/55573724/create-a-patch-to-add-a-kubernetes-annotation
+                        ;; Here is the RFC-6901 reference https://www.rfc-editor.org/rfc/rfc6901#section-3
+                        {:op :add :path "/metadata/annotations/waiter~1delete-triggered" :value "true"}]
                        scheduler)))
 
 (defn kill-service-instance
@@ -855,6 +875,10 @@
     (if (and two-phase-scale-down? (not force-kill))
       (mark-pod-for-scale-down scheduler instance prepared-to-scale-down-at)
       (do
+        (when two-phase-scale-down?
+          ; pod needs to be marked so that the calculation of pods scaling down is accurate
+          (mark-pod-with-delete-triggered scheduler instance))
+
         ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
         (api-request pod-url scheduler :request-method :delete
                      :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds 300}))
