@@ -525,18 +525,6 @@
                                  ;; e.g., if pod-base-port is 31000, and the random offset was 390, then $PORT0==31390 and $PORT9==31399:
                                  :pod-base-port 31000
 
-                                 ;; Determines the interval the pod cleanup daemon should check for pods in phase 1 of safe scale down
-                                 ;; and hard delete any killable pods.
-                                 :pod-cleanup-interval-ms 5000
-
-                                 ;; The minimum amount of time that needs to pass before the pod cleanup daemon can consider deleting
-                                 ;; the pod. This allows for some lingering metrics from raven to be tracked by waiter routers, before knowing
-                                 ;; if a pod is no longer serving any active requests.
-                                 :pod-cleanup-grace-buffer-ms 15000
-
-                                 ;; The pod daemon will delete the pod after this timeout is reached even if it is still serving requests.
-                                 :pod-cleanup-scale-down-timeout-secs 120
-
                                  ;; The number of seconds between the SIGTERM and SIGKILL signals sent to a pod on shutdown.
                                  ;; This value should be placed in the terminationGracePeriodSeconds field in the pod template.
                                  ;; Should be set between 0 and 300 seconds, inclusive.
@@ -827,6 +815,14 @@
  ; instances. Such instances are guaranteed not to be served up as an available instance until sufficient time has
  ; elapsed since their last use. This is referred to as ejecting an instance:
  :ejection-config {
+                   ;; The bypass instance cannot be killed during this period right after being ejected because the instance may still be
+                   ;; handling requests, and those request metrics will have some latency before waiter routers are up to date.
+                   :bypass-grace-buffer-ms 15000
+
+                   ;; The minimum amount of time that needs to pass before the instance of a bypass service will be fully deleted after
+                   ;; being marked as ejected.
+                   :bypass-max-eject-time-secs 120
+
                    ;; Erroneous instances are ejected using an exponential delay based on the number of successive
                    ;; failures and eject-backoff-base-time-ms (milliseconds):
                    :eject-backoff-base-time-ms 10000

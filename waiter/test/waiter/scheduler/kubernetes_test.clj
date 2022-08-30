@@ -1767,7 +1767,7 @@
             (testing "removes previously created deployment error"
               (let [api-calls-atom (atom [])
                     actual (with-redefs [api-request (make-api-request api-calls-atom)
-                                         replicaset->Service (fn get-first-arg-fn [rs-json & _] rs-json)]
+                                         replicaset->Service identity]
                              (scheduler/create-service-if-new dummy-scheduler descriptor))
                     api-calls @api-calls-atom
                     services (scheduler/get-services dummy-scheduler)]
@@ -1782,7 +1782,7 @@
             (testing "without pod disruption budget"
               (let [api-calls-atom (atom [])
                     actual (with-redefs [api-request (make-api-request api-calls-atom)
-                                         replicaset->Service (fn get-first-arg-fn [rs-json & _] rs-json)]
+                                         replicaset->Service identity]
                              (scheduler/create-service-if-new dummy-scheduler descriptor))
                     api-calls @api-calls-atom]
                 (is (= 1 (count api-calls)))
@@ -1796,7 +1796,7 @@
                     api-calls-atom (atom [])
                     dummy-scheduler (make-dummy-scheduler [service-id] {:pdb-spec-builder-fn nil})
                     actual (with-redefs [api-request (make-api-request api-calls-atom)
-                                         replicaset->Service (fn get-first-arg-fn [rs-json & _] rs-json)]
+                                         replicaset->Service identity]
                              (scheduler/create-service-if-new dummy-scheduler descriptor))
                     api-calls @api-calls-atom]
                 (is (= 1 (count api-calls)))
@@ -1810,7 +1810,7 @@
               (let [descriptor (assoc-in descriptor [:service-description "min-instances"] 2)
                     api-calls-atom (atom [])
                     actual (with-redefs [api-request (make-api-request api-calls-atom)
-                                         replicaset->Service (fn get-first-arg-fn [rs-json & _] rs-json)]
+                                         replicaset->Service identity]
                              (scheduler/create-service-if-new dummy-scheduler descriptor))
                     api-calls @api-calls-atom]
                 (is (= 2 (count api-calls)))
@@ -1839,7 +1839,7 @@
                                             (-> (base-spec-builder-fn scheduler service-id service-description context)
                                                 (assoc-in [:metadata :annotations] {:waiter/x :waiter/y}))))))]
         (let [spec-json (with-redefs [api-request (fn [_ _ & {:keys [body]}] body)
-                                      replicaset->Service (fn get-first-arg-fn [rs-json & _] rs-json)]
+                                      replicaset->Service identity]
                           (create-service descriptor dummy-scheduler))]
           (is (str/includes? spec-json "\"annotations\":{\"waiter/x\":\"waiter/y\"}")))))))
 
@@ -2075,9 +2075,6 @@
                     :max-patch-retries 5
                     :max-name-length 63
                     :pod-base-port 8080
-                    :pod-cleanup-grace-buffer-ms 15000
-                    :pod-cleanup-interval-ms 5000
-                    :pod-cleanup-scale-down-timeout-secs 120
                     :pod-sigkill-delay-secs 3
                     :pod-suffix-length default-pod-suffix-length
                     :replicaset-api-version "apps/v1"
@@ -3481,65 +3478,3 @@
         (is (= 1 (count events)))
         (is (= simple-event (first events)))
         (is (true? (cu/cache-contains? (:k8s-object-key->event-cache dummy-scheduler) {:namespace namespace :k8s-object-name service-a-name})))))))
-
-(defn create-generic-pod
-  [id service-id]
-  {:metadata {:name id
-              :namespace "myself"
-              :labels {:app service-id
-                       :waiter/cluster "waiter"
-                       :waiter/service-hash service-id}
-              :annotations {:waiter/port-count "1"
-                            :waiter/port-onto-protocol (utils/clj->json {:p1234 "http"})
-                            :waiter/revision-timestamp "2020-09-22T20:00:00.000Z"
-                            :waiter/service-id service-id}}
-   :spec {:containers [{:ports [{:containerPort 8080 :protocol "TCP"}]}]}
-   :status {:podIP "10.141.141.11"
-            :startTime "2020-09-22T10:00:00Z"
-            :containerStatuses [{:name waiter-primary-container-name
-                                 :ready true
-                                 :restartCount 0}]}})
-
-(defn create-killable-pod
-  [id service-id now timeout-secs]
-  (-> (create-generic-pod id service-id)
-      (assoc-in [:metadata :annotations :waiter/prepared-to-scale-down-at] (du/date-to-str (t/minus now (t/seconds (+ timeout-secs 1)))))))
-
-(defn create-scale-down-pod
-  [id service-id now grace-buffer-ms]
-  (-> (create-generic-pod id service-id)
-      (assoc-in [:metadata :annotations :waiter/prepared-to-scale-down-at] (du/date-to-str (t/minus now (t/millis (+ grace-buffer-ms 1)))))))
-
-(deftest test-cleanup-killable-pods
-  (let [now (t/now)
-        grace-buffer-ms 15000
-        timeout-secs 120
-        service-id->pod-id->pod
-        {"s1" {"s1.p1" (create-killable-pod "p1" "s1" now timeout-secs)
-               "s1.p2" (create-killable-pod "p2" "s1" now timeout-secs)
-               "s1.p3" (create-scale-down-pod "p3" "s1" now grace-buffer-ms)
-               "s1.p4" (create-generic-pod "p4" "s1")}
-         "s2" {"s2.p1" (create-scale-down-pod "p1" "s2" now grace-buffer-ms)
-               "s2.p2" (create-generic-pod "p2" "s2")
-               "s2.p3" (create-killable-pod "p3" "s2" now timeout-secs)
-               "s2.p4" (create-killable-pod "p4" "s2" now timeout-secs)}
-         "s3" {}}
-        killable-instances #{"s1.p1-0" "s1.p2-0" "s2.p3-0" "s2.p4-0"}
-        test-cleanup-killable-pods-fn
-        (fn test-cleanup-killable-pods [leader?-fn expected-killed-instances]
-          (let [{:keys [watch-state] :as scheduler} (make-dummy-scheduler ["s1" "s2" "s3"])
-                instances-killed-atom (atom #{})
-                kill-service-instance-mock
-                (fn kill-service-instance-fn
-                  [_ instance & _]
-                  (swap! instances-killed-atom conj (:id instance)))]
-            (reset! watch-state {:service-id->pod-id->pod service-id->pod-id->pod})
-            (with-redefs [kill-service-instance kill-service-instance-mock
-                          t/now (constantly now)]
-              (cleanup-killable-pods scheduler leader?-fn grace-buffer-ms timeout-secs)
-              (is (= expected-killed-instances @instances-killed-atom)))))]
-    (testing "attempts to delete killable pods"
-      (test-cleanup-killable-pods-fn (constantly true) killable-instances))
-
-    (testing "does not attempt to delete killable pods when not the leader"
-      (test-cleanup-killable-pods-fn (constantly false) #{}))))

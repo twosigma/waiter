@@ -49,6 +49,8 @@
                                  (into {} (map (fn [instance-id] [instance-id {:slots-assigned 1, :slots-used 0, :status-tags #{:healthy}}]) %1))
                                  (into {} (map (fn [instance-id] [instance-id {:slots-assigned 0, :slots-used 0, :status-tags #{:unhealthy}}]) %2)))
         all-id->instance (pc/map-from-vals :id all-instance-combo)
+        bypass-grace-buffer-ms 15000
+        bypass-max-eject-time-secs 120
         lingering-request-threshold-ms 60000
         time-active (->> (- lingering-request-threshold-ms 1000) (t/millis) (t/minus current-time))
         time-linger (->> (+ lingering-request-threshold-ms 1000) (t/millis) (t/minus current-time))
@@ -337,6 +339,7 @@
                 actual (if (= :kill-instance reason)
                          (find-killable-instance id->instance instance-id->state acceptable-instance-id?
                                                  instance-id->request-id->use-reason-map load-balancing
+                                                 bypass-grace-buffer-ms bypass-max-eject-time-secs
                                                  lingering-request-threshold-ms)
                          (find-available-instance sorted-instance-ids id->instance instance-id->state acceptable-instance-id? first))]
             (when (or (and (nil? expected) (not (nil? actual)))

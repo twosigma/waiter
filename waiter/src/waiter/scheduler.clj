@@ -115,6 +115,7 @@
    exit-code
    ^String host
    port
+   prepared-to-scale-down-at
    extra-ports
    ^String log-directory
    ^String message
