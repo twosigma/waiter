@@ -875,15 +875,14 @@
     (if (and two-phase-scale-down? (not force-kill))
       (mark-pod-for-scale-down scheduler instance prepared-to-scale-down-at)
       (do
-        (when two-phase-scale-down?
-          ; Pod needs to be marked so that kubernetes watches will receive event that the pod is moving in phase 2 of
-          ; scale down. This is important as each router will need to update their :instances field for the service.
-          (mark-pod-with-delete-triggered scheduler instance))
-
         ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
         (api-request pod-url scheduler :request-method :delete
                      :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds 300}))
         (try
+          (when two-phase-scale-down?
+            ; Pod needs to be marked so that kubernetes watches will receive event that the pod is moving in phase 2 of
+            ; scale down. This is important as each router will need to update their :instances field for the service.
+            (mark-pod-with-delete-triggered scheduler instance))
           ; Scale down the replicaset to reflect removal of this instance. This has to be done after the selector labels are changed
           ; on the pod, otherwise the replicaset will set the pod to terminating state.
           (scale-service-by-delta scheduler service -1)
