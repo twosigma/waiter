@@ -630,9 +630,4 @@
                    ; pod should not be deleted before grace period
                    (is (t/before? (t/plus scale-down-time-at (t/millis pod-cleanup-grace-buffer-ms)) pod-deleted-at))
                    ; pod should be deleted after the timeout is reached
-                   (is (t/after? pod-deleted-at (t/plus scale-down-time-at (t/seconds pod-cleanup-scale-down-timeout-secs)))))))
-
-             (let [active-instances (active-instances waiter-url service-id)
-                   killed-instances (killed-instances waiter-url service-id)]
-               (is (= 1 (count active-instances)) (str "should only be one active instance:" active-instances))
-               (is (= 2 (count killed-instances)) (str "should only be two killed instances:" killed-instances))))))))))
+                   (is (t/after? pod-deleted-at (t/plus scale-down-time-at (t/seconds pod-cleanup-scale-down-timeout-secs))))))))))))))
