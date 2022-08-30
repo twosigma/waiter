@@ -204,7 +204,9 @@
 (defn update-service-with-pods
   "Recalculates the instances count based on changes to the number of pods that are actively draining."
   [{:keys [k8s/replicaset-replicas] service-id :id :as service} service-id->pod-id->pod]
-  (let [num-pods-draining (get-num-pods-scaling-down service-id service-id->pod-id->pod)]
+  (let [num-pods-draining (get-num-pods-scaling-down service-id service-id->pod-id->pod)
+        ;; replicaset-replicas may be nil when service is empty
+        replicaset-replicas (or replicaset-replicas 0)]
     (assoc service :instances (- replicaset-replicas num-pods-draining))))
 
 (defn create-empty-service
