@@ -510,9 +510,10 @@
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-instance-draining-mode-on-scale-down
   (testing-using-waiter-url
    (when (using-k8s? waiter-url)
-     (testing "service with bypass enabled puts instances in draining mode before deleting the pod when scaling down"
+     (testing "service with bypass enabled puts instances in draining mode before deleting the pod when scaling down and waits until 'bypass-max-eject-time-secs'
+               is up before attempting to fully kill the instance."
        (let [cluster-name (retrieve-cluster-name waiter-url)
-             {:keys [pod-cleanup-grace-buffer-ms pod-cleanup-scale-down-timeout-secs]} (get-kubernetes-scheduler-settings waiter-url) 
+             {:keys [bypass-grace-buffer-ms bypass-max-eject-time-secs]} (setting waiter-url [:ejection-config])
              extra-headers {:content-type "application/json"
                             :x-waiter-concurrency-level 1
                             ; make sure raven doesn't send external metrics for these services
@@ -530,7 +531,7 @@
               "service-metrics"
               {service-id {instance-id {"updated-at" (du/date-to-str (t/now))
                                         "metrics" {"last-request-time" (du/date-to-str (t/now))
-                                                   "active-request-count" 3}}}}}]
+                                                   "active-request-count" 2}}}}}]
          (assert-response-status response http-200-ok)
          (with-service-cleanup
            service-id
@@ -540,13 +541,13 @@
                                                        :headers {:content-type "application/json"})]
              (assert-response-status update-metrics-response http-200-ok)
 
-             ; wait for three instances to scale up for the service
+             ; wait for two instances to scale up for the service
              (is (wait-for
-                  (fn three-instances-on-waiter? []
+                  (fn two-instances-on-waiter? []
                     (let [instances (active-instances waiter-url service-id)]
-                      (log/info "waiting for three instances total:" {:instances instances
-                                                                      :service-id service-id})
-                      (= 3 (count instances))))
+                      (log/info "waiting for two instances total:" {:instances instances
+                                                                    :service-id service-id})
+                      (= 2 (count instances))))
                   :timeout 300))
 
              ; set outstanding requests to 0
@@ -562,52 +563,47 @@
                                                          :headers {:content-type "application/json"})]
                (assert-response-status update-metrics-response http-200-ok))
 
-             ; wait for instance that is prepared to be killed for scale down, which is marked as a killed instance
-             (let [assert-deleted-buffer-secs 30
-                   killed-instances
+             ; wait for instance that is prepared to for scale down, which is marked as a killed instance
+             (let [{:keys [k8s/pod-name] :as instance-preparing-to-scale-down}
                    (wait-for
                     (fn get-killed-instance []
                       (let [active-instances (active-instances waiter-url service-id)
                             killed-instances (killed-instances waiter-url service-id)
-                            killed-instance-id (some-> killed-instances first :id)
-                            num-killed-instances (count killed-instances)]
+                            num-killed-instances (count killed-instances)
+                            instances-preparing-to-scale-down (filter :prepared-to-scale-down-at active-instances)]
                         (log/info "waiting for a killed instance:" {:active-instances active-instances
                                                                     :killed-instances killed-instances
+                                                                    :instances-preparing-to-scale-down instances-preparing-to-scale-down
                                                                     :service-id service-id})
-                        (when (< 2 num-killed-instances)
-                          (throw (ex-info "There should only be two killed instances!" {:killed-instances (map :id killed-instances)
-                                                                                        :service-id service-id})))
-                        (and
-                          ; none of the active instances should have the killed instance
-                         (every?
-                          (fn is-not-prepared-to-scale-down [{:keys [id]}]
-                            (not= id killed-instance-id))
-                          active-instances)
-                         (= 2 num-killed-instances)
-                         killed-instances)))
+                        (when (< 0 num-killed-instances)
+                          (throw (ex-info "There should not be a killed instance when instance is marked for scale down"
+                                          {:killed-instances (map :id killed-instances) 
+                                           :service-id service-id})))
+                        (when (< 1 (count instances-preparing-to-scale-down))
+                          (throw (ex-info "There should only ever be 1 instance preparing to scale down"
+                                          {:instances-preparing-to-scale-down instances-preparing-to-scale-down})))
+                        (first instances-preparing-to-scale-down)))
                     :interval 5
                     :timeout 30)
-                    scale-down-time-at (t/now)]
-               (is (some? killed-instances))
+                   prepared-to-scale-down-at (some-> instance-preparing-to-scale-down :prepared-to-scale-down-at du/str-to-date)]
+               (is (some? instance-preparing-to-scale-down))
+               (is (some? prepared-to-scale-down-at))
+               (is (t/before? prepared-to-scale-down-at (t/now)))
 
-               (doseq [{:keys [k8s/pod-name]} killed-instances]
-                 ; the pod should still exist, but is currently draining
-                 ; check the label and annotation on that one instance
-                 (let [watch-state-json (get-k8s-watch-state waiter-url cookies)
-                       pod-spec (get-in watch-state-json ["service-id->pod-id->pod" service-id pod-name])
-                       prepared-to-scale-down-at (some-> pod-spec
-                                                         (get-in ["metadata" "annotations" "waiter/prepared-to-scale-down-at"])
-                                                         du/str-to-date)]
-                   (log/info "killed instance in phase 1" {:pod-spec pod-spec
-                                                           :prepared-to-scale-down-at prepared-to-scale-down-at})
-                   (is (some? pod-spec))
-                   (is (some? prepared-to-scale-down-at))
+               ; the pod should still exist, but is currently draining
+               ; check the annotation on the instance scaling down
+               (let [watch-state-json (get-k8s-watch-state waiter-url cookies)
+                     pod-spec (get-in watch-state-json ["service-id->pod-id->pod" service-id pod-name])
+                     k8s-prepared-to-scale-down-at (some-> pod-spec
+                                                           (get-in ["metadata" "annotations" "waiter/prepared-to-scale-down-at"])
+                                                           du/str-to-date)
+                     assert-deleted-buffer-secs 30]
+                 (log/info "killed instance in phase 1" {:k8s-prepared-to-scale-down-at k8s-prepared-to-scale-down-at
+                                                         :pod-spec pod-spec})
+                 (is (some? pod-spec))
+                 (is (some? k8s-prepared-to-scale-down-at))
+                 (is (t/equal? k8s-prepared-to-scale-down-at k8s-prepared-to-scale-down-at))
 
-                   ; prepared-to-scale-down-at should be set to when the waiter router determined to scale it down
-                   ; which should be before the current time
-                   (is (t/before? prepared-to-scale-down-at (t/now)))))
-               
-               (doseq [{:keys [k8s/pod-name]} killed-instances]
                  ; wait for the pod to be deleted on kubernetes
                  (is (wait-for
                       (fn pod-gced? []
@@ -616,18 +612,26 @@
                           (log/info "waiting for pod to terminate" {:pod-spec pod-spec})
                           (nil? pod-spec)))
                       :interval 5
-                      :timeout (+ pod-cleanup-scale-down-timeout-secs assert-deleted-buffer-secs)))
+                      :timeout (+ bypass-max-eject-time-secs assert-deleted-buffer-secs)))
 
                  ; Note that I tried to set up several long running requests with the header 'x-kitchen-delay-ms' equal to
-                 ; 'pod-cleanup-scale-down-timeout-secs' and assert that the requests were successful even during pod two phase scale down.
+                 ; 'bypass-max-eject-time-secs' and assert that the requests were successful even during pod two phase scale down.
                  ; I was unable to do this because the responder does not consider instances actively serving requests (uses 'slots-used' metric)
                  ; as 'killable?'. This means that the autoscaler will be unable to kill any of the instances if the long running requests
                  ; are routed by the Waiter routers. One way to test this is to have the requests go to the pods directly, but that currently
                  ; isn't supported. I think asserting that the pod marked for scale down continues to run even when they are tracked as killed
                  ; instance should imply that long running requests that bypass the routers would still be handled prior to the
-                 ; 'pod-cleanup-scale-down-timeout-secs'.
+                 ; 'bypass-max-eject-time-secs'.
                  (let [pod-deleted-at (t/now)]
                    ; pod should not be deleted before grace period
-                   (is (t/before? (t/plus scale-down-time-at (t/millis pod-cleanup-grace-buffer-ms)) pod-deleted-at))
+                   (is (t/before? (t/plus prepared-to-scale-down-at (t/millis bypass-grace-buffer-ms)) pod-deleted-at))
                    ; pod should be deleted after the timeout is reached
-                   (is (t/after? pod-deleted-at (t/plus scale-down-time-at (t/seconds pod-cleanup-scale-down-timeout-secs))))))))))))))
+                   (is (t/after? pod-deleted-at (t/plus prepared-to-scale-down-at (t/seconds bypass-max-eject-time-secs)))))
+                 
+                 ; instance is fully killed, check that killed-instances reflects the expected instance.
+                 (let [active-instances (active-instances waiter-url service-id)
+                       killed-instances (killed-instances waiter-url service-id)]
+                   (is (= 1 (count active-instances)))
+                   (is (= 1 (count killed-instances)))
+                   (is (= (:id instance-preparing-to-scale-down)
+                          (:id (first killed-instances))))))))))))))
