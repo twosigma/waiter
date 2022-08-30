@@ -778,7 +778,7 @@
                 ;; New replica count needs to be the previous replcas + the scaling delta.
                 ;; We can't directly use :instances as the replicas because they are not the same.
                 ;; 'instances' omits pods that are scaling down, but replicas includes them.
-                replicas' (+ replicaset-replicas delta)]
+                replicas' (+ replicas delta)]
             (k8s-patch-with-retries
               (patch-object-replicas replicaset-url replicas replicas' scheduler)
               (<= attempt max-patch-retries)
