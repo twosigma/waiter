@@ -705,8 +705,8 @@
 
 (defn- get-replica-count
   "Query the current requested replica count for the given Kubernetes object."
-  [{:keys [watch-state]} service-id]
-  (-> watch-state deref :service-id->service (get service-id) :k8s/replicaset-replicas))
+  [{:keys [watch-state] :as scheduler} service-id]
+  (-> watch-state deref :service-id->service (get service-id) :instances))
 
 (defmacro k8s-patch-with-retries
   "Query the current replica count for the given Kubernetes object,

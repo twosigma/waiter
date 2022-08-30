@@ -918,7 +918,6 @@
                                     :k8s/replicaset-creation-timestamp "2019-08-01T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :k8s/replicaset-pod-annotations {}
-                                    :k8s/replicaset-replicas 2
                                     :task-count 2
                                     :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
            (scheduler/make-Service {:id "test-app-6789"
@@ -928,7 +927,6 @@
                                     :k8s/replicaset-creation-timestamp "2019-08-05T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :k8s/replicaset-pod-annotations {}
-                                    :k8s/replicaset-replicas 3
                                     :task-count 3
                                     :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})]}
          {:api-server-response
@@ -980,7 +978,6 @@
                                     :k8s/replicaset-creation-timestamp "2019-09-07T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :k8s/replicaset-pod-annotations {}
-                                    :k8s/replicaset-replicas 2
                                     :task-count 2
                                     :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
            (scheduler/make-Service {:id "test-app-wxyz"
@@ -991,7 +988,6 @@
                                     :k8s/replicaset-creation-timestamp "2019-10-15T00:00:00.000Z"
                                     :k8s/replicaset-annotations {}
                                     :k8s/replicaset-pod-annotations {}
-                                    :k8s/replicaset-replicas 3
                                     :task-count 3
                                     :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})]}
 
@@ -1030,7 +1026,6 @@
                                     :k8s/replicaset-creation-timestamp "2020-03-04T05:06:07.000Z"
                                     :k8s/replicaset-annotations {}
                                     :k8s/replicaset-pod-annotations {}
-                                    :k8s/replicaset-replicas 3
                                     :task-count 3
                                     :task-stats {:running 2 :healthy 1 :unhealthy 1 :staged 1}})]}
 
@@ -1064,7 +1059,6 @@
                                     :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                     :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"}
                                     :k8s/replicaset-pod-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"}
-                                    :k8s/replicaset-replicas 0
                                     :task-count 0
                                     :task-stats {:running 0, :healthy 0, :unhealthy 0, :staged 0}})]}
 
@@ -1102,7 +1096,6 @@
                                                                  :waiter/revision-version "3"}
                                     :k8s/replicaset-pod-annotations {:waiter/revision-timestamp "2020-09-22T20:22:22.000Z"
                                                                      :waiter/revision-version "3"}
-                                    :k8s/replicaset-replicas 0
                                     :task-count 0
                                     :task-stats {:running 0, :healthy 0, :unhealthy 0, :staged 0}})]}
 
@@ -1383,7 +1376,6 @@
                                            :k8s/replicaset-creation-timestamp "2020-01-02T03:04:05.000Z"
                                            :k8s/replicaset-annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"}
                                            :k8s/replicaset-pod-annotations {:waiter/revision-timestamp "2020-09-22T20:33:33.000Z"}
-                                           :k8s/replicaset-replicas 2
                                            :task-count 2
                                            :task-stats {:running 2, :healthy 2, :unhealthy 0, :staged 0}})
                   {:active-instances
@@ -1469,7 +1461,6 @@
                                            :k8s/replicaset-creation-timestamp "2020-09-08T07:06:05.000Z"
                                            :k8s/replicaset-annotations {}
                                            :k8s/replicaset-pod-annotations {}
-                                           :k8s/replicaset-replicas 3
                                            :task-count 3
                                            :task-stats {:running 3 :healthy 1 :unhealthy 2 :staged 0}})
                   {:active-instances
@@ -1524,6 +1515,24 @@
                                                 :type :init}]
                       :log-directory "/home/myself/r0"
                       :port 8080
+                      :service-id "test-app-6789"
+                      :started-at (du/str-to-date "2014-09-13T00:24:48Z" k8s-timestamp-format)
+                      :status "Unhealthy"})
+                    (scheduler/make-ServiceInstance
+                     {:flags #{:expired}
+                      :healthy? false
+                      :host "10.141.141.16"
+                      :id "test-app-6789.test-app-6789-abcd5-0"
+                      :k8s/container-statuses [{:name waiter-primary-container-name
+                                                :restart-count 0
+                                                :type :app}
+                                               {:name "waiter-setup"
+                                                :ready false
+                                                :restart-count 200
+                                                :type :init}]
+                      :log-directory "/home/myself/r0"
+                      :port 8080
+                      :prepared-to-scale-down-at (du/str-to-date "2020-09-22T20:11:11.000Z")
                       :service-id "test-app-6789"
                       :started-at (du/str-to-date "2014-09-13T00:24:48Z" k8s-timestamp-format)
                       :status "Unhealthy"})]
@@ -1880,9 +1889,9 @@
 (deftest test-scale-service
   (let [instances' 4
         service-id "test-service-id"
-        service (scheduler/make-Service {:id service-id :instances 1 :k8s/app-name service-id :k8s/namespace "myself" :k8s/replicaset-replicas 1})
+        service (scheduler/make-Service {:id service-id :instances 1 :k8s/app-name service-id :k8s/namespace "myself"})
         service-id-with-scale-down "test-service-id-scale-down"
-        service-scale-down (scheduler/make-Service {:id service-id-with-scale-down :instances 1 :k8s/app-name service-id :k8s/namespace "myself" :k8s/replicaset-replicas 2})
+        service-scale-down (scheduler/make-Service {:id service-id-with-scale-down :instances 1 :k8s/app-name service-id :k8s/namespace "myself"})
         service-state (atom {:service-id->service {service-id service
                                                    service-id-with-scale-down service-scale-down}})
         dummy-scheduler (assoc (make-dummy-scheduler [service-id service-id-with-scale-down]) :watch-state service-state)]
@@ -3195,7 +3204,7 @@
               pod' (-> pod
                        (assoc-in [:metadata :annotations :waiter/prepared-to-scale-down-at] now-str))
               instance (pod->ServiceInstance base-scheduler pod')
-              expected-instance-map (assoc instance-map :k8s/prepared-to-scale-down-at now)]
+              expected-instance-map (assoc instance-map :prepared-to-scale-down-at now)]
           (is (= (scheduler/make-ServiceInstance expected-instance-map) instance))))
 
       (testing "annotation is NOT a valid ISO-8601 string so it is ignored"
