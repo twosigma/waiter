@@ -181,6 +181,9 @@
        requested (get spec :replicas 0)
        staged (- replicas (+ availableReplicas unavailableReplicas))
        num-pods-draining (get-num-pods-scaling-down service-id service-id->pod-id->pod)]
+      (log/info "KEVIN: while making service:" {:num-pods-draining num-pods-draining
+                                                :replicas requested
+                                                :instances (- requested num-pods-draining)})
       (scheduler/make-Service
         {:id service-id
          :instances (- requested num-pods-draining)
@@ -207,6 +210,8 @@
   (let [num-pods-draining (get-num-pods-scaling-down service-id service-id->pod-id->pod)
         ;; replicaset-replicas may be nil when service is empty
         replicaset-replicas (or replicaset-replicas 0)]
+    (log/info "KEVIN: updating service with pods" {:replicas replicaset-replicas
+                                                   :num-pods-draining num-pods-draining})
     (assoc service :instances (- replicaset-replicas num-pods-draining))))
 
 (defn create-empty-service
@@ -727,6 +732,8 @@
 (defn- patch-object-replicas
   "Update the replica count in the given Kubernetes object's spec."
   [k8s-object-uri replicas replicas' scheduler]
+  (log/info "KEVIN: patching replicas" {:replicas replicas
+                                        :replicas' replicas'})
   (patch-object-json k8s-object-uri
                      [{:op :test :path "/spec/replicas" :value replicas}
                       {:op :replace :path "/spec/replicas" :value replicas'}]
@@ -781,6 +788,11 @@
                 ;; We can't directly use :instances as the replicas because they are not the same.
                 ;; 'instances' omits pods that are scaling down, but replicas includes them.
                 replicas' (+ replicas delta)]
+  (log/info "KEVIN: attempting to scale up" {:instances instances
+                                 :instances' instances'
+                                 :delta delta
+                                 :replicas replicas
+                                 :replicas' replicas'})            
             (k8s-patch-with-retries
               (patch-object-replicas replicaset-url replicas replicas' scheduler)
               (<= attempt max-patch-retries)
@@ -794,6 +806,9 @@
     (loop [attempt 1
            replicas replicaset-replicas]
       (let [replicas' (+ replicas instances-delta)]
+          (log/info "KEVIN: attempting to scale down" {:delta instances-delta
+                                                     :replicas replicas
+                                                     :replicas' replicas'})
         (k8s-patch-with-retries
           (patch-object-replicas replicaset-url replicas replicas' scheduler)
           (<= attempt max-patch-retries)
@@ -877,6 +892,7 @@
     (if (and two-phase-scale-down? (not force-kill))
       (mark-pod-for-scale-down scheduler instance prepared-to-scale-down-at)
       (do
+        (log/info "KEVIN: preparing to delete pod" {:id (:id instance)})
         ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
         (api-request pod-url scheduler :request-method :delete
                      :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds 300}))
@@ -894,6 +910,7 @@
         ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
         ; (note that the pod's default grace period is different from the 300s period set above)
         (hard-delete-service-instance scheduler instance)
+        (log/info "KEVIN: hard deleted pod" {:id (:id instance)})
         (comment "Success! Even if the scale-down or force-kill operation failed,
                   the pod will be force-killed after the grace period is up.")))))
 
@@ -1829,7 +1846,12 @@
                           pod-id (k8s-object->id pod)
                           service-id (k8s-object->service-id pod)
                           version (k8s-object->resource-version pod)
-                          old-state @watch-state]
+                          old-state @watch-state
+                          print-result-fn (fn [state]
+                                            (log/info "KEVIN: pods state update" {:service-id->service (get-in state [:service-id->service service-id])
+                                                                           :update-type update-type
+                                                                           :pod-info (get-in pod ["metadata" "annotations"])})
+                                            state)]
                       (swap! watch-state
                              #(as-> % state
                                 (case update-type
@@ -1840,7 +1862,8 @@
                                 (assoc-in state [:pods-metadata :version :watch] version)
                                 ;; We have to update the Service because the :instances field depends on number of pods that are
                                 ;; marked as prepared-to-scale-down-at annotation
-                                (update-in state [:service-id->service service-id] update-service-with-pods (:service-id->pod-id->pod state))))
+                                (update-in state [:service-id->service service-id] update-service-with-pods (:service-id->pod-id->pod state))
+                                (print-result-fn state)))
                       (let [old-pod (get-in old-state [:service-id->pod-id->pod service-id pod-id])
                             [pod-fields pod-fields'] (data/diff old-pod pod)
                             pod-ns (k8s-object->namespace pod)
@@ -1860,6 +1883,24 @@
     {:service-id->service service-id->service
      :version version}))
 
+(defn- update-k8s-state-with-rs
+  "The service depends on the pods state, so it must be updated atomically to prevent race condition."
+  [watch-state rs update-type version]
+  (let [now (t/now)
+        {service-id :id :as service} (replicaset->Service rs (some-> watch-state :service-id->pod-id->pod))
+        print-result-fn (fn [state]
+                          (log/info "kevin: service state update" {:service (get-in state [:service-id->service service-id])
+                                                                   :update-type update-type})
+                          state)]
+    (as-> watch-state state
+      (case update-type
+        "ADDED" (assoc-in state [:service-id->service service-id] service)
+        "MODIFIED" (assoc-in state [:service-id->service service-id] service)
+        "DELETED" (utils/dissoc-in state [:service-id->service service-id]))
+      (assoc-in state [:rs-metadata :timestamp :watch] now)
+      (assoc-in state [:rs-metadata :version :watch] version)
+      (print-result-fn state))))
+
 (defn start-replicasets-watch!
   "Start a thread to continuously update the watch-state atom based on watched ReplicaSet events."
   [{:keys [api-server-url cluster-name namespace replicaset-api-version
@@ -1876,22 +1917,14 @@
                           cluster-name)
        :metadata-key :rs-metadata
        :update-fn (fn rs-watch-update [{rs :object update-type :type}]
-                    (let [now (t/now)
-                          {service-id :id :as service} (replicaset->Service rs (some-> watch-state deref :service-id->pod-id->pod))
-                          version (k8s-object->resource-version rs)]
+                    (let [version (k8s-object->resource-version rs)
+                          {service-id :id :as service} (replicaset->Service rs (some-> watch-state deref :service-id->pod-id->pod))]
                       (when service
                         (scheduler/log "rs state update:" update-type version service)
                         (when (= "DELETED" update-type)
                           (log/info "clearing failed instances of" service-id)
                           (swap! service-id->failed-instances-transient-store dissoc service-id))
-                        (swap! watch-state
-                               #(as-> % state
-                                  (case update-type
-                                    "ADDED" (assoc-in state [:service-id->service service-id] service)
-                                    "MODIFIED" (assoc-in state [:service-id->service service-id] service)
-                                    "DELETED" (utils/dissoc-in state [:service-id->service service-id]))
-                                  (assoc-in state [:rs-metadata :timestamp :watch] now)
-                                  (assoc-in state [:rs-metadata :version :watch] version))))))}
+                        (swap! watch-state update-k8s-state-with-rs rs update-type version))))}
       (merge options))))
 
 (defn- query-events
