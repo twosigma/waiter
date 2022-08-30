@@ -71,7 +71,7 @@
                                                   (s/required-key :async-request-max-timeout-ms) schema/positive-int
                                                   (s/required-key :async-request-timeout-ms) schema/positive-int
                                                   (s/required-key :byte-buffer-capacity-factor) (s/maybe schema/non-negative-int)
-                                                  (s/required-key :byte-buffer-heap-percent) (s/maybe schema/positive-num)
+                                                  (s/required-key :byte-buffer-heap-percent) (s/maybe schema/positive-fraction-less-than-or-equal-to-1)
                                                   (s/required-key :byte-buffer-max-queue-length) (s/maybe schema/non-negative-int)
                                                   (s/required-key :client-buffer-size) schema/positive-int
                                                   (s/required-key :client-connection-idle-timeout-ms) schema/positive-int
