@@ -70,6 +70,9 @@
                                                   (s/required-key :async-request-max-status-checks) schema/positive-int
                                                   (s/required-key :async-request-max-timeout-ms) schema/positive-int
                                                   (s/required-key :async-request-timeout-ms) schema/positive-int
+                                                  (s/required-key :byte-buffer-capacity-factor) (s/maybe schema/non-negative-int)
+                                                  (s/required-key :byte-buffer-heap-percent) (s/maybe schema/positive-fraction-less-than-or-equal-to-1)
+                                                  (s/required-key :byte-buffer-max-queue-length) (s/maybe schema/non-negative-int)
                                                   (s/required-key :client-buffer-size) schema/positive-int
                                                   (s/required-key :client-connection-idle-timeout-ms) schema/positive-int
                                                   (s/required-key :connection-timeout-ms) schema/positive-int
@@ -327,6 +330,9 @@
                                  :async-request-max-status-checks 50
                                  :async-request-max-timeout-ms (-> 4 t/hours t/in-millis)
                                  :async-request-timeout-ms 60000
+                                 :byte-buffer-capacity-factor nil
+                                 :byte-buffer-heap-percent nil
+                                 :byte-buffer-max-queue-length nil
                                  :client-buffer-size 32768 ;; 32 KiB
                                  :client-connection-idle-timeout-ms 10000 ; 10 seconds
                                  :connection-timeout-ms 5000 ; 5 seconds

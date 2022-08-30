@@ -169,7 +169,8 @@
     :or {clear-content-decoders true}
     :as config}]
   (let [^HttpClient client
-        (http/client (cond-> (select-keys config [:client-name :follow-redirects? :request-buffer-size :response-buffer-size :transport])
+        (http/client (cond-> (select-keys config [:byte-buffer-capacity-factor :byte-buffer-heap-percent :byte-buffer-max-queue-length
+                                                  :client-name :follow-redirects? :request-buffer-size :response-buffer-size :transport])
                        (some? conn-timeout) (assoc :connect-timeout conn-timeout)
                        (some? socket-timeout) (assoc :idle-timeout socket-timeout)))]
     ;; disable checks on www-authenticate header on 401 responses
