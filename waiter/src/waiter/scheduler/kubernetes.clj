@@ -669,12 +669,7 @@
                           (track-failed-instances! service-instance scheduler pod)
                           service-instance))
         {active-instances false failed-instances true}
-        (->> all-instances
-             (remove nil?)
-             ;; filter out instances that are prepared-to-scale-down-at, they should not be considered
-             ;; active-instances and thus should not have any requests routed to them
-             (remove :k8s/prepared-to-scale-down-at)
-             (group-by #(-> % :k8s/pod-phase (= "Failed")) ))]
+        (->> all-instances (remove nil?) (group-by #(-> % :k8s/pod-phase (= "Failed")) ))]
     ;; pods with Failed phase are treated as failed instances
     (doseq [{:keys [service-id] :as failed-instance} failed-instances]
       (->> (assoc failed-instance :healthy? false :status "Failed")
