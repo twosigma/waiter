@@ -478,9 +478,9 @@
 
 (defn handle-eject-request
   "Handle a request to eject an instance."
-  [{:keys [instance-id->request-id->use-reason-map instance-id->state] :as current-state}
-   update-status-tag-fn update-state-by-ejecting-instance-fn lingering-request-threshold-ms
-   [{:keys [instance-id eject-period-ms cid]} response-chan]]
+  [{:keys [id->instance instance-id->request-id->use-reason-map instance-id->state] :as current-state}
+   update-status-tag-fn update-state-by-ejecting-instance-fn bypass-grace-buffer-ms bypass-max-eject-time-secs
+   lingering-request-threshold-ms [{:keys [instance-id eject-period-ms cid]} response-chan]]
   (cid/with-correlation-id
     cid
     (log/info "attempt to eject" instance-id "which has"
@@ -492,10 +492,13 @@
                                            earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))
                                            has-expired-instances (expired-instances? instance-id->state)
                                            has-starting-instances (starting-instances? instance-id->state)
-                                           state (instance-id->state instance-id)]
+                                           has-prepared-to-scale-down-instances (prepared-to-scale-down-at-instances? instance-id->state)
+                                           state (instance-id->state instance-id)
+                                           instance (id->instance instance-id)
+                                           now (t/now)]
                                        (not
-                                         (killable? request-id->use-reason-map earliest-request-threshold-time
-                                                    has-expired-instances has-starting-instances state))))
+                                         (killable? request-id->use-reason-map bypass-grace-buffer-ms bypass-max-eject-time-secs earliest-request-threshold-time
+                                                    has-prepared-to-scale-down-instances has-expired-instances has-starting-instances state instance now))))
           response-code (if instance-not-allowed? :in-use :ejected)]
       {:current-state' (if (= :ejected response-code)
                          (-> current-state
@@ -753,7 +756,7 @@
                                  responder-eject-timer
                                  (handle-eject-request
                                    current-state update-status-tag-fn update-state-by-ejecting-instance-fn
-                                   lingering-request-threshold-ms data))]
+                                   bypass-grace-buffer-ms bypass-max-eject-time-secs lingering-request-threshold-ms data))]
                            (async/put! response-chan response)
                            current-state')
 
