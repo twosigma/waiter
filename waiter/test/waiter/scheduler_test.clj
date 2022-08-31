@@ -53,6 +53,28 @@
     (locking lock
       (f))))
 
+(deftest test-service-scale-down-throttle-cache
+  (testing "can-bypass-service-scale-down? returns true initially for a service-id"
+    (is (can-bypass-service-scale-down? "test-throttle-s1"))
+    (is (can-bypass-service-scale-down? "test-throttle-s2"))
+    (is (can-bypass-service-scale-down? "test-throttle-s3")))
+  (testing "after the configured ttl is up can-bypass-service-scale-down? returns true"
+    (let [now (t/now)]
+      (with-redefs [t/now (constantly now)]
+        (set-bypass-service-scale-down "test-throttle-s1")
+        (is (not (can-bypass-service-scale-down? "test-throttle-s1"))))
+      ;; service still can't scale down right before throttle-secs is reached
+      (with-redefs [t/now (constantly (t/plus (t/now) (t/seconds (dec service-scale-down-throttle-secs))))]
+        (is (not (can-bypass-service-scale-down? "test-throttle-s1"))))
+      ;; t/now is now passed the throttle-secs; service should be able to scale down
+      (with-redefs [t/now (constantly (t/plus (t/now) (t/seconds service-scale-down-throttle-secs)))]
+        (is (can-bypass-service-scale-down? "test-throttle-s1")))
+      ;; wait until cache is expired
+      (utils/sleep (* service-scale-down-throttle-secs 1001))
+      ;; service should be able to scale down
+      (with-redefs [t/now now]
+        (is (can-bypass-service-scale-down? "test-throttle-s1"))))))
+
 (deftest test-record-Service
   (let [test-instance-1 (->Service "service1-id" 100 100 {:running 0, :healthy 0, :unhealthy 0, :staged 0})
         test-instance-2 (make-Service {:id "service2-id" :instances 200 :task-count 200})

@@ -35,6 +35,7 @@
             [waiter.statsd :as statsd]
             [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
+            [waiter.util.cache-utils :as cu]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
@@ -53,6 +54,25 @@
   "The maximum number of kill instances tracked per service."
   ;; track more killed instances than failed instances
   (+ max-failed-instances-to-keep 2))
+
+(def ^:const service-scale-down-throttle-secs 20)
+
+(let [;; This cache is used for throttling services from scaling down instances to quickly that
+      ;; are in bypass. We have to do this because there is a race condtion with schedulers and
+      ;; the scheduler syncer updating the state of instances defining the :prepared-to-scale-down-at
+      ;; field. The cache is mapping service-id to throttle-expires-at
+      service-scale-down-throttle-cache (cu/cache-factory {:threshold 100000 :ttl (-> service-scale-down-throttle-secs t/seconds t/in-millis)})]
+  (defn can-bypass-service-scale-down?
+    "Checks if the service can scale down based on whether or not there was a scale down operation within the service-scale-down-throttle-secs."
+    [service-id]
+    (let [throttle-expires-at (cu/cache-get-or-load service-scale-down-throttle-cache service-id (constantly nil))]
+      (or (nil? throttle-expires-at)
+          (t/after? (t/now) throttle-expires-at))))
+
+  (defn set-bypass-service-scale-down
+    "Updates the cache with the service-id with the throttle-expires-at"
+    [service-id]
+    (cu/cache-put! service-scale-down-throttle-cache service-id (t/plus (t/now) (t/seconds service-scale-down-throttle-secs)))))
 
 (defmacro log
   "Log Scheduler-specific messages."

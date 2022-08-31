@@ -975,11 +975,17 @@
             first-phase? (and bypass-enabled? (nil? prepared-to-scale-down-at))
             second-phase? (and bypass-enabled? (some? prepared-to-scale-down-at))
             kill-result (cond first-phase?
-                              (do
-                                (mark-pod-for-scale-down this instance)
-                                {:killed? false
-                                 :message "Successfully annotated pod to be prepared for scale down"})
-                              second-phase? 
+                              (let [can-scale-down? (scheduler/can-bypass-service-scale-down? service-id)]
+                                (if can-scale-down?
+                                  (do
+                                    (scheduler/set-bypass-service-scale-down service-id)
+                                    (mark-pod-for-scale-down this instance)
+                                    {:message "Successfully annotated pod to be prepared for scale down"})
+                                  (do
+                                    (log/info "throttled when trying to annotate the pod" {:instance-id id})
+                                    {:message "Throttled when trying to annotate the pod"
+                                     :status http-429-too-many-requests})))
+                              second-phase?
                               (do
                                 (kill-service-instance this instance service)
                                 {:killed? true
@@ -989,10 +995,12 @@
                                 (kill-service-instance this instance service)
                                 {:killed? true
                                  :message "Successfully killed instance"}))]
-        (assoc kill-result
-               :instance-id id
-               :service-id service-id
-               :status http-200-ok))
+        (merge
+          {:killed? false
+           :instance-id id
+           :service-id service-id
+           :status http-200-ok}
+          kill-result))
       (catch [:status http-404-not-found] _
         {:instance-id id
          :killed? false

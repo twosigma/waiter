@@ -1642,7 +1642,7 @@
                         :message "Error while killing instance"
                         :status http-500-internal-server-error)
                  actual))))
-      (testing "succesful-delete: service is in bypass, instance has not been annotated with 'prepared-to-scale-down-at'"
+      (testing "succesful-delete: service is in bypass, instance needs to be annotated with 'prepared-to-scale-down-at'"
         (let [service-id->service-description-fn
               (constantly {"metadata" {"waiter-proxy-bypass-opt-in" "true"}})
               dummy-scheduler (assoc dummy-scheduler :service-id->service-description-fn service-id->service-description-fn)
@@ -1650,9 +1650,13 @@
               mark-pod-for-scale-down-mock (fn mark-pod-for-scale-down-fn [_ _]
                                              (reset! pod-marked-for-scale-down?-atom true))
               instances-killed?-fn (atom false)
+              set-bypass-service-scale-down-atom (atom false)
               hard-delete-service-instance-mock (fn hard-delete-service-instance-fn [_ _]
                                                   (reset! instances-killed?-fn true))
-              actual (with-redefs [api-request (constantly {:status "OK"})
+              actual (with-redefs [scheduler/can-bypass-service-scale-down? (constantly true)
+                                   scheduler/set-bypass-service-scale-down (fn set-bypass-service-scale-down-fn [_]
+                                                                             (reset! set-bypass-service-scale-down-atom true))
+                                   api-request (constantly {:status "OK"})
                                    mark-pod-for-scale-down mark-pod-for-scale-down-mock
                                    hard-delete-service-instance hard-delete-service-instance-mock]
                        (scheduler/kill-instance dummy-scheduler instance))]
@@ -1661,11 +1665,40 @@
                         :message "Successfully annotated pod to be prepared for scale down"
                         :status http-200-ok)
                  actual))
-          (is @pod-marked-for-scale-down?-atom)
+          (is (not @pod-marked-for-scale-down?-atom))
+          (is @set-bypass-service-scale-down-atom
+              "Instance should update the cache with service-id as the pod is being marked for scale down.")
           (is (not @instances-killed?-fn)
               "Instance should not be killed fully, that is handled by the pod cleanup daemon separately.")))
-
-      (testing "succesful-delete: service is in bypass, instance has been annotated with 'prepared-to-scale-down-at'"
+      (testing "succesful-delete: service is in bypass, instance needs to be annotated with 'prepared-to-scale-down-at' but is throttled"
+        (let [service-id->service-description-fn
+              (constantly {"metadata" {"waiter-proxy-bypass-opt-in" "true"}})
+              dummy-scheduler (assoc dummy-scheduler :service-id->service-description-fn service-id->service-description-fn)
+              pod-marked-for-scale-down?-atom (atom false)
+              mark-pod-for-scale-down-mock (fn mark-pod-for-scale-down-fn [_ _]
+                                             (reset! pod-marked-for-scale-down?-atom true))
+              instances-killed?-fn (atom false)
+              set-bypass-service-scale-down-atom (atom false)
+              hard-delete-service-instance-mock (fn hard-delete-service-instance-fn [_ _]
+                                                  (reset! instances-killed?-fn true))
+              actual (with-redefs [scheduler/can-bypass-service-scale-down? (constantly false)
+                                   scheduler/set-bypass-service-scale-down (fn set-bypass-service-scale-down-fn [_]
+                                                                             (reset! set-bypass-service-scale-down-atom true))
+                                   api-request (constantly {:status "OK"})
+                                   mark-pod-for-scale-down mark-pod-for-scale-down-mock
+                                   hard-delete-service-instance hard-delete-service-instance-mock]
+                       (scheduler/kill-instance dummy-scheduler instance))]
+          (is (= (assoc partial-expected
+                        :killed? false
+                        :message "Throttled when trying to annotate the pod"
+                        :status http-429-too-many-requests)
+                 actual))
+          (is @pod-marked-for-scale-down?-atom)
+          (is (not @set-bypass-service-scale-down-atom)
+              "Instance was throttled and should not reset the service value in cache!")
+          (is (not @instances-killed?-fn)
+              "Instance should not be killed fully, that is handled by the pod cleanup daemon separately.")))
+      (testing "succesful-delete: service is in bypass, instance already has 'prepared-to-scale-down-at' and needs to be fully scaled down"
         (let [service-id->service-description-fn
               (constantly {"metadata" {"waiter-proxy-bypass-opt-in" "true"}})
               dummy-scheduler (assoc dummy-scheduler :service-id->service-description-fn service-id->service-description-fn)
