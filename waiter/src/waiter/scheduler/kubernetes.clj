@@ -696,8 +696,6 @@
 (defn- patch-object-replicas
   "Update the replica count in the given Kubernetes object's spec."
   [k8s-object-uri replicas replicas' scheduler]
-  (log/info "KEVIN: patching replicas" {:replicas replicas
-                                        :replicas' replicas'})
   (patch-object-json k8s-object-uri
                      [{:op :test :path "/spec/replicas" :value replicas}
                       {:op :replace :path "/spec/replicas" :value replicas'}]
