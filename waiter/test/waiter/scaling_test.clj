@@ -315,9 +315,9 @@
                                                     notify-instance-killed-fn notify-instance-killed-fn
                                                     peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn}}]
                                            (service-scaling-executor
-                                             notify-instance-killed-fn peers-acknowledged-eject-requests-fn delegate-instance-kill-request-fn
-                                             service-id->service-description-fn scheduler populate-maintainer-chan! quanta-constraints
-                                             timeout-config scale-service-thread-pool test-service-id))]
+                                            notify-instance-killed-fn peers-acknowledged-eject-requests-fn delegate-instance-kill-request-fn
+                                            service-id->service-description-fn scheduler populate-maintainer-chan! quanta-constraints
+                                            timeout-config scale-service-thread-pool test-service-id))]
         (testing "basic-equilibrium-with-no-scaling"
           (let [instance-rpc-chan (async/chan 1)
                 populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
@@ -327,8 +327,8 @@
                 scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)]
+                 scheduler populate-maintainer-chan! scale-service-thread-pool
+                 :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan {:correlation-id (first *testing-contexts*) :service-id test-service-id, :scale-amount 0})
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -344,8 +344,8 @@
                 scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)]
+                 scheduler populate-maintainer-chan! scale-service-thread-pool
+                 :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 10 30 25 30 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -362,8 +362,8 @@
                 scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)]
+                 scheduler populate-maintainer-chan! scale-service-thread-pool
+                 :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 10 30 25 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -380,8 +380,8 @@
                 scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)]
+                 scheduler populate-maintainer-chan! scale-service-thread-pool
+                 :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id 4 24 22 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -398,8 +398,8 @@
                 scale-service-thread-pool (Executors/newFixedThreadPool 2)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)]
+                 scheduler populate-maintainer-chan! scale-service-thread-pool
+                 :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)]
             (mock-reservation-system instance-rpc-chan [])
             (async/>!! executor-chan (make-scaling-message test-service-id -5 25 20 20 nil))
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -421,13 +421,13 @@
                                                     false)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :delegate-instance-kill-request-fn delegate-instance-kill-request-fn)]
+                 scheduler populate-maintainer-chan! scale-service-thread-pool
+                 :delegate-instance-kill-request-fn delegate-instance-kill-request-fn)]
             (mock-reservation-system
-              instance-rpc-chan
-              [(fn [[{:keys [reason]} response-chan]]
-                 (is (= :kill-instance reason))
-                 (async/>!! response-chan :no-instance-available))])
+             instance-rpc-chan
+             [(fn [[{:keys [reason]} response-chan]]
+                (is (= :kill-instance reason))
+                (async/>!! response-chan :no-instance-available))])
             (async/>!! executor-chan (make-scaling-message test-service-id -1 30 31 31 response-chan))
             (.await latch)
             (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -436,6 +436,8 @@
             (is (empty? @scheduler-operation-tracker-atom))
             (async/>!! exit-chan :exit)
             (.shutdown scale-service-thread-pool)))
+
+        ;; TODO:KEVIN add delegated-instance-kill test with service in bypass
 
         (testing "scale-down:delegated-instance-kill"
           (let [instance-rpc-chan (async/chan 1)
@@ -451,13 +453,13 @@
                                                     true)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :delegate-instance-kill-request-fn delegate-instance-kill-request-fn)]
+                 scheduler populate-maintainer-chan! scale-service-thread-pool
+                 :delegate-instance-kill-request-fn delegate-instance-kill-request-fn)]
             (mock-reservation-system
-              instance-rpc-chan
-              [(fn [[{:keys [reason]} response-chan]]
-                 (is (= :kill-instance reason))
-                 (async/>!! response-chan :no-instance-available))])
+             instance-rpc-chan
+             [(fn [[{:keys [reason]} response-chan]]
+                (is (= :kill-instance reason))
+                (async/>!! response-chan :no-instance-available))])
             (async/>!! executor-chan (make-scaling-message test-service-id -1 30 31 31 response-chan))
             (.await latch)
             (is (= (assoc equilibrium-state :last-scale-down-time current-time)
@@ -481,17 +483,17 @@
                 response-chan (async/promise-chan)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :notify-instance-killed-fn notify-instance-killed-fn)]
+                 scheduler populate-maintainer-chan! scale-service-thread-pool
+                 :notify-instance-killed-fn notify-instance-killed-fn)]
             (let [instance-1 {:id instance-id-1, :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
-                instance-rpc-chan
-                [(fn [[{:keys [reason]} response-chan]]
-                   (is (= :kill-instance reason))
-                   (async/>!! response-chan instance-1))
-                 (fn [[instance result]]
-                   (is (= instance instance))
-                   (is (= :killed (:status result))))])
+               instance-rpc-chan
+               [(fn [[{:keys [reason]} response-chan]]
+                  (is (= :kill-instance reason))
+                  (async/>!! response-chan instance-1))
+                (fn [[instance result]]
+                  (is (= instance instance))
+                  (is (= :killed (:status result))))])
               (async/>!! executor-chan (make-scaling-message test-service-id -1 30 31 31 response-chan))
               (is (= {:instance-id (:id instance-1), :killed? true, :service-id test-service-id}
                      (async/<!! response-chan)))
@@ -520,23 +522,23 @@
                   false)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)
+                 scheduler populate-maintainer-chan! scale-service-thread-pool
+                 :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id instance-id-1, :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
-                instance-rpc-chan
-                [(fn [[{:keys [reason]} response-chan]]
-                   (is (= :kill-instance reason))
-                   (async/>!! response-chan instance-1))
-                 (fn [[instance result]]
-                   (is (= instance-1 instance))
-                   (is (= :not-killed (:status result))))
-                 (fn [[{:keys [reason]} response-chan exclude-ids-set]]
-                   (is (= :kill-instance reason))
-                   (is (= #{instance-id-1} exclude-ids-set))
-                   (.countDown latch)
-                   (async/>!! response-chan :no-matching-instance-found))])
+               instance-rpc-chan
+               [(fn [[{:keys [reason]} response-chan]]
+                  (is (= :kill-instance reason))
+                  (async/>!! response-chan instance-1))
+                (fn [[instance result]]
+                  (is (= instance-1 instance))
+                  (is (= :not-killed (:status result))))
+                (fn [[{:keys [reason]} response-chan exclude-ids-set]]
+                  (is (= :kill-instance reason))
+                  (is (= #{instance-id-1} exclude-ids-set))
+                  (.countDown latch)
+                  (async/>!! response-chan :no-matching-instance-found))])
               (async/>!! executor-chan (make-scaling-message test-service-id -2 30 32 32 response-chan))
               (.await latch)
               (is (= equilibrium-state (retrieve-state-fn query-chan)))
@@ -562,27 +564,27 @@
                 peers-acknowledged-eject-requests-fn (fn [{:keys [id]} _ _ _] (not= instance-id-1 id))
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :notify-instance-killed-fn notify-instance-killed-fn
-                  :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)
+                 scheduler populate-maintainer-chan! scale-service-thread-pool
+                 :notify-instance-killed-fn notify-instance-killed-fn
+                 :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id instance-id-1, :service-id test-service-id, :success-flag true}
                   instance-2 {:id instance-id-2, :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
-                instance-rpc-chan
-                [(fn [[{:keys [reason]} response-chan]]
-                   (is (= :kill-instance reason))
-                   (async/>!! response-chan instance-1))
-                 (fn [[instance result]]
-                   (is (= instance-1 instance))
-                   (is (= :not-killed (:status result))))
-                 (fn [[{:keys [reason]} response-chan]]
-                   (is (= :kill-instance reason))
-                   (async/>!! response-chan instance-2))
-                 (fn [[instance result]]
-                   (is (= instance-2 instance))
-                   (is (= :killed (:status result)))
-                   (.countDown latch))])
+               instance-rpc-chan
+               [(fn [[{:keys [reason]} response-chan]]
+                  (is (= :kill-instance reason))
+                  (async/>!! response-chan instance-1))
+                (fn [[instance result]]
+                  (is (= instance-1 instance))
+                  (is (= :not-killed (:status result))))
+                (fn [[{:keys [reason]} response-chan]]
+                  (is (= :kill-instance reason))
+                  (async/>!! response-chan instance-2))
+                (fn [[instance result]]
+                  (is (= instance-2 instance))
+                  (is (= :killed (:status result)))
+                  (.countDown latch))])
               (async/>!! executor-chan (make-scaling-message test-service-id -2 30 32 32 response-chan))
               (.await latch)
               (is (= (assoc equilibrium-state :last-scale-down-time current-time)
@@ -608,28 +610,28 @@
                 peers-acknowledged-eject-requests-fn (fn [{:keys [id]} _ _ _] (not= instance-id-1 id))
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)
+                 scheduler populate-maintainer-chan! scale-service-thread-pool
+                 :peers-acknowledged-eject-requests-fn peers-acknowledged-eject-requests-fn)
                 latch (CountDownLatch. 1)]
             (let [instance-1 {:id instance-id-1, :service-id test-service-id, :success-flag true}
                   instance-2 {:id instance-id-2, :service-id test-service-id, :success-flag false}]
               (mock-reservation-system
-                instance-rpc-chan
-                [(fn [[{:keys [reason]} response-chan exclude-ids-set]]
-                   (is (= :kill-instance reason))
-                   (is (= #{} exclude-ids-set))
-                   (async/>!! response-chan instance-1))
-                 (fn [[instance result]]
-                   (is (= instance-1 instance))
-                   (is (= :not-killed (:status result))))
-                 (fn [[{:keys [reason]} response-chan exclude-ids-set]]
-                   (is (= :kill-instance reason))
-                   (is (= #{instance-id-1} exclude-ids-set))
-                   (async/>!! response-chan instance-2))
-                 (fn [[instance result]]
-                   (is (= instance-2 instance))
-                   (is (= :not-killed (:status result)))
-                   (.countDown latch))])
+               instance-rpc-chan
+               [(fn [[{:keys [reason]} response-chan exclude-ids-set]]
+                  (is (= :kill-instance reason))
+                  (is (= #{} exclude-ids-set))
+                  (async/>!! response-chan instance-1))
+                (fn [[instance result]]
+                  (is (= instance-1 instance))
+                  (is (= :not-killed (:status result))))
+                (fn [[{:keys [reason]} response-chan exclude-ids-set]]
+                  (is (= :kill-instance reason))
+                  (is (= #{instance-id-1} exclude-ids-set))
+                  (async/>!! response-chan instance-2))
+                (fn [[instance result]]
+                  (is (= instance-2 instance))
+                  (is (= :not-killed (:status result)))
+                  (.countDown latch))])
               (async/>!! executor-chan (make-scaling-message test-service-id -3 30 33 33 response-chan))
               (.await latch)
               (is (= {:instance-id (:id instance-2), :killed? false, :service-id test-service-id}
@@ -655,17 +657,17 @@
                                             (is (= test-service-id service-id)))
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                  scheduler populate-maintainer-chan! scale-service-thread-pool
-                  :notify-instance-killed-fn notify-instance-killed-fn)]
+                 scheduler populate-maintainer-chan! scale-service-thread-pool
+                 :notify-instance-killed-fn notify-instance-killed-fn)]
             (let [instance-1 {:id instance-id-1, :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
-                instance-rpc-chan
-                [(fn [[{:keys [reason]} response-chan exclude-ids-set]]
-                   (is (= :kill-instance reason))
-                   (is (= #{} exclude-ids-set))
-                   (async/>!! response-chan instance-1))
-                 (fn [[instance result]] (is (= instance-1 instance))
-                   (is (= :killed (:status result))))])
+               instance-rpc-chan
+               [(fn [[{:keys [reason]} response-chan exclude-ids-set]]
+                  (is (= :kill-instance reason))
+                  (is (= #{} exclude-ids-set))
+                  (async/>!! response-chan instance-1))
+                (fn [[instance result]] (is (= instance-1 instance))
+                  (is (= :killed (:status result))))])
               (async/>!! executor-chan (make-scaling-message test-service-id -2 30 32 32 response-chan))
               (is (= {:instance-id (:id instance-1), :killed? true, :service-id test-service-id}
                      (async/<!! response-chan)))

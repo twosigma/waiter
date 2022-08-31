@@ -25,6 +25,7 @@
             [waiter.metrics :as metrics]
             [waiter.scheduler :as scheduler]
             [waiter.service :as service]
+            [waiter.service-description :as sd]
             [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
             [waiter.util.utils :as utils])
@@ -151,7 +152,7 @@
                               (peers-acknowledged-eject-requests-fn instance false max-eject-time-ms :killed))
                             (do
                               (if (= status http-200-ok)
-                                (log/info "successfully marked instance as prepared-to-scale-down-at" {:instance-id :instance-id})
+                                (log/info "successfully marked instance as prepared-to-scale-down-at" {:instance-id instance-id})
                                 (do
                                   (log/info "failed kill attempt, releasing instance" instance-id)
                                   (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "kill-fail"))))
@@ -280,7 +281,8 @@
                           executor-state)
 
                         (pos? num-instances-to-kill)
-                        (do
+                        (let [service-description (service-id->service-description-fn service-id)
+                              bypass-enabled? (sd/service-description-bypass-enabled? service-description)]
                           (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "total"))
                           (if (or (nil? last-scale-down-time)
                                   (t/after? (t/now) (t/plus last-scale-down-time inter-kill-request-wait-time-in-millis)))
@@ -289,7 +291,10 @@
                                         notify-instance-killed-fn peers-acknowledged-eject-requests-fn
                                         scheduler populate-maintainer-chan! timeout-config service-id iter-correlation-id
                                         num-instances-to-kill scale-service-thread-pool response-chan))
-                                    (delegate-instance-kill-request-fn service-id))
+                                    ;; don't delegate kill if the service in bypass mode because the instance may not be fully killed, but it was
+                                    ;; properly marked as 'prepared-to-scale-down-at'.
+                                    (and (not bypass-enabled?)
+                                         (delegate-instance-kill-request-fn service-id)))
                               (assoc executor-state :last-scale-down-time (t/now))
                               executor-state)
                             (do
