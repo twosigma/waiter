@@ -592,7 +592,7 @@
              (is (some? instance-preparing-to-scale-down))
              (is (some? prepared-to-scale-down-at))
              (is (t/before? prepared-to-scale-down-at (t/now)))
-             (is (contains? flags "ejected"))
+             (is (contains? (set flags) "ejected"))
 
              ; the pod should still exist and be tracked, but is currently draining
              (let [watch-state-json (get-k8s-watch-state waiter-url cookies)
