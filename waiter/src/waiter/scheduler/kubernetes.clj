@@ -401,7 +401,7 @@
           instance-id (pod->instance-id pod primary-container-restart-count)
           node-name (get-in pod [:spec :nodeName])
           pod-labels (get-in pod [:metadata :labels])
-          pod-annotations (get-in pod [:metadata :annotations])
+          {:keys [waiter/pod-ejected] :as pod-annotations} (get-in pod [:metadata :annotations])
           port0 (or (some-> pod-annotations :waiter/service-port (Integer/parseInt))
                     (get-in pod [:spec :containers 0 :ports 0 :containerPort]))
           port->protocol (some-> pod-annotations :waiter/port-onto-protocol (utils/try-parse-json keyword))
@@ -458,7 +458,9 @@
                      (cond-> {:extra-ports (->> pod-annotations :waiter/port-count Integer/parseInt range next (mapv #(+ port0 %)))
                               :flags (cond-> #{}
                                        (check-expired scheduler service-id instance-id pod-restart-count pod-annotations primary-container-status pod-started-at)
-                                       (conj :expired))
+                                       (conj :expired)
+                                       (= pod-ejected "true")
+                                       (conj :ejected))
                               :healthy? healthy?
                               :host (get-in pod [:status :podIP] scheduler/UNKNOWN-IP)
                               :id instance-id
@@ -774,7 +776,8 @@
         (log/error t "Error force-killing pod")))))
 
 (defn mark-pod-for-scale-down
-  "Marks the pod for scale down by adding an annotation 'waiter/prepared-to-scale-down-at' and setting it to the current time."
+  "Marks the pod for scale down by adding an annotation 'waiter/prepared-to-scale-down-at', setting it to the current time, and another
+   annotation that marks the resulting instance with the flag :ejected."
   [{:keys [api-server-url] :as scheduler} {:keys [id] :as instance}]
   (let [pod-url (instance->pod-url api-server-url instance)]
     (log/info "marking instance for scale down" {:instance-id id})
@@ -782,7 +785,8 @@
                        [;; The backslash becomes "~1" so "waiter/prepared-to-scale-down-at" becomes "waiter~1prepared-to-scale-down-at"
                         ;; Source https://stackoverflow.com/questions/55573724/create-a-patch-to-add-a-kubernetes-annotation
                         ;; Here is the RFC-6901 reference https://www.rfc-editor.org/rfc/rfc6901#section-3
-                        {:op :add :path "/metadata/annotations/waiter~1prepared-to-scale-down-at" :value (du/date-to-str (t/now))}]
+                        {:op :add :path "/metadata/annotations/waiter~1prepared-to-scale-down-at" :value (du/date-to-str (t/now))}
+                        {:op :add :path "/metadata/annotations/waiter~1pod-ejected" :value "true"}]
                        scheduler)))
 
 (defn kill-service-instance

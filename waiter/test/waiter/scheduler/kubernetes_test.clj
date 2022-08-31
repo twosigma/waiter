@@ -2962,7 +2962,9 @@
                       :k8s/restart-count 9
                       :k8s/user "myself"
                       :status "Healthy"}
+        ejected-instance-map (assoc instance-map :flags #{:ejected})
         expired-instance-map (assoc instance-map :flags #{:expired})
+        ejected-and-expired-instance-map (assoc instance-map :flags #{:ejected :expired})
         expired-unhealthy-instance-map (assoc expired-instance-map :healthy? false :status "Unhealthy")
         rs-revision-timestamp-path [:service-id->service service-id :k8s/replicaset-annotations :waiter/revision-timestamp]]
 
@@ -3107,11 +3109,25 @@
             instance-map' (assoc instance-map :k8s/context kube-context-name)]
         (is (= (scheduler/make-ServiceInstance instance-map') instance))))
 
+    (testing "pod with ejected annotation"
+      (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
+            pod' (assoc-in pod [:metadata :annotations :waiter/pod-ejected] "true")
+            instance (pod->ServiceInstance dummy-scheduler pod')]
+        (is (= (scheduler/make-ServiceInstance ejected-instance-map) instance))))
+
     (testing "pod with expired annotation"
       (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
             pod' (assoc-in pod [:metadata :annotations :waiter/pod-expired] "true")
             instance (pod->ServiceInstance dummy-scheduler pod')]
         (is (= (scheduler/make-ServiceInstance expired-instance-map) instance))))
+
+    (testing "pod with ejected and expired annotation"
+      (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 10)
+            pod' (-> pod
+                     (assoc-in [:metadata :annotations :waiter/pod-ejected] "true")
+                     (assoc-in [:metadata :annotations :waiter/pod-expired] "true"))
+            instance (pod->ServiceInstance dummy-scheduler pod')]
+        (is (= (scheduler/make-ServiceInstance ejected-and-expired-instance-map) instance))))
 
     (testing "pod to expired instance threshold"
       (let [dummy-scheduler (assoc base-scheduler :restart-expiry-threshold 9)

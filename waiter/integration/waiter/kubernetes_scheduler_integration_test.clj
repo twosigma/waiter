@@ -587,23 +587,26 @@
                       (first instances-preparing-to-scale-down)))
                   :interval 5
                   :timeout 30)
-                  prepared-to-scale-down-at (some-> instance-preparing-to-scale-down :prepared-to-scale-down-at du/str-to-date)]
+                  prepared-to-scale-down-at (some-> instance-preparing-to-scale-down :prepared-to-scale-down-at du/str-to-date)
+                  flags (some-> instance-preparing-to-scale-down :flags)]
              (is (some? instance-preparing-to-scale-down))
              (is (some? prepared-to-scale-down-at))
              (is (t/before? prepared-to-scale-down-at (t/now)))
+             (is (contains? flags "ejected"))
 
-             ; the pod should still exist, but is currently draining
-             ; check the annotation on the instance scaling down
+             ; the pod should still exist and be tracked, but is currently draining
              (let [watch-state-json (get-k8s-watch-state waiter-url cookies)
                    pod-spec (get-in watch-state-json ["service-id->pod-id->pod" service-id pod-name])
-                   k8s-prepared-to-scale-down-at (some-> pod-spec
-                                                         (get-in ["metadata" "annotations" "waiter/prepared-to-scale-down-at"])
-                                                         du/str-to-date)
+                   pod-annotations (get-in pod-spec ["metadata" "annotations"])
+                   k8s-prepared-to-scale-down-at (some-> pod-annotations (get "waiter/prepared-to-scale-down-at") du/str-to-date)
+                   k8s-pod-ejected (-> pod-annotations (get "waiter/pod-ejected"))
                    assert-deleted-buffer-secs 30]
                (log/info "killed instance in phase 1" {:k8s-prepared-to-scale-down-at k8s-prepared-to-scale-down-at
                                                        :pod-spec pod-spec})
                (is (some? pod-spec))
+               (is (= "true" k8s-pod-ejected))
                (is (some? k8s-prepared-to-scale-down-at))
+               (is (t/equal? k8s-prepared-to-scale-down-at k8s-prepared-to-scale-down-at))
                (is (t/equal? k8s-prepared-to-scale-down-at k8s-prepared-to-scale-down-at))
 
                ; wait for the pod to be deleted on kubernetes
