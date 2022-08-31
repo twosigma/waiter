@@ -609,10 +609,14 @@
                ; wait for the pod to be deleted on kubernetes
                (is (wait-for
                     (fn pod-gced? []
-                      (let [watch-state-json (get-k8s-watch-state waiter-url cookies)
-                            pod-spec (get-in watch-state-json ["service-id->pod-id->pod" service-id pod-name])]
-                        (log/info "waiting for pod to terminate" {:pod-spec pod-spec})
-                        (nil? pod-spec)))
+                      ; guard against fleeting errors with being unable to parse the JSON from the provided watch state
+                      (try
+                        (let [watch-state-json (get-k8s-watch-state waiter-url cookies)
+                              pod-spec (get-in watch-state-json ["service-id->pod-id->pod" service-id pod-name])]
+                          (log/info "waiting for pod to terminate" {:pod-spec pod-spec})
+                          (nil? pod-spec))
+                        (catch Exception e
+                          (log/error "Error while fetching for the watch-state" e))))
                     :interval 5
                     :timeout (+ bypass-max-eject-time-secs assert-deleted-buffer-secs)))
 
