@@ -1642,7 +1642,7 @@
                         :message "Error while killing instance"
                         :status http-500-internal-server-error)
                  actual))))
-      (testing "succesful-delete: service is in bypass, instance is has not been annotated with 'prepared-to-scale-down-at'"
+      (testing "succesful-delete: service is in bypass, instance has not been annotated with 'prepared-to-scale-down-at'"
         (let [service-id->service-description-fn
               (constantly {"metadata" {"waiter-proxy-bypass-opt-in" "true"}})
               dummy-scheduler (assoc dummy-scheduler :service-id->service-description-fn service-id->service-description-fn)
