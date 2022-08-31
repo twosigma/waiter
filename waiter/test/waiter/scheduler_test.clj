@@ -70,6 +70,7 @@
 
 (deftest test-record-ServiceInstance
   (let [start-time (du/str-to-date "2014-09-13T00:24:46.959Z" du/formatter-iso8601)
+        prepared-to-scale-down-at (du/str-to-date "2014-09-13T00:24:47.959Z" du/formatter-iso8601)
         test-instance (->ServiceInstance
                         "instance-id"
                         "service-id"
@@ -80,6 +81,7 @@
                         nil
                         "www.scheduler-test.example.com"
                         1234
+                        prepared-to-scale-down-at
                         []
                         "log-dir"
                         "instance-message"
@@ -92,6 +94,7 @@
       (is (= http-200-ok (:health-check-status test-instance)))
       (is (= "www.scheduler-test.example.com" (:host test-instance)))
       (is (= 1234 (:port test-instance)))
+      (is (= prepared-to-scale-down-at (:prepared-to-scale-down-at test-instance)))
       (is (= "log-dir" (:log-directory test-instance)))
       (is (= "instance-message" (:message test-instance))))))
 
@@ -309,12 +312,12 @@
                                                      "health-check-port-index" 2
                                                      "health-check-url" (str "/" id)})
         started-at (t/minus (clock) (t/hours 1))
-        instance1 (->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test" "Unhealthy")
-        instance2 (->ServiceInstance "s1.i2" "s1" started-at true nil #{} nil "host" 123 [] "/log" "test" "Healthy")
-        instance3 (->ServiceInstance "s1.i3" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test" "Unhealthy")
-        instance4 (->ServiceInstance "s1.i4" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test" "Unhealthy")
-        instance5 (->ServiceInstance "s1.i5" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test" "Unhealthy")
-        instance6 (->ServiceInstance "s1.i6" "s1" started-at nil nil #{} nil "host" 123 [] "/log" "test" "Unhealthy")
+        instance1 (->ServiceInstance "s1.i1" "s1" started-at nil nil #{} nil "host" 123 nil [] "/log" "test" "Unhealthy")
+        instance2 (->ServiceInstance "s1.i2" "s1" started-at true nil #{} nil "host" 123 nil [] "/log" "test" "Healthy")
+        instance3 (->ServiceInstance "s1.i3" "s1" started-at nil nil #{} nil "host" 123 nil [] "/log" "test" "Unhealthy")
+        instance4 (->ServiceInstance "s1.i4" "s1" started-at nil nil #{} nil "host" 123 nil [] "/log" "test" "Unhealthy")
+        instance5 (->ServiceInstance "s1.i5" "s1" started-at nil nil #{} nil "host" 123 nil [] "/log" "test" "Unhealthy")
+        instance6 (->ServiceInstance "s1.i6" "s1" started-at nil nil #{} nil "host" 123 nil [] "/log" "test" "Unhealthy")
         get-service->instances-invocation-count (atom 0)
         get-service->instances (fn []
                                  (swap! get-service->instances-invocation-count inc)
