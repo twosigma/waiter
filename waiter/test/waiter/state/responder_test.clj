@@ -129,7 +129,7 @@
                       :name "find-instance-to-offer:select-youngest-healthy-expired-instance"
                       :reason :serve-request
                       :instance-id->state (->> (instance-id->state-fn healthy-instance-ids [])
-                                               (pc/map-vals #(update % :status-tags conj :expired)))}
+                                            (pc/map-vals #(update % :status-tags conj :expired)))}
                      {:name "find-instance-to-offer:killing-with-no-instances"
                       :expected nil
                       :reason :kill-instance
@@ -309,7 +309,6 @@
                                             (update-in ["inst-2" :status-tags] conj :expired)
                                             (update-in ["inst-7" :status-tags] conj :killed)
                                             (update-in ["inst-2"] assoc :slots-used 1))}
- 
                      {:expected [instance-3]
                       :name "find-instance-to-offer:only-healthy-and-unknown-ejected-instance"
                       :reason :kill-instance
