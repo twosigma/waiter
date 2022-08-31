@@ -140,11 +140,7 @@
                                     category-comparison))
         has-prepared-to-scale-down-instances (prepared-to-scale-down-at-instances? id->instance)
         has-expired-instances (expired-instances? instance-id->state)
-        has-starting-instances (starting-instances? instance-id->state)
-        print-identity (fn [temp]
-                         (log/info "kevin: instance" temp)
-                         temp)]
-    (log/info "kevin: has-prepared-to-scale-down-instances?" {:has-prepared-to-scale-down-instances has-prepared-to-scale-down-instances})
+        has-starting-instances (starting-instances? instance-id->state)]
     (some->> instance-id->state
       (filter (fn [[instance-id _]] (and (acceptable-instance-id? instance-id)
                                          (contains? id->instance instance-id))))
@@ -156,8 +152,7 @@
                              has-prepared-to-scale-down-instances has-expired-instances has-starting-instances state instance now))))
       (find-max instance-id-comparator)
       first ; extract the instance-id
-      id->instance
-             print-identity)))
+      id->instance)))
 
 (defn find-available-instance
   "For servicing requests, choose the _oldest_ live healthy instance with available slots.
