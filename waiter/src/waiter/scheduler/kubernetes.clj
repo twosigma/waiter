@@ -975,22 +975,21 @@
             first-phase? (and bypass-enabled? (nil? prepared-to-scale-down-at))
             second-phase? (and bypass-enabled? (some? prepared-to-scale-down-at))
             kill-result (cond first-phase?
-                              (let [can-scale-down? (scheduler/can-bypass-service-scale-down? service-id)]
-                                (if can-scale-down?
-                                  (do
-                                    (scheduler/set-bypass-service-scale-down service-id)
-                                    (mark-pod-for-scale-down this instance)
-                                    {:message "Successfully annotated pod to be prepared for scale down"})
-                                  (do
-                                    (log/info "throttled when trying to annotate the pod" {:instance-id id})
-                                    {:message "Throttled when trying to annotate the pod"
-                                     :status http-429-too-many-requests})))
+                              (if (scheduler/can-bypass-service-scale-down? service-id)
+                                (do
+                                  (scheduler/set-bypass-service-scale-down service-id)
+                                  (mark-pod-for-scale-down this instance)
+                                  {:message "Successfully annotated pod to be prepared for scale down"})
+                                (do
+                                  (log/info "throttled when trying to annotate the pod" {:instance-id id})
+                                  {:message "Throttled when trying to annotate the pod"
+                                   :status http-429-too-many-requests}))
                               second-phase?
                               (do
                                 (kill-service-instance this instance service)
                                 {:killed? true
                                  :message "Successfully killed instance in second phase of scale down"})
-                              :else 
+                              :else
                               (do
                                 (kill-service-instance this instance service)
                                 {:killed? true

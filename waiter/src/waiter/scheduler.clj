@@ -66,13 +66,17 @@
     "Checks if the service can scale down based on whether or not there was a scale down operation within the service-scale-down-throttle-secs."
     [service-id]
     (let [throttle-expires-at (cu/cache-get-or-load service-scale-down-throttle-cache service-id (constantly nil))]
+      (log/info "can-bypass-service-scale-down?" {:service-id service-id
+                                                  :throttle-expires-at throttle-expires-at})
       (or (nil? throttle-expires-at)
           (t/after? (t/now) throttle-expires-at))))
 
   (defn set-bypass-service-scale-down
     "Updates the cache with the service-id with the throttle-expires-at"
     [service-id]
-    (cu/cache-put! service-scale-down-throttle-cache service-id (t/plus (t/now) (t/seconds service-scale-down-throttle-secs)))))
+    (let [throttle-expires-at (t/plus (t/now) (t/seconds service-scale-down-throttle-secs))]
+      (log/info "set-bypass-service-scale-down" {:service-id service-id})
+      (cu/cache-put! service-scale-down-throttle-cache service-id throttle-expires-at))))
 
 (defmacro log
   "Log Scheduler-specific messages."
