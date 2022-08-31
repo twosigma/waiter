@@ -1913,63 +1913,61 @@
   (let [instances' 4
         service-id "test-service-id"
         service (scheduler/make-Service {:id service-id :instances 1 :k8s/app-name service-id :k8s/namespace "myself"})
-        service-id-with-scale-down "test-service-id-scale-down"
-        service-scale-down (scheduler/make-Service {:id service-id-with-scale-down :instances 1 :k8s/app-name service-id :k8s/namespace "myself"})
-        service-state (atom {:service-id->service {service-id service
-                                                   service-id-with-scale-down service-scale-down}})
-        dummy-scheduler (assoc (make-dummy-scheduler [service-id service-id-with-scale-down]) :watch-state service-state)]
-    (testing "successful-scale"
-      (with-redefs [api-request (fn [url _ & {:keys [body content-type request-method]}]
-                                  (is (= "https://k8s-api.example//apis/apps/v1/namespaces/myself/replicasets/test-service-id" url))
-                                  (is (= "application/json-patch+json" content-type))
-                                  (is (= :patch request-method))
-                                  (is (= [{"op" "test" "path" "/spec/replicas" "value" 1}
-                                          {"op" "replace" "path" "/spec/replicas" "value" 4}]
-                                         (json/read-str (str body))))
-                                  {:status "OK"})]
-        (testing "integer value"
-          (let [actual (scheduler/scale-service dummy-scheduler service-id 4 false)]
-            (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual))))
-        (testing "double value"
-          (let [actual (scheduler/scale-service dummy-scheduler service-id 4.0 false)]
-            (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual)))
-          (let [actual (scheduler/scale-service dummy-scheduler service-id 4.2 false)]
-            (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual)))
-          (let [actual (scheduler/scale-service dummy-scheduler service-id 4.8 false)]
-            (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual))))))
+        service-state (atom {:service-id->service {service-id service}})
+        dummy-scheduler (assoc (make-dummy-scheduler [service-id]) :watch-state service-state)]
+    (with-redefs [service-id->service (constantly service)]
+      (testing "successful-scale"
+        (with-redefs [api-request (fn [url _ & {:keys [body content-type request-method]}]
+                                    (is (= "https://k8s-api.example//apis/apps/v1/namespaces/myself/replicasets/test-service-id" url))
+                                    (is (= "application/json-patch+json" content-type))
+                                    (is (= :patch request-method))
+                                    (is (= [{"op" "test" "path" "/spec/replicas" "value" 1}
+                                            {"op" "replace" "path" "/spec/replicas" "value" 4}]
+                                           (json/read-str (str body))))
+                                    {:status "OK"})]
+          (testing "integer value"
+            (let [actual (scheduler/scale-service dummy-scheduler service-id 4 false)]
+              (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual))))
+          (testing "double value"
+            (let [actual (scheduler/scale-service dummy-scheduler service-id 4.0 false)]
+              (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual)))
+            (let [actual (scheduler/scale-service dummy-scheduler service-id 4.2 false)]
+              (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual)))
+            (let [actual (scheduler/scale-service dummy-scheduler service-id 4.8 false)]
+              (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual))))))
 
-    (testing "unsuccessful-scale: service not found"
-      (let [actual (with-redefs [service-id->service (constantly nil)]
-                     (scheduler/scale-service dummy-scheduler service-id instances' false))]
-        (is (= {:success false
-                :status http-404-not-found
-                :result :no-such-service-exists
-                :message "Failed to scale missing service"}
-               actual))))
-    (testing "unsuccessful-scale: forbidden"
-      (let [actual (with-redefs [api-request (fn [& _] (ss/throw+ {:status http-403-forbidden}))]
-                     (scheduler/scale-service dummy-scheduler service-id instances' false))]
-        (is (= {:success false
-                :status http-500-internal-server-error
-                :result :failed
-                :message "Error while scaling waiter service"}
-               actual))))
-    (testing "unsuccessful-scale: patch conflict"
-      (let [actual (with-redefs [api-request (fn [& _] (ss/throw+ {:status http-409-conflict}))]
-                     (scheduler/scale-service dummy-scheduler service-id instances' false))]
-        (is (= {:success false
-                :status http-409-conflict
-                :result :conflict
-                :message "Scaling failed due to repeated patch conflicts"}
-               actual))))
-    (testing "unsuccessful-scale: internal error"
-      (let [actual (with-redefs [api-request (fn [& _] (throw-exception))]
-                     (scheduler/scale-service dummy-scheduler service-id instances' false))]
-        (is (= {:success false
-                :status http-500-internal-server-error
-                :result :failed
-                :message "Error while scaling waiter service"}
-               actual))))))
+      (testing "unsuccessful-scale: service not found"
+        (let [actual (with-redefs [service-id->service (constantly nil)]
+                       (scheduler/scale-service dummy-scheduler service-id instances' false))]
+          (is (= {:success false
+                  :status http-404-not-found
+                  :result :no-such-service-exists
+                  :message "Failed to scale missing service"}
+                 actual))))
+      (testing "unsuccessful-scale: forbidden"
+        (let [actual (with-redefs [api-request (fn [& _] (ss/throw+ {:status http-403-forbidden}))]
+                       (scheduler/scale-service dummy-scheduler service-id instances' false))]
+          (is (= {:success false
+                  :status http-500-internal-server-error
+                  :result :failed
+                  :message "Error while scaling waiter service"}
+                 actual))))
+      (testing "unsuccessful-scale: patch conflict"
+        (let [actual (with-redefs [api-request (fn [& _] (ss/throw+ {:status http-409-conflict}))]
+                       (scheduler/scale-service dummy-scheduler service-id instances' false))]
+          (is (= {:success false
+                  :status http-409-conflict
+                  :result :conflict
+                  :message "Scaling failed due to repeated patch conflicts"}
+                 actual))))
+      (testing "unsuccessful-scale: internal error"
+        (let [actual (with-redefs [api-request (fn [& _] (throw-exception))]
+                       (scheduler/scale-service dummy-scheduler service-id instances' false))]
+          (is (= {:success false
+                  :status http-500-internal-server-error
+                  :result :failed
+                  :message "Error while scaling waiter service"}
+                 actual)))))))
 
 (deftest test-retrieve-directory-content
   ;; Killed pod
