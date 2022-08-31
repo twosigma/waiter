@@ -1642,12 +1642,12 @@
                         :message "Error while killing instance"
                         :status http-500-internal-server-error)
                  actual))))
-      (testing "succesful-delete: service is in bypass"
+      (testing "succesful-delete: service is in bypass, instance is has not been annotated with 'prepared-to-scale-down-at'"
         (let [service-id->service-description-fn
               (constantly {"metadata" {"waiter-proxy-bypass-opt-in" "true"}})
               dummy-scheduler (assoc dummy-scheduler :service-id->service-description-fn service-id->service-description-fn)
               pod-marked-for-scale-down?-atom (atom false)
-              mark-pod-for-scale-down-mock (fn mark-pod-for-scale-down-fn [_ _ _]
+              mark-pod-for-scale-down-mock (fn mark-pod-for-scale-down-fn [_ _]
                                              (reset! pod-marked-for-scale-down?-atom true))
               instances-killed?-fn (atom false)
               hard-delete-service-instance-mock (fn hard-delete-service-instance-fn [_ _]
@@ -1657,13 +1657,36 @@
                                    hard-delete-service-instance hard-delete-service-instance-mock]
                        (scheduler/kill-instance dummy-scheduler instance))]
           (is (= (assoc partial-expected
-                        :killed? true
-                        :message "Successfully killed instance"
+                        :killed? false
+                        :message "Successfully annotated pod to be prepared for scale down"
                         :status http-200-ok)
                  actual))
           (is @pod-marked-for-scale-down?-atom)
           (is (not @instances-killed?-fn)
-              "Instance should not be killed fully, that is handled by the pod cleanup daemon separately."))))))
+              "Instance should not be killed fully, that is handled by the pod cleanup daemon separately.")))
+
+      (testing "succesful-delete: service is in bypass, instance has been annotated with 'prepared-to-scale-down-at'"
+        (let [service-id->service-description-fn
+              (constantly {"metadata" {"waiter-proxy-bypass-opt-in" "true"}})
+              dummy-scheduler (assoc dummy-scheduler :service-id->service-description-fn service-id->service-description-fn)
+              instance-prepared-to-scale-down (assoc instance :prepared-to-scale-down-at (t/now))
+              pod-marked-for-scale-down?-atom (atom false)
+              mark-pod-for-scale-down-mock (fn mark-pod-for-scale-down-fn [_ _]
+                                             (reset! pod-marked-for-scale-down?-atom true))
+              instances-killed?-fn (atom false)
+              hard-delete-service-instance-mock (fn hard-delete-service-instance-fn [_ _]
+                                                  (reset! instances-killed?-fn true))
+              actual (with-redefs [api-request (constantly {:status "OK"})
+                                   mark-pod-for-scale-down mark-pod-for-scale-down-mock
+                                   hard-delete-service-instance hard-delete-service-instance-mock]
+                       (scheduler/kill-instance dummy-scheduler instance-prepared-to-scale-down))]
+          (is (= (assoc partial-expected
+                        :killed? true
+                        :message "Successfully killed instance in second phase of scale down"
+                        :status http-200-ok)
+                 actual))
+          (is (not @pod-marked-for-scale-down?-atom))
+          (is @instances-killed?-fn))))))
 
 (deftest test-scheduler-service-exists?
   (let [service-id "test-app-1234"
@@ -1913,19 +1936,6 @@
           (let [actual (scheduler/scale-service dummy-scheduler service-id 4.2 false)]
             (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual)))
           (let [actual (scheduler/scale-service dummy-scheduler service-id 4.8 false)]
-            (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual))))))
-
-    (testing "successful-scale for service with pods that are marked for scale down"
-      (with-redefs [api-request (fn [url _ & {:keys [body content-type request-method]}]
-                                  (is (= "https://k8s-api.example//apis/apps/v1/namespaces/myself/replicasets/test-service-id" url))
-                                  (is (= "application/json-patch+json" content-type))
-                                  (is (= :patch request-method))
-                                  (is (= [{"op" "test" "path" "/spec/replicas" "value" 2}
-                                          {"op" "replace" "path" "/spec/replicas" "value" 5}]
-                                         (json/read-str (str body))))
-                                  {:status "OK"})]
-        (testing "integer value"
-          (let [actual (scheduler/scale-service dummy-scheduler service-id-with-scale-down 4 false)]
             (is (= {:message "Scaled to 4" :result :scaled :status http-200-ok :success true} actual))))))
 
     (testing "unsuccessful-scale: service not found"
