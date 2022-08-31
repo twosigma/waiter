@@ -1665,7 +1665,7 @@
                         :message "Successfully annotated pod to be prepared for scale down"
                         :status http-200-ok)
                  actual))
-          (is (not @pod-marked-for-scale-down?-atom))
+          (is @pod-marked-for-scale-down?-atom)
           (is @set-bypass-service-scale-down-atom
               "Instance should update the cache with service-id as the pod is being marked for scale down.")
           (is (not @instances-killed?-fn)
@@ -1693,7 +1693,7 @@
                         :message "Throttled when trying to annotate the pod"
                         :status http-429-too-many-requests)
                  actual))
-          (is @pod-marked-for-scale-down?-atom)
+          (is (not @pod-marked-for-scale-down?-atom))
           (is (not @set-bypass-service-scale-down-atom)
               "Instance was throttled and should not reset the service value in cache!")
           (is (not @instances-killed?-fn)
