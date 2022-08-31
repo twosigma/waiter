@@ -133,7 +133,7 @@
                         (log/info "scaling down instance candidate" instance)
                         (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "attempt"))
                         (scheduler/track-kill-candidate! instance-id :prepare-to-kill eject-backoff-base-time-ms)
-                        (let [{:keys [killed?] :as kill-result}
+                        (let [{:keys [killed? status] :as kill-result}
                               (-> (au/execute
                                     (fn kill-instance-for-scale-down-task []
                                       (scheduler/kill-instance scheduler instance))
@@ -150,8 +150,11 @@
                               (notify-instance-killed-fn instance)
                               (peers-acknowledged-eject-requests-fn instance false max-eject-time-ms :killed))
                             (do
-                              (log/info "failed kill attempt, releasing instance" instance-id)
-                              (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "kill-fail"))
+                              (if (= status http-200-ok)
+                                (log/info "successfully marked instance as prepared-to-scale-down-at" {:instance-id :instance-id})
+                                (do
+                                  (log/info "failed kill attempt, releasing instance" instance-id)
+                                  (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "kill-fail"))))
                               (service/release-instance! populate-maintainer-chan! instance (result-map-fn :not-killed))))
                           (when response-chan (async/>! response-chan kill-result))
                           killed?))

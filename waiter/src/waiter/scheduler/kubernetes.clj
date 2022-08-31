@@ -790,8 +790,7 @@
 (defn kill-service-instance
   "Safely kill the Kubernetes pod corresponding to the given Waiter Service Instance.
    Also adjusts the ReplicaSet replica count to prevent a replacement pod from being started.
-   Returns nil if pod is successfully killed and throws on failure. If the instance is a part of a bypass service
-   then add a label (prepared-to-scale-down-at: milliseconds-since-epoch) to the pod."
+   Returns nil on success, but throws on failure."
   [{:keys [api-server-url] :as scheduler} {:keys [service-id] :as instance} service]
   ;; SAFE DELETION STRATEGY:
   ;; 1) Delete the target pod with a grace period of 5 minutes
@@ -810,14 +809,13 @@
   ;; we assume we're already so far out of sync that the possibility of non-atomic scaling
   ;; doesn't hurt us significantly. If it takes more than 5 minutes to get from step 1
   ;; to step 3, then the pod was already deleted, and the force-delete is no longer needed.
-  ;; The force-delete can fail with a 404 (object not found), but this operation still succeeds. 
+  ;; The force-delete can fail with a 404 (object not found), but this operation still succeeds.
   (let [pod-url (instance->pod-url api-server-url instance)]
     ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
     (api-request pod-url scheduler :request-method :delete
                  :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds 300}))
+    ; scale down the replicaset to reflect removal of this instance
     (try
-      ; Scale down the replicaset to reflect removal of this instance. This has to be done after the selector labels are changed
-      ; on the pod, otherwise the replicaset will set the pod to terminating state.
       (scale-service-by-delta scheduler service -1)
       (catch Throwable t
         (log/error t "Error while scaling down ReplicaSet after pod termination")))
@@ -825,9 +823,8 @@
     ; (note that the pod's default grace period is different from the 300s period set above)
     (hard-delete-service-instance scheduler instance)
     (scheduler/log-service-instance instance :kill :info)
-    (log/info "KEVIN: hard deleted pod" {:id (:id instance)})
     (comment "Success! Even if the scale-down or force-kill operation failed,
-                  the pod will be force-killed after the grace period is up.")))
+              the pod will be force-killed after the grace period is up.")))
 
 (defn invoke-replicaset-spec-builder-fn
   "Helper function to invoke replicaset-spec-builder-fn and ensure arity is maintained in invocation."
@@ -838,7 +835,7 @@
   "Reify a Waiter Service as a Kubernetes ReplicaSet."
   [{:keys [run-as-user-source service-description service-id]}
    {:keys [api-server-url pdb-api-version pdb-spec-builder-fn replicaset-api-version
-           response->deployment-error-msg-fn service-id->deployment-error-cache watch-state] :as scheduler}]
+           response->deployment-error-msg-fn service-id->deployment-error-cache] :as scheduler}]
   (let [{:strs [cmd-type]} service-description]
     (when (= "docker" cmd-type)
       (throw (ex-info "Unsupported command type on service"
@@ -972,9 +969,6 @@
     (ss/try+
       (let [service (service-id->service this service-id)
             desc (service-id->service-description-fn service-id)
-            ; services with bypass enabled must be scaled down in two phases because there may be
-            ; external load balancers that continue to send requests to the pods. The pod does not actually
-            ; get hard deleted by this function call, and is handled later in the pod-cleanup daemon.
             bypass-enabled? (sd/service-description-bypass-enabled? desc)
             first-phase? (and bypass-enabled? (nil? prepared-to-scale-down-at))
             second-phase? (and bypass-enabled? (some? prepared-to-scale-down-at))
@@ -993,10 +987,6 @@
                                 (kill-service-instance this instance service)
                                 {:killed? true
                                  :message "Successfully killed instance"}))]
-        (log/info "kevin: kill-instance in k8s scheduler" {:bypass-enabled? bypass-enabled?
-                                                    :first-phase? first-phase?
-                                                    :second-phase? second-phase?
-                                                    :kill-result kill-result})
         (assoc kill-result
                :instance-id id
                :service-id service-id
