@@ -62,14 +62,14 @@
    - expired and idle or processing lingering requests.
    If there are expired instances, only choose healthy instances that are ejected or expired.
    If there are expired and starting instances, only kill unhealthy instances that are not starting."
-  [request-id->use-reason-map bypass-grace-buffer-ms bypass-force-kill-time-ms earliest-request-threshold-time
+  [request-id->use-reason-map bypass-grace-kill-time-ms bypass-force-kill-time-ms earliest-request-threshold-time
    prepared-to-scale-down-instances? expired-instances? starting-instances? {:keys [slots-used status-tags] :as state}
    {:keys [prepared-to-scale-down-at]} now]
   (and (or (not prepared-to-scale-down-instances?)
            ;; If there are any bypass instances preparing to scale down then we should only attempt to kill those instances
            ;; first. Bypass instances that are scaling down are only killable if the bypass-force-kill-time-ms is met.
            (and (some? prepared-to-scale-down-at)
-                (t/before? (t/plus prepared-to-scale-down-at (t/millis bypass-grace-buffer-ms)) now)
+                (t/before? (t/plus prepared-to-scale-down-at (t/millis bypass-grace-kill-time-ms)) now)
                 ; TODO: need to include outstanding requests check
                 (t/before? (t/plus prepared-to-scale-down-at (t/millis bypass-force-kill-time-ms)) now)))
        (not-any? #(contains? status-tags %) [:killed :locked])
@@ -113,7 +113,7 @@
    - choose amongst the idle ejected instances
    - choose amongst the idle youngest healthy instances."
   [id->all-healthy-instances id->instance instance-id->state acceptable-instance-id? instance-id->request-id->use-reason-map
-   load-balancing bypass-grace-buffer-ms bypass-force-kill-time-ms lingering-request-threshold-ms]
+   load-balancing bypass-grace-kill-time-ms bypass-force-kill-time-ms lingering-request-threshold-ms]
   (let [earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))
         instance-id-state-pair->categorizer-vec (fn [[instance-id {:keys [slots-used status-tags] :as state}]]
                                                   ; most important goes first
@@ -152,7 +152,7 @@
                 (let [instance (get id->instance instance-id)
                       request-id->use-reason-map (instance-id->request-id->use-reason-map instance-id)
                       now (t/now)]
-                  (killable? request-id->use-reason-map bypass-grace-buffer-ms bypass-force-kill-time-ms earliest-request-threshold-time
+                  (killable? request-id->use-reason-map bypass-grace-kill-time-ms bypass-force-kill-time-ms earliest-request-threshold-time
                              has-prepared-to-scale-down-instances has-expired-instances has-starting-instances state instance now))))
       (find-max instance-id-comparator)
       first ; extract the instance-id
@@ -414,12 +414,12 @@
 (defn handle-kill-instance-request
   "Handles a kill request."
   [{:keys [id->all-healthy-instances id->instance instance-id->request-id->use-reason-map instance-id->state load-balancing] :as current-state}
-   update-status-tag-fn bypass-grace-buffer-ms bypass-force-kill-time-ms lingering-request-threshold-ms
+   update-status-tag-fn bypass-grace-kill-time-ms bypass-force-kill-time-ms lingering-request-threshold-ms
    [{:keys [request-id] :as reason-map} resp-chan exclude-ids-set _]]
   (let [acceptable-instance-id? #(not (contains? exclude-ids-set %))
         instance (find-killable-instance id->all-healthy-instances id->instance instance-id->state acceptable-instance-id?
                                          instance-id->request-id->use-reason-map load-balancing
-                                         bypass-grace-buffer-ms bypass-force-kill-time-ms
+                                         bypass-grace-kill-time-ms bypass-force-kill-time-ms
                                          lingering-request-threshold-ms)]
     (if instance
       (let [instance-id (:id instance)]
@@ -485,7 +485,7 @@
 (defn handle-eject-request
   "Handle a request to eject an instance."
   [{:keys [id->all-healthy-instances id->instance instance-id->request-id->use-reason-map instance-id->state] :as current-state}
-   update-status-tag-fn update-state-by-ejecting-instance-fn bypass-grace-buffer-ms bypass-force-kill-time-ms
+   update-status-tag-fn update-state-by-ejecting-instance-fn bypass-grace-kill-time-ms bypass-force-kill-time-ms
    lingering-request-threshold-ms [{:keys [instance-id eject-period-ms cid]} response-chan]]
   (cid/with-correlation-id
     cid
@@ -504,7 +504,7 @@
                                            instance (id->instance instance-id)
                                            now (t/now)]
                                        (not
-                                         (killable? request-id->use-reason-map bypass-grace-buffer-ms bypass-force-kill-time-ms earliest-request-threshold-time
+                                         (killable? request-id->use-reason-map bypass-grace-kill-time-ms bypass-force-kill-time-ms earliest-request-threshold-time
                                                     has-prepared-to-scale-down-instances has-expired-instances has-starting-instances state instance now))))
           response-code (if instance-not-allowed? :in-use :ejected)]
       {:current-state' (if (= :ejected response-code)
@@ -599,7 +599,7 @@
   updated state is passed into the block through the update-state-chan,
   state queries are passed into the block through the query-state-chan."
   [ejection-expiry-tracker service-id trigger-uneject-process-fn
-   {:keys [bypass-grace-buffer-ms bypass-force-kill-time-ms eject-backoff-base-time-ms lingering-request-threshold-ms max-eject-time-ms]}
+   {:keys [bypass-grace-kill-time-ms bypass-force-kill-time-ms eject-backoff-base-time-ms lingering-request-threshold-ms max-eject-time-ms]}
    {:keys [eject-instance-chan exit-chan kill-instance-chan query-state-chan release-instance-chan
            reserve-instance-chan scaling-state-chan uneject-instance-chan update-state-chan work-stealing-chan]}
    initial-state]
@@ -716,7 +716,7 @@
                          (let [{:keys [current-state' response-chan response]}
                                (timers/start-stop-time!
                                  responder-kill-timer
-                                 (handle-kill-instance-request current-state update-status-tag-fn bypass-grace-buffer-ms bypass-force-kill-time-ms 
+                                 (handle-kill-instance-request current-state update-status-tag-fn bypass-grace-kill-time-ms bypass-force-kill-time-ms 
                                                                lingering-request-threshold-ms data))]
                            (async/>! response-chan response)
                            current-state')
@@ -764,7 +764,7 @@
                                  responder-eject-timer
                                  (handle-eject-request
                                    current-state update-status-tag-fn update-state-by-ejecting-instance-fn
-                                   bypass-grace-buffer-ms bypass-force-kill-time-ms lingering-request-threshold-ms data))]
+                                   bypass-grace-kill-time-ms bypass-force-kill-time-ms lingering-request-threshold-ms data))]
                            (async/put! response-chan response)
                            current-state')
 
@@ -841,7 +841,7 @@
                      :update-state-chan (au/latest-chan)
                      :work-stealing-chan (async/chan 1024)
                      :exit-chan (async/chan 1)}]
-    (let [timeout-config (-> (select-keys ejection-config [:bypass-grace-buffer-ms :bypass-force-kill-time-ms 
+    (let [timeout-config (-> (select-keys ejection-config [:bypass-grace-kill-time-ms :bypass-force-kill-time-ms 
                                                            :eject-backoff-base-time-ms :max-eject-time-ms])
                            (assoc :lingering-request-threshold-ms lingering-request-threshold-ms))
           {:strs [load-balancing]} service-description

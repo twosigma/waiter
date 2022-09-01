@@ -29,7 +29,7 @@
            (org.joda.time DateTime)))
 
 (deftest test-find-instance-to-offer-with-concurrency-level-1
-  (let [bypass-grace-buffer-ms 15000
+  (let [bypass-grace-kill-time-ms 15000
         bypass-force-kill-time-ms 120000
         current-time (t/now)
         make-instance (fn [id] {:id (str "inst-" id), :started-at (DateTime. (* id 1000000))})
@@ -360,7 +360,7 @@
                 actual (if (= :kill-instance reason)
                          (find-killable-instance id->all-healthy-instances id->instance instance-id->state acceptable-instance-id?
                                                  instance-id->request-id->use-reason-map load-balancing
-                                                 bypass-grace-buffer-ms bypass-force-kill-time-ms
+                                                 bypass-grace-kill-time-ms bypass-force-kill-time-ms
                                                  lingering-request-threshold-ms)
                          (find-available-instance sorted-instance-ids id->instance instance-id->state acceptable-instance-id? first))]
             (when (or (and (nil? expected) (not (nil? actual)))
