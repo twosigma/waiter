@@ -815,13 +815,13 @@
  ; instances. Such instances are guaranteed not to be served up as an available instance until sufficient time has
  ; elapsed since their last use. This is referred to as ejecting an instance:
  :ejection-config {
-                   ;; The bypass instance cannot be killed during this period right after being ejected because the instance may still be
-                   ;; handling requests, and those request metrics will have some latency before waiter routers are up to date.
-                   :bypass-grace-buffer-ms 15000
-
                    ;; The minimum amount of time that needs to pass before the instance of a bypass service will be fully deleted after
                    ;; being marked as ejected.
-                   :bypass-max-eject-time-secs 120
+                   :bypass-force-kill-time-ms 120000
+
+                   ;; The bypass instance cannot be killed during this period right after being ejected because the instance may still be
+                   ;; handling requests, and those request metrics will have some latency before waiter routers are up to date.
+                   :bypass-grace-kill-time-ms 15000
 
                    ;; Erroneous instances are ejected using an exponential delay based on the number of successive
                    ;; failures and eject-backoff-base-time-ms (milliseconds):
