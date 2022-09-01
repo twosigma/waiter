@@ -143,9 +143,11 @@
         has-starting-instances (starting-instances? instance-id->state)
         print-identity-fn (fn [res]
                             (log/info "kevin: find-killable-instance" {:instances-considered (keys instance-id->state)
-                                                                       :has-expired-instances has-expired-instances
+                                                                       :prepared-to-scale-down-at-instances? prepared-to-scale-down-at-instances?
                                                                        :return res})
                             res)]
+    (log/info "kevin: find-killable-instance called" {:instances-considered (keys instance-id->state)
+                                                      :prepared-to-scale-down-at-instances? prepared-to-scale-down-at-instances?})
     (some->> instance-id->state
       (filter (fn [[instance-id _]] (and (acceptable-instance-id? instance-id)
                                          (contains? id->instance instance-id))))
