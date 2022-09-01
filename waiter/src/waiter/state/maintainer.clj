@@ -135,7 +135,7 @@
                    (timers/start-stop-time!
                      update-state-timer
                      (try
-                       (let [{:keys [service-id->my-instance->slots service-id->unhealthy-instances service-id->expired-instances
+                       (let [{:keys [service-id->healthy-instances service-id->my-instance->slots service-id->unhealthy-instances service-id->expired-instances
                                      service-id->starting-instances service-id->deployment-error service-id->instability-issue time]} router-state
                              incoming-service-ids (set (keys service-id->my-instance->slots))
                              known-service-ids (set (keys service-id->channel-map))
@@ -153,7 +153,8 @@
                          ;; Update state for responders
                          (doseq [service-id (keys service-id->channel-map'')]
                            (try
-                             (let [my-instance->slots (get service-id->my-instance->slots service-id)
+                             (let [all-healthy-instances (get service-id->healthy-instances service-id)
+                                   my-instance->slots (get service-id->my-instance->slots service-id)
                                    healthy-instances (keys my-instance->slots)
                                    unhealthy-instances (get service-id->unhealthy-instances service-id)
                                    expired-instances (get service-id->expired-instances service-id)
@@ -163,7 +164,8 @@
                                    update-state-chan (retrieve-channel (get service-id->channel-map'' service-id) :update-state)]
                                (if (or healthy-instances unhealthy-instances)
                                  (async/put! update-state-chan
-                                             (let [update-state {:healthy-instances healthy-instances
+                                             (let [update-state {:all-healthy-instances all-healthy-instances
+                                                                 :healthy-instances healthy-instances
                                                                  :unhealthy-instances unhealthy-instances
                                                                  :expired-instances expired-instances
                                                                  :starting-instances starting-instances

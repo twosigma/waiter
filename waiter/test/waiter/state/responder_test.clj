@@ -54,6 +54,7 @@
                                  (into {} (map (fn [instance-id] [instance-id {:slots-assigned 1, :slots-used 0, :status-tags #{:healthy}}]) %1))
                                  (into {} (map (fn [instance-id] [instance-id {:slots-assigned 0, :slots-used 0, :status-tags #{:unhealthy}}]) %2)))
         all-id->instance (pc/map-from-vals :id all-instance-combo)
+        default-id->all-healthy-instances (pc/map-from-vals :id healthy-instance-combo)
         lingering-request-threshold-ms 60000
         time-active (->> (- lingering-request-threshold-ms 1000) (t/millis) (t/minus current-time))
         time-linger (->> (+ lingering-request-threshold-ms 1000) (t/millis) (t/minus current-time))
@@ -323,18 +324,26 @@
                       :id->instance (-> (pc/map-from-vals :id [instance-2 instance-9-scaling-down-timeout-reached]))
                       :instance-id->request-id->use-reason-map {}
                       :instance-id->state (instance-id->state-fn (map :id [instance-2 instance-9-scaling-down-timeout-reached]) [])}
- 
                      {:expected nil
-                      :name "find-instance-to-offer:kill-instance-provides-no-instances-when-instance-preparing-to-scale-down-is-not-killable"
+                      :name "find-instance-to-offer:kill-instance-provides-nil-when-no-local-instances-are-preparing-to-scale-down-but-service-has-instance-preparing-to-scale-down"
                       :reason :kill-instance
-                      :id->instance (-> (pc/map-from-vals :id [instance-2 instance-10-scaling-down]))
+                      :id->all-healthy-instances (pc/map-from-vals :id [instance-2 instance-10-scaling-down])
+                      :id->instance (pc/map-from-vals :id [instance-2])
+                      :instance-id->request-id->use-reason-map {}
+                      :instance-id->state (instance-id->state-fn (map :id [instance-2]) [])}
+                     {:expected nil
+                      :name "find-instance-to-offer:kill-instance-provides-no-instances-when-instance-preparing-to-scale-down-is-not-killable-with-timeout-not-reached"
+                      :reason :kill-instance
+                      :id->all-healthy-instances (pc/map-from-vals :id [instance-2 instance-10-scaling-down])
+                      :id->instance (pc/map-from-vals :id [instance-2 instance-10-scaling-down])
                       :instance-id->request-id->use-reason-map {}
                       :instance-id->state (instance-id->state-fn (map :id [instance-2 instance-10-scaling-down]) [])})]
-    (doseq [{:keys [exclude-ids-set expected id->instance instance-id->request-id->use-reason-map
+    (doseq [{:keys [exclude-ids-set expected id->all-healthy-instances id->instance instance-id->request-id->use-reason-map
                     instance-id->state load-balancing name reason sorted-instance-ids]} test-cases]
       (testing (str "Test " name)
         (with-redefs [t/now (constantly current-time)]
           (let [exclude-ids-set (or exclude-ids-set #{})
+                id->all-healthy-instances (or id->all-healthy-instances default-id->all-healthy-instances)
                 id->instance (or id->instance all-id->instance)
                 load-balancing (or load-balancing :oldest)
                 sorted-instance-ids (or sorted-instance-ids
@@ -349,7 +358,7 @@
                 acceptable-instance-id? (fn [instance-id] (not (contains? exclude-ids-set instance-id)))
                 instance-id->request-id->use-reason-map (or instance-id->request-id->use-reason-map {})
                 actual (if (= :kill-instance reason)
-                         (find-killable-instance id->instance instance-id->state acceptable-instance-id?
+                         (find-killable-instance id->all-healthy-instances id->instance instance-id->state acceptable-instance-id?
                                                  instance-id->request-id->use-reason-map load-balancing
                                                  bypass-grace-buffer-ms bypass-max-eject-time-secs
                                                  lingering-request-threshold-ms)

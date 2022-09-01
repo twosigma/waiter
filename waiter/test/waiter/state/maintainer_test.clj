@@ -1530,6 +1530,7 @@
                                                           "service-3" {"service-3.A" 6, "service-3.B" 8}
                                                           "service-4" {"service-4.B" 3}
                                                           "service-5" {"service-5.A" 5}}
+                         :service-id->healthy-instances {}
                          :service-id->unhealthy-instances {}
                          :service-id->expired-instances {}
                          :service-id->starting-instances {}
@@ -1544,7 +1545,8 @@
                                      "service-5" {:channel-map-for "service-5"}}
            :last-state-update-time current-time})
 
-        (is (= [{:healthy-instances ["service-1.A" "service-1.B"]
+        (is (= [{:all-healthy-instances nil
+                 :healthy-instances ["service-1.A" "service-1.B"]
                  :expired-instances nil
                  :unhealthy-instances nil
                  :starting-instances nil
@@ -1553,7 +1555,8 @@
                  :instability-issue nil}
                 current-time]
                (async/<!! (retrieve-channel {:channel-map-for "service-1"} :update-state))))
-        (is (= [{:healthy-instances ["service-3.A" "service-3.B"]
+        (is (= [{:all-healthy-instances nil
+                 :healthy-instances ["service-3.A" "service-3.B"]
                  :expired-instances nil
                  :unhealthy-instances nil
                  :starting-instances nil
@@ -1562,7 +1565,8 @@
                  :instability-issue nil}
                 current-time]
                (async/<!! (retrieve-channel {:channel-map-for "service-3"} :update-state))))
-        (is (= [{:healthy-instances ["service-4.B"]
+        (is (= [{:all-healthy-instances nil
+                 :healthy-instances ["service-4.B"]
                  :expired-instances nil
                  :unhealthy-instances nil
                  :starting-instances nil
@@ -1571,7 +1575,8 @@
                  :instability-issue nil}
                 current-time]
                (async/<!! (retrieve-channel {:channel-map-for "service-4"} :update-state))))
-        (is (= [{:healthy-instances ["service-5.A"]
+        (is (= [{:all-healthy-instances nil
+                 :healthy-instances ["service-5.A"]
                  :expired-instances nil
                  :unhealthy-instances nil
                  :starting-instances nil

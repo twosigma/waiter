@@ -112,7 +112,7 @@
    - choose amongst the idle unhealthy instances
    - choose amongst the idle ejected instances
    - choose amongst the idle youngest healthy instances."
-  [id->instance instance-id->state acceptable-instance-id? instance-id->request-id->use-reason-map
+  [id->all-healthy-instances id->instance instance-id->state acceptable-instance-id? instance-id->request-id->use-reason-map
    load-balancing bypass-grace-buffer-ms bypass-max-eject-time-secs lingering-request-threshold-ms]
   (let [earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))
         instance-id-state-pair->categorizer-vec (fn [[instance-id {:keys [slots-used status-tags] :as state}]]
@@ -138,15 +138,14 @@
                                       (get id->instance (first %1))
                                       (get id->instance (first %2)))
                                     category-comparison))
-        has-prepared-to-scale-down-instances (prepared-to-scale-down-at-instances? id->instance)
+        ;; id->instance ONLY includes the local instances for the router (based on 'my-instance->slots'), so has-prepared-to-scale-down-instances
+        ;; may be false even though there are instances for the service-id that have the :prepared-to-scale-down-at field. 
+        ;; We include id->all-healthy-instances in this calculation to fix the problem.
+        has-prepared-to-scale-down-instances (or (prepared-to-scale-down-at-instances? id->all-healthy-instances)
+                                                 (prepared-to-scale-down-at-instances? id->instance))
         has-expired-instances (expired-instances? instance-id->state)
-        has-starting-instances (starting-instances? instance-id->state)
-        print-identity-fn (fn [res]
-                            (log/info "kevin: find-killable-instance" {:instances-considered (keys instance-id->state)
-                                                                       :prepared-to-scale-down-at-instances? prepared-to-scale-down-at-instances?
-                                                                       :return res})
-                            res)]
-    (log/info "kevin: find-killable-instance called" {:instances-considered (keys instance-id->state)
+        has-starting-instances (starting-instances? instance-id->state)]
+    (log/info "kevin: find-killable-instance called" {:instances-considered (set (concat (keys id->all-healthy-instances) (keys id->instance)))
                                                       :prepared-to-scale-down-at-instances? prepared-to-scale-down-at-instances?})
     (some->> instance-id->state
       (filter (fn [[instance-id _]] (and (acceptable-instance-id? instance-id)
@@ -159,8 +158,7 @@
                              has-prepared-to-scale-down-instances has-expired-instances has-starting-instances state instance now))))
       (find-max instance-id-comparator)
       first ; extract the instance-id
-      id->instance
-             print-identity-fn)))
+      id->instance)))
 
 (defn find-available-instance
   "For servicing requests, choose the _oldest_ live healthy instance with available slots.
@@ -272,7 +270,7 @@
    update-responder-state-meter slots-assigned-counter slots-available-counter slots-in-use-counter]
   (timers/start-stop-time!
     update-responder-state-timer
-    (when-let [[{:keys [healthy-instances unhealthy-instances my-instance->slots expired-instances starting-instances deployment-error instability-issue]} _] data]
+    (when-let [[{:keys [all-healthy-instances healthy-instances unhealthy-instances my-instance->slots expired-instances starting-instances deployment-error instability-issue]} _] data]
       ; instances that are expired *might also* appear in healthy-instances, depending on whether
       ; or not this router has been assigned the expired instance
       ; stated differently, healthy-instances contains only instances that are both healthy
@@ -324,6 +322,12 @@
                                                                    :status-tags status-tags}))))
                                     (transient {})
                                     all-instance-ids))
+            id->all-healthy-instances' (persistent!
+                                         (reduce
+                                           (fn [acc {:keys [id] :as instance}]
+                                             (assoc! acc id instance))
+                                           (transient {})
+                                           all-healthy-instances))
             id->instance' (persistent!
                             (reduce
                               (fn [acc {:keys [id] :as instance}]
@@ -337,6 +341,7 @@
         (meters/mark! update-responder-state-meter)
         (assoc current-state
           :deployment-error deployment-error
+          :id->all-healthy-instances id->all-healthy-instances'
           :id->instance id->instance'
           :instance-id->state instance-id->state'
           :instance-id->consecutive-failures instance-id->consecutive-failures'
@@ -410,14 +415,15 @@
 
 (defn handle-kill-instance-request
   "Handles a kill request."
-  [{:keys [id->instance instance-id->request-id->use-reason-map instance-id->state load-balancing] :as current-state}
+  [{:keys [id->all-healthy-instances id->instance instance-id->request-id->use-reason-map instance-id->state load-balancing] :as current-state}
    update-status-tag-fn bypass-grace-buffer-ms bypass-max-eject-time-secs lingering-request-threshold-ms
    [{:keys [request-id] :as reason-map} resp-chan exclude-ids-set _]]
   (let [acceptable-instance-id? #(not (contains? exclude-ids-set %))
-        instance (find-killable-instance id->instance instance-id->state acceptable-instance-id?
+        instance (find-killable-instance id->all-healthy-instances id->instance instance-id->state acceptable-instance-id?
                                          instance-id->request-id->use-reason-map load-balancing
                                          bypass-grace-buffer-ms bypass-max-eject-time-secs
                                          lingering-request-threshold-ms)]
+    (log/info "kevin: instance that is killable:" {:instance instance})
     (if instance
       (let [instance-id (:id instance)]
         {:current-state' (-> current-state
@@ -660,6 +666,7 @@
         (loop [{:keys [deployment-error instance-id->state timer-context work-stealing-queue]
                 :as current-state}
                (merge {:deployment-error nil
+                       :id->all-healthy-instances {}
                        :id->instance {}
                        :instability-issue nil
                        :instance-id->eject-expiry-time {}
