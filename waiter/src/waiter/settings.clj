@@ -48,8 +48,8 @@
                                                                    (s/required-key :show-locked-synchronizers) s/Bool}}
    (s/required-key :deployment-error-config) {(s/required-key :min-failed-instances) schema/positive-int
                                               (s/required-key :min-hosts) schema/positive-int}
-   (s/required-key :ejection-config) {(s/required-key :bypass-grace-buffer-ms) schema/positive-int
-                                      (s/required-key :bypass-max-eject-time-secs) schema/positive-int
+   (s/required-key :ejection-config) {(s/required-key :bypass-force-kill-time-ms) schema/positive-int
+                                      (s/required-key :bypass-grace-buffer-ms) schema/positive-int
                                       (s/required-key :eject-backoff-base-time-ms) schema/positive-int
                                       (s/required-key :expiry-threshold) schema/positive-int
                                       (s/required-key :max-eject-time-ms) schema/positive-int}
@@ -307,8 +307,8 @@
    :debug-options {:thread-dump {:interval-secs 0
                                  :show-locked-monitors false
                                  :show-locked-synchronizers false}}
-   :ejection-config {:bypass-grace-buffer-ms 15000
-                     :bypass-max-eject-time-secs 120
+   :ejection-config {:bypass-force-kill-time-ms 120
+                     :bypass-grace-buffer-ms 15000
                      :eject-backoff-base-time-ms 10000
                      :expiry-threshold 5
                      :max-eject-time-ms 300000}

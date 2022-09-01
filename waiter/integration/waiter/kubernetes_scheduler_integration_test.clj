@@ -539,10 +539,10 @@
 (deftest ^:parallel ^:integration-slow ^:resource-heavy test-instance-draining-mode-on-scale-down
   (testing-using-waiter-url
    (when (using-k8s? waiter-url)
-     (testing "service with bypass enabled puts instances in draining mode before deleting the pod when scaling down and waits until 'bypass-max-eject-time-secs'
+     (testing "service with bypass enabled puts instances in draining mode before deleting the pod when scaling down and waits until 'bypass-force-kill-time-ms'
                is up before attempting to fully kill the instance."
        (let [cluster-name (retrieve-cluster-name waiter-url)
-             {:keys [bypass-grace-buffer-ms bypass-max-eject-time-secs]} (setting waiter-url [:ejection-config])
+             {:keys [bypass-grace-buffer-ms bypass-force-kill-time-ms]} (setting waiter-url [:ejection-config])
              extra-headers {:content-type "application/json"
                             :x-waiter-concurrency-level 1
                             ; make sure raven doesn't send external metrics for these services
@@ -621,21 +621,21 @@
                         (catch Exception e
                           (log/error "Error while fetching for the watch-state" e))))
                     :interval 5
-                    :timeout (+ bypass-max-eject-time-secs assert-deleted-buffer-secs)))
+                    :timeout (+ (/ bypass-force-kill-time-ms 1000) assert-deleted-buffer-secs)))
 
                ; Note that I tried to set up several long running requests with the header 'x-kitchen-delay-ms' equal to
-               ; 'bypass-max-eject-time-secs' and assert that the requests were successful even during pod two phase scale down.
+               ; 'bypass-force-kill-time-ms' and assert that the requests were successful even during pod two phase scale down.
                ; I was unable to do this because the responder does not consider instances actively serving requests (uses 'slots-used' metric)
                ; as 'killable?'. This means that the autoscaler will be unable to kill any of the instances if the long running requests
                ; are routed by the Waiter routers. One way to test this is to have the requests go to the pods directly, but that currently
                ; isn't supported. I think asserting that the pod marked for scale down continues to run even when they are tracked as killed
                ; instance should imply that long running requests that bypass the routers would still be handled prior to the
-               ; 'bypass-max-eject-time-secs'.
+               ; 'bypass-force-kill-time-ms'.
                (let [pod-deleted-at (t/now)]
                  ; pod should not be deleted before grace period
                  (is (t/before? (t/plus prepared-to-scale-down-at (t/millis bypass-grace-buffer-ms)) pod-deleted-at))
                  ; pod should be deleted after the timeout is reached
-                 (is (t/after? pod-deleted-at (t/plus prepared-to-scale-down-at (t/seconds bypass-max-eject-time-secs)))))
+                 (is (t/after? pod-deleted-at (t/plus prepared-to-scale-down-at (t/millis bypass-force-kill-time-ms)))))
 
                ; instance is fully killed, check that killed-instances reflects the expected instance.
                (let [active-instances (active-instances waiter-url service-id)

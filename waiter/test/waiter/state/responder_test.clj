@@ -30,7 +30,7 @@
 
 (deftest test-find-instance-to-offer-with-concurrency-level-1
   (let [bypass-grace-buffer-ms 15000
-        bypass-max-eject-time-secs 120
+        bypass-force-kill-time-ms 120000
         current-time (t/now)
         make-instance (fn [id] {:id (str "inst-" id), :started-at (DateTime. (* id 1000000))})
         make-instance-preparing-to-scale-down (fn [instance time] (assoc instance :prepared-to-scale-down-at time))
@@ -42,7 +42,7 @@
         instance-6 (make-instance 6)
         instance-7 (make-instance 7)
         instance-8 (make-instance 8)
-        instance-9-scaling-down-timeout-reached (-> 9 make-instance (make-instance-preparing-to-scale-down (t/minus current-time (t/seconds (inc bypass-max-eject-time-secs)))))
+        instance-9-scaling-down-timeout-reached (-> 9 make-instance (make-instance-preparing-to-scale-down (t/minus current-time (t/millis (inc bypass-force-kill-time-ms)))))
         instance-10-scaling-down (-> 10 make-instance (make-instance-preparing-to-scale-down current-time))
         healthy-instance-combo [instance-2 instance-3 instance-5 instance-6 instance-8]
         healthy-instance-ids (map :id healthy-instance-combo)
@@ -360,7 +360,7 @@
                 actual (if (= :kill-instance reason)
                          (find-killable-instance id->all-healthy-instances id->instance instance-id->state acceptable-instance-id?
                                                  instance-id->request-id->use-reason-map load-balancing
-                                                 bypass-grace-buffer-ms bypass-max-eject-time-secs
+                                                 bypass-grace-buffer-ms bypass-force-kill-time-ms
                                                  lingering-request-threshold-ms)
                          (find-available-instance sorted-instance-ids id->instance instance-id->state acceptable-instance-id? first))]
             (when (or (and (nil? expected) (not (nil? actual)))
