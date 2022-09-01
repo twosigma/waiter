@@ -590,7 +590,8 @@
                    pod-annotations (get-in pod-spec ["metadata" "annotations"])
                    k8s-prepared-to-scale-down-at (some-> pod-annotations (get "waiter/prepared-to-scale-down-at") du/str-to-date)
                    k8s-pod-ejected (-> pod-annotations (get "waiter/pod-ejected"))
-                   assert-deleted-buffer-secs 30]
+                   ; There may be some grace period where k8s is in the process of terminating the pod after initializing the delete.
+                   assert-deleted-buffer-secs 60]
                (log/info "killed instance in phase 1" {:k8s-prepared-to-scale-down-at k8s-prepared-to-scale-down-at
                                                        :pod-spec pod-spec})
                (is (some? pod-spec))
@@ -627,10 +628,22 @@
                  ; pod should be deleted after the timeout is reached
                  (is (t/after? pod-deleted-at (t/plus prepared-to-scale-down-at (t/millis bypass-force-kill-time-ms)))))
 
-               ; instance is fully killed, check that killed-instances reflects the expected instance.
-               (let [active-instances (active-instances waiter-url service-id)
-                     killed-instances (killed-instances waiter-url service-id)]
-                 (is (= 1 (count active-instances)))
-                 (is (= 1 (count killed-instances)))
+               ; Instance is fully killed, check that killed-instances reflects the expected instance.
+               ; There may be a delay before the scheduler syncer updates the list of instances, so this test will wait until
+               ; the state is correct.
+               (let [killed-instances
+                     (wait-for
+                       (fn correct-instance-breakdown? []
+                         (let [active-instances (active-instances waiter-url service-id)
+                               killed-instances (killed-instances waiter-url service-id)]
+                           (log/info "instance breakdown:" {:active-instances active-instances
+                                                            :killed-instances killed-instances
+                                                            :service-id service-id})
+                           (and (= 1 (count active-instances))
+                                (= 1 (count killed-instances))
+                                killed-instances)))
+                       :interval 5
+                       :timeout 30)]
+                 (is (some? killed-instances))
                  (is (= (:id instance-preparing-to-scale-down)
                         (:id (first killed-instances)))))))))))))
