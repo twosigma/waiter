@@ -580,7 +580,7 @@
                   prepared-to-scale-down-at (some-> instance-preparing-to-scale-down :prepared-to-scale-down-at du/str-to-date)
                   flags (some-> instance-preparing-to-scale-down :flags)]
              (is (some? instance-preparing-to-scale-down))
-             (is (some? prepared-to-scale-down-at))
+             (is (some? prepared-to-scale-down-at) (str instance-preparing-to-scale-down))
              (is (t/before? prepared-to-scale-down-at (t/now)))
              (is (contains? (set flags) "ejected"))
 
