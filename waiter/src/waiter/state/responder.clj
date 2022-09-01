@@ -145,8 +145,6 @@
                                                  (prepared-to-scale-down-at-instances? id->instance))
         has-expired-instances (expired-instances? instance-id->state)
         has-starting-instances (starting-instances? instance-id->state)]
-    (log/info "kevin: find-killable-instance called" {:instances-considered (set (concat (keys id->all-healthy-instances) (keys id->instance)))
-                                                      :prepared-to-scale-down-at-instances? prepared-to-scale-down-at-instances?})
     (some->> instance-id->state
       (filter (fn [[instance-id _]] (and (acceptable-instance-id? instance-id)
                                          (contains? id->instance instance-id))))
@@ -423,7 +421,6 @@
                                          instance-id->request-id->use-reason-map load-balancing
                                          bypass-grace-buffer-ms bypass-max-eject-time-secs
                                          lingering-request-threshold-ms)]
-    (log/info "kevin: instance that is killable:" {:instance instance})
     (if instance
       (let [instance-id (:id instance)]
         {:current-state' (-> current-state
@@ -487,7 +484,7 @@
 
 (defn handle-eject-request
   "Handle a request to eject an instance."
-  [{:keys [id->instance instance-id->request-id->use-reason-map instance-id->state] :as current-state}
+  [{:keys [id->all-healthy-instances id->instance instance-id->request-id->use-reason-map instance-id->state] :as current-state}
    update-status-tag-fn update-state-by-ejecting-instance-fn bypass-grace-buffer-ms bypass-max-eject-time-secs
    lingering-request-threshold-ms [{:keys [instance-id eject-period-ms cid]} response-chan]]
   (cid/with-correlation-id
@@ -501,7 +498,8 @@
                                            earliest-request-threshold-time (t/minus (t/now) (t/millis lingering-request-threshold-ms))
                                            has-expired-instances (expired-instances? instance-id->state)
                                            has-starting-instances (starting-instances? instance-id->state)
-                                           has-prepared-to-scale-down-instances (prepared-to-scale-down-at-instances? instance-id->state)
+                                           has-prepared-to-scale-down-instances (or (prepared-to-scale-down-at-instances? instance-id->state)
+                                                                                    (prepared-to-scale-down-at-instances? id->all-healthy-instances))
                                            state (instance-id->state instance-id)
                                            instance (id->instance instance-id)
                                            now (t/now)]
