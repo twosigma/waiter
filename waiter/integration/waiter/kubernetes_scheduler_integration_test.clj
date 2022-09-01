@@ -567,7 +567,7 @@
                                                                   :killed-instances killed-instances
                                                                   :instances-preparing-to-scale-down instances-preparing-to-scale-down
                                                                   :service-id service-id})
-                      (when (< 0 num-killed-instances)
+                      (when (pos? num-killed-instances)
                         (throw (ex-info "There should not be a killed instance when instance is marked for scale down"
                                         {:killed-instances (map :id killed-instances)
                                          :service-id service-id})))
