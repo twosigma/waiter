@@ -515,8 +515,8 @@
                 response-chan (async/promise-chan)
                 {:keys [executor-chan exit-chan query-chan]}
                 (run-service-scaling-executor
-                 scheduler populate-maintainer-chan! scale-service-thread-pool
-                 :notify-instance-killed-fn notify-instance-killed-fn)]
+                  scheduler populate-maintainer-chan! scale-service-thread-pool
+                  :notify-instance-killed-fn notify-instance-killed-fn)]
             (let [instance-1 {:id instance-id-1, :service-id test-service-id, :success-flag true}]
               (mock-reservation-system
                 instance-rpc-chan
