@@ -35,7 +35,6 @@
             [waiter.statsd :as statsd]
             [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
-            [waiter.util.cache-utils :as cu]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
