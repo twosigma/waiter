@@ -975,15 +975,10 @@
             first-phase? (and bypass-enabled? (nil? prepared-to-scale-down-at))
             second-phase? (and bypass-enabled? (some? prepared-to-scale-down-at))
             kill-result (cond first-phase?
-                              (if (scheduler/can-bypass-service-scale-down? service-id)
-                                (do
-                                  (scheduler/set-bypass-service-scale-down service-id)
-                                  (mark-pod-for-scale-down this instance)
-                                  {:message "Successfully annotated pod to be prepared for scale down"})
-                                (do
-                                  (log/info "throttled when trying to annotate the pod" {:instance-id id})
-                                  {:message "Throttled when trying to annotate the pod"
-                                   :status http-429-too-many-requests}))
+                              (do
+                                (mark-pod-for-scale-down this instance)
+                                {:marked-prepared-for-scale-down true
+                                 :message "Successfully annotated pod to be prepared for scale down"})
                               second-phase?
                               (do
                                 (kill-service-instance this instance service)

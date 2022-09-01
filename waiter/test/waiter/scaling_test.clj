@@ -132,12 +132,13 @@
                                    (throw (Exception. "throwing exception as required by test")))
                                  (is (pos? scale-to-instances))
                                  true)
-                               (kill-instance [_ {:keys [id message service-id success-flag]}]
+                               (kill-instance [_ {:keys [id message marked-prepared-for-scale-down service-id success-flag ]}]
                                  (swap! operation-tracker-atom conj [:kill-instance id service-id success-flag])
                                  (is id)
                                  (is (= test-service-id service-id))
-                                 {:instance-id id, :killed? success-flag, :message message, :service-id service-id,
-                                  :status (if success-flag http-200-ok http-404-not-found)})))
+                                 (cond-> {:instance-id id, :killed? success-flag, :message message, :service-id service-id,
+                                          :status (if success-flag http-200-ok http-404-not-found)}
+                                   marked-prepared-for-scale-down (assoc :marked-prepared-for-scale-down marked-prepared-for-scale-down)))))
             peers-acknowledged-eject-requests-fn (fn [{:keys [service-id]} short-circuit? eject-period-ms reason]
                                                    (if (= (:eject-backoff-base-time-ms timeout-config) eject-period-ms)
                                                      (do
@@ -180,6 +181,39 @@
                        (walk/keywordize-keys (json/read-str body))))
                 (is (= [[:kill-instance "instance-1" "test-service-id" true]] @scheduler-operation-tracker-atom))
                 (is (= instance-1 (deref killed-instance-promise 10 :not-killed)))))))
+
+        (testing "successfully-mark-instance-with-prepared-to-scale-down-at"
+          (let [instance-rpc-chan (async/chan 1)
+                populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
+                scheduler-operation-tracker-atom (atom [])
+                scheduler (make-scheduler scheduler-operation-tracker-atom)]
+            (let [instance-1 {:id "instance-1", :message "Marked", :marked-prepared-for-scale-down true, :service-id test-service-id, :success-flag true}]
+              (mock-reservation-system
+               instance-rpc-chan
+               [(fn [[{:keys [reason]} response-chan]]
+                  (is (= :kill-instance reason))
+                  (async/>!! response-chan instance-1))
+                (fn [[instance result]]
+                  (is (= instance-1 instance))
+                  (is (= :not-killed (:status result))))])
+              (let [killed-instance-promise (promise)
+                    notify-instance-killed-fn (fn [instance] (deliver killed-instance-promise instance))
+                    correlation-id (str "test-cid-" (rand-int 10000))
+                    response-chan
+                    (cid/with-correlation-id
+                      correlation-id
+                      (kill-instance-handler
+                       notify-instance-killed-fn peers-acknowledged-eject-requests-fn
+                       scheduler populate-maintainer-chan! timeout-config scheduler-interactions-thread-pool
+                       {:basic-authentication {:src-router-id src-router-id} :route-params {:service-id test-service-id}}))
+                    {:keys [body headers status]} (async/<!! response-chan)]
+                (is (= http-200-ok status))
+                (is (= (assoc expected-json-response-headers "x-cid" correlation-id) headers))
+                (is (= {:kill-response {:instance-id "instance-1", :killed? true, :message "Marked", :marked-prepared-for-scale-down true, :service-id test-service-id, :status http-200-ok},
+                        :service-id test-service-id, :source-router-id src-router-id, :success true}
+                       (walk/keywordize-keys (json/read-str body))))
+                (is (= [[:kill-instance "instance-1" "test-service-id" true]] @scheduler-operation-tracker-atom))
+                (is (= :not-killed (deref killed-instance-promise 10 :not-killed)))))))
 
         (testing "no-instance-to-kill-no-message-404"
           (let [instance-rpc-chan (async/chan 1)
@@ -436,8 +470,6 @@
             (is (empty? @scheduler-operation-tracker-atom))
             (async/>!! exit-chan :exit)
             (.shutdown scale-service-thread-pool)))
-
-        ;; TODO:KEVIN add delegated-instance-kill test with service in bypass
 
         (testing "scale-down:delegated-instance-kill"
           (let [instance-rpc-chan (async/chan 1)

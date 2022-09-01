@@ -110,8 +110,9 @@
   "Helper function to scale-down instances of a service.
    An instance needs to be approved for killing by peers before an actual kill attempt is made.
    When an instance receives a veto or is not killed, we will iteratively search for another instance to successfully kill.
-   The function stops and returns true when a successful kill is made.
-   Else, it terminates after we have exhausted all candidate instances to kill or when a kill attempt returns a non-truthy value."
+   The function stops and returns true when a successful kill is made or successfully attached the field 'prepared-to-scale-down-at'
+   to the instance as a part of two phase scale down. Else, it terminates after we have exhausted all candidate instances to kill or
+   when a kill attempt returns a non-truthy value."
   [notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler populate-maintainer-chan! timeout-config
    service-id correlation-id num-instances-to-kill thread-pool response-chan]
   (let [{:keys [eject-backoff-base-time-ms inter-kill-request-wait-time-ms max-eject-time-ms]} timeout-config]
@@ -134,31 +135,37 @@
                         (log/info "scaling down instance candidate" instance)
                         (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "attempt"))
                         (scheduler/track-kill-candidate! instance-id :prepare-to-kill eject-backoff-base-time-ms)
-                        (let [{:keys [killed? status] :as kill-result}
+                        (let [{:keys [killed? marked-prepared-for-scale-down] :as kill-result}
                               (-> (au/execute
                                     (fn kill-instance-for-scale-down-task []
                                       (scheduler/kill-instance scheduler instance))
                                     thread-pool)
                                   async/<!
-                                  :result)]
-                          (if killed?
-                            (do
-                              (log/info "marking instance" instance-id "as killed")
-                              (counters/inc! (metrics/service-counter service-id "instance-counts" "killed"))
-                              (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "success"))
-                              (scheduler/track-kill-candidate! instance-id :killed eject-backoff-base-time-ms)
-                              (service/release-instance! populate-maintainer-chan! instance (result-map-fn :killed))
-                              (notify-instance-killed-fn instance)
-                              (peers-acknowledged-eject-requests-fn instance false max-eject-time-ms :killed))
-                            (do
-                              (if (= status http-200-ok)
-                                (log/info "successfully marked instance as prepared-to-scale-down-at" {:instance-id instance-id})
-                                (do
-                                  (log/info "failed kill attempt, releasing instance" instance-id)
-                                  (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "kill-fail"))))
-                              (service/release-instance! populate-maintainer-chan! instance (result-map-fn :not-killed))))
+                                  :result)
+                              success? (cond
+                                         marked-prepared-for-scale-down
+                                         (do
+                                           (log/info "successfully marked instance as prepared-to-scale-down-at" {:instance-id instance-id})
+                                           (service/release-instance! populate-maintainer-chan! instance (result-map-fn :not-killed))
+                                           true)
+                                         killed?
+                                         (do
+                                           (log/info "marking instance" instance-id "as killed")
+                                           (counters/inc! (metrics/service-counter service-id "instance-counts" "killed"))
+                                           (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "success"))
+                                           (scheduler/track-kill-candidate! instance-id :killed eject-backoff-base-time-ms)
+                                           (service/release-instance! populate-maintainer-chan! instance (result-map-fn :killed))
+                                           (notify-instance-killed-fn instance)
+                                           (peers-acknowledged-eject-requests-fn instance false max-eject-time-ms :killed)
+                                           true)
+                                         :else
+                                         (do
+                                           (log/info "failed kill attempt, releasing instance" instance-id)
+                                           (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "kill-fail"))
+                                           (service/release-instance! populate-maintainer-chan! instance (result-map-fn :not-killed))
+                                           false))]
                           (when response-chan (async/>! response-chan kill-result))
-                          killed?))
+                          success?))
                       (do
                         (log/info "kill was vetoed, releasing instance" instance-id)
                         (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "vetoed-instance"))
@@ -182,20 +189,21 @@
     (cid/cinfo correlation-id "received request to kill instance of" service-id "from" src-router-id)
     (async/go
       (let [response-chan (async/promise-chan)
-            instance-killed? (async/<!
-                               (execute-scale-down-request
-                                 notify-instance-killed-fn peers-acknowledged-eject-requests-fn
-                                 scheduler populate-maintainer-chan! timeout-config service-id correlation-id 1
-                                 scale-service-thread-pool response-chan))
-            {:keys [instance-id status] :as kill-response} (or (async/poll! response-chan)
-                                                               {:message :no-instance-killed, :status http-404-not-found})]
-        (if instance-killed?
-          (cid/cinfo correlation-id "killed instance" instance-id)
-          (cid/cinfo correlation-id "unable to kill instance" kill-response))
+            success? (async/<!
+                       (execute-scale-down-request
+                         notify-instance-killed-fn peers-acknowledged-eject-requests-fn
+                         scheduler populate-maintainer-chan! timeout-config service-id correlation-id 1
+                         scale-service-thread-pool response-chan))
+            {:keys [instance-id killed? marked-prepared-for-scale-down status] :as kill-response} 
+            (or (async/poll! response-chan) {:message :no-instance-killed, :status http-404-not-found})]
+        (cond
+          killed? (cid/cinfo correlation-id "killed instance" instance-id)
+          marked-prepared-for-scale-down (cid/cinfo correlation-id "marked instance for scale down" instance-id)
+          :else (cid/cinfo correlation-id "unable to kill instance" kill-response))
         (-> (utils/clj->json-response {:kill-response kill-response
                                        :service-id service-id
                                        :source-router-id src-router-id
-                                       :success instance-killed?}
+                                       :success success?}
                                       :status (or status http-500-internal-server-error))
             (update :headers assoc "x-cid" correlation-id))))))
 
@@ -281,8 +289,7 @@
                           executor-state)
 
                         (pos? num-instances-to-kill)
-                        (let [service-description (service-id->service-description-fn service-id)
-                              bypass-enabled? (sd/service-description-bypass-enabled? service-description)]
+                        (do
                           (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "total"))
                           (if (or (nil? last-scale-down-time)
                                   (t/after? (t/now) (t/plus last-scale-down-time inter-kill-request-wait-time-in-millis)))
@@ -291,10 +298,7 @@
                                         notify-instance-killed-fn peers-acknowledged-eject-requests-fn
                                         scheduler populate-maintainer-chan! timeout-config service-id iter-correlation-id
                                         num-instances-to-kill scale-service-thread-pool response-chan))
-                                    ;; don't delegate kill if the service in bypass mode because the instance may not be fully killed, but it was
-                                    ;; properly marked as 'prepared-to-scale-down-at'.
-                                    (and (not bypass-enabled?)
-                                         (delegate-instance-kill-request-fn service-id)))
+                                    (delegate-instance-kill-request-fn service-id))
                               (assoc executor-state :last-scale-down-time (t/now))
                               executor-state)
                             (do
