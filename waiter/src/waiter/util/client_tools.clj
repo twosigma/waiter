@@ -1400,3 +1400,14 @@
   "Makes a request to the start-new-services-maintainer state endpoint."
   [waiter-url cookies]
   (make-request waiter-url "/state/start-new-services-maintainer" :cookies cookies))
+
+(defn wait-for-n-active-instances
+  "Waits for n instances to become active and then returns true. If timeout is reached nil is returned."
+  [waiter-url service-id n]
+  (wait-for
+   (fn n-instances-on-waiter? []
+     (let [instances (active-instances waiter-url service-id)]
+       (log/info "waiting for instances:" {:desired-num-instances n
+                                           :instances instances
+                                           :service-id service-id})
+       (= n (count instances))))))

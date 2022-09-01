@@ -507,16 +507,6 @@
                             (and (contains? rs-spec "k8s/events")
                                  (contains? pod-spec "k8s/events"))))))))))))))
 
-(defn- wait-for-n-active-instances
-  "Waits for n instances to become active and then returns true. If timeout is reached nil is returned."
-  [waiter-url service-id n]
-  (wait-for
-   (fn two-instances-on-waiter? []
-     (let [instances (active-instances waiter-url service-id)]
-       (log/info "waiting for two instances total:" {:instances instances
-                                                     :service-id service-id})
-       (= n (count instances))))))
-
 (defmacro update-instance-metrics-active-requests-and-assert
   "Updates the instance metrics active-request-count for a single instance."
   [cluster-name waiter-url service-id instance-id active-requests]
