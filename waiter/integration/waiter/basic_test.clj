@@ -1634,14 +1634,16 @@
 
 (deftest ^:parallel ^:integration-fast test-grace-period-disabled
   (testing-using-waiter-url
-    (let [{:keys [cookies request-headers service-id] :as response}
+    (let [base-cid (utils/unique-identifier)
+          {:keys [cookies request-headers service-id] :as response}
           (make-request-with-debug-info
-            {:x-waiter-cmd (kitchen-cmd "--enable-status-change -p $PORT0")
-             :x-waiter-grace-period-secs 0
-             :x-waiter-instance-expiry-mins 30
-             :x-waiter-max-instances 1
-             :x-waiter-name (rand-name)}
-            #(make-kitchen-request waiter-url % :method :get :path "/"))]
+            {"x-cid" (str base-cid "-1")
+             "x-waiter-cmd" (kitchen-cmd "--enable-status-change -p $PORT0")
+             "x-waiter-grace-period-secs" 0
+             "x-waiter-instance-expiry-mins" 30
+             "x-waiter-max-instances" 1
+             "x-waiter-name" (rand-name)}
+            #(make-kitchen-request waiter-url % :method :get :path "/hello-1"))]
       (with-service-cleanup
         service-id
         (assert-response-status response http-200-ok)
@@ -1651,14 +1653,16 @@
                                               :service-id service-id})))
         (assert-service-on-all-routers waiter-url service-id cookies)
         (let [request-headers (assoc request-headers
-                                :x-kitchen-default-status-timeout 600000
-                                :x-kitchen-default-status-value http-400-bad-request)
-              response (make-kitchen-request waiter-url request-headers :path "/hello")]
+                                "x-cid" (str base-cid "-2")
+                                "x-kitchen-default-status-timeout" 600000
+                                "x-kitchen-default-status-value" http-400-bad-request)
+              response (make-kitchen-request waiter-url request-headers :path "/hello-2")]
           (assert-response-status response http-400-bad-request))
         (assert-service-unhealthy-on-all-routers waiter-url service-id cookies)
         (let [request-headers (assoc request-headers
-                                :x-waiter-queue-timeout 5000)
-              response (make-kitchen-request waiter-url request-headers :path "/hello")]
+                                "x-cid" (str base-cid "-3")
+                                "x-waiter-queue-timeout" 5000)
+              response (make-kitchen-request waiter-url request-headers :path "/hello-3")]
           (assert-response-status response http-503-service-unavailable))))))
 
 (deftest  ^:parallel ^:integration-fast test-request-unsupported-headers
