@@ -1267,6 +1267,13 @@
     (map :service-id)
     set))
 
+(defn active-instances-from-state
+  "Returns the active instances for the given service-id from the /state endpoint."
+  [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
+  (some-> (service-state waiter-url service-id :cookies cookies)
+      (get-in [:state :responder-state :id->instance])
+      (vals)))
+
 (defn active-instances
   "Returns the active instances for the given service-id"
   [waiter-url service-id & {:keys [cookies] :or {cookies {}}}]
@@ -1306,7 +1313,7 @@
   `(let [service-id# ~service-id
          cookies# ~cookies]
      (doseq [[_# router-url#] (routers ~waiter-url)]
-       (is (wait-for #(let [instances# (active-instances router-url# service-id# :cookies cookies#)]
+       (is (wait-for #(let [instances# (active-instances-from-state router-url# service-id# :cookies cookies#)]
                         (log/info "instances:" instances#)
                         (and (seq instances#) (some :healthy? instances#)))
                      :interval 1 :timeout 30)))))
@@ -1316,7 +1323,7 @@
   `(let [service-id# ~service-id
          cookies# ~cookies]
      (doseq [[_# router-url#] (routers ~waiter-url)]
-       (is (wait-for #(let [instances# (active-instances router-url# service-id# :cookies cookies#)]
+       (is (wait-for #(let [instances# (active-instances-from-state router-url# service-id# :cookies cookies#)]
                         (log/info "instances:" instances#)
                         (and (seq instances#) (every? (comp not :healthy?) instances#)))
                      :interval 1 :timeout 30)))))
