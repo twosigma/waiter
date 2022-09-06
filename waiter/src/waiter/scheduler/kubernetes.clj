@@ -814,6 +814,12 @@
   [{:keys [replicaset-spec-builder-fn] :as scheduler} service-id service-description context]
   (replicaset-spec-builder-fn scheduler service-id service-description context))
 
+(defn- server-error?
+  "Checks if the given exception object corresponds to a 5XX response indicating a server error."
+  [maybe-exception]
+  (when-let [status (-> maybe-exception ex-data :status)]
+    (<= 500 status 599)))
+
 (defn create-service
   "Reify a Waiter Service as a Kubernetes ReplicaSet."
   [{:keys [run-as-user-source service-description service-id]}
@@ -825,14 +831,17 @@
                       {:cmd-type cmd-type
                        :service-description service-description
                        :service-id service-id}))))
-  (let [rs-spec-builder-context {:run-as-user-source run-as-user-source}
+  (let [with-retries (utils/retry-strategy {:delay-multiplier 1.0 :initial-delay-ms 100 :max-attempts 3 :retry?-fn server-error?})
+        rs-spec-builder-context {:run-as-user-source run-as-user-source}
         rs-spec (invoke-replicaset-spec-builder-fn scheduler service-id service-description rs-spec-builder-context)
+        rs-spec-json (utils/clj->json rs-spec)
         request-namespace (k8s-object->namespace rs-spec)
         request-url (str api-server-url "/apis/" replicaset-api-version "/namespaces/" request-namespace "/replicasets")
         response-json
         (ss/try+
-          (api-request request-url scheduler :body (utils/clj->json rs-spec) :request-method :post)
-          (catch Object response
+          (with-retries
+            #(api-request request-url scheduler :body rs-spec-json :request-method :post))
+          (catch clojure.lang.ILookup response
             ; Don't create deployment error for http-409-conflict (replicaset already exists)
             (when-not (= (:status response) http-409-conflict)
               (let [response->deployment-error-details-fn (fn [k8s-response] {:k8s-response-body (get-in k8s-response [:body])})
@@ -853,7 +862,7 @@
         (when (> min-instances 1)
           (let [pdb-spec (pdb-spec-builder-fn pdb-api-version rs-spec replicaset-uid)
                 request-url (str api-server-url "/apis/" pdb-api-version "/namespaces/" request-namespace "/poddisruptionbudgets")
-                with-retries (utils/retry-strategy {:delay-multiplier 1.0 :initial-delay-ms 100 :max-retries 2})]
+                with-retries (utils/retry-strategy {:delay-multiplier 1.0 :initial-delay-ms 100 :max-attempts 3})]
             (try
               (with-retries
                 (fn create-pdb []

@@ -558,14 +558,18 @@
 
    `delay-multiplier` each previous delay is multiplied by delay-multiplier to generate the next delay.
    `initial-delay-ms` the initial delay for the first retry.
-   `max-delay-ms` the delay cap for exponential backoff delay.
-   `max-retries`  limit the number of retries.
+   `max-attempts`     limit the number of attempts.
+   `max-delay-ms`     the delay cap for exponential backoff delay.
+   `max-retries`      DEPRECATED. use more accurately named max-attempts.
+   `retry?-fn`        predicate taking a result (not successful), returns true if it should be retried.
    "
-  [{:keys [delay-multiplier initial-delay-ms max-delay-ms max-retries]
+  [{:keys [delay-multiplier initial-delay-ms max-delay-ms max-retries max-attempts retry?-fn]
     :or {delay-multiplier 1.0
          initial-delay-ms 100
          max-delay-ms 300000 ; 300k millis = 5 minutes
-         max-retries 10}}]
+         max-retries 10
+         max-attempts max-retries
+         retry?-fn (constantly true)}}]
   (fn [body-function]
     (loop [num-tries 1
            current-delay-ms initial-delay-ms]
@@ -576,11 +580,12 @@
                 {:success false, :result ex}))]
         (cond
           success result
-          (>= num-tries max-retries) (throw result)
-          :else (let [delay-ms (long (min max-delay-ms current-delay-ms))]
-                  (log/info "sleeping" delay-ms "ms before retry" (str "#" num-tries))
-                  (sleep delay-ms)
-                  (recur (inc num-tries) (* delay-ms delay-multiplier))))))))
+          (and (retry?-fn result) (< num-tries max-attempts))
+          (let [delay-ms (long (min max-delay-ms current-delay-ms))]
+            (log/info "sleeping" delay-ms "ms before retry" (str "#" num-tries))
+            (sleep delay-ms)
+            (recur (inc num-tries) (* delay-ms delay-multiplier)))
+          :else (throw result))))))
 
 (defn async-retry-strategy
   "Return a async retry function using the specified retry config.

@@ -1673,21 +1673,28 @@
                          (scheduler/create-service-if-new dummy-scheduler descriptor))]
             (is (nil? actual))
             (assert-service-deployment-error
-             dummy-scheduler (:service-id service) (str "Unknown reason - check logs"))))
+             dummy-scheduler (:service-id service) "Unknown reason - check logs")))
         (testing "unsuccessful-create: service creation conflict (already running)"
           (let [actual (with-redefs [api-request (fn mocked-api-request [& _]
                                                    (ss/throw+ {:status http-409-conflict}))]
                          (scheduler/create-service-if-new dummy-scheduler descriptor))]
             (is (nil? actual))
             (assert-service-deployment-error
-             dummy-scheduler (:service-id service) (str "Unknown reason - check logs"))))
+             dummy-scheduler (:service-id service) "Unknown reason - check logs")))
+        (testing "unsuccessful-create: k8s api server internal error (retries exhausted)"
+          (let [actual (with-redefs [api-request (fn mocked-api-request [& _]
+                                                   (ss/throw+ {:status http-500-internal-server-error}))]
+                         (scheduler/create-service-if-new dummy-scheduler descriptor))]
+            (is (nil? actual))
+            (assert-service-deployment-error
+             dummy-scheduler (:service-id service) "Unknown reason - check logs")))
         (testing "unsuccessful-create: internal error"
           (let [actual (with-redefs [api-request (fn mocked-api-request [& _]
                                                    (throw-exception))]
                          (scheduler/create-service-if-new dummy-scheduler descriptor))]
             (is (nil? actual))
             (assert-service-deployment-error
-             dummy-scheduler (:service-id service) (str "Unknown reason - check logs"))))
+             dummy-scheduler (:service-id service) "Unknown reason - check logs")))
         (testing "unsuccessful-create: failing k8s deployment error does not persist passed cache ttl"
           (Thread/sleep 2001)
           (is (= [] (scheduler/get-services dummy-scheduler))))
@@ -1722,6 +1729,30 @@
                         :request-method :post
                         :url (str apis-url "/apps/v1/namespaces/waiter/replicasets")}
                        (first api-calls)))
+                (is (= service actual))
+                (is (= [] services))))
+
+            (testing "retries after k8s api server 500 internal server error"
+              (let [api-calls-atom (atom [])
+                    make-ok-api-request (make-api-request api-calls-atom)
+                    make-flaky-api-request (fn make-flaky-api-request [& args]
+                                             (when (< (count @api-calls-atom) 2)
+                                               (swap! api-calls-atom conj {:error "FAILURE"})
+                                               (ss/throw+ {:status http-500-internal-server-error
+                                                           :body {:message "k8s api server internal error"}}))
+                                             (apply make-ok-api-request args))
+                    actual (with-redefs [api-request make-flaky-api-request
+                                         replicaset->Service identity]
+                             (scheduler/create-service-if-new dummy-scheduler descriptor))
+                    [res1 res2 res3 :as api-calls] @api-calls-atom
+                    services (scheduler/get-services dummy-scheduler)]
+                (is (= 3 (count api-calls)))
+                (is (= {:error "FAILURE"} res1))
+                (is (= {:error "FAILURE"} res2))
+                (is (= {:kind "ReplicaSet"
+                        :request-method :post
+                        :url (str apis-url "/apps/v1/namespaces/waiter/replicasets")}
+                       res3))
                 (is (= service actual))
                 (is (= [] services))))
 
