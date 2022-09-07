@@ -82,6 +82,8 @@
      :pdb-api-version "policy/v1beta1"
      :pdb-spec-builder-fn waiter.scheduler.kubernetes/default-pdb-spec-builder
      :pod-base-port 8080
+     :pod-bypass-force-sigterm-secs 120
+     :pod-bypass-sigterm-grace-period-secs 30
      :pod-sigkill-delay-secs 3
      :pod-suffix-length default-pod-suffix-length
      :replicaset-api-version "apps/v1"
@@ -2037,6 +2039,8 @@
                     :max-patch-retries 5
                     :max-name-length 63
                     :pod-base-port 8080
+                    :pod-bypass-force-sigterm-secs 120
+                    :pod-bypass-sigterm-grace-period-secs 30
                     :pod-sigkill-delay-secs 3
                     :pod-suffix-length default-pod-suffix-length
                     :replicaset-api-version "apps/v1"
