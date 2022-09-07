@@ -185,8 +185,11 @@
                           "https-redirect" true
                           "maintenance" {"message" "test-message"}
                           "owner" "jane.doe"
+                          "queue-timeout-ms" 300000
                           "service-mapping" "legacy"
-                          "stale-timeout-mins" 15}]
+                          "socket-timeout-ms" 900000
+                          "stale-timeout-mins" 15
+                          "streaming-timeout-ms" 20000}]
 
     (try
       (validate-user-metadata-schema basic-parameters {})
@@ -199,7 +202,14 @@
         "service-mapping must be one of default, exclusive or legacy")
       (run-validate-user-metadata-schema-test
         (assoc basic-parameters "service-mapping" "exclusive") {"env" {"WAITER_CONFIG_TOKEN" "foo"}}
-        "Service environment cannot contain WAITER_CONFIG_TOKEN when service-mapping is exclusive."))))
+        "Service environment cannot contain WAITER_CONFIG_TOKEN when service-mapping is exclusive."))
+
+    (doseq [timeout-param ["queue-timeout-ms" "socket-timeout-ms" "streaming-timeout-ms"]]
+      (let [message (str timeout-param " must be an integer between 0 and 3600000 (inclusive)")]
+        (testing (str "testing invalid " timeout-param)
+          (run-validate-user-metadata-schema-test (assoc basic-parameters timeout-param "100") {} message)
+          (run-validate-user-metadata-schema-test (assoc basic-parameters timeout-param -1) {} message)
+          (run-validate-user-metadata-schema-test (assoc basic-parameters timeout-param 10000000) {} message))))))
 
 (deftest test-retrieve-token-from-service-description-or-hostname
   (let [test-cases (list

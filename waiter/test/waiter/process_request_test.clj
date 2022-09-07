@@ -40,83 +40,107 @@
   (let [test-cases (list
                      {:name "test-prepare-request-properties:nil-inputs"
                       :input {:request-properties nil :waiter-headers nil}
-                      :expected {:async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:empty-nil-inputs"
                       :input {:request-properties {} :waiter-headers nil}
-                      :expected {:async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:nil-empty-inputs"
                       :input {:request-properties nil :waiter-headers {}}
-                      :expected {:async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:empty-inputs"
                       :input {:request-properties {} :waiter-headers {}}
-                      :expected {:async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:missing-timeout-header-1"
                       :input {:request-properties {:fie "foe"} :waiter-headers {:foo "bar"}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:missing-timeout-header-2"
-                      :input {:request-properties {:fie "foe", :initial-socket-timeout-ms 100, :streaming-timeout-ms 200}
+                      :input {:request-properties {:fie "foe" :initial-socket-timeout-ms 100 :streaming-timeout-ms 200}
                               :waiter-headers {:foo "bar"}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 100, :queue-timeout-ms nil, :streaming-timeout-ms 200}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms 100 :queue-timeout-ms nil :streaming-timeout-ms 200}
                       }
                      {:name "test-prepare-request-properties:invalid-timeout-header"
-                      :input {:request-properties {:fie "foe", :initial-socket-timeout-ms 100, :queue-timeout-ms 150, :streaming-timeout-ms nil}
+                      :input {:request-properties {:fie "foe" :initial-socket-timeout-ms 100 :queue-timeout-ms 150 :streaming-timeout-ms nil}
                               :waiter-headers {"timeout" "bar"}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 100, :queue-timeout-ms 150, :streaming-timeout-ms nil}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms 100 :queue-timeout-ms 150 :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:negative-timeout-header"
-                      :input {:request-properties {:fie "foe", :initial-socket-timeout-ms 100}
+                      :input {:request-properties {:fie "foe" :initial-socket-timeout-ms 100}
                               :waiter-headers {"timeout" -50}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 100, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms 100 :queue-timeout-ms nil :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:valid-timeout-header"
-                      :input {:request-properties {:fie "foe", :initial-socket-timeout-ms 100, :streaming-timeout-ms 200}
-                              :waiter-headers {"timeout" 50, "streaming-timeout" 250}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 50, :queue-timeout-ms nil, :streaming-timeout-ms 250}
+                      :input {:request-properties {:fie "foe" :initial-socket-timeout-ms 100 :streaming-timeout-ms 200}
+                              :waiter-headers {"timeout" 50 "streaming-timeout" 250}}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms 50 :queue-timeout-ms nil :streaming-timeout-ms 250}
                       }
                      {:name "test-prepare-request-properties:invalid-queue-timeout-header"
-                      :input {:request-properties {:fie "foe", :queue-timeout-ms 150}
+                      :input {:request-properties {:fie "foe" :queue-timeout-ms 150}
                               :waiter-headers {"queue-timeout" "bar"}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms 150, :streaming-timeout-ms nil}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms nil :queue-timeout-ms 150 :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:negative-queue-timeout-header"
-                      :input {:request-properties {:fie "foe", :queue-timeout-ms 150}
+                      :input {:request-properties {:fie "foe" :queue-timeout-ms 150}
                               :waiter-headers {"queue-timeout" -50}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms 150, :streaming-timeout-ms nil}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms nil :queue-timeout-ms 150 :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:valid-queue-timeout-header"
-                      :input {:request-properties {:fie "foe", :queue-timeout-ms 150, :streaming-timeout-ms nil}
+                      :input {:request-properties {:fie "foe" :queue-timeout-ms 150 :streaming-timeout-ms nil}
                               :waiter-headers {"queue-timeout" 50}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms 50, :streaming-timeout-ms nil}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms nil :queue-timeout-ms 50 :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:valid-both-timeout-headers"
-                      :input {:request-properties {:fie "foe", :initial-socket-timeout-ms 100, :queue-timeout-ms 150}
-                              :waiter-headers {"timeout" 75, "queue-timeout" 50}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 75, :queue-timeout-ms 50, :streaming-timeout-ms nil}
+                      :input {:request-properties {:fie "foe" :initial-socket-timeout-ms 100 :queue-timeout-ms 150}
+                              :waiter-headers {"queue-timeout" 50 "timeout" 75}}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms 75 :queue-timeout-ms 50 :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:invalid-async-headers"
-                      :input {:request-properties {:fie "foe", :async-check-interval-ms 100, :async-request-timeout-ms 200}
-                              :waiter-headers {"async-check-interval" -50, "async-request-timeout" "foo"}}
-                      :expected {:fie "foe", :async-check-interval-ms 100, :async-request-timeout-ms 200, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :input {:request-properties {:fie "foe" :async-check-interval-ms 100 :async-request-timeout-ms 200}
+                              :waiter-headers {"async-check-interval" -50 "async-request-timeout" "foo"}}
+                      :expected {:fie "foe" :async-check-interval-ms 100 :async-request-timeout-ms 200 :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:valid-async-headers"
-                      :input {:request-properties {:fie "foe", :async-check-interval-ms 100, :async-request-timeout-ms 200}
-                              :waiter-headers {"async-check-interval" 50, "async-request-timeout" 250}}
-                      :expected {:fie "foe", :async-check-interval-ms 50, :async-request-timeout-ms 250, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :input {:request-properties {:fie "foe" :async-check-interval-ms 100 :async-request-timeout-ms 200}
+                              :waiter-headers {"async-check-interval" 50 "async-request-timeout" 250}}
+                      :expected {:fie "foe" :async-check-interval-ms 50 :async-request-timeout-ms 250 :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:too-large-async-request-timeout-header"
-                      :input {:request-properties {:fie "foe", :async-check-interval-ms 100, :async-request-max-timeout-ms 100000 :async-request-timeout-ms 200}
+                      :input {:request-properties {:fie "foe" :async-check-interval-ms 100 :async-request-max-timeout-ms 100000 :async-request-timeout-ms 200}
                               :waiter-headers {"async-request-timeout" 101000}}
-                      :expected {:fie "foe", :async-check-interval-ms 100, :async-request-max-timeout-ms 100000 :async-request-timeout-ms 100000, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:fie "foe" :async-check-interval-ms 100 :async-request-max-timeout-ms 100000 :async-request-timeout-ms 100000 :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
+                      }
+                     {:name "test-prepare-request-properties:too-large-async-request-timeout-header"
+                      :input {:request-properties {:fie "foe" :async-check-interval-ms 100 :async-request-max-timeout-ms 100000 :async-request-timeout-ms 200}
+                              :waiter-headers {"async-request-timeout" 101000}}
+                      :expected {:fie "foe" :async-check-interval-ms 100 :async-request-max-timeout-ms 100000 :async-request-timeout-ms 100000 :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
+                      }
+                     {:name "test-prepare-request-properties:empty-request-properties-with-token-defaults"
+                      :input {:request-properties {:initial-socket-timeout-ms 100 :queue-timeout-ms 150 :streaming-timeout-ms nil}
+                              :token-metadata {"queue-timeout-ms" 300000 "socket-timeout-ms" 900000 "streaming-timeout-ms" 20000}
+                              :waiter-headers nil}
+                      :expected {:async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms 900000 :queue-timeout-ms 300000 :streaming-timeout-ms 20000}
+                      }
+                     {:name "test-prepare-request-properties:empty-request-properties-with-token-defaults-and-some-headers"
+                      :input {:request-properties {:initial-socket-timeout-ms 100 :queue-timeout-ms 150 :streaming-timeout-ms nil}
+                              :token-metadata {"queue-timeout-ms" 300000 "socket-timeout-ms" 900000 "streaming-timeout-ms" 20000}
+                              :waiter-headers {"queue-timeout" 50 "timeout" 75}}
+                      :expected {:async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms 75 :queue-timeout-ms 50 :streaming-timeout-ms 20000}
+                      }
+                     {:name "test-prepare-request-properties:empty-request-properties-with-token-defaults-and-most-timeout-headers"
+                      :input {:request-properties {:initial-socket-timeout-ms 100 :queue-timeout-ms 150 :streaming-timeout-ms nil}
+                              :token-metadata {"queue-timeout-ms" 300000 "socket-timeout-ms" 900000 "streaming-timeout-ms" 20000}
+                              :waiter-headers {"queue-timeout" 50 "streaming-timeout" 95 "timeout" 75}}
+                      :expected {:async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms 75 :queue-timeout-ms 50 :streaming-timeout-ms 95}
                       })]
     (doseq [{:keys [name input expected]} test-cases]
       (testing (str "Test " name)
-        (let [actual (prepare-request-properties (:request-properties input)
-                                                 (pc/map-keys #(str headers/waiter-header-prefix %) (:waiter-headers input)))]
+        (let [{:keys [request-properties token-metadata waiter-headers]} input
+              waiter-headers' (pc/map-keys #(str headers/waiter-header-prefix %) waiter-headers)
+              actual (prepare-request-properties request-properties waiter-headers' token-metadata)]
           (is (= expected actual)))))))
 
 (deftest test-prepare-grpc-compliant-request-properties
@@ -125,7 +149,7 @@
                                  :initial-socket-timeout-ms 1030
                                  :queue-timeout-ms 1040
                                  :streaming-timeout-ms 1050}]
-    (doseq [{:keys [backend-proto request-headers request-properties-expected] :as test-case}
+    (doseq [{:keys [backend-proto request-headers request-properties-expected token-metadata] :as test-case}
             [{:backend-proto "h2c"
               :request-headers {"x-waiter-async-check-interval" "2100"
                                 "x-waiter-async-request-timeout" "2200"
@@ -162,10 +186,20 @@
               :request-headers {"content-type" "application/grpc"
                                 "grpc-timeout" "3S"
                                 "x-waiter-queue-timeout" "2000"}
-              :request-properties-expected {:queue-timeout-ms 2000}}]]
+              :request-properties-expected {:queue-timeout-ms 2000}}
+             {:backend-proto "h2c"
+              :request-headers {"content-type" "application/grpc"
+                                "grpc-timeout" "3S"
+                                "x-waiter-queue-timeout" "2000"}
+              :request-properties-expected {:initial-socket-timeout-ms 900000
+                                            :queue-timeout-ms 2000
+                                            :streaming-timeout-ms 20000}
+              :token-metadata {"queue-timeout-ms" 300000
+                               "socket-timeout-ms" 900000
+                               "streaming-timeout-ms" 20000}}]]
       (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers request-headers)
             request-properties-actual  (prepare-grpc-compliant-request-properties
-                                         request-properties-base backend-proto passthrough-headers waiter-headers)]
+                                         request-properties-base backend-proto passthrough-headers waiter-headers token-metadata)]
         (is (= (merge request-properties-base request-properties-expected) request-properties-actual) (str test-case))))))
 
 (deftest test-stream-http-response-configure-idle-timeout

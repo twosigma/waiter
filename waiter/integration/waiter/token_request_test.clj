@@ -2415,3 +2415,55 @@
                         (assert-service-mapping-response waiter-url service-id-3 (-> response-3 :body str) env-token-new))))))
               (finally
                 (delete-token-and-assert waiter-url token)))))))))
+
+(deftest ^:parallel ^:integration-fast test-request-timeouts-in-token
+  (testing-using-waiter-url
+    (let [{:keys [queue-timeout-ms socket-timeout-ms streaming-timeout-ms]} (setting waiter-url [:token-config :token-defaults])
+          service-name (rand-name)
+          token-1 (create-token-name waiter-url ".")
+          token-description-1 (assoc (kitchen-request-headers :prefix "")
+                                :fallback-period-secs 300
+                                :idle-timeout-mins 2
+                                :name (str service-name "-v1")
+                                :permitted-user "*"
+                                :run-as-user (retrieve-username)
+                                :version "version-1")
+          timeout-response-headers ["x-waiter-queue-timeout-ms" "x-waiter-socket-timeout-ms" "x-waiter-streaming-timeout-ms"]]
+      (try
+        (assert-response-status (post-token waiter-url (assoc token-description-1 :token token-1)) http-200-ok)
+        (let [service-id-1 (retrieve-service-id waiter-url {:x-waiter-token token-1})]
+          (with-service-cleanup
+            service-id-1
+            (let [{:keys [headers] :as response}
+                  (make-request-with-debug-info {:x-waiter-token token-1} #(make-request waiter-url "/hello-1" :headers %))]
+              (assert-response-status response http-200-ok)
+              (is (= service-id-1 (:service-id response)))
+              (is (= {"x-waiter-queue-timeout-ms" (str queue-timeout-ms)
+                      "x-waiter-socket-timeout-ms" (str socket-timeout-ms)
+                      "x-waiter-streaming-timeout-ms" (str streaming-timeout-ms)}
+                     (select-keys headers timeout-response-headers))
+                  (str headers))
+              (let [token-description-2 (assoc token-description-1 :queue-timeout-ms 12000 :socket-timeout-ms 23000)]
+                (assert-response-status (post-token waiter-url (assoc token-description-2 :token token-1)) http-200-ok)
+                (let [{:keys [headers] :as response}
+                      (make-request-with-debug-info {:x-waiter-token token-1} #(make-request waiter-url "/hello-2" :headers %))]
+                  (assert-response-status response http-200-ok)
+                  (is (= service-id-1 (:service-id response)))
+                  (is (= {"x-waiter-queue-timeout-ms" "12000"
+                          "x-waiter-socket-timeout-ms" "23000"
+                          "x-waiter-streaming-timeout-ms" (str streaming-timeout-ms)}
+                         (select-keys headers timeout-response-headers))
+                      (str headers))))
+              (let [token-description-3 (assoc token-description-1 :socket-timeout-ms 32000 :streaming-timeout-ms 43000)]
+                (assert-response-status (post-token waiter-url (assoc token-description-3 :token token-1)) http-200-ok)
+                (let [{:keys [headers] :as response}
+                      (make-request-with-debug-info {:x-waiter-token token-1} #(make-request waiter-url "/hello-3" :headers %))]
+                  (assert-response-status response http-200-ok)
+                  (is (= service-id-1 (:service-id response)))
+                  (is (= {"x-waiter-queue-timeout-ms" (str queue-timeout-ms)
+                          "x-waiter-socket-timeout-ms" "32000"
+                          "x-waiter-streaming-timeout-ms" "43000"}
+                         (select-keys headers timeout-response-headers))
+                      (str headers)))))))
+        (finally
+          (delete-token-and-assert waiter-url token-1))))))

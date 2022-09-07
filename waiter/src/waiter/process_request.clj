@@ -194,38 +194,40 @@
 (defn- lookup-configured-timeout
   "Parses the header value to an integer and return it if it is inside the allowed maximum value.
    Else it returns the old value."
-  ([old-value header-value display-name]
-   (lookup-configured-timeout old-value header-value display-name nil))
-  ([old-value header-value display-name allowed-max-value]
-   (let [parsed-value (when header-value
-                        (try
-                          (log/info "request wants to configure" display-name "to" header-value)
-                          (Integer/parseInt (str header-value))
-                          (catch Exception _
-                            (log/warn "cannot convert header for" display-name "to an int:" header-value)
-                            nil)))]
-     (if (and parsed-value (pos? parsed-value))
-       (if (and (integer? allowed-max-value)
-                (> parsed-value allowed-max-value))
-         (do
-           (log/warn "limiting" display-name "to" allowed-max-value)
-           allowed-max-value)
-         parsed-value)
-       old-value))))
+  [old-value header-value default-value display-name allowed-max-value]
+  (let [parsed-value (or (when header-value
+                           (try
+                             (log/info "request wants to configure" display-name "to" header-value)
+                             (Integer/parseInt (str header-value))
+                             (catch Exception _
+                               (log/warn "cannot convert header for" display-name "to an int:" header-value)
+                               nil)))
+                         default-value)]
+    (if (and parsed-value (pos? parsed-value))
+      (if (and (integer? allowed-max-value)
+               (> parsed-value allowed-max-value))
+        (do
+          (log/warn "limiting" display-name "to" allowed-max-value)
+          allowed-max-value)
+        parsed-value)
+      old-value)))
 
 (defn prepare-request-properties
-  [{:keys [async-request-max-timeout-ms] :as instance-request-properties} waiter-headers]
+  [{:keys [async-request-max-timeout-ms] :as instance-request-properties}
+   {:strs [x-waiter-async-check-interval x-waiter-async-request-timeout x-waiter-queue-timeout x-waiter-streaming-timeout
+           x-waiter-timeout]}
+   {:strs [queue-timeout-ms socket-timeout-ms streaming-timeout-ms]}]
   (-> instance-request-properties
-    (update :async-check-interval-ms lookup-configured-timeout
-            (headers/get-waiter-header waiter-headers "async-check-interval") "async request check interval")
-    (update :async-request-timeout-ms lookup-configured-timeout
-            (headers/get-waiter-header waiter-headers "async-request-timeout") "async request timeout" async-request-max-timeout-ms)
-    (update :initial-socket-timeout-ms lookup-configured-timeout
-            (headers/get-waiter-header waiter-headers "timeout") "socket timeout")
-    (update :queue-timeout-ms lookup-configured-timeout
-            (headers/get-waiter-header waiter-headers "queue-timeout") "instance timeout")
-    (update :streaming-timeout-ms lookup-configured-timeout
-            (headers/get-waiter-header waiter-headers "streaming-timeout") "streaming timeout")))
+      (update :async-check-interval-ms lookup-configured-timeout
+              x-waiter-async-check-interval nil "async request check interval" nil)
+      (update :async-request-timeout-ms lookup-configured-timeout
+              x-waiter-async-request-timeout nil "async request timeout" async-request-max-timeout-ms)
+      (update :initial-socket-timeout-ms lookup-configured-timeout
+              x-waiter-timeout socket-timeout-ms "socket timeout" du/one-hour-in-millis)
+      (update :queue-timeout-ms lookup-configured-timeout
+              x-waiter-queue-timeout queue-timeout-ms "instance timeout" du/one-hour-in-millis)
+      (update :streaming-timeout-ms lookup-configured-timeout
+              x-waiter-streaming-timeout streaming-timeout-ms "streaming timeout" du/one-hour-in-millis)))
 
 (defn timeout-value->millis
   "Converts a TimeoutValue quantity string with an associated timeout unit to a numeric value.
@@ -255,8 +257,8 @@
 
 (defn prepare-grpc-compliant-request-properties
   "Processes request headers and converts them to instance request properties."
-  [instance-request-properties backend-proto passthrough-headers waiter-headers]
-  (cond-> (prepare-request-properties instance-request-properties waiter-headers)
+  [instance-request-properties backend-proto passthrough-headers waiter-headers token-metadata]
+  (cond-> (prepare-request-properties instance-request-properties waiter-headers token-metadata)
     (let [proto-version (hu/backend-protocol->http-version backend-proto)]
       (and (hu/grpc? passthrough-headers proto-version)
            (contains? passthrough-headers "grpc-timeout")
@@ -812,7 +814,7 @@
     [scheduler make-request-fn populate-maintainer-chan! start-new-service-fn
      instance-request-properties determine-priority-fn process-backend-response-fn
      request-abort-callback-factory local-usage-agent
-     {:keys [ctrl descriptor request-id request-time] :as request}]
+     {:keys [ctrl descriptor request-id request-time waiter-discovery] :as request}]
     (let [reservation-status-promise (promise)
           control-mult (async/mult ctrl)
           {:keys [uri] :as request} (-> request (dissoc :ctrl) (assoc :ctrl-mult control-mult))
@@ -820,11 +822,7 @@
           confirm-live-connection-factory #(confirm-live-connection-factory
                                              control-mult reservation-status-promise correlation-id %1)
           confirm-live-connection-without-abort (confirm-live-connection-factory nil)
-          waiter-debug-enabled? (utils/request->debug-enabled? request)
-          assoc-debug-header (fn [response header value]
-                               (if waiter-debug-enabled?
-                                 (assoc-in response [:headers header] value)
-                                 response))]
+          waiter-debug-enabled? (utils/request->debug-enabled? request)]
       (async/go
         (if waiter-debug-enabled?
           (log/info "process request to" (get-in request [:headers "host"]) "at path" uri)
@@ -835,7 +833,8 @@
                 {:strs [backend-proto metric-group]} service-description]
             (send local-usage-agent metrics/update-last-request-time-usage-metric service-id request-time)
             (try
-              (let [{:keys [waiter-headers passthrough-headers]} descriptor]
+              (let [{:keys [waiter-headers passthrough-headers]} descriptor
+                    {:keys [token-metadata]} waiter-discovery]
                 (meters/mark! (metrics/service-meter service-id "request-rate"))
                 (counters/inc! (metrics/service-counter service-id "request-counts" "total"))
                 (statsd/inc! metric-group "request")
@@ -846,7 +845,8 @@
                 (metrics/with-timer!
                   (metrics/service-timer service-id "process")
                   (fn [nanos] (statsd/histo! metric-group "process" nanos))
-                  (let [instance-request-properties (prepare-grpc-compliant-request-properties instance-request-properties backend-proto passthrough-headers waiter-headers)
+                  (let [instance-request-properties (prepare-grpc-compliant-request-properties
+                                                      instance-request-properties backend-proto passthrough-headers waiter-headers token-metadata)
                         start-new-service-fn (fn start-new-service-in-process [] (start-new-service-fn descriptor))
                         priority (determine-priority-fn waiter-headers)
                         reason-map (cond-> {:reason :serve-request
@@ -873,45 +873,49 @@
                     (when-not instance
                       (throw (ex-info "Suggested instance was nil" reason-map)))
                     (statsd/histo! metric-group "get_instance" instance-elapsed)
-                    (-> (try
-                          (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
-                          (confirm-live-connection-without-abort)
-                          (let [timed-response (metrics/with-timer
-                                                 (metrics/service-timer service-id "backend-response")
-                                                 (async/<!
-                                                   (make-request-fn instance request instance-request-properties
-                                                                    passthrough-headers uri metric-group
-                                                                    request-proto proto-version)))
-                                response-elapsed (:elapsed timed-response)
-                                {:keys [error] :as response} (assoc (:out timed-response)
-                                                               :backend-response-latency-ns response-elapsed)]
-                            (statsd/histo! metric-group "backend_response" response-elapsed)
-                            (-> (if error
-                                  (let [error-response (handle-response-error error reservation-status-promise service-id request)]
-                                    ; must close `request-state-chan` after calling `handle-response-error`
-                                    ; which resolves the `reservation-status-promise`
+                    (cond-> (-> (try
+                                  (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
+                                  (confirm-live-connection-without-abort)
+                                  (let [timed-response (metrics/with-timer
+                                                         (metrics/service-timer service-id "backend-response")
+                                                         (async/<!
+                                                           (make-request-fn instance request instance-request-properties
+                                                                            passthrough-headers uri metric-group
+                                                                            request-proto proto-version)))
+                                        response-elapsed (:elapsed timed-response)
+                                        {:keys [error] :as response} (assoc (:out timed-response)
+                                                                       :backend-response-latency-ns response-elapsed)]
+                                    (statsd/histo! metric-group "backend_response" response-elapsed)
+                                    (cond-> (if error
+                                              (let [error-response (handle-response-error error reservation-status-promise service-id request)]
+                                                ; must close `request-state-chan` after calling `handle-response-error`
+                                                ; which resolves the `reservation-status-promise`
+                                                (async/close! request-state-chan)
+                                                error-response)
+                                              (try
+                                                (let [request-abort-callback (request-abort-callback-factory response)
+                                                      confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
+                                                  (process-backend-response-fn local-usage-agent instance-request-properties descriptor
+                                                                               instance request reason-map reservation-status-promise
+                                                                               confirm-live-connection-with-abort request-state-chan response))
+                                                (catch Exception e
+                                                  (async/close! request-state-chan)
+                                                  (handle-process-exception e request))))
+                                      waiter-debug-enabled? (hu/merge-response-headers {"x-waiter-backend-response-ns" response-elapsed})))
+                                  (catch Exception e
                                     (async/close! request-state-chan)
-                                    error-response)
-                                  (try
-                                    (let [request-abort-callback (request-abort-callback-factory response)
-                                          confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
-                                      (process-backend-response-fn local-usage-agent instance-request-properties descriptor
-                                                                   instance request reason-map reservation-status-promise
-                                                                   confirm-live-connection-with-abort request-state-chan response))
-                                    (catch Exception e
-                                      (async/close! request-state-chan)
-                                      (handle-process-exception e request))))
-                              (assoc-debug-header "x-waiter-backend-response-ns" (str response-elapsed))))
-                          (catch Exception e
-                            (async/close! request-state-chan)
-                            (handle-process-exception e request)))
-                      (update :headers headers/dissoc-hop-by-hop-headers proto-version)
-                      (update :headers auth/remove-auth-set-cookie)
-                      (assoc :get-instance-latency-ns instance-elapsed
-                             :instance instance
-                             :instance-proto request-proto
-                             :protocol proto-version)
-                      (assoc-debug-header "x-waiter-get-available-instance-ns" (str instance-elapsed))))))
+                                    (handle-process-exception e request)))
+                                (update :headers headers/dissoc-hop-by-hop-headers proto-version)
+                                (update :headers auth/remove-auth-set-cookie)
+                                (assoc :get-instance-latency-ns instance-elapsed
+                                       :instance instance
+                                       :instance-proto request-proto
+                                       :protocol proto-version))
+                      waiter-debug-enabled? (hu/merge-response-headers
+                                              {"x-waiter-get-available-instance-ns" instance-elapsed
+                                               "x-waiter-queue-timeout-ms" (get instance-request-properties :queue-timeout-ms)
+                                               "x-waiter-socket-timeout-ms" (get instance-request-properties :initial-socket-timeout-ms)
+                                               "x-waiter-streaming-timeout-ms" (get instance-request-properties :streaming-timeout-ms)})))))
               (catch Exception e ; Handle case where we couldn't get an instance
                 (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
                 (statsd/gauge-delta! metric-group "request_outstanding" -1)

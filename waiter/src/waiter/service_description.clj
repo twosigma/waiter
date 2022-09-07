@@ -131,6 +131,11 @@
    (s/optional-key "owner") schema/non-empty-string
    (s/optional-key "service-mapping") (s/pred #(contains? #{"default" "exclusive" "legacy"} %) 'valid-service-mapping?)
    (s/optional-key "stale-timeout-mins") (s/both s/Int (s/pred #(<= 0 % (t/in-minutes (t/hours 4))) 'at-most-4-hours))
+   ;; per request timeouts
+   (s/optional-key "queue-timeout-ms") (s/both s/Int (s/pred #(<= 0 % du/one-hour-in-millis) 'at-most-1-hour))
+   (s/optional-key "socket-timeout-ms") (s/both s/Int (s/pred #(<= 0 % du/one-hour-in-millis) 'at-most-1-hour))
+   (s/optional-key "streaming-timeout-ms") (s/both s/Int (s/pred #(<= 0 % du/one-hour-in-millis) 'at-most-1-hour))
+   ;; unknown entries
    s/Str s/Any})
 
 (def ^:const service-required-keys (->> (keys service-description-schema)
@@ -175,7 +180,8 @@
 (def ^:const system-metadata-keys #{"cluster" "deleted" "last-update-time" "last-update-user" "previous" "root"})
 
 ; keys allowed in user metadata for tokens, these need to be distinct from service description keys
-(def ^:const user-metadata-keys #{"cors-rules" "editor" "fallback-period-secs" "https-redirect" "maintenance" "owner" "service-mapping" "stale-timeout-mins"})
+(def ^:const user-metadata-keys #{"cors-rules" "editor" "fallback-period-secs" "https-redirect" "maintenance" "owner"
+                                  "queue-timeout-ms" "service-mapping" "socket-timeout-ms" "stale-timeout-mins" "streaming-timeout-ms"})
 
 ; keys allowed in metadata for tokens, these need to be distinct from service description keys
 (def ^:const token-metadata-keys (set/union system-metadata-keys user-metadata-keys))
@@ -557,12 +563,24 @@
                                            "owner must be a non-empty string")
                                          (attach-error-message-for-parameter
                                            parameter->issues
+                                           :queue-timeout-ms
+                                           "queue-timeout-ms must be an integer between 0 and 3600000 (inclusive)")
+                                         (attach-error-message-for-parameter
+                                           parameter->issues
                                            :service-mapping
                                            "service-mapping must be one of default, exclusive or legacy")
                                          (attach-error-message-for-parameter
                                            parameter->issues
+                                           :socket-timeout-ms
+                                           "socket-timeout-ms must be an integer between 0 and 3600000 (inclusive)")
+                                         (attach-error-message-for-parameter
+                                           parameter->issues
                                            :stale-timeout-mins
-                                           "stale-timeout-mins must be an integer between 0 and 240 (inclusive)"))]
+                                           "stale-timeout-mins must be an integer between 0 and 240 (inclusive)")
+                                         (attach-error-message-for-parameter
+                                           parameter->issues
+                                           :streaming-timeout-ms
+                                           "streaming-timeout-ms must be an integer between 0 and 3600000 (inclusive)"))]
         (throw (ex-info (str "Validation failed for token:\n" (str/join "\n" (vals parameter->error-message)))
                         {:failed-check (str parameter->issues) :status http-400-bad-request :log-level :warn})))))
 

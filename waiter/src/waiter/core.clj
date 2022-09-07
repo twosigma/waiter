@@ -1068,13 +1068,16 @@
    :make-basic-auth-fn (pc/fnk []
                          (fn make-basic-auth-fn [uri username password]
                            (BasicAuthentication$BasicResult. (URI. uri) username password)))
-   :make-http-request-fn (pc/fnk [[:settings instance-request-properties]
+   :make-http-request-fn (pc/fnk [[:settings [:token-config token-defaults] instance-request-properties]
                                   [:state http-clients]
                                   make-basic-auth-fn service-id->password-fn]
-                           (let [make-request-fn pr/make-request]
+                           (let [make-request-fn pr/make-request
+                                 prepare-request-properties-fn (fn prepare-request-properties-fn [instance-request-properties waiter-headers]
+                                                                 (pr/prepare-request-properties
+                                                                   instance-request-properties waiter-headers token-defaults))]
                              (handler/async-make-request-helper
                                http-clients instance-request-properties make-basic-auth-fn service-id->password-fn
-                               pr/prepare-request-properties make-request-fn)))
+                               prepare-request-properties-fn make-request-fn)))
    :make-inter-router-requests-async-fn (pc/fnk [[:settings [:instance-request-properties initial-socket-timeout-ms]]
                                                  [:state discovery http-clients passwords router-id]
                                                  make-basic-auth-fn]
