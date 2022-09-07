@@ -1457,11 +1457,11 @@
                                            (update container-config :env conj {:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value (str pod-bypass-force-sigterm-secs)}))
                                         container-configs))]
     (cond->
-     {:kind "ReplicaSet"
-      :apiVersion replicaset-api-version
-      :metadata {:annotations (cond-> {:waiter/revision-timestamp revision-timestamp
-                                       :waiter/revision-version revision-version
-                                       :waiter/run-as-user-source run-as-user-source
+      {:kind "ReplicaSet"
+       :apiVersion replicaset-api-version
+       :metadata {:annotations (cond-> {:waiter/revision-timestamp revision-timestamp
+                                        :waiter/revision-version revision-version
+                                        :waiter/run-as-user-source run-as-user-source
                                         ;; Since there are length restrictions on Kubernetes label values,
                                         ;; we store just the 32-char hash portion of the service-id as a searchable label,
                                         ;; but store the full service-id as an annotation.
@@ -1565,12 +1565,12 @@
            :env (into [{:name "WAITER_FILESERVER_PORT" :value (str port)}
                        {:name "WAITER_GRACE_SECS" :value (str configured-pod-sigkill-delay-secs)}]
                       (concat
-                       (for [[k v] base-env
-                             :when (str/starts-with? k "WAITER_")]
-                         {:name k :value v})
-                       (when base-bucket-url
-                         [{:name "WAITER_LOG_BUCKET_URL"
-                           :value (str base-bucket-url "/" run-as-user "/" service-id)}])))
+                        (for [[k v] base-env
+                              :when (str/starts-with? k "WAITER_")]
+                          {:name k :value v})
+                        (when base-bucket-url
+                          [{:name "WAITER_LOG_BUCKET_URL"
+                            :value (str base-bucket-url "/" run-as-user "/" service-id)}])))
            :image image
            :imagePullPolicy "IfNotPresent"
            :name waiter-fileserver-sidecar-name
