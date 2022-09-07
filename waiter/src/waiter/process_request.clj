@@ -43,6 +43,7 @@
             [waiter.util.utils :as utils])
   (:import (clojure.lang ExceptionInfo)
            (java.io ByteArrayOutputStream InputStream IOException)
+           (java.net ConnectException SocketTimeoutException)
            (java.nio ByteBuffer)
            (java.util.concurrent TimeoutException)
            (javax.servlet ReadListener ServletInputStream ServletOutputStream)
@@ -114,6 +115,9 @@
                              (let [response-status-code (.getResponseStatusCode error)
                                    status-code (if (pos? response-status-code) response-status-code http-400-bad-request)]
                                [:client-error "Failed to upgrade to websocket connection" status-code error-class])
+                             (or (instance? ConnectException error)
+                                 (and (instance? SocketTimeoutException error) (= (.getMessage error) "Connect Timeout")))
+                             [:instance-error (utils/message :backend-connect-error) http-502-bad-gateway error-class]
                              :else
                              [:instance-error (utils/message :backend-request-failed) http-502-bad-gateway error-class])
         error-cause (first classification)]
