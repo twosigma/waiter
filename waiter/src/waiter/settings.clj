@@ -201,8 +201,11 @@
                                    (s/required-key :limit-per-owner) schema/positive-int
                                    (s/required-key :token-defaults) {(s/required-key "fallback-period-secs") schema/non-negative-int
                                                                      (s/required-key "https-redirect") s/Bool
+                                                                     (s/required-key "queue-timeout-ms") schema/non-negative-int
                                                                      (s/optional-key "service-mapping") schema/non-empty-string
-                                                                     (s/required-key "stale-timeout-mins") schema/non-negative-int}
+                                                                     (s/required-key "socket-timeout-ms") schema/non-negative-int
+                                                                     (s/required-key "stale-timeout-mins") schema/non-negative-int
+                                                                     (s/required-key "streaming-timeout-ms") schema/non-negative-int}
                                    (s/required-key :validator) (s/constrained
                                                                  {:kind s/Keyword
                                                                   s/Keyword schema/require-symbol-factory-fn}
@@ -518,8 +521,11 @@
                   :limit-per-owner 1000
                   :token-defaults {"fallback-period-secs" (-> 5 t/minutes t/in-seconds)
                                    "https-redirect" false
+                                   "queue-timeout-ms" 300000
                                    "service-mapping" "legacy"
-                                   "stale-timeout-mins" 15}
+                                   "socket-timeout-ms" 900000
+                                   "stale-timeout-mins" 15
+                                   "streaming-timeout-ms" 20000}
                   :validator {:kind :default
                               :default {:factory-fn 'waiter.token-validator/create-default-token-validator}}}
    :watch-config {:tokens {:channels-update-chan-buffer-size 1024
