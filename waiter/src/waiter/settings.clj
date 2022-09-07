@@ -420,6 +420,8 @@
                                    :max-patch-retries 5
                                    :max-name-length 63
                                    :pod-base-port 31000
+                                   :pod-bypass-force-sigterm-secs 120
+                                   :pod-bypass-sigterm-grace-period-secs 30
                                    ; Marathon also defaults this value to 3 seconds:
                                    ; https://mesosphere.github.io/marathon/docs/health-checks.html#taskkillgraceperiodseconds
                                    :pod-sigkill-delay-secs 3

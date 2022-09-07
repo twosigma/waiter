@@ -525,6 +525,13 @@
                                  ;; e.g., if pod-base-port is 31000, and the random offset was 390, then $PORT0==31390 and $PORT9==31399:
                                  :pod-base-port 31000
 
+                                 ;; The maximum amount of time before the SIGTERM signal will be sent in each container of the pod.
+                                 ;; This will allow requests to drain during this period without killing any containers.
+                                 :pod-bypass-force-sigterm-secs 120
+
+                                 ;; The grace period that allows containers to handle SIGTERM before getting fully deleted.
+                                 :pod-bypass-sigterm-grace-period-secs 30
+
                                  ;; The number of seconds between the SIGTERM and SIGKILL signals sent to a pod on shutdown.
                                  ;; This value should be placed in the terminationGracePeriodSeconds field in the pod template.
                                  ;; Should be set between 0 and 300 seconds, inclusive.
