@@ -1276,10 +1276,9 @@
   "Attaches raven sidecar to replicaset"
   [replicaset raven-sidecar
    {:strs [backend-proto health-check-port-index health-check-proto ports] :as service-description}
-   base-env service-port port0 force-tls? lifecycle-config]
+   base-env service-port port0 force-tls?]
   (let [raven-log-request-header-names (header-names->log-entry-value (config/retrieve-request-log-request-headers))
-        raven-log-response-header-names (header-names->log-entry-value (config/retrieve-request-log-response-headers))
-        bypass-enabled? (sd/service-description-bypass-enabled? service-description)]
+        raven-log-response-header-names (header-names->log-entry-value (config/retrieve-request-log-response-headers))]
     (update-in replicaset
       [:spec :template :spec :containers]
       conj
@@ -1308,8 +1307,7 @@
                              :ports [{:containerPort service-port}]
                              :resources {:limits {:memory (str (:mem resources) "Mi")}
                                          :requests {:cpu (str (:cpu resources)) :memory (str (:mem resources) "Mi")}}}]
-        (cond-> raven-container
-          bypass-enabled? (assoc :lifecycle lifecycle-config))))))
+        raven-container))))
 
 (defn- proto->tls-proto
   "Return equivalent TLS protocol for given protocol"
@@ -1452,15 +1450,18 @@
         waiter-config-token (retrieve-unique-service-mapping-token service-description)
         ;; Services that are in bypass will need to safely scale down. Configuring 'preStop' will delay the sigterm for each contianer.
         bypass-enabled? (sd/service-description-bypass-enabled? service-description)
-        pre-stop-command (str "echo Sleeping for " pod-bypass-force-sigterm-secs " secs >> /proc/1/fd/1 ; sleep "
-                              pod-bypass-force-sigterm-secs " ; echo ending sleep >> /proc/1/fd/1")
-        lifecycle-config {:preStop {:exec {:command ["/bin/sh" "-c" pre-stop-command]}}}]
+        add-lifecycle-configs-fn (fn add-lifecycle-config [container-configs]
+                                   (map #(as-> % container-config
+                                           (assoc-in container-config [:lifecycle :preStop :exec :command]
+                                                     ["/bin/sh" "-c" "echo Sleeping for ${WAITER_BYPASS_FORCE_SIGTERM_SECS} secs >> /proc/1/fd/1; sleep ${WAITER_BYPASS_FORCE_SIGTERM_SECS}; echo ending sleep >> /proc/1/fd/1"])
+                                           (update container-config :env conj {:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value (str pod-bypass-force-sigterm-secs)}))
+                                        container-configs))]
     (cond->
-      {:kind "ReplicaSet"
-       :apiVersion replicaset-api-version
-       :metadata {:annotations (cond-> {:waiter/revision-timestamp revision-timestamp
-                                        :waiter/revision-version revision-version
-                                        :waiter/run-as-user-source run-as-user-source
+     {:kind "ReplicaSet"
+      :apiVersion replicaset-api-version
+      :metadata {:annotations (cond-> {:waiter/revision-timestamp revision-timestamp
+                                       :waiter/revision-version revision-version
+                                       :waiter/run-as-user-source run-as-user-source
                                         ;; Since there are length restrictions on Kubernetes label values,
                                         ;; we store just the 32-char hash portion of the service-id as a searchable label,
                                         ;; but store the full service-id as an annotation.
@@ -1560,30 +1561,32 @@
         (let [{:keys [cmd image port] {:keys [cpu mem]} :resources} fileserver
               memory (str mem "Mi")
               base-bucket-url (retrieve-service-log-bucket-url service-description log-bucket-url)]
-          (cond-> {:command cmd
-                   :env (into [{:name "WAITER_FILESERVER_PORT" :value (str port)}
-                               {:name "WAITER_GRACE_SECS" :value (str configured-pod-sigkill-delay-secs)}]
-                              (concat
-                               (for [[k v] base-env
-                                     :when (str/starts-with? k "WAITER_")]
-                                 {:name k :value v})
-                               (when base-bucket-url
-                                 [{:name "WAITER_LOG_BUCKET_URL"
-                                   :value (str base-bucket-url "/" run-as-user "/" service-id)}])))
-                   :lifecycle lifecycle-config
-                   :image image
-                   :imagePullPolicy "IfNotPresent"
-                   :name waiter-fileserver-sidecar-name
-                   :ports [{:containerPort port}]
-                   :resources {:limits {:memory memory}
-                               :requests {:cpu cpu :memory memory}}
-                   :volumeMounts [{:mountPath "/srv/www"
-                                   :name "user-home"}]}
-            bypass-enabled? (assoc :lifecycle lifecycle-config))))
+          {:command cmd
+           :env (into [{:name "WAITER_FILESERVER_PORT" :value (str port)}
+                       {:name "WAITER_GRACE_SECS" :value (str configured-pod-sigkill-delay-secs)}]
+                      (concat
+                       (for [[k v] base-env
+                             :when (str/starts-with? k "WAITER_")]
+                         {:name k :value v})
+                       (when base-bucket-url
+                         [{:name "WAITER_LOG_BUCKET_URL"
+                           :value (str base-bucket-url "/" run-as-user "/" service-id)}])))
+           :image image
+           :imagePullPolicy "IfNotPresent"
+           :name waiter-fileserver-sidecar-name
+           :ports [{:containerPort port}]
+           :resources {:limits {:memory memory}
+                       :requests {:cpu cpu :memory memory}}
+           :volumeMounts [{:mountPath "/srv/www"
+                           :name "user-home"}]}))
 
       ;; Optional raven sidecar container
       has-raven?
-      (attach-raven-sidecar raven-sidecar service-description base-env service-port port0 raven-force-downstream-tls? lifecycle-config))))
+      (attach-raven-sidecar raven-sidecar service-description base-env service-port port0 raven-force-downstream-tls?)
+
+      ;; When bypass is enabled, we should attach a preStop command to all containers to delay SIGTERM to be handled for a period of time
+      bypass-enabled?
+      (update-in [:spec :template :spec :containers] add-lifecycle-configs-fn))))
 
 (defn default-pdb-spec-builder
   "Factory function which creates a Kubernetes PodDisruptionBudget spec for the given ReplicaSet."
