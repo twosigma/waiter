@@ -517,6 +517,12 @@
   (-> (exception->response-metadata ex)
       (data->error-response request)))
 
+(defn log-when-not-exception
+  "Logs when the Throwable instance is not an instance of an Exception"
+  [^Throwable th]
+  (when (and (some? th) (not (instance? th Exception)))
+    (log/warn th "handling non-exception instance!")))
+
 (defmacro log-and-suppress-when-exception-thrown
   "Executes the body inside a try-catch block and suppresses any thrown exceptions."
   [error-message & body]

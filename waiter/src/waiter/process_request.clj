@@ -806,6 +806,7 @@
   "Handles an error during process."
   [exception {:keys [descriptor] :as request}]
   (let [error-message (str (some-> exception .getMessage))]
+    (utils/log-when-not-exception exception)
     (if (str/includes? error-message service/deployment-error-prefix)
       (log/error "error during process" error-message)
       (log/error exception "error during process" error-message))
@@ -902,13 +903,13 @@
                                                   (process-backend-response-fn local-usage-agent instance-request-properties descriptor
                                                                                instance request reason-map reservation-status-promise
                                                                                confirm-live-connection-with-abort request-state-chan response))
-                                                (catch Exception e
+                                                (catch Throwable th
                                                   (async/close! request-state-chan)
-                                                  (handle-process-exception e request))))
+                                                  (handle-process-exception th request))))
                                       waiter-debug-enabled? (hu/merge-response-headers {"x-waiter-backend-response-ns" response-elapsed})))
-                                  (catch Exception e
+                                  (catch Throwable th
                                     (async/close! request-state-chan)
-                                    (handle-process-exception e request)))
+                                    (handle-process-exception th request)))
                                 (update :headers headers/dissoc-hop-by-hop-headers proto-version)
                                 (update :headers auth/remove-auth-set-cookie)
                                 (assoc :get-instance-latency-ns instance-elapsed
@@ -920,10 +921,10 @@
                                                "x-waiter-queue-timeout-ms" (get instance-request-properties :queue-timeout-ms)
                                                "x-waiter-socket-timeout-ms" (get instance-request-properties :initial-socket-timeout-ms)
                                                "x-waiter-streaming-timeout-ms" (get instance-request-properties :streaming-timeout-ms)})))))
-              (catch Exception e ; Handle case where we couldn't get an instance
+              (catch Throwable th ; Handle case where we couldn't get an instance
                 (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
                 (statsd/gauge-delta! metric-group "request_outstanding" -1)
-                (handle-process-exception e request)))))))))
+                (handle-process-exception th request)))))))))
 
 (defn wrap-suspended-service
   "Check if a service has been suspended and immediately return a 503 response"
