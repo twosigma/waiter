@@ -152,6 +152,18 @@
         (clojure.data/diff expected# actual#)))
      (is (= expected# actual#))))
 
+(deftest test-add-pre-stop-config-for-bypass-service
+  (testing "adds expected environment variables and prestop command to configs"
+    (let [container-configs (repeat 3 {})
+          pre-stop-cmd ["this" "is" "a" "test"]
+          force-sigterm-secs 1
+          sigterm-grace-period-secs 2
+          actual-configs (add-pre-stop-config-for-bypass-service container-configs pre-stop-cmd force-sigterm-secs sigterm-grace-period-secs)
+          expected-configs (vec (repeat 3 {:env [{:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value "1"}
+                                                 {:name "WAITER_BYPASS_SIGTERM_GRACE_PERIOD_SECS" :value "2"}]
+                                           :lifecycle {:preStop {:exec {:command pre-stop-cmd}}}}))]
+      (assert-data-equal expected-configs actual-configs))))
+
 (deftest test-replicaset-spec-pre-stop-cmd
   (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
                 config/retrieve-request-log-request-headers (constantly  #{})
@@ -174,7 +186,8 @@
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description rs-spec-builder-context)]
       (doseq [container (get-in replicaset-spec [:spec :template :spec :containers])]
         (is (= {:exec {:command ["test" "pre-stop" "cmd" "config"]}} (get-in container [:lifecycle :preStop])))
-        (is (contains? (set (:env container)) {:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value "120"}))))))
+        (is (contains? (set (:env container)) {:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value "120"}))
+        (is (contains? (set (:env container)) {:name "WAITER_BYPASS_SIGTERM_GRACE_PERIOD_SECS" :value "30"}))))))
 
 (deftest test-replicaset-spec-fileserver-container-and-metadata
   (let [current-time (t/now)]
