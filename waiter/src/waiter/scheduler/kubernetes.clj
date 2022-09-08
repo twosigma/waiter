@@ -1452,10 +1452,11 @@
         ;; Services that are in bypass will need to safely scale down. Configuring 'preStop' will delay the sigterm for each contianer.
         bypass-enabled? (sd/service-description-bypass-enabled? service-description)
         add-lifecycle-configs-fn (fn add-lifecycle-config [container-configs]
-                                   (map #(as-> % container-config
-                                           (assoc-in container-config [:lifecycle :preStop :exec :command] pod-bypass-pre-stop-cmd)
-                                           (update container-config :env conj {:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value (str pod-bypass-force-sigterm-secs)}))
-                                        container-configs))]
+                                   (->> container-configs
+                                       (map #(as-> % container-config
+                                               (assoc-in container-config [:lifecycle :preStop :exec :command] pod-bypass-pre-stop-cmd)
+                                               (update container-config :env conj {:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value (str pod-bypass-force-sigterm-secs)})))
+                                        vec))]
     (cond->
       {:kind "ReplicaSet"
        :apiVersion replicaset-api-version
