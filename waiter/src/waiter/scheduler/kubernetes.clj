@@ -1352,6 +1352,15 @@
     (when (nil? (str/index-of waiter-config-token ","))
       waiter-config-token)))
 
+(defn add-pre-stop-config-for-bypass-service
+  "Returns a new vector of container configurations that include the desired preStop command and environment variables
+   that will be used by the preStop command to know how long to delay the SIGTERM signal to the container."
+  [container-configs pre-stop-cmd force-sigterm-secs]
+  (mapv #(-> %
+             (assoc-in [:lifecycle :preStop :exec :command] pre-stop-cmd)
+             (update :env conj {:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value (str force-sigterm-secs)}))
+        container-configs))
+
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
   [{:keys [cluster-name determine-replicaset-namespace-fn fileserver pod-base-port pod-sigkill-delay-secs
@@ -1450,12 +1459,7 @@
         fileserver-label (if fileserver-enabled? "enabled" "disabled")
         waiter-config-token (retrieve-unique-service-mapping-token service-description)
         ;; Services that are in bypass will need to safely scale down. Configuring 'preStop' will delay the sigterm for each contianer.
-        bypass-enabled? (sd/service-description-bypass-enabled? service-description)
-        add-lifecycle-configs-fn (fn add-lifecycle-config [container-configs]
-                                   (mapv #(as-> % container-config
-                                            (assoc-in container-config [:lifecycle :preStop :exec :command] pre-stop-cmd)
-                                            (update container-config :env conj {:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value (str force-sigterm-secs)}))
-                                         container-configs))]
+        bypass-enabled? (sd/service-description-bypass-enabled? service-description)]
     (cond->
       {:kind "ReplicaSet"
        :apiVersion replicaset-api-version
@@ -1585,7 +1589,7 @@
 
       ;; When bypass is enabled, we should attach a preStop command to all containers to delay SIGTERM to be handled for a period of time
       bypass-enabled?
-      (update-in [:spec :template :spec :containers] add-lifecycle-configs-fn))))
+      (update-in [:spec :template :spec :containers] add-pre-stop-config-for-bypass-service pre-stop-cmd force-sigterm-secs))))
 
 (defn default-pdb-spec-builder
   "Factory function which creates a Kubernetes PodDisruptionBudget spec for the given ReplicaSet."
