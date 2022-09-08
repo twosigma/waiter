@@ -2117,6 +2117,20 @@
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-base-port "8080"))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-base-port 1234567890)))))
 
+          (testing "bad pod-bypass-force-sigterm-secs"
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-bypass-force-sigterm-secs -1))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-bypass-force-sigterm-secs "10")))))
+
+          (testing "bad pod-bypass-pre-stop-cmd"
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-bypass-pre-stop-cmd [1 2 3 4]))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-bypass-pre-stop-cmd 5))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-bypass-pre-stop-cmd '("testing")))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-bypass-pre-stop-cmd "10")))))
+
+          (testing "bad pod-bypass-sigterm-grace-period-secs"
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-bypass-sigterm-grace-period-secs -1))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-bypass-sigterm-grace-period-secs "10")))))
+
           (testing "bad pod termination grace period"
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-sigkill-delay-secs -1))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-sigkill-delay-secs "10"))))
