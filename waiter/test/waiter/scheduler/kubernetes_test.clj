@@ -82,9 +82,9 @@
      :pdb-api-version "policy/v1beta1"
      :pdb-spec-builder-fn waiter.scheduler.kubernetes/default-pdb-spec-builder
      :pod-base-port 8080
-     :pod-bypass-force-sigterm-secs 120
-     :pod-bypass-pre-stop-cmd ["test" "pre-stop" "cmd" "config"]
-     :pod-bypass-sigterm-grace-period-secs 30
+     :pod-bypass {:force-sigterm-secs 120
+                  :pre-stop-cmd ["test" "pre-stop" "cmd" "config"]
+                  :sigterm-grace-period-secs 30}
      :pod-sigkill-delay-secs 3
      :pod-suffix-length default-pod-suffix-length
      :replicaset-api-version "apps/v1"
@@ -2087,9 +2087,9 @@
                     :max-patch-retries 5
                     :max-name-length 63
                     :pod-base-port 8080
-                    :pod-bypass-force-sigterm-secs 120
-                    :pod-bypass-pre-stop-cmd ["test" "pre-stop" "cmd" "config"]
-                    :pod-bypass-sigterm-grace-period-secs 30
+                    :pod-bypass {:force-sigterm-secs 120
+                                 :pre-stop-cmd ["test" "pre-stop" "cmd" "config"]
+                                 :sigterm-grace-period-secs 30}
                     :pod-sigkill-delay-secs 3
                     :pod-suffix-length default-pod-suffix-length
                     :replicaset-api-version "apps/v1"
@@ -2142,18 +2142,18 @@
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-base-port 1234567890)))))
 
           (testing "bad pod-bypass-force-sigterm-secs"
-            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-bypass-force-sigterm-secs -1))))
-            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-bypass-force-sigterm-secs "10")))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config [:pod-bypass :force-sigterm-secs] -1))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config [:pod-bypass :force-sigterm-secs] "10")))))
 
           (testing "bad pod-bypass-pre-stop-cmd"
-            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-bypass-pre-stop-cmd [1 2 3 4]))))
-            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-bypass-pre-stop-cmd 5))))
-            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-bypass-pre-stop-cmd '("testing")))))
-            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-bypass-pre-stop-cmd "10")))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config [:pod-bypass :pre-stop-cmd] [1 2 3 4]))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config [:pod-bypass :pre-stop-cmd] 5))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config [:pod-bypass :pre-stop-cmd] '("testing")))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config [:pod-bypass :pre-stop-cmd] "10")))))
 
           (testing "bad pod-bypass-sigterm-grace-period-secs"
-            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-bypass-sigterm-grace-period-secs -1))))
-            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-bypass-sigterm-grace-period-secs "10")))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config [:pod-bypass :sigterm-grace-period-secs] -1))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc base-config [:pod-bypass :sigterm-grace-period-secs] "10")))))
 
           (testing "bad pod termination grace period"
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-sigkill-delay-secs -1))))

@@ -420,11 +420,11 @@
                                    :max-patch-retries 5
                                    :max-name-length 63
                                    :pod-base-port 31000
-                                   :pod-bypass-force-sigterm-secs 120
-                                   :pod-bypass-pre-stop-cmd ["/bin/sh"
-                                                             "-c"
-                                                             "echo $(date +%Y-%m-%dT%H:%M:%S.%3NZ) INFO preStop: sleeping for ${WAITER_BYPASS_FORCE_SIGTERM_SECS} secs >> /proc/1/fd/1 ; sleep ${WAITER_BYPASS_FORCE_SIGTERM_SECS} ; echo $(date +%Y-%m-%dT%H:%M:%S.%3NZ) INFO preStop: ending sleep, and container will receive SIGTERM shortly >> /proc/1/fd/1"]
-                                   :pod-bypass-sigterm-grace-period-secs 30
+                                   :pod-bypass {:force-sigterm-secs 120
+                                                :pre-stop-cmd ["/bin/sh"
+                                                               "-c"
+                                                               "echo $(date +%Y-%m-%dT%H:%M:%S.%3NZ) INFO preStop: sleeping for ${WAITER_BYPASS_FORCE_SIGTERM_SECS} secs >> /proc/1/fd/1 ; sleep ${WAITER_BYPASS_FORCE_SIGTERM_SECS} ; echo $(date +%Y-%m-%dT%H:%M:%S.%3NZ) INFO preStop: ending sleep, and container will receive SIGTERM shortly >> /proc/1/fd/1"]
+                                                :sigterm-grace-period-secs 30}
                                    ; Marathon also defaults this value to 3 seconds:
                                    ; https://mesosphere.github.io/marathon/docs/health-checks.html#taskkillgraceperiodseconds
                                    :pod-sigkill-delay-secs 3

@@ -775,7 +775,7 @@
   "Safely kill the Kubernetes pod corresponding to the given Waiter Service Instance.
    Also adjusts the ReplicaSet replica count to prevent a replacement pod from being started.
    Returns nil on success, but throws on failure."
-  [{:keys [api-server-url pod-bypass-force-sigterm-secs pod-bypass-sigterm-grace-period-secs service-id->service-description-fn] :as scheduler}
+  [{:keys [api-server-url service-id->service-description-fn] {:keys [force-sigterm-secs sigterm-grace-period-secs]} :pod-bypass :as scheduler}
    {:keys [service-id] :as instance} service]
   ;; SAFE DELETION STRATEGY:
   ;; 1) Delete the target pod with a grace period of 5 minutes
@@ -801,7 +801,7 @@
         ;; We have to add both of these durations together because K8s gracePeriodSeconds countdown is done
         ;; in parallel with the preStop hook and issuing the SIGTERM signal.
         ;; https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination
-        total-bypass-grace-period-secs (+ pod-bypass-sigterm-grace-period-secs pod-bypass-force-sigterm-secs)
+        total-bypass-grace-period-secs (+ force-sigterm-secs sigterm-grace-period-secs)
         grace-period-seconds (if bypass-enabled? total-bypass-grace-period-secs 300)]
     (when bypass-enabled?
       (log/info "deleting pod for bypass service" {:grace-period-seconds grace-period-seconds}))
@@ -813,7 +813,7 @@
       (scale-service-by-delta scheduler service -1)
       (catch Throwable t
         (log/error t "Error while scaling down ReplicaSet after pod termination")))
-    ; don't hard delete the pod if the service is bypass a
+    ; don't hard delete the pod if the service is bypass because the default gracePeriodSeconds may be too aggressive
     (when (not bypass-enabled?)
       ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
       ; (note that the pod's default grace period is different from the 300s period set above)
@@ -948,9 +948,7 @@
                                 pdb-api-version
                                 pdb-spec-builder-fn
                                 pod-base-port
-                                pod-bypass-force-sigterm-secs
-                                pod-bypass-pre-stop-cmd
-                                pod-bypass-sigterm-grace-period-secs
+                                pod-bypass
                                 pod-sigkill-delay-secs
                                 pod-suffix-length
                                 raven-sidecar
@@ -1356,8 +1354,10 @@
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
-  [{:keys [cluster-name determine-replicaset-namespace-fn fileserver pod-base-port pod-bypass-pre-stop-cmd pod-bypass-force-sigterm-secs
-           pod-sigkill-delay-secs replicaset-api-version raven-sidecar service-id->password-fn] :as scheduler}
+  [{:keys [cluster-name determine-replicaset-namespace-fn fileserver pod-base-port pod-sigkill-delay-secs
+           replicaset-api-version raven-sidecar service-id->password-fn]
+    {:keys [force-sigterm-secs pre-stop-cmd]} :pod-bypass
+    :as scheduler}
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
@@ -1453,8 +1453,8 @@
         bypass-enabled? (sd/service-description-bypass-enabled? service-description)
         add-lifecycle-configs-fn (fn add-lifecycle-config [container-configs]
                                    (mapv #(as-> % container-config
-                                            (assoc-in container-config [:lifecycle :preStop :exec :command] pod-bypass-pre-stop-cmd)
-                                            (update container-config :env conj {:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value (str pod-bypass-force-sigterm-secs)}))
+                                            (assoc-in container-config [:lifecycle :preStop :exec :command] pre-stop-cmd)
+                                            (update container-config :env conj {:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value (str force-sigterm-secs)}))
                                          container-configs))]
     (cond->
       {:kind "ReplicaSet"
@@ -2056,8 +2056,7 @@
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
   [{:keys [authenticate-health-checks? authentication authorizer cluster-name container-running-grace-secs custom-options 
            fetch-events-k8s-object-minimum-age-secs http-options determine-replicaset-namespace-fn kube-context leader?-fn log-bucket-sync-secs
-           log-bucket-url max-patch-retries max-name-length namespace pdb-api-version pdb-spec-builder pod-base-port pod-bypass-force-sigterm-secs
-           pod-bypass-pre-stop-cmd pod-bypass-sigterm-grace-period-secs pod-sigkill-delay-secs pod-suffix-length replicaset-api-version
+           log-bucket-url max-patch-retries max-name-length namespace pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs pod-suffix-length replicaset-api-version
            response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold raven-sidecar scheduler-name scheduler-state-chan
            scheduler-syncer-interval-secs service-id->service-description-fn service-id->password-fn start-scheduler-syncer-fn url
            watch-chan-throttle-interval-ms watch-connect-timeout-ms watch-init-timeout-ms watch-retries watch-socket-timeout-ms watch-validate-ssl]
@@ -2065,6 +2064,7 @@
     {:keys [default-namespace] :as replicaset-spec-builder} :replicaset-spec-builder
     {service-id->deployment-error-cache-threshold :threshold service-id->deployment-error-cache-ttl-sec :ttl} :service-id->deployment-error-cache
     {k8s-object-key->event-cache-threshold :threshold k8s-object-key->event-cache-ttl-sec :ttl} :k8s-object-key->event-cache
+    {pod-bypass-force-sigterm-secs :force-sigterm-secs pod-bypass-pre-stop-cmd :pre-stop-cmd pod-bypass-sigterm-grace-period-secs :sigterm-grace-period-secs :as pod-bypass} :pod-bypass
     :as context}]
   {:pre [(or (nil? authenticate-health-checks?) (boolean? authenticate-health-checks?))
          (schema/contains-kind-sub-map? authorizer)
@@ -2093,6 +2093,7 @@
          (or (nil? pdb-spec-builder) (symbol? (:factory-fn pdb-spec-builder)))
          (integer? pod-base-port)
          (< 0 pod-base-port 65527) ; max port is 65535, and we need to reserve up to 10 ports
+         (map? pod-bypass)
          (pos-int? pod-bypass-force-sigterm-secs)
          (vector? pod-bypass-pre-stop-cmd)
          (every? string? pod-bypass-pre-stop-cmd)
@@ -2226,9 +2227,7 @@
                             :pdb-api-version pdb-api-version
                             :pdb-spec-builder-fn pdb-spec-builder-fn
                             :pod-base-port pod-base-port
-                            :pod-bypass-force-sigterm-secs pod-bypass-force-sigterm-secs
-                            :pod-bypass-pre-stop-cmd pod-bypass-pre-stop-cmd
-                            :pod-bypass-sigterm-grace-period-secs pod-bypass-sigterm-grace-period-secs
+                            :pod-bypass pod-bypass
                             :pod-sigkill-delay-secs pod-sigkill-delay-secs
                             :pod-suffix-length pod-suffix-length
                             :raven-sidecar raven-sidecar
