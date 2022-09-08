@@ -356,7 +356,8 @@
                        :ttl 60}
                :encrypt true
                :relative-path "tokens"}
-   :messages {:backend-request-failed "Request to service backend failed"
+   :messages {:backend-connect-error "Request failed to connect to service backend"
+              :backend-request-failed "Request to service backend failed"
               :backend-request-timed-out "Request to service backend timed out"
               :bad-socket "Backend is closing socket without responding (ensure backend-proto is correctly configured)"
               :bad-startup-command "Invalid startup command"
