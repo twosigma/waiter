@@ -949,6 +949,7 @@
                                 pdb-spec-builder-fn
                                 pod-base-port
                                 pod-bypass-force-sigterm-secs
+                                pod-bypass-pre-stop-cmd
                                 pod-bypass-sigterm-grace-period-secs
                                 pod-sigkill-delay-secs
                                 pod-suffix-length
@@ -1355,7 +1356,7 @@
 
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
-  [{:keys [cluster-name determine-replicaset-namespace-fn fileserver pod-base-port pod-bypass-force-sigterm-secs
+  [{:keys [cluster-name determine-replicaset-namespace-fn fileserver pod-base-port pod-bypass-pre-stop-cmd pod-bypass-force-sigterm-secs
            pod-sigkill-delay-secs replicaset-api-version raven-sidecar service-id->password-fn] :as scheduler}
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
@@ -1452,8 +1453,7 @@
         bypass-enabled? (sd/service-description-bypass-enabled? service-description)
         add-lifecycle-configs-fn (fn add-lifecycle-config [container-configs]
                                    (map #(as-> % container-config
-                                           (assoc-in container-config [:lifecycle :preStop :exec :command]
-                                                     ["/bin/sh" "-c" "echo Sleeping for ${WAITER_BYPASS_FORCE_SIGTERM_SECS} secs >> /proc/1/fd/1; sleep ${WAITER_BYPASS_FORCE_SIGTERM_SECS}; echo ending sleep >> /proc/1/fd/1"])
+                                           (assoc-in container-config [:lifecycle :preStop :exec :command] pod-bypass-pre-stop-cmd)
                                            (update container-config :env conj {:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value (str pod-bypass-force-sigterm-secs)}))
                                         container-configs))]
     (cond->
@@ -1498,26 +1498,25 @@
                                 ;; but this is only enabled when the replicaset namespace matches the run-as-user.
                                 :automountServiceAccountToken (= rs-namespace run-as-user)
                                 ;; Note: waiter-app must always be the first container we register
-                                :containers [(cond-> {:command (conj (vec container-init-commands) cmd)
-                                                      :env env
-                                                      :image (compute-image image default-container-image image-aliases)
-                                                      :imagePullPolicy "IfNotPresent"
-                                                      :name waiter-primary-container-name
-                                                      :ports [{:containerPort port0}]
-                                                      :readinessProbe (-> (prepare-health-check-probe
-                                                                           service-id->password-fn service-id
-                                                                           authenticate-health-check?
-                                                                           readiness-scheme health-check-url
-                                                                           (+ service-port health-check-port-index)
-                                                                           health-check-interval-secs)
-                                                                          (assoc :failureThreshold 1))
-                                                      :resources {:limits {:memory memory}
-                                                                  :requests {:cpu cpus
-                                                                             :memory memory}}
-                                                      :volumeMounts [{:mountPath work-path
-                                                                      :name "user-home"}]
-                                                      :workingDir work-path}
-                                               bypass-enabled? (assoc :lifecycle lifecycle-config))]
+                                :containers [{:command (conj (vec container-init-commands) cmd)
+                                              :env env
+                                              :image (compute-image image default-container-image image-aliases)
+                                              :imagePullPolicy "IfNotPresent"
+                                              :name waiter-primary-container-name
+                                              :ports [{:containerPort port0}]
+                                              :readinessProbe (-> (prepare-health-check-probe
+                                                                   service-id->password-fn service-id
+                                                                   authenticate-health-check?
+                                                                   readiness-scheme health-check-url
+                                                                   (+ service-port health-check-port-index)
+                                                                   health-check-interval-secs)
+                                                                  (assoc :failureThreshold 1))
+                                              :resources {:limits {:memory memory}
+                                                          :requests {:cpu cpus
+                                                                     :memory memory}}
+                                              :volumeMounts [{:mountPath work-path
+                                                              :name "user-home"}]
+                                              :workingDir work-path}]
                                 :volumes [{:name "user-home"
                                            :emptyDir {}}]
                                 :terminationGracePeriodSeconds total-sigkill-delay-secs}}}}
@@ -2058,10 +2057,10 @@
   [{:keys [authenticate-health-checks? authentication authorizer cluster-name container-running-grace-secs custom-options 
            fetch-events-k8s-object-minimum-age-secs http-options determine-replicaset-namespace-fn kube-context leader?-fn log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length namespace pdb-api-version pdb-spec-builder pod-base-port pod-bypass-force-sigterm-secs
-           pod-bypass-sigterm-grace-period-secs pod-sigkill-delay-secs pod-suffix-length replicaset-api-version response->deployment-error-msg-fn
-           restart-expiry-threshold restart-kill-threshold raven-sidecar scheduler-name scheduler-state-chan scheduler-syncer-interval-secs
-           service-id->service-description-fn service-id->password-fn start-scheduler-syncer-fn url watch-chan-throttle-interval-ms
-           watch-connect-timeout-ms watch-init-timeout-ms watch-retries watch-socket-timeout-ms watch-validate-ssl]
+           pod-bypass-pre-stop-cmd pod-bypass-sigterm-grace-period-secs pod-sigkill-delay-secs pod-suffix-length replicaset-api-version
+           response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold raven-sidecar scheduler-name scheduler-state-chan
+           scheduler-syncer-interval-secs service-id->service-description-fn service-id->password-fn start-scheduler-syncer-fn url
+           watch-chan-throttle-interval-ms watch-connect-timeout-ms watch-init-timeout-ms watch-retries watch-socket-timeout-ms watch-validate-ssl]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver
     {:keys [default-namespace] :as replicaset-spec-builder} :replicaset-spec-builder
     {service-id->deployment-error-cache-threshold :threshold service-id->deployment-error-cache-ttl-sec :ttl} :service-id->deployment-error-cache
@@ -2095,6 +2094,8 @@
          (integer? pod-base-port)
          (< 0 pod-base-port 65527) ; max port is 65535, and we need to reserve up to 10 ports
          (pos-int? pod-bypass-force-sigterm-secs)
+         (vector? pod-bypass-pre-stop-cmd)
+         (every? string? pod-bypass-pre-stop-cmd)
          (pos-int? pod-bypass-sigterm-grace-period-secs)
          (integer? pod-sigkill-delay-secs)
          (<= 0 pod-sigkill-delay-secs 300)
@@ -2226,6 +2227,7 @@
                             :pdb-spec-builder-fn pdb-spec-builder-fn
                             :pod-base-port pod-base-port
                             :pod-bypass-force-sigterm-secs pod-bypass-force-sigterm-secs
+                            :pod-bypass-pre-stop-cmd pod-bypass-pre-stop-cmd
                             :pod-bypass-sigterm-grace-period-secs pod-bypass-sigterm-grace-period-secs
                             :pod-sigkill-delay-secs pod-sigkill-delay-secs
                             :pod-suffix-length pod-suffix-length
