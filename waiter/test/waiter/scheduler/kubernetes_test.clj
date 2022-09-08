@@ -1567,6 +1567,20 @@
                         :message "Successfully killed instance"
                         :status http-200-ok)
                  actual))))
+      (testing "successful-delete: bypass"
+        (let [dummy-scheduler (assoc dummy-scheduler :service-id->service-description-fn (constantly {"metadata" {"waiter-proxy-bypass-opt-in" "true"}}))
+              api-call-count-atom (atom 0)
+              expected-api-call-count 2 ;; should make one request for deleting the pod and one request for update the replicas count
+              actual (with-redefs [api-request (fn mock-api-request [& _]
+                                                 (swap! api-call-count-atom inc)
+                                                 {:status "OK"})]
+                       (scheduler/kill-instance dummy-scheduler instance))]
+          (is (= (assoc partial-expected
+                        :killed? true
+                        :message "Successfully killed instance"
+                        :status http-200-ok)
+                 actual))
+          (is (= expected-api-call-count @api-call-count-atom))))
       (testing "unsuccessful-delete: forbidden"
         (let [actual (with-redefs [api-request (fn mocked-api-request [_ _ & {:keys [request-method]}]
                                                  (when (= request-method :delete)
