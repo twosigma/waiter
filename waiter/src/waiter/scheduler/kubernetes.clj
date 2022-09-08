@@ -1505,12 +1505,12 @@
                                               :name waiter-primary-container-name
                                               :ports [{:containerPort port0}]
                                               :readinessProbe (-> (prepare-health-check-probe
-                                                                   service-id->password-fn service-id
-                                                                   authenticate-health-check?
-                                                                   readiness-scheme health-check-url
-                                                                   (+ service-port health-check-port-index)
-                                                                   health-check-interval-secs)
-                                                                  (assoc :failureThreshold 1))
+                                                                    service-id->password-fn service-id
+                                                                    authenticate-health-check?
+                                                                    readiness-scheme health-check-url
+                                                                    (+ service-port health-check-port-index)
+                                                                    health-check-interval-secs)
+                                                                (assoc :failureThreshold 1))
                                               :resources {:limits {:memory memory}
                                                           :requests {:cpu cpus
                                                                      :memory memory}}
