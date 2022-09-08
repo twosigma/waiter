@@ -83,7 +83,7 @@
      :pdb-spec-builder-fn waiter.scheduler.kubernetes/default-pdb-spec-builder
      :pod-base-port 8080
      :pod-bypass-force-sigterm-secs 120
-     :pod-bypass-pre-stop-cmd []
+     :pod-bypass-pre-stop-cmd ["test" "pre-stop" "cmd" "config"]
      :pod-bypass-sigterm-grace-period-secs 30
      :pod-sigkill-delay-secs 3
      :pod-suffix-length default-pod-suffix-length
@@ -151,6 +151,30 @@
        (clojure.pprint/pprint
         (clojure.data/diff expected# actual#)))
      (is (= expected# actual#))))
+
+(deftest test-replicaset-spec-pre-stop-cmd
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                config/retrieve-request-log-request-headers (constantly  #{})
+                config/retrieve-request-log-response-headers (constantly #{"content-type" "server"})
+                config/retrieve-waiter-principal (constantly "waiter@test.com")]
+    (let [custom-raven-flag "MY_RAVEN_FLAG"
+          service-description (assoc dummy-service-description
+                                     "env" {custom-raven-flag "true"}
+                                     "metadata" {"waiter-proxy-bypass-opt-in" "true"})
+          scheduler (make-dummy-scheduler ["test-service-id"]
+                                          {:raven-sidecar {:cmd ["/opt/waiter/raven/bin/raven-start"]
+                                                           :env-vars {:defaults {"PORT0" "P0"
+                                                                                 "RAVEN_E1" "V1"}
+                                                                      :flags [custom-raven-flag]}
+                                                           :image "twosigma/waiter-raven"
+                                                           :predicate-fn raven-sidecar-opt-in?
+                                                           :resources {:cpu 0.1 :mem 256}}
+                                           :service-id->service-description-fn (constantly service-description)})
+          rs-spec-builder-context {:run-as-user-source "unknown"}
+          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description rs-spec-builder-context)]
+      (doseq [container (get-in replicaset-spec [:spec :template :spec :containers])]
+        (is (= {:exec {:command ["test" "pre-stop" "cmd" "config"]}} (get-in container [:lifecycle :preStop])))
+        (is (contains? (set (:env container)) {:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value "120"}))))))
 
 (deftest test-replicaset-spec-fileserver-container-and-metadata
   (let [current-time (t/now)]
@@ -2064,7 +2088,7 @@
                     :max-name-length 63
                     :pod-base-port 8080
                     :pod-bypass-force-sigterm-secs 120
-                    :pod-bypass-pre-stop-cmd []
+                    :pod-bypass-pre-stop-cmd ["test" "pre-stop" "cmd" "config"]
                     :pod-bypass-sigterm-grace-period-secs 30
                     :pod-sigkill-delay-secs 3
                     :pod-suffix-length default-pod-suffix-length
