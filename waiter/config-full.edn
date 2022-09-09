@@ -533,12 +533,12 @@
                                               ;; This command prevents the SIGTERM signal from reaching or doing various cleanup work
                                               ;; preStop commands do not log anywhere by default in k8s, so append logs to the containers main process stdout
                                               ;; which is symlinked with "/proc/1/fd/1" https://github.com/kubernetes/kubernetes/issues/54247#issuecomment-827694001
-                                              pre-stop-cmd ["/bin/sh"
-                                                            "-c"
-                                                            "echo $(date +%Y-%m-%dT%H:%M:%S.%3NZ) INFO preStop: sleeping for ${WAITER_BYPASS_FORCE_SIGTERM_SECS} secs >> /proc/1/fd/1 ; sleep ${WAITER_BYPASS_FORCE_SIGTERM_SECS} ; echo $(date +%Y-%m-%dT%H:%M:%S.%3NZ) INFO preStop: ending sleep, and container will receive SIGTERM shortly >> /proc/1/fd/1"]
+                                              :pre-stop-cmd ["/bin/sh"
+                                                             "-c"
+                                                             "echo $(date +%Y-%m-%dT%H:%M:%S.%3NZ) INFO preStop: sleeping for ${WAITER_BYPASS_FORCE_SIGTERM_SECS} secs >> /proc/1/fd/1 ; sleep ${WAITER_BYPASS_FORCE_SIGTERM_SECS} ; echo $(date +%Y-%m-%dT%H:%M:%S.%3NZ) INFO preStop: ending sleep, and container will receive SIGTERM shortly >> /proc/1/fd/1"]
 
                                               ;; The grace period that allows containers to handle SIGTERM before getting fully deleted.
-                                              sigterm-grace-period-secs 30}
+                                              :sigterm-grace-period-secs 30}
 
                                  ;; The number of seconds between the SIGTERM and SIGKILL signals sent to a pod on shutdown.
                                  ;; This value should be placed in the terminationGracePeriodSeconds field in the pod template.
