@@ -23,9 +23,9 @@
             [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [comb.template :as template]
+            [full.async :refer [<?]]
             [metrics.counters :as counters]
             [metrics.meters :as meters]
-            [full.async :refer [<?]]
             [plumbing.core :as pc]
             [ring.middleware.multipart-params :as multipart-params]
             [ring.middleware.ssl :as ssl]
@@ -45,6 +45,7 @@
             [waiter.statsd :as statsd]
             [waiter.status-codes :refer :all]
             [waiter.util.async-utils :as au]
+            [waiter.util.cache-utils :as cu]
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
             [waiter.util.ring-utils :as ru]
@@ -683,7 +684,8 @@
                   unsupported-keys (set/difference (utils/keyset service-description-overrides) sd/service-override-keys)]
               (when (seq unsupported-keys)
                 (throw (ex-info (str "Cannot override the following parameter(s): " (str/join ", " (sort unsupported-keys)))
-                                {:log-level :info :service-id service-id :status http-400-bad-request :unsupported-keys unsupported-keys})))
+                                {:log-level :info :service-id service-id :status http-400-bad-request :unsupported-keys unsupported-keys
+                                 :waiter/error-image error-image-400-bad-request})))
               (validate-service-description-fn (merge core-service-description service-description-overrides))
               (sd/store-service-description-overrides kv-store service-id auth-user service-description-overrides))
             (trigger-service-refresh make-inter-router-requests-fn service-id)
@@ -1257,5 +1259,26 @@
              {:defaults defaults
               :name profile})
            (seq profile->defaults)))
+    (catch Throwable th
+      (utils/exception->response th request))))
+
+(defn handle-render-image
+  "Renders an image found as a resource in the images directory."
+  [image-cache {:keys [request-method route-params] :as request}]
+  (try
+    (if (= :get request-method)
+      (let [{:keys [image-name]} route-params
+            resource-bytes (cu/cache-get-or-load image-cache image-name #(utils/load-resource-bytes (str "images/" image-name)))
+            file-extension (subs image-name (-> image-name (str/last-index-of ".") (or -1) (inc)))]
+        {:body resource-bytes
+         :headers {"cache-control" "public, max-age=600"
+                   "content-type" (str "image/" file-extension)}
+         :status http-200-ok})
+      (utils/data->error-response
+        {:log-level :info
+         :message "Only GET supported"
+         :request-method request-method
+         :status http-405-method-not-allowed}
+        request))
     (catch Throwable th
       (utils/exception->response th request))))

@@ -619,19 +619,25 @@
 
 (deftest test-classify-error
   (with-redefs [utils/message name]
-    (is (= [:generic-error "Test Exception" http-500-internal-server-error "clojure.lang.ExceptionInfo"]
+    (is (= [:generic-error "Test Exception" http-500-internal-server-error error-image-500-internal-server-error "clojure.lang.ExceptionInfo"]
            (classify-error "test-classify-error" (ex-info "Test Exception" {:source :test}))))
-    (is (= [:test-error "Test Exception" http-500-internal-server-error "clojure.lang.ExceptionInfo"]
+    (is (= [:test-error "Test Exception" http-500-internal-server-error error-image-500-internal-server-error "clojure.lang.ExceptionInfo"]
            (classify-error "test-classify-error" (ex-info "Test Exception" {:error-cause :test-error :source :test}))))
-    (is (= [:generic-error "Test Exception" http-400-bad-request "clojure.lang.ExceptionInfo"]
-           (classify-error "test-classify-error" (ex-info "Test Exception" {:source :test :status http-400-bad-request}))))
-    (is (= [:instance-error "backend-request-failed" http-502-bad-gateway "java.io.IOException"]
+    (is (= [:generic-error "Test 401 Exception" http-401-unauthorized nil "clojure.lang.ExceptionInfo"]
+           (classify-error "test-classify-error" (ex-info "Test 401 Exception" {:source :test :status http-401-unauthorized}))))
+    (is (= [:generic-error "Test 400 Exception" http-400-bad-request error-image-400-bad-request "clojure.lang.ExceptionInfo"]
+           (classify-error "test-classify-error" (ex-info "Test 400 Exception" {:source :test :status http-400-bad-request}))))
+    (is (= [:generic-error "Test 500 Exception" http-500-internal-server-error error-image-500-internal-server-error "clojure.lang.ExceptionInfo"]
+           (classify-error "test-classify-error" (ex-info "Test 500 Exception" {:source :test :status http-500-internal-server-error}))))
+    (is (= [:generic-error "Test Exception" http-400-bad-request error-image-400-bad-request "clojure.lang.ExceptionInfo"]
+           (classify-error "test-classify-error" (ex-info "Test Exception" {:source :test :status http-400-bad-request :waiter/error-image error-image-400-bad-request}))))
+    (is (= [:instance-error "backend-request-failed" http-502-bad-gateway error-image-502-connection-failed "java.io.IOException"]
            (classify-error "test-classify-error" (ex-info "Test Exception" {:source :test :status http-400-bad-request} (IOException. "Test")))))
-    (is (= [:instance-error "backend-request-failed" http-502-bad-gateway "java.io.IOException"]
+    (is (= [:instance-error "backend-request-failed" http-502-bad-gateway error-image-502-connection-failed "java.io.IOException"]
            (classify-error "test-classify-error" (IOException. "Test"))))
-    (is (= [:client-error "Client action means stream is no longer needed" http-400-bad-request "java.io.IOException"]
+    (is (= [:client-error "Client action means stream is no longer needed" http-400-bad-request error-image-400-bad-request "java.io.IOException"]
            (classify-error "test-classify-error" (ex-info "Test Exception" {:source :test :status http-400-bad-request} (IOException. "cancel_stream_error")))))
-    (is (= [:client-error "Client action means stream is no longer needed" http-400-bad-request "java.io.IOException"]
+    (is (= [:client-error "Client action means stream is no longer needed" http-400-bad-request error-image-400-bad-request "java.io.IOException"]
            (classify-error "test-classify-error" (IOException. "cancel_stream_error"))))
     (let [exception (IOException. "internal_error")]
       (->> (into-array StackTraceElement
@@ -639,31 +645,31 @@
                         (StackTraceElement. "org.eclipse.jetty.http2.api.Stream$Listener" "onReset" "Stream.java" 177)
                         (StackTraceElement. "org.eclipse.jetty.http2.HTTP2Stream" "notifyReset" "HTTP2Stream.java" 574)])
            (.setStackTrace exception))
-      (is (= [:client-error "Client send invalid data to HTTP/2 backend" http-400-bad-request "java.io.IOException"]
+      (is (= [:client-error "Client send invalid data to HTTP/2 backend" http-400-bad-request error-image-400-bad-request "java.io.IOException"]
              (classify-error "test-classify-error" exception))))
-    (is (= [:instance-error "backend-request-failed" http-502-bad-gateway "java.io.IOException"]
+    (is (= [:instance-error "backend-request-failed" http-502-bad-gateway error-image-502-connection-failed "java.io.IOException"]
            (classify-error "test-classify-error" (IOException. "internal_error"))))
-    (is (= [:server-eagerly-closed "Connection eagerly closed by server" http-400-bad-request "java.io.IOException"]
+    (is (= [:server-eagerly-closed "Connection eagerly closed by server" http-400-bad-request error-image-400-bad-request "java.io.IOException"]
            (classify-error "test-classify-error" (IOException. "no_error"))))
-    (is (= [:client-error "Connection unexpectedly closed while streaming request" http-400-bad-request "org.eclipse.jetty.io.EofException"]
+    (is (= [:client-error "Connection unexpectedly closed while streaming request" http-400-bad-request error-image-400-bad-request "org.eclipse.jetty.io.EofException"]
            (classify-error "test-classify-error" (ex-info "Test Exception" {:source :test :status http-400-bad-request} (EofException. "Test")))))
-    (is (= [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request "org.eclipse.jetty.io.EofException"]
+    (is (= [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request error-image-400-bad-request "org.eclipse.jetty.io.EofException"]
            (classify-error "test-classify-error" (ex-info "Test Exception" {:source :test :status http-400-bad-request} (EofException. "reset")))))
-    (is (= [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request "org.eclipse.jetty.io.EofException"]
+    (is (= [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request error-image-400-bad-request "org.eclipse.jetty.io.EofException"]
            (classify-error "test-classify-error" (EofException. "reset"))))
-    (is (= [:instance-error "backend-request-timed-out" http-504-gateway-timeout "java.util.concurrent.TimeoutException"]
+    (is (= [:instance-error "backend-request-timed-out" http-504-gateway-timeout error-image-504-gateway-timeout "java.util.concurrent.TimeoutException"]
            (classify-error "test-classify-error" (TimeoutException. "timeout"))))
-    (is (= [:client-error "Timeout receiving bytes from client" http-408-request-timeout "java.util.concurrent.TimeoutException"]
+    (is (= [:client-error "Timeout receiving bytes from client" http-408-request-timeout error-image-408-request-timeout "java.util.concurrent.TimeoutException"]
            (let [timeout-exception (TimeoutException. "timeout")]
              (.addSuppressed timeout-exception (Throwable. "HttpInput idle timeout"))
              (classify-error "test-classify-error" timeout-exception))))
-    (is (= [:client-error "Failed to upgrade to websocket connection" http-400-bad-request "org.eclipse.jetty.websocket.api.UpgradeException"]
+    (is (= [:client-error "Failed to upgrade to websocket connection" http-400-bad-request error-image-400-bad-request "org.eclipse.jetty.websocket.api.UpgradeException"]
            (classify-error "test-classify-error" (UpgradeException. nil http-400-bad-request "websocket upgrade failed"))))
-    (is (= [:instance-error "backend-connect-error" http-502-bad-gateway "java.net.ConnectException"]
+    (is (= [:instance-error "backend-connect-error" http-502-bad-gateway error-image-502-connection-failed "java.net.ConnectException"]
            (classify-error "test-classify-error" (ConnectException. "Connection refused"))))
-    (is (= [:instance-error "backend-connect-error" http-502-bad-gateway "java.net.SocketTimeoutException"]
+    (is (= [:instance-error "backend-connect-error" http-502-bad-gateway error-image-502-connection-failed "java.net.SocketTimeoutException"]
            (classify-error "test-classify-error" (SocketTimeoutException. "Connect Timeout"))))
-    (is (= [:instance-error "backend-request-failed" http-502-bad-gateway "java.net.SocketTimeoutException"]
+    (is (= [:instance-error "backend-request-failed" http-502-bad-gateway error-image-502-connection-failed "java.net.SocketTimeoutException"]
            (classify-error "test-classify-error" (SocketTimeoutException. "Connection refused"))))
-    (is (= [:instance-error "backend-request-failed" http-502-bad-gateway "java.lang.Exception"]
+    (is (= [:instance-error "backend-request-failed" http-502-bad-gateway error-image-502-connection-failed "java.lang.Exception"]
            (classify-error "test-classify-error" (Exception. "Test Exception"))))))

@@ -1453,21 +1453,24 @@
       (when-not (seq user-service-description)
         (throw (ex-info (utils/message :cannot-identify-service)
                         (-> (error-message-map-fn passthrough-headers waiter-headers)
-                          (assoc :error-class error-class-service-unidentified)))))
+                          (assoc :error-class error-class-service-unidentified
+                                 :waiter/error-image error-image-400-bad-request)))))
       (when (and (= "*" raw-run-as-user) raw-namespace (not= "*" raw-namespace))
         (throw (ex-info "Cannot use run-as-requester with a specific namespace"
                         {:error-class error-class-service-misconfigured
+                         :log-level :info
                          :namespace raw-namespace
                          :run-as-user raw-run-as-user
                          :status http-400-bad-request
-                         :log-level :warn})))
+                         :waiter/error-image error-image-400-bad-request})))
       (when-let [idle-timeout-mins-header (get waiter-headers (str headers/waiter-header-prefix "idle-timeout-mins"))]
         (when (zero? idle-timeout-mins-header)
           (throw (ex-info "idle-timeout-mins on-the-fly header configured to a value of zero is not supported"
                           {:error-class error-class-service-misconfigured
                            :log-level :info
                            :status http-400-bad-request
-                           :waiter-headers waiter-headers}))))
+                           :waiter-headers waiter-headers
+                           :waiter/error-image error-image-400-bad-request}))))
       (sling/try+
         (let [component->last-update-epoch-time (cond-> {}
                                                   (seq token->token-data)

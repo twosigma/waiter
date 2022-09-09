@@ -141,7 +141,7 @@
    :state core/state
    :http-server (pc/fnk [[:routines discover-service-parameters-fn generate-log-url-fn waiter-request?-fn]
                          [:settings cors-config host port server-options support-info websocket-config]
-                         [:state cors-validator router-id server-name]
+                         [:state cors-validator router-id server-name waiter-images-url]
                          handlers] ; Insist that all systems are running before we start server
                   (let [{:keys [websocket-request-acceptor]} handlers
                         {:keys [drain-request-buffer-size]} server-options
@@ -158,13 +158,13 @@
                                                         (core/attach-via-header-middleware server-name)
                                                         rlog/wrap-log
                                                         core/correlation-id-middleware
-                                                        (core/wrap-request-info router-id support-info)
+                                                        (core/wrap-request-info router-id support-info waiter-images-url)
                                                         (consume-request-stream drain-request-buffer-size))
                                         :websocket-acceptor websocket-request-acceptor
                                         :websocket-handler (-> (core/websocket-handler-factory handlers)
                                                              rlog/wrap-log
                                                              core/correlation-id-middleware
-                                                             (core/wrap-request-info router-id support-info))
+                                                             (core/wrap-request-info router-id support-info waiter-images-url))
                                         :host host
                                         :join? false
                                         :port port
