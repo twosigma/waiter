@@ -1640,6 +1640,31 @@
                  actual))
           (is (= expected-api-call-count @api-call-count-atom))
           (is (= expected-delete-grace-period @pod-delete-grace-period-atom))))
+      (testing "successful-delete: bypass with WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS and WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS overrides"
+        (let [dummy-scheduler (assoc dummy-scheduler :service-id->service-description-fn (constantly {"env" {"WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS" "3"
+                                                                                                             "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS" "4"}
+                                                                                                      "metadata" {"waiter-proxy-bypass-opt-in" "true"}}))
+              api-call-count-atom (atom 0)
+              expected-api-call-count 2 ;; should make one request for deleting the pod and one request for update the replicas count
+              pod-delete-grace-period-atom (atom nil)
+              expected-delete-grace-period 7 ;; should be the pod-bypass-force-sigterm-secs + pod-bypass-sigterm-grace-period-secs (env variables overrides 3 + 4)
+              actual (with-redefs [api-request (fn mock-api-request [resource-url _ & {:keys [body]}]
+                                                 (when (some-> resource-url (str/includes? "/pods/"))
+                                                   (some->> body
+                                                            ct/try-parse-json
+                                                            walk/keywordize-keys
+                                                            :gracePeriodSeconds
+                                                            (reset! pod-delete-grace-period-atom)))
+                                                 (swap! api-call-count-atom inc)
+                                                 {:status "OK"})]
+                       (scheduler/kill-instance dummy-scheduler instance))]
+          (is (= (assoc partial-expected
+                        :killed? true
+                        :message "Successfully killed instance"
+                        :status http-200-ok)
+                 actual))
+          (is (= expected-api-call-count @api-call-count-atom))
+          (is (= expected-delete-grace-period @pod-delete-grace-period-atom))))
       (testing "unsuccessful-delete: forbidden"
         (let [actual (with-redefs [api-request (fn mocked-api-request [_ _ & {:keys [request-method]}]
                                                  (when (= request-method :delete)

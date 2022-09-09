@@ -801,6 +801,8 @@
         ;; We have to add both of these durations together because K8s gracePeriodSeconds countdown is done
         ;; in parallel with the preStop hook and issuing the SIGTERM signal.
         ;; https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination
+        force-sigterm-secs (utils/parse-int (get-in desc ["env" "WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS"] (str force-sigterm-secs)))
+        sigterm-grace-period-secs (utils/parse-int (get-in desc ["env" "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS"] (str sigterm-grace-period-secs)))
         total-bypass-grace-period-secs (+ force-sigterm-secs sigterm-grace-period-secs)
         grace-period-seconds (if bypass-enabled? total-bypass-grace-period-secs 300)]
     (when bypass-enabled?
