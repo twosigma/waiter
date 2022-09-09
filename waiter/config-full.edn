@@ -535,7 +535,7 @@
                                               ;; which is symlinked with "/proc/1/fd/1" https://github.com/kubernetes/kubernetes/issues/54247#issuecomment-827694001
                                               :pre-stop-cmd ["/bin/sh"
                                                              "-c"
-                                                             "echo $(date +%Y-%m-%dT%H:%M:%S.%3NZ) INFO preStop: sleeping for ${WAITER_BYPASS_FORCE_SIGTERM_SECS} secs >> /proc/1/fd/1 ; sleep ${WAITER_BYPASS_FORCE_SIGTERM_SECS} ; echo $(date +%Y-%m-%dT%H:%M:%S.%3NZ) INFO preStop: ending sleep, and container will receive SIGTERM shortly >> /proc/1/fd/1"]
+                                                             "echo $(date +%Y-%m-%dT%H:%M:%S.%3NZ) INFO preStop: sleeping for ${WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS} secs >> /proc/1/fd/1 ; sleep ${WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS} ; echo $(date +%Y-%m-%dT%H:%M:%S.%3NZ) INFO preStop: ending sleep, and container will receive SIGTERM shortly >> /proc/1/fd/1"]
 
                                               ;; The grace period that allows containers to handle SIGTERM before getting fully deleted.
                                               :sigterm-grace-period-secs 30}

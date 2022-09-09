@@ -1359,10 +1359,10 @@
   (mapv #(-> %
              (assoc-in [:lifecycle :preStop :exec :command] pre-stop-cmd)
              (assoc :env (get % :env []))
-             (update :env conj {:name "WAITER_BYPASS_FORCE_SIGTERM_SECS"
-                                :value (get base-env "WAITER_BYPASS_FORCE_SIGTERM_SECS" (str force-sigterm-secs))})
-             (update :env conj {:name "WAITER_BYPASS_SIGTERM_GRACE_PERIOD_SECS"
-                                :value (get base-env "WAITER_BYPASS_SIGTERM_GRACE_PERIOD_SECS" (str sigterm-grace-period-secs))}))
+             (update :env conj {:name "WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS"
+                                :value (get base-env "WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS" (str force-sigterm-secs))})
+             (update :env conj {:name "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS"
+                                :value (get base-env "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS" (str sigterm-grace-period-secs))}))
         container-configs))
 
 (defn default-replicaset-builder

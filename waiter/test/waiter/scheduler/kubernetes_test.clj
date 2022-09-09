@@ -160,20 +160,20 @@
           force-sigterm-secs 1
           sigterm-grace-period-secs 2
           actual-configs (add-pre-stop-config-for-bypass-service container-configs base-env pre-stop-cmd force-sigterm-secs sigterm-grace-period-secs)
-          expected-configs (vec (repeat 3 {:env [{:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value "1"}
-                                                 {:name "WAITER_BYPASS_SIGTERM_GRACE_PERIOD_SECS" :value "2"}]
+          expected-configs (vec (repeat 3 {:env [{:name "WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS" :value "1"}
+                                                 {:name "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS" :value "2"}]
                                            :lifecycle {:preStop {:exec {:command pre-stop-cmd}}}}))]
       (assert-data-equal expected-configs actual-configs)))
   (testing "service description environment variables override the defaults"
-    (let [base-env {"WAITER_BYPASS_FORCE_SIGTERM_SECS" "this value overrides defaults"
-                    "WAITER_BYPASS_SIGTERM_GRACE_PERIOD_SECS" "this value overrides defaults"}
+    (let [base-env {"WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS" "this value overrides defaults"
+                    "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS" "this value overrides defaults"}
           container-configs (vec (repeat 3 {}))
           pre-stop-cmd ["this" "is" "a" "test"]
           force-sigterm-secs 1
           sigterm-grace-period-secs 2
           actual-configs (add-pre-stop-config-for-bypass-service container-configs base-env pre-stop-cmd force-sigterm-secs sigterm-grace-period-secs)
-          expected-configs (vec (repeat 3 {:env [{:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value "this value overrides defaults"}
-                                                 {:name "WAITER_BYPASS_SIGTERM_GRACE_PERIOD_SECS" :value "this value overrides defaults"}]
+          expected-configs (vec (repeat 3 {:env [{:name "WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS" :value "this value overrides defaults"}
+                                                 {:name "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS" :value "this value overrides defaults"}]
                                            :lifecycle {:preStop {:exec {:command pre-stop-cmd}}}}))]
       (assert-data-equal expected-configs actual-configs))))
 
@@ -199,8 +199,8 @@
           replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description rs-spec-builder-context)]
       (doseq [container (get-in replicaset-spec [:spec :template :spec :containers])]
         (is (= {:exec {:command ["test" "pre-stop" "cmd" "config"]}} (get-in container [:lifecycle :preStop])))
-        (is (contains? (set (:env container)) {:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value "120"}))
-        (is (contains? (set (:env container)) {:name "WAITER_BYPASS_SIGTERM_GRACE_PERIOD_SECS" :value "30"}))))))
+        (is (contains? (set (:env container)) {:name "WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS" :value "120"}))
+        (is (contains? (set (:env container)) {:name "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS" :value "30"}))))))
 
 (deftest test-replicaset-spec-fileserver-container-and-metadata
   (let [current-time (t/now)]
