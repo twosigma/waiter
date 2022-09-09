@@ -1355,12 +1355,14 @@
 (defn add-pre-stop-config-for-bypass-service
   "Returns a new vector of container configurations that include the desired preStop command and environment variables
    that will be used by the preStop command to know how long to delay the SIGTERM signal to the container."
-  [container-configs pre-stop-cmd force-sigterm-secs sigterm-grace-period-secs]
+  [container-configs base-env pre-stop-cmd force-sigterm-secs sigterm-grace-period-secs]
   (mapv #(-> %
              (assoc-in [:lifecycle :preStop :exec :command] pre-stop-cmd)
              (assoc :env (get % :env []))
-             (update :env conj {:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value (str force-sigterm-secs)})
-             (update :env conj {:name "WAITER_BYPASS_SIGTERM_GRACE_PERIOD_SECS" :value (str sigterm-grace-period-secs)}))
+             (update :env conj {:name "WAITER_BYPASS_FORCE_SIGTERM_SECS"
+                                :value (get base-env "WAITER_BYPASS_FORCE_SIGTERM_SECS" (str force-sigterm-secs))})
+             (update :env conj {:name "WAITER_BYPASS_SIGTERM_GRACE_PERIOD_SECS"
+                                :value (get base-env "WAITER_BYPASS_SIGTERM_GRACE_PERIOD_SECS" (str sigterm-grace-period-secs))}))
         container-configs))
 
 (defn default-replicaset-builder
@@ -1591,7 +1593,7 @@
 
       ;; When bypass is enabled, we should attach a preStop command to all containers to delay SIGTERM to be handled for a period of time
       bypass-enabled?
-      (update-in [:spec :template :spec :containers] add-pre-stop-config-for-bypass-service pre-stop-cmd force-sigterm-secs sigterm-grace-period-secs))))
+      (update-in [:spec :template :spec :containers] add-pre-stop-config-for-bypass-service base-env pre-stop-cmd force-sigterm-secs sigterm-grace-period-secs))))
 
 (defn default-pdb-spec-builder
   "Factory function which creates a Kubernetes PodDisruptionBudget spec for the given ReplicaSet."

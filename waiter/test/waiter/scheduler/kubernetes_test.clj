@@ -153,14 +153,27 @@
      (is (= expected# actual#))))
 
 (deftest test-add-pre-stop-config-for-bypass-service
-  (testing "adds expected environment variables and prestop command to configs"
-    (let [container-configs (repeat 3 {})
+  (testing "adds expected default environment variables and prestop command to configs"
+    (let [base-env {}
+          container-configs (vec (repeat 3 {}))
           pre-stop-cmd ["this" "is" "a" "test"]
           force-sigterm-secs 1
           sigterm-grace-period-secs 2
-          actual-configs (add-pre-stop-config-for-bypass-service container-configs pre-stop-cmd force-sigterm-secs sigterm-grace-period-secs)
+          actual-configs (add-pre-stop-config-for-bypass-service container-configs base-env pre-stop-cmd force-sigterm-secs sigterm-grace-period-secs)
           expected-configs (vec (repeat 3 {:env [{:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value "1"}
                                                  {:name "WAITER_BYPASS_SIGTERM_GRACE_PERIOD_SECS" :value "2"}]
+                                           :lifecycle {:preStop {:exec {:command pre-stop-cmd}}}}))]
+      (assert-data-equal expected-configs actual-configs)))
+  (testing "service description environment variables override the defaults"
+    (let [base-env {"WAITER_BYPASS_FORCE_SIGTERM_SECS" "this value overrides defaults"
+                    "WAITER_BYPASS_SIGTERM_GRACE_PERIOD_SECS" "this value overrides defaults"}
+          container-configs (vec (repeat 3 {}))
+          pre-stop-cmd ["this" "is" "a" "test"]
+          force-sigterm-secs 1
+          sigterm-grace-period-secs 2
+          actual-configs (add-pre-stop-config-for-bypass-service container-configs base-env pre-stop-cmd force-sigterm-secs sigterm-grace-period-secs)
+          expected-configs (vec (repeat 3 {:env [{:name "WAITER_BYPASS_FORCE_SIGTERM_SECS" :value "this value overrides defaults"}
+                                                 {:name "WAITER_BYPASS_SIGTERM_GRACE_PERIOD_SECS" :value "this value overrides defaults"}]
                                            :lifecycle {:preStop {:exec {:command pre-stop-cmd}}}}))]
       (assert-data-equal expected-configs actual-configs))))
 
