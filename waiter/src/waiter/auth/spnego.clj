@@ -58,7 +58,7 @@
       (encode-output-token output-token))))
 
 (defn- response-http-401-unauthorized
-  [request cause]
+  [request cause spnego-disabled?]
   (log/info "triggering 401 response for spnego authentication" cause)
   (counters/inc! (metrics/waiter-counter "core" "response-status" "401"))
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "401"))
@@ -68,13 +68,14 @@
            :status http-401-unauthorized}
         (utils/data->error-response request)
         (cookies/cookies-response))
+      true (assoc :waiter/auth-disabled? spnego-disabled?)
       waiter-token (assoc :waiter/token waiter-token))))
 
 (defn response-http-401-unauthorized-negotiate
   "Tell the client you'd like them to use kerberos"
   [request]
   (log/info "triggering 401 negotiate for spnego authentication")
-  (-> (response-http-401-unauthorized request "for negotiation")
+  (-> (response-http-401-unauthorized request "for negotiation" false)
     (assoc :error-class error-class-kerberos-negotiate)
     (assoc-in [:headers "www-authenticate"] (str/trim negotiate-prefix))))
 
@@ -82,7 +83,7 @@
   "Tell the client you'd like them to not use kerberos.
    Does not send the www-authenticate header, relies on upstream handlers to handle the missing negotiate header."
   [request]
-  (response-http-401-unauthorized request "as it is disabled"))
+  (response-http-401-unauthorized request "as it is disabled" true))
 
 (defn response-http-503-service-unavailable-temporarily-unavailable
   "Tell the client you're overloaded and would like them to try later"

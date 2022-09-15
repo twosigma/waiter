@@ -42,6 +42,7 @@
                                :headers {"content-type" "text/plain"
                                          "www-authenticate" "Negotiate"}
                                :status http-401-unauthorized
+                               :waiter/auth-disabled? false
                                :waiter/response-source :waiter}]
 
     (with-redefs [utils/error-context->text-body (fn mocked-error-context->text-body [data-map _] (-> data-map :message str))]
@@ -53,6 +54,7 @@
             (is (= {:body "Unauthorized"
                     :headers {"content-type" "text/plain"}
                     :status http-401-unauthorized
+                    :waiter/auth-disabled? true
                     :waiter/response-source :waiter}
                    (handler request))))))
 

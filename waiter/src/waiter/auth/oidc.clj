@@ -20,6 +20,7 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [digest]
+            [ring.middleware.cookies :as cookies]
             [waiter.auth.authentication :as auth]
             [waiter.auth.jwt :as jwt]
             [waiter.cookie-support :as cookie-support]
@@ -308,17 +309,40 @@
                  (= "." accept-redirect-auth)
                  (some #(= oidc-authority %) (str/split accept-redirect-auth #" ")))))))
 
+(defn count-challenge-cookies
+  "Returns the number of challenge cookies."
+  [request]
+  (let [cookie-header (get-in request [:headers "cookie"])
+        request-cookies (cond->> cookie-header
+                          (not (string? cookie-header)) (str/join ";"))]
+    (count
+      (filter #(str/starts-with? (str/trim %) oidc-challenge-cookie-prefix)
+              (str/split (str request-cookies) #";")))))
+
 (defn too-many-oidc-challenge-cookies?
   "Returns true if the request already contains too many OIDC challenge cookies."
   [request num-allowed]
-  (let [cookie-header (get-in request [:headers "cookie"])
-        request-cookies (cond->> cookie-header
-                          (not (string? cookie-header)) (str/join ";"))
-        num-challenge-cookies (count
-                                (filter #(str/starts-with? (str/trim %) oidc-challenge-cookie-prefix)
-                                        (str/split (str request-cookies) #";")))]
+  (let [num-challenge-cookies (count-challenge-cookies request)]
     (log/info "request has" num-challenge-cookies "oidc challenge cookies")
     (> num-challenge-cookies num-allowed)))
+
+(defn make-oidc-auth-too-many-cookies-response-updater
+  "Returns a response updater that rewrites 401 waiter responses to 302 redirects."
+  [request num-allowed]
+  (fn update-oidc-auth-too-many-cookies-response
+    [{:keys [waiter/auth-disabled? status] :as response}]
+    (let [num-challenge-cookies (count-challenge-cookies request)]
+      (cond-> response
+        (and auth-disabled?
+             (= status http-401-unauthorized)
+             (utils/waiter-generated-response? response))
+        (merge (-> {:message (str "Too many OIDC challenge cookies (allowed: "
+                                  num-allowed ", provided: " num-challenge-cookies ")")
+                    :status http-403-forbidden}
+                   (utils/data->error-response request)
+                   (cookies/cookies-response)))
+        true
+        (dissoc :waiter/auth-disabled?)))))
 
 (defn wrap-auth-handler
   "Wraps the request handler with a handler to trigger OIDC+PKCE authentication."
@@ -328,15 +352,21 @@
    request-handler]
   (let [oidc-authority (utils/uri-string->host oidc-authorize-uri)]
     (fn oidc-auth-handler [request]
-      (let [oidc-mode-delay (delay (request->oidc-mode allow-oidc-auth-api? allow-oidc-auth-services? oidc-default-mode request))]
+      (let [oidc-mode-delay (delay (request->oidc-mode allow-oidc-auth-api? allow-oidc-auth-services? oidc-default-mode request))
+            skip-oidc? (or (auth/request-authenticated? request)
+                           (= :disabled @oidc-mode-delay)
+                           ;; OIDC auth is no-op when request cannot be redirected
+                           (not (supports-redirect? oidc-authority oidc-redirect-user-agent-products request)))
+            many-oidc-challenge-cookies? (delay (too-many-oidc-challenge-cookies? request oidc-num-challenge-cookies-allowed-in-request))]
         (cond
-          (or (auth/request-authenticated? request)
-              (= :disabled @oidc-mode-delay)
-              ;; OIDC auth is no-op when request cannot be redirected
-              (not (supports-redirect? oidc-authority oidc-redirect-user-agent-products request))
+          (or skip-oidc?
               ;; OIDC auth is avoided if client already has too many challenge cookies
-              (too-many-oidc-challenge-cookies? request oidc-num-challenge-cookies-allowed-in-request))
-          (request-handler request)
+              @many-oidc-challenge-cookies?)
+          (cond-> (request-handler request)
+            (not skip-oidc?)
+            ;; update a 401 response to 403 if there were too many cookies and downstream auth options are disabled
+            (ru/update-response
+              (make-oidc-auth-too-many-cookies-response-updater request oidc-num-challenge-cookies-allowed-in-request)))
 
           :else
           (ru/update-response
