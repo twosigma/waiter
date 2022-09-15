@@ -74,12 +74,12 @@
    - associated error message,
    - the http status code, and
    - the canonical name of the exception that 'caused' the error."
-  [error]
+  [label error]
   (let [error-class (-> error .getClass .getCanonicalName)
         error-message (str (.getMessage error))
         classification (cond (instance? ExceptionInfo error)
                              (if-let [ex-info-cause (ex-cause error)]
-                               (let [[error-cause message status error-class] (classify-error ex-info-cause)
+                               (let [[error-cause message status error-class] (classify-error label ex-info-cause)
                                      error-cause (or (-> error ex-data :error-cause) error-cause)]
                                  [error-cause message status error-class])
                                (let [error-status (or (-> error ex-data :status) http-500-internal-server-error)
@@ -121,13 +121,13 @@
                              :else
                              [:instance-error (utils/message :backend-request-failed) http-502-bad-gateway error-class])
         error-cause (first classification)]
-    (log/info error-class error-message "identified as" error-cause)
+    (log/info error-class error-message "identified as" error-cause "for" label)
     classification))
 
 (defn- determine-client-error
   "Classifies the error into one of :client-eagerly-closed or :client-error"
   [error]
-  (let [[error-cause] (classify-error error)]
+  (let [[error-cause] (classify-error "determine-client-error" error)]
     (or (get #{:client-eagerly-closed :client-error} error-cause)
         :client-error)))
 
@@ -311,7 +311,7 @@
 (defn- handle-response-error
   "Handles error responses from the backend."
   [error reservation-status-promise service-id request]
-  (let [[error-cause message status error-class] (classify-error error)
+  (let [[error-cause message status error-class] (classify-error "handle-response-error" error)
         metrics-map (metrics/retrieve-local-stats-for-service service-id)
         error-map (assoc metrics-map
                     :error-class error-class
@@ -395,7 +395,7 @@
                                              (counters/dec! request-body-streaming-counter)
                                              (report-request-size-metrics 0 true))
                                            (let [[error-cause] (when throwable
-                                                                 (classify-error throwable))]
+                                                                 (classify-error "complete-request-streaming" throwable))]
                                              (if (and throwable (not (eagerly-closed? error-cause)))
                                                (let [identifier-map {:identifier complete-trigger-id}
                                                      ;; the callback is necessary as there is a data race between aborting the
@@ -629,7 +629,7 @@
           (catch Exception e
             (log/info e "exception occurred while streaming response for" service-id)
             (meters/mark! stream-exception-meter)
-            (let [[error-cause] (classify-error e)]
+            (let [[error-cause] (classify-error "stream-http-response" e)]
               (deliver reservation-status-promise error-cause)
               (when-not (eagerly-closed? error-cause)
                 (log/info "sending poison pill to response channel")
