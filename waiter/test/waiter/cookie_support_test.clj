@@ -104,11 +104,15 @@
 
 (deftest test-consent-cookie-handler
   (let [password [:cached "password"]
-        cookie-string "user=john; mode=test; product-name=waiter"
+        unique-suffix (System/currentTimeMillis)
+        user-key (str "user-" unique-suffix)
+        product-key (str "product-" unique-suffix)
+        product-name-key (str "product-name-" unique-suffix)
+        cookie-string (str user-key "=john; ""mode=test; " product-name-key "=waiter")
         value->data (fn [v] {"value" v})]
-    (with-redefs [decode-cookie-cached (fn [value in-password]
-                                         (is (= password in-password))
-                                         value)]
+    (with-redefs [decode-cookie (fn [in-cookie in-password]
+                                  (is (= password in-password))
+                                  in-cookie)]
       (testing "unsupported request method"
         (let [request {:request-method :post}
               {:keys [body status]} (consent-cookie-handler password "cookie-name" value->data request)]
@@ -118,15 +122,15 @@
       (testing "valid cookie lookup"
         (let [request {:headers {"cookie" cookie-string}
                        :request-method :get}
-              {:keys [body status]} (consent-cookie-handler password "user" value->data request)]
+              {:keys [body status]} (consent-cookie-handler password user-key value->data request)]
           (is (= http-200-ok status))
-          (is (= {"user" {"formatted-content" {"value" "john"} "raw-content" "john"}}
+          (is (= {user-key {"formatted-content" {"value" "john"} "raw-content" "john"}}
                  (json/read-str body)))))
 
       (testing "invalid cookie lookup"
         (let [request {:headers {"cookie" cookie-string}
                        :request-method :get}
-              {:keys [body status]} (consent-cookie-handler password "product" value->data request)]
+              {:keys [body status]} (consent-cookie-handler password product-key value->data request)]
           (is (= http-200-ok status))
-          (is (= {"product" {"raw-content" nil}}
+          (is (= {product-key {"raw-content" nil}}
                  (json/read-str body))))))))
