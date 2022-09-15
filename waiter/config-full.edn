@@ -1082,6 +1082,7 @@
             :environment-variable-error-info "Error in environment variables"
             :health-check-requires-authentication "Health check requires authentication"
             :health-check-timed-out "Health check timed out"
+            :http-401-spnego "Unauthorized"
             :invalid-health-check-response "Health check returned an invalid response"
             :invalid-service-description "Service description using waiter headers/token improperly configured"
             :metadata-error-info "Error in metadata"

@@ -44,7 +44,8 @@
                                :status http-401-unauthorized
                                :waiter/response-source :waiter}]
 
-    (with-redefs [utils/error-context->text-body (fn mocked-error-context->text-body [data-map _] (-> data-map :message str))]
+    (with-redefs [utils/error-context->text-body (fn mocked-error-context->text-body [data-map _] (-> data-map :message str))
+                  utils/message (fn mocked-message [key] (if (= key :http-401-spnego) "Unauthorized" "Unknown"))]
 
       (testing "spnego authentication disabled"
         (with-redefs [too-many-pending-auth-requests? (constantly true)]

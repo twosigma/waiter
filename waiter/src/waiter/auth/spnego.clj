@@ -64,7 +64,7 @@
   (meters/mark! (metrics/waiter-meter "core" "response-status-rate" "401"))
   (let [waiter-token (get-in request [:waiter-discovery :token])]
     (cond->
-      (-> {:message "Unauthorized"
+      (-> {:message (utils/message :http-401-spnego)
            :status http-401-unauthorized}
         (utils/data->error-response request)
         (cookies/cookies-response))
