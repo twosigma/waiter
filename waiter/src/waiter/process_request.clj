@@ -694,11 +694,13 @@
   "Adds logging for tracking response trailers for requests.
    When only headers are provided jetty terminates the request with an empty data frame,
    we work around that limitation by sending trailers that carry the same grpc error message."
-  [{:keys [headers trailers] :as response}]
+  [{:keys [headers trailers] :as response} service-id]
   (if trailers
     (let [correlation-id (cid/get-correlation-id)
           trailers-copy-ch (async/chan 1)
           {:strs [grpc-status] :as grpc-headers} (select-keys headers ["grpc-message" "grpc-status"])]
+      (when grpc-status
+        (counters/inc! (metrics/service-counter service-id "grpc-response-status" (str grpc-status))))
       (if (hu/grpc-status-success? grpc-status)
         (do
           (async/go
@@ -788,7 +790,7 @@
         (utils/attach-waiter-source :backend)
         (introspect-trailers)
         (handle-grpc-error-response request backend-proto reservation-status-promise)
-        (forward-successful-grpc-status-headers-in-trailers)
+        (forward-successful-grpc-status-headers-in-trailers service-id)
         (assoc :body resp-body)
         (update-in [:headers] (fn update-response-headers [headers]
                                 (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)))))))
