@@ -1310,6 +1310,56 @@
                                          :requests {:cpu (str (:cpu resources)) :memory (str (:mem resources) "Mi")}}}]
         raven-container))))
 
+(defn find-container-by-name
+  "Returns [index container] pair for the container with the given name, or nil if not found."
+  [replicaset-spec container-name]
+  (->> (get-in replicaset-spec [:spec :template :spec :containers])
+       (keep-indexed (fn [index container] (when (= container-name (:name container)) [index container])))
+       (first)))
+
+(defn attach-service-sidecar
+  "TODO"
+  [replicaset-spec sidecar-config service-description base-env]
+  (let [{:keys [cmd env image resources sidecar-name type]} sidecar-config
+        containers-key (if (= type "init") :initContainers :containers)
+        user-env (get service-description "env")
+        sidecar-env-prefix (-> sidecar-name (str/upper-case) (str/replace "-" "_") (str "_"))
+        sidecar-cpu (or (get user-env (str sidecar-env-prefix "CPU")) (get resources :cpu))
+        sidecar-mem (or (get user-env (str sidecar-env-prefix "MEM")) (get resources :mem))
+        [_ primary-container] (find-container-by-name replicaset-spec waiter-primary-container-name)
+        primary-container-volume-mounts (get primary-container :volumeMounts)]
+    (log/info "attaching" type "container with name" sidecar-name "to" (get-in replicaset-spec [:metadata :name]))
+    (update-in replicaset-spec
+      [:spec :template :spec containers-key]
+      conj
+      (let [;; TODO extract env from main containers
+            env-map (-> (merge env user-env base-env)
+                        (assoc "WAITER_SIDECAR_NAME" sidecar-name))
+            sidecar-env (vec (for [[k v] env-map] {:name k :value v}))
+            sidecar-container {:command cmd
+                               :env sidecar-env
+                               :image image
+                               :imagePullPolicy "IfNotPresent"
+                               :name sidecar-name
+                               :resources {:limits {:memory (str sidecar-mem "Mi")}
+                                           :requests {:cpu (str sidecar-cpu) :memory (str sidecar-mem "Mi")}}
+                               :volumeMounts primary-container-volume-mounts}]
+        sidecar-container))))
+
+(defn side->sidecar-config
+  "TODO"
+  [sidecar-name]
+  (when-let [sidecar-config (config/retrieve-side-config sidecar-name)]
+    (assoc sidecar-config :sidecar-name sidecar-name)))
+
+(defn attach-service-sidecars
+  "TODO"
+  [replicaset-spec sides service-description base-env]
+  (let [sidecar-configs (->> sides (map side->sidecar-config) (remove nil?))]
+    (if (seq sidecar-configs)
+      (reduce #(attach-service-sidecar %1 %2 service-description base-env) replicaset-spec sidecar-configs)
+      replicaset-spec)))
+
 (defn- proto->tls-proto
   "Return equivalent TLS protocol for given protocol"
   [proto]
@@ -1377,7 +1427,7 @@
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
            liveness-check-interval-secs liveness-check-max-consecutive-failures liveness-check-port-index
-           liveness-check-proto liveness-check-url mem min-instances ports run-as-user
+           liveness-check-proto liveness-check-url mem min-instances ports run-as-user sides
            termination-grace-period-secs] :as service-description}
    {:keys [container-init-commands default-container-image log-bucket-url image-aliases
            pod-anti-affinity run-as-user-source] :as context}]
@@ -1595,7 +1645,10 @@
 
       ;; When bypass is enabled, we should attach a preStop command to all containers to delay SIGTERM to be handled for a period of time
       bypass-enabled?
-      (update-in [:spec :template :spec :containers] add-pre-stop-config-for-bypass-service base-env pre-stop-cmd force-sigterm-secs sigterm-grace-period-secs))))
+      (update-in [:spec :template :spec :containers] add-pre-stop-config-for-bypass-service base-env pre-stop-cmd force-sigterm-secs sigterm-grace-period-secs)
+
+      (seq sides)
+      (attach-service-sidecars sides service-description base-env))))
 
 (defn default-pdb-spec-builder
   "Factory function which creates a Kubernetes PodDisruptionBudget spec for the given ReplicaSet."

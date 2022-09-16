@@ -3542,3 +3542,81 @@
         (is (= 1 (count events)))
         (is (= simple-event (first events)))
         (is (true? (cu/cache-contains? (:k8s-object-key->event-cache dummy-scheduler) {:namespace namespace :k8s-object-name service-a-name})))))))
+
+(deftest test-attach-service-sidecar
+  (let [primary-container-volume-mounts [:volume-1 :volume-2]
+        rs-spec {:spec {:template {:spec {:containers [{:name waiter-primary-container-name
+                                                        :volumeMounts primary-container-volume-mounts}]}}}}
+        sidecar-cpu 0.1
+        sidecar-mem 1024
+        sidecar-name "sidecar-1"
+        service-description {"env" {"DAVIS" "jane" "MILLER" "john" "SOURCE" "service"}}
+        base-env {"FOO" "bar" "LOREM" "ipsum" "SOURCE" "waiter"}
+        sidecar-config-env {"FEE" "fie" "FOE" "fum" "SOURCE" "sidecar"}
+        sidecar-env (merge sidecar-config-env
+                           (get service-description "env")
+                           base-env
+                           {"WAITER_SIDECAR_NAME" sidecar-name})]
+
+    (let [sidecar-config {:cmd ["echo foo"]
+                          :env sidecar-config-env
+                          :image "images/sidecar-1:prod"
+                          :resources {:cpu sidecar-cpu :mem sidecar-mem}
+                          :sidecar-name sidecar-name
+                          :type "app"}
+          rs-spec-with-sidecar (attach-service-sidecar rs-spec sidecar-config service-description base-env)]
+      (is (= (update-in rs-spec [:spec :template :spec :containers] conj
+                                {:command (get sidecar-config :cmd)
+                                 :env (vec (for [[k v] sidecar-env] {:name k :value v}))
+                                 :image (get sidecar-config :image)
+                                 :imagePullPolicy "IfNotPresent"
+                                 :name sidecar-name
+                                 :resources {:limits {:memory (str sidecar-mem "Mi")}
+                                             :requests {:cpu (str sidecar-cpu)
+                                                        :memory (str sidecar-mem "Mi")}}
+                                 :volumeMounts primary-container-volume-mounts})
+             rs-spec-with-sidecar)))
+
+    (let [sidecar-config {:cmd ["echo foo"]
+                          :env sidecar-config-env
+                          :image "images/sidecar-1:prod"
+                          :resources {:cpu sidecar-cpu :mem sidecar-mem}
+                          :sidecar-name sidecar-name
+                          :type "init"}
+          rs-spec-with-sidecar (attach-service-sidecar rs-spec sidecar-config service-description base-env)]
+      (is (= (update-in rs-spec [:spec :template :spec :initContainers] conj
+                                {:command (get sidecar-config :cmd)
+                                 :env (vec (for [[k v] sidecar-env] {:name k :value v}))
+                                 :image (get sidecar-config :image)
+                                 :imagePullPolicy "IfNotPresent"
+                                 :name sidecar-name
+                                 :resources {:limits {:memory (str sidecar-mem "Mi")}
+                                             :requests {:cpu (str sidecar-cpu)
+                                                        :memory (str sidecar-mem "Mi")}}
+                                 :volumeMounts primary-container-volume-mounts})
+             rs-spec-with-sidecar)))
+
+    (let [sidecar-cpu-override 0.2
+          sidecar-mem-override 2048
+          sidecar-extra-env {"SIDECAR_1_CPU" (str sidecar-cpu-override)
+                             "SIDECAR_1_MEM" (str sidecar-mem-override)}
+          service-description (update service-description "env" merge sidecar-extra-env)
+          sidecar-env (merge sidecar-env sidecar-extra-env)
+          sidecar-config {:cmd ["echo foo"]
+                          :env sidecar-config-env
+                          :image "images/sidecar-1:prod"
+                          :resources {:cpu sidecar-cpu :mem sidecar-mem}
+                          :sidecar-name sidecar-name
+                          :type "init"}
+          rs-spec-with-sidecar (attach-service-sidecar rs-spec sidecar-config service-description base-env)]
+      (is (= (update-in rs-spec [:spec :template :spec :initContainers] conj
+                                {:command (get sidecar-config :cmd)
+                                 :env (vec (for [[k v] sidecar-env] {:name k :value v}))
+                                 :image (get sidecar-config :image)
+                                 :imagePullPolicy "IfNotPresent"
+                                 :name sidecar-name
+                                 :resources {:limits {:memory (str sidecar-mem-override "Mi")}
+                                             :requests {:cpu (str sidecar-cpu-override)
+                                                        :memory (str sidecar-mem-override "Mi")}}
+                                 :volumeMounts primary-container-volume-mounts})
+             rs-spec-with-sidecar)))))
