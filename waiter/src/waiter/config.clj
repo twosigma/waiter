@@ -58,3 +58,9 @@
   []
   {:pre [(realized? config-promise)]}
   (get-in @config-promise [:request-log :response-headers]))
+
+(defn retrieve-side-config
+  "Retrieves the configured sidecar."
+  [side-name]
+  {:pre [(realized? config-promise)]}
+  (get-in @config-promise [:sides-config side-name]))

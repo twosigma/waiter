@@ -36,6 +36,9 @@
                                                     'greater-than-or-equal-to-0-less-than-1))
 (def regex-pattern (s/pred #(re-pattern %) 'is-a-valid-regular-expression?))
 
+(def environment-key-name (s/both (s/constrained s/Str #(<= 1 (count %) 512)) #"^[A-Za-z][A-Za-z0-9_]*$"))
+(def metadata-key-name (s/both (s/constrained s/Str #(<= 1 (count %) 512)) #"^[a-z][a-z0-9\\-]*$"))
+
 (def http-methods #{"CONNECT" "DELETE" "GET" "HEAD" "OPTIONS" "PATCH" "POST" "PUT" "TRACE"})
 (def http-method (s/pred #(contains? http-methods %) 'is-an-http-method?))
 
@@ -177,3 +180,8 @@
                               (s/required-key :ttl) positive-int}
      s/Keyword require-symbol-factory-fn}
     contains-kind-sub-map?))
+
+(def valid-container-type
+  "Validator for the sidecar container types parameter.
+   Valid values are 'app' or 'init'."
+  (s/pred #(contains? #{"app" "init"} %) 'invalid-backend-proto))

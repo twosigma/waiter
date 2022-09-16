@@ -86,6 +86,7 @@
    (s/optional-key "permitted-user") schema/non-empty-string
    (s/optional-key "ports") schema/valid-number-of-ports
    (s/optional-key "profile") schema/non-empty-string
+   (s/optional-key "sides") [schema/non-empty-string]
    ; start-up related
    (s/optional-key "grace-period-secs") (s/both s/Int (s/pred #(<= 0 % (t/in-seconds (t/minutes 60))) 'at-most-60-minutes))
    (s/optional-key "health-check-authentication") schema/valid-health-check-authentication
@@ -156,7 +157,7 @@
     "health-check-authentication" "health-check-port-index" "health-check-proto" "health-check-url"
     "image" "liveness-check-authentication" "liveness-check-port-index" "liveness-check-proto" "liveness-check-url"
     "mem" "metadata" "metric-group" "name" "namespace" "permitted-user" "ports" "profile"
-    "run-as-user" "scheduler" "version"})
+    "run-as-user" "scheduler" "sides" "version"})
 
 ; keys used as parameters in the service description
 (def ^:const service-parameter-keys

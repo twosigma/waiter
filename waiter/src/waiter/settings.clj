@@ -178,7 +178,16 @@
                                                    (s/required-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-1
                                                    (s/required-key "scale-up-factor") schema/positive-fraction-less-than-1
                                                    (s/required-key "scale-down-factor") schema/positive-fraction-less-than-1
+                                                   (s/required-key "sides") [schema/non-empty-string]
                                                    (s/required-key "termination-grace-period-secs") schema/non-negative-int}
+   (s/required-key :sides-config) {;; TODO schema should validate name cannot be one of existing container names
+                                   schema/metadata-key-name {(s/required-key :cmd) [schema/non-empty-string]
+                                                             (s/optional-key :env) {schema/environment-key-name schema/non-empty-string}
+                                                             (s/required-key :image) schema/non-empty-string
+                                                             ;; TODO schema should make app containers require resources
+                                                             (s/optional-key :resources) {(s/required-key :cpu) schema/positive-num
+                                                                                          (s/required-key :mem) schema/positive-num}
+                                                             (s/required-key :type) schema/valid-container-type}}
    (s/required-key :statsd) (s/either (s/eq :disabled)
                                       {(s/required-key :cluster) schema/non-empty-string
                                        (s/required-key :environment) schema/non-empty-string
@@ -515,7 +524,9 @@
                                   "scale-down-factor" 0.001
                                   "scale-factor" 1
                                   "scale-up-factor" 0.1
+                                  "sides" []
                                   "termination-grace-period-secs" 0}
+   :sides-config {}
    :statsd :disabled
    :support-info [{:label "Waiter on GitHub"
                    :link {:type :url
