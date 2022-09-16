@@ -162,6 +162,7 @@ class WaiterCliTest(util.WaiterTest):
         self.assertNotIn('--max-queue-length', cli.stdout(cp))
         self.assertNotIn('--expired-instance-restart-rate', cli.stdout(cp))
         self.assertNotIn('--jitter-threshold', cli.stdout(cp))
+        self.assertNotIn('--queue-timeout-ms', cli.stdout(cp))
         token_name = self.token_name()
         cp = cli.create(self.waiter_url, token_name, create_flags=('--https-redirect true '
                                                                    '--cpus 0.1 '
@@ -174,7 +175,8 @@ class WaiterCliTest(util.WaiterTest):
                                                                    '--health-check-max-consecutive-failures 10 '
                                                                    '--max-queue-length 1000000 '
                                                                    '--expired-instance-restart-rate 0.1 '
-                                                                   '--jitter-threshold 0.1 '))
+                                                                   '--jitter-threshold 0.1 '
+                                                                   '--queue-timeout-ms 60000 '))
         self.assertEqual(0, cp.returncode, cp.stderr)
         try:
             token = util.load_token(self.waiter_url, token_name)
@@ -189,6 +191,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(1000000, token['max-queue-length'])
             self.assertEqual(0.1, token['expired-instance-restart-rate'])
             self.assertEqual(0.1, token['jitter-threshold'])
+            self.assertEqual(60000, token['queue-timeout-ms'])
             cp = cli.create(self.waiter_url, token_name, create_flags=('--https-redirect false '
                                                                        '--cpus 0.1 '
                                                                        '--fallback-period-secs 20 '
@@ -200,7 +203,8 @@ class WaiterCliTest(util.WaiterTest):
                                                                        '--health-check-max-consecutive-failures 2 '
                                                                        '--max-queue-length 2000000 '
                                                                        '--expired-instance-restart-rate 0.2 '
-                                                                       '--jitter-threshold 0.2 '))
+                                                                       '--jitter-threshold 0.2 '
+                                                                       '--queue-timeout-ms 80000 '))
             self.assertEqual(0, cp.returncode, cp.stderr)
             token = util.load_token(self.waiter_url, token_name)
             self.assertFalse(token['https-redirect'])
@@ -214,6 +218,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(2000000, token['max-queue-length'])
             self.assertEqual(0.2, token['expired-instance-restart-rate'])
             self.assertEqual(0.2, token['jitter-threshold'])
+            self.assertEqual(80000, token['queue-timeout-ms'])
         finally:
             util.delete_token(self.waiter_url, token_name)
 
@@ -254,13 +259,15 @@ class WaiterCliTest(util.WaiterTest):
         self.assertNotIn('--idle-timeout-mins', cli.stdout(cp))
         self.assertNotIn('--max-instances', cli.stdout(cp))
         self.assertNotIn('--restart-backoff-factor', cli.stdout(cp))
+        self.assertNotIn('--queue-timeout-ms', cli.stdout(cp))
         token_name = self.token_name()
         cp = cli.update(self.waiter_url, token_name, update_flags='--https-redirect true '
                                                                   '--cpus 0.1 '
                                                                   '--fallback-period-secs 10 '
                                                                   '--idle-timeout-mins 1 '
                                                                   '--max-instances 100 '
-                                                                  '--restart-backoff-factor 1.1')
+                                                                  '--restart-backoff-factor 1.1 '
+                                                                  '--queue-timeout-ms 60000 ')
         self.assertEqual(0, cp.returncode, cp.stderr)
         try:
             token = util.load_token(self.waiter_url, token_name)
@@ -269,12 +276,14 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(1, token['idle-timeout-mins'])
             self.assertEqual(100, token['max-instances'])
             self.assertEqual(1.1, token['restart-backoff-factor'])
+            self.assertEqual(60000, token['queue-timeout-ms'])
             cp = cli.update(self.waiter_url, token_name, update_flags='--https-redirect false '
                                                                       '--cpus 0.1 '
                                                                       '--fallback-period-secs 20 '
                                                                       '--idle-timeout-mins 2 '
                                                                       '--max-instances 200 '
-                                                                      '--restart-backoff-factor 2.2')
+                                                                      '--restart-backoff-factor 2.2 '
+                                                                      '--queue-timeout-ms 80000 ')
             self.assertEqual(0, cp.returncode, cp.stderr)
             token = util.load_token(self.waiter_url, token_name)
             self.assertFalse(token['https-redirect'])
@@ -282,6 +291,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(2, token['idle-timeout-mins'])
             self.assertEqual(200, token['max-instances'])
             self.assertEqual(2.2, token['restart-backoff-factor'])
+            self.assertEqual(80000, token['queue-timeout-ms'])
         finally:
             util.delete_token(self.waiter_url, token_name)
 

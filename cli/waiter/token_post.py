@@ -12,7 +12,7 @@ from waiter.util import deep_merge, FALSE_STRINGS, is_admin_enabled, print_info,
     guard_no_cluster, str2bool, update_in
 
 BOOL_STRINGS = TRUE_STRINGS + FALSE_STRINGS
-INT_PARAM_SUFFIXES = ['-failures', '-index', '-instances', '-length', '-level', '-mins', '-secs']
+INT_PARAM_SUFFIXES = ['-failures', '-index', '-instances', '-length', '-level', '-mins', '-ms', '-secs']
 FLOAT_PARAM_SUFFIXES = ['-factor', '-rate', '-threshold']
 STRING_PARAM_PREFIXES = ['env', 'metadata']
 
