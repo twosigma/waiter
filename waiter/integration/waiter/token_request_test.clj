@@ -1606,7 +1606,8 @@
             (is (str/includes? body custom-maintenance-message))))
 
         (testing "request to /waiter-ping should report error with custom maintenance message"
-          (let [{:keys [body] :as response}
+          (let [request-headers (assoc request-headers "accept" "application/json")
+                {:keys [body] :as response}
                 (make-request waiter-url "/waiter-ping" :headers request-headers)]
             (assert-response-status response http-200-ok)
             (assert-waiter-response response)

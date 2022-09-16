@@ -333,3 +333,28 @@
                 (is (= (str "Hello " (retrieve-username)) (-> backend-response :body str))))))
           (finally
             (delete-token-and-assert waiter-url token)))))))
+
+(deftest ^:parallel ^:integration-fast test-ping-with-maintenance-mode
+  (testing-using-waiter-url
+    (let [token (rand-name)
+          request-headers {:x-waiter-debug true
+                           :x-waiter-token token}
+          maintenance-message (str token " is under maintenance")
+          token-description (-> (kitchen-request-headers :prefix "")
+                                (assoc :maintenance {:message maintenance-message}
+                                       :name (str token "-v1")
+                                       :permitted-user "*"
+                                       :run-as-user (retrieve-username)
+                                       :token token))]
+      (try
+        (assert-response-status (post-token waiter-url token-description) http-200-ok)
+        (let [response (make-request waiter-url "/waiter-ping" :headers request-headers)]
+          (assert-response-status response http-200-ok)
+          (is (nil? (get-in response [:headers "x-waiter-service-id"])))
+          (let [{:keys [ping-response service-description service-state]} (some-> response :body (utils/try-parse-json keyword))]
+            (assert-response-status ping-response http-503-service-unavailable)
+            (is (str/includes? (-> ping-response :body str) maintenance-message))
+            (is (nil? service-description))
+            (is (= {:exists? false :healthy? false :service-id nil :status "Inactive"} service-state))))
+        (finally
+          (delete-token-and-assert waiter-url token))))))
