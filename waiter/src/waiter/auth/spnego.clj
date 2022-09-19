@@ -68,6 +68,7 @@
            :status http-401-unauthorized}
         (utils/data->error-response request)
         (cookies/cookies-response))
+      ;; communicate upstream when spnego auth has been disabled.
       true (assoc :waiter/auth-disabled? spnego-disabled?)
       waiter-token (assoc :waiter/token waiter-token))))
 

@@ -560,7 +560,6 @@
                         :processed-by :oidc-updater
                         :status http-401-unauthorized
                         :waiter-api-call? false
-                        :waiter/auth-disabled? true
                         :waiter/response-source :waiter}
                        response))))
             (let [cookie-header (str/join ";" (take (inc num-challenge-cookies-allowed-in-request) challenge-cookies))]
