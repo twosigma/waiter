@@ -20,6 +20,7 @@
             [clojure.string :as str]
             [clojure.tools.logging :as log]
             [digest]
+            [ring.middleware.cookies :as cookies]
             [waiter.auth.authentication :as auth]
             [waiter.auth.jwt :as jwt]
             [waiter.cookie-support :as cookie-support]
@@ -308,17 +309,54 @@
                  (= "." accept-redirect-auth)
                  (some #(= oidc-authority %) (str/split accept-redirect-auth #" ")))))))
 
+(defn count-challenge-cookies
+  "Returns the number of challenge cookies."
+  [request]
+  (let [cookie-header (get-in request [:headers "cookie"])
+        request-cookies (cond->> cookie-header
+                          (not (string? cookie-header)) (str/join ";"))]
+    (count
+      (filter #(str/starts-with? (str/trim %) oidc-challenge-cookie-prefix)
+              (str/split (str request-cookies) #";")))))
+
 (defn too-many-oidc-challenge-cookies?
   "Returns true if the request already contains too many OIDC challenge cookies."
   [request num-allowed]
-  (let [cookie-header (get-in request [:headers "cookie"])
-        request-cookies (cond->> cookie-header
-                          (not (string? cookie-header)) (str/join ";"))
-        num-challenge-cookies (count
-                                (filter #(str/starts-with? (str/trim %) oidc-challenge-cookie-prefix)
-                                        (str/split (str request-cookies) #";")))]
+  (let [num-challenge-cookies (count-challenge-cookies request)]
     (log/info "request has" num-challenge-cookies "oidc challenge cookies")
     (> num-challenge-cookies num-allowed)))
+
+(defn- promote-401-to-403?
+  "Determines whether the response represents a 401 from a downstream handler which attempted no authentication."
+  [response]
+  ;; when downstream auth is disabled, the 401 response indicates OIDC auth handler is authoritative in
+  ;; terms of the 4XX authentication response that is generated. We can rewrite the 401 response to a
+  ;; 403 response to indicate an authentication error due to too many cookies.
+  (and (map? response)
+       (let [{:keys [waiter/auth-disabled? status]} response]
+         (and auth-disabled?
+              (= status http-401-unauthorized)
+              (utils/waiter-generated-response? response)))))
+
+(defn make-oidc-auth-too-many-cookies-response-updater
+  "Returns a response updater that rewrites 401 waiter responses to 302 redirects."
+  [request num-allowed]
+  (fn update-oidc-auth-too-many-cookies-response
+    [response]
+    (cond-> response
+      (promote-401-to-403? response)
+      (merge (-> {:message (str "Too many OIDC challenge cookies (allowed: "
+                                num-allowed ", provided: " (count-challenge-cookies request) ")")
+                  :status http-403-forbidden}
+                 (utils/data->error-response request)
+                 (cookies/cookies-response))))))
+
+(defn dissoc-auth-disabled?
+  "Dissociates the waiter/auth-disabled? entry on the response."
+  [response]
+  (cond-> response
+    (map? response)
+    (dissoc :waiter/auth-disabled?)))
 
 (defn wrap-auth-handler
   "Wraps the request handler with a handler to trigger OIDC+PKCE authentication."
@@ -328,20 +366,30 @@
    request-handler]
   (let [oidc-authority (utils/uri-string->host oidc-authorize-uri)]
     (fn oidc-auth-handler [request]
-      (let [oidc-mode-delay (delay (request->oidc-mode allow-oidc-auth-api? allow-oidc-auth-services? oidc-default-mode request))]
-        (cond
-          (or (auth/request-authenticated? request)
-              (= :disabled @oidc-mode-delay)
-              ;; OIDC auth is no-op when request cannot be redirected
-              (not (supports-redirect? oidc-authority oidc-redirect-user-agent-products request))
-              ;; OIDC auth is avoided if client already has too many challenge cookies
-              (too-many-oidc-challenge-cookies? request oidc-num-challenge-cookies-allowed-in-request))
-          (request-handler request)
+      (-> (let [oidc-mode-delay (delay (request->oidc-mode allow-oidc-auth-api? allow-oidc-auth-services? oidc-default-mode request))
+                skip-oidc? (or (auth/request-authenticated? request)
+                               (= :disabled @oidc-mode-delay)
+                               ;; OIDC auth is no-op when request cannot be redirected
+                               (not (supports-redirect? oidc-authority oidc-redirect-user-agent-products request)))]
+            (cond
+              (or skip-oidc?
+                  ;; OIDC auth is avoided if client already has too many challenge cookies
+                  (too-many-oidc-challenge-cookies? request oidc-num-challenge-cookies-allowed-in-request))
+              (cond-> (request-handler request)
+                (not skip-oidc?)
+                ;; update a 401 response to 403 if there were too many cookies and downstream auth options are disabled:
+                ;; 401 indicates that the client request lacks valid authentication credentials whereas
+                ;; 403 indicates that the server understands the request but refuses to authorize it.
+                (ru/update-response
+                  (make-oidc-auth-too-many-cookies-response-updater request oidc-num-challenge-cookies-allowed-in-request)))
 
-          :else
-          (ru/update-response
-            (request-handler request)
-            (make-oidc-auth-response-updater jwt-auth-server @oidc-mode-delay oidc-same-site-attribute password request)))))))
+              :else
+              (ru/update-response
+                (request-handler request)
+                (make-oidc-auth-response-updater jwt-auth-server @oidc-mode-delay oidc-same-site-attribute password request))))
+          ;; do not let the downstream waiter/auth-disabled? on the response flow out of the OIDC auth handler to avoid confusion
+          ;; in upstream handlers who may think authentication was disabled overall while processing the request.
+          (ru/update-response dissoc-auth-disabled?)))))
 
 (defrecord OidcAuthenticator [allow-oidc-auth-api? allow-oidc-auth-services? oidc-authorize-uri oidc-default-mode
                               jwt-auth-server jwt-validator oidc-num-challenge-cookies-allowed-in-request
