@@ -366,6 +366,7 @@
               :cannot-identify-service "Unable to identify service using waiter headers/token"
               :health-check-requires-authentication "Health check requires authentication"
               :health-check-timed-out "Health check timed out"
+              :http-401-spnego "Unauthorized"
               :invalid-health-check-response "Health check returned an invalid response"
               :invalid-service-description "Service description using waiter headers/token improperly configured"
               :not-enough-memory "Not enough memory allocated"
