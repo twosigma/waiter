@@ -552,7 +552,7 @@
                   #(make-request target-url (str "/request-" (rand-int 1000))
                                  :disable-auth true :headers % :method :get))]
             (assert-waiter-response initial-response)
-            (assert-response-status initial-response http-401-unauthorized))
+            (assert-response-status initial-response http-403-forbidden))
           (testing "oidc enabled endpoint"
             (let [response (make-request-with-debug-info
                              {:x-waiter-token waiter-token}
