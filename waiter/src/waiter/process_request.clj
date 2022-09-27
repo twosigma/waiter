@@ -42,7 +42,7 @@
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
   (:import (clojure.lang ExceptionInfo)
-           (java.io ByteArrayOutputStream InputStream IOException)
+           (java.io ByteArrayOutputStream IOException InputStream)
            (java.net ConnectException SocketTimeoutException)
            (java.nio ByteBuffer)
            (java.util.concurrent TimeoutException)
@@ -1076,34 +1076,54 @@
       (catch Exception ex
         (utils/exception->response ex request)))))
 
+(defn make-ping-request-handler
+  "Generates the health check response after service discovery including maintenance mode.
+   Includes writing the result of the health check ping into the request log."
+  [process-request-handler-fn wrap-descriptor-fn wrap-maintenance-mode-fn user-agent {:keys [health-check-accept-header]}]
+  (-> (fn ping-request-handler-fn [{:keys [descriptor headers] :as request}]
+        (async/go
+          (try
+            (let [{:keys [core-service-description service-description service-id]} descriptor
+                  request (assoc-in request [:headers "user-agent"] user-agent)
+                  idle-timeout-ms (Integer/parseInt (get headers "x-waiter-timeout" "300000"))
+                  ping-response (async/<! (make-health-check-request process-request-handler-fn idle-timeout-ms request health-check-accept-header))]
+              (let [{:strs [health-check-url]} service-description
+                    health-check-protocol (scheduler/service-description->health-check-protocol service-description)
+                    backend-protocol (hu/backend-protocol->http-version health-check-protocol)
+                    backend-scheme (hu/backend-proto->scheme health-check-protocol)
+                    request (assoc request
+                              :client-protocol backend-protocol
+                              :internal-protocol backend-protocol
+                              :request-method :get
+                              :scheme backend-scheme
+                              :uri health-check-url)
+                    auth-params (auth/select-auth-params request)
+                    response (-> (merge auth-params ping-response)
+                                 (assoc :descriptor descriptor
+                                        :latest-service-id service-id
+                                        :request-type "ping"
+                                        :waiter-api-call? false))]
+                (rlog/log-request! request response))
+              (assoc ping-response
+                :core-service-description core-service-description
+                :service-id service-id))
+            (catch Exception ex
+              (-> (utils/exception->response ex request)
+                  (select-keys [:body :headers :status])
+                  (assoc :result :ping-internal-error))))))
+      wrap-descriptor-fn
+      wrap-maintenance-mode-fn))
+
 (defn ping-service
   "Performs a health check on an arbitrary instance of the service specified in the descriptor.
    If the service is not running, an instance will be started.
    The response body contains the following map: {:ping-response ..., :service-state ...}"
-  [user-agent process-request-handler-fn service-state-fn {:keys [health-check-accept-header]} {:keys [descriptor headers] :as request}]
+  [ping-request-handler-fn service-state-fn request]
   (async/go
     (try
-      (let [{:keys [core-service-description service-description service-id]} descriptor
-            request (assoc-in request [:headers "user-agent"] user-agent)
-            idle-timeout-ms (Integer/parseInt (get headers "x-waiter-timeout" "300000"))
-            ping-response (async/<! (make-health-check-request process-request-handler-fn idle-timeout-ms request health-check-accept-header))]
-        (let [{:strs [health-check-url]} service-description
-              health-check-protocol (scheduler/service-description->health-check-protocol service-description)
-              backend-protocol (hu/backend-protocol->http-version health-check-protocol)
-              backend-scheme (hu/backend-proto->scheme health-check-protocol)
-              request (assoc request
-                        :client-protocol backend-protocol
-                        :internal-protocol backend-protocol
-                        :request-method :get
-                        :scheme backend-scheme
-                        :uri health-check-url)
-              auth-params (auth/select-auth-params request)
-              response (-> (merge auth-params ping-response)
-                         (assoc :descriptor descriptor
-                                :latest-service-id service-id
-                                :request-type "ping"
-                                :waiter-api-call? false))]
-          (rlog/log-request! request response))
+      (let [ping-response-ch-or-map (ping-request-handler-fn request)
+            {:keys [core-service-description service-id] :as ping-response} (cond-> ping-response-ch-or-map
+                                                                              (au/chan? ping-response-ch-or-map) (async/<!))]
         (let [request-params (-> request ru/query-params-request :query-params)
               exclude-service-state (utils/param-contains? request-params "exclude" "service-state")
               service-state (if exclude-service-state
@@ -1113,15 +1133,20 @@
               redirect-ping? (ru/redirect-response? ping-response)
               redirect-response (when redirect-ping?
                                   (ssl/ssl-redirect-response request {}))
-              response-instance (:instance ping-response)]
+              response-instance (:instance ping-response)
+              response-result (or (:result ping-response)
+                                  ;; response can be generated outside of the health check call
+                                  (when (utils/waiter-generated-response? ping-response)
+                                    :waiter-response))]
           (merge
             (dissoc ping-response [:body :error-chan :headers :request :result :status :trailers])
             (utils/clj->json-response
-              {:ping-response (-> ping-response
-                                  (select-keys [:body :headers :result :status])
-                                  (assoc :instance {:host (:host response-instance)
-                                                    :id (:id response-instance)
-                                                    :port (:port response-instance)}))
+              {:ping-response (cond-> (-> ping-response
+                                          (select-keys [:body :headers :status])
+                                          (assoc :result response-result))
+                                response-instance (assoc :instance {:host (:host response-instance)
+                                                                    :id (:id response-instance)
+                                                                    :port (:port response-instance)}))
                :service-description core-service-description
                :service-state service-state}
               :headers (if redirect-ping? (:headers redirect-response) {})
@@ -1132,8 +1157,6 @@
 (defn exception->ping-response
   "Renders a ping response when there is an error in determining the descriptor for the request."
   [^Exception ex request]
-  (utils/clj->json-response
-    {:ping-response (-> (utils/exception->response ex request)
-                      (select-keys [:body :headers :status])
-                      (assoc :result :descriptor-error))}
-    :status http-200-ok))
+  (-> (utils/exception->response ex request)
+      (select-keys [:body :headers :status])
+      (assoc :result :descriptor-error)))

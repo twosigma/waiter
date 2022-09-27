@@ -1662,11 +1662,14 @@
                                   process-request-fn wrap-descriptor-for-ping-fn wrap-ignore-disabled-auth-fn wrap-secure-request-fn]
                            (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                  user-agent (str "waiter-ping/" user-agent-version)
-                                 handler (wrap-descriptor-for-ping-fn
-                                           (fn inner-ping-service-handler [request]
-                                             (let [retrieve-service-status-label-fn #(:service-status-label (service/retrieve-service-status-and-deployment-error % (query-state-fn)))
-                                                   service-state-fn (partial descriptor/extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn)]
-                                               (pr/ping-service user-agent process-request-fn service-state-fn health-check-config request))))]
+                                 ping-request-handler-fn (pr/make-ping-request-handler
+                                                           process-request-fn wrap-descriptor-for-ping-fn pr/wrap-maintenance-mode user-agent health-check-config)
+                                 retrieve-service-status-label-fn #(:service-status-label (service/retrieve-service-status-and-deployment-error % (query-state-fn)))
+                                 service-state-fn (fn extract-service-state-fn [service-id ping-result]
+                                                    (descriptor/extract-service-state
+                                                      router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn service-id ping-result))
+                                 handler (fn inner-ping-service-handler [request]
+                                           (pr/ping-service ping-request-handler-fn service-state-fn request))]
                              (-> (fn ping-service-handler [request]
                                    (let [request-params (-> request ru/query-params-request :query-params)
                                          request (cond-> request
@@ -1749,10 +1752,11 @@
                                    wrap-descriptor-fn wrap-ignore-disabled-auth-fn wrap-secure-request-fn]
                             (-> (fn service-id-handler-fn [request]
                                   (handler/service-id-handler request kv-store store-service-description-fn))
-                              wrap-descriptor-fn
-                              wrap-secure-request-fn
-                              wrap-ignore-disabled-auth-fn
-                              wrap-service-discovery-fn))
+                                wrap-descriptor-fn
+                                wrap-secure-request-fn
+                                wrap-ignore-disabled-auth-fn
+                                pr/wrap-maintenance-mode
+                                wrap-service-discovery-fn))
    :service-list-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
                                      [:routines prepend-waiter-url retrieve-token-based-fallback-fn router-metrics-helpers
                                       service-id->references-fn service-id->service-description-fn service-id->source-tokens-entries-fn
