@@ -528,7 +528,8 @@
             edit-token? (or (str/blank? oidc-token-from-env) edit-oidc-token-from-env?)
             _ (when edit-token?
                 (let [service-parameters (assoc (kitchen-params)
-                                           :env {"USE_OIDC_AUTH" "true"}
+                                           :env (cond-> {"USE_OIDC_AUTH" "true"}
+                                                  use-spnego (assoc "USE_SPNEGO_AUTH" "false"))
                                            :name (rand-name)
                                            :run-as-user (retrieve-username))
                       token-response (post-token waiter-url (assoc service-parameters :token waiter-token))]
@@ -546,13 +547,16 @@
             port (waiter-settings-port waiter-url)
             target-url (str waiter-host ":" port)]
         (try
-          (let [initial-response
+          (let [token-response (get-token waiter-url waiter-token)
+                _ (assert-response-status token-response http-200-ok)
+                spnego-disabled? (-> token-response :body (json/read-str) (get-in ["env" "USE_SPNEGO_AUTH"]) (= "false"))
+                initial-response
                 (make-request-with-debug-info
                   request-headers
                   #(make-request target-url (str "/request-" (rand-int 1000))
                                  :disable-auth true :headers % :method :get))]
             (assert-waiter-response initial-response)
-            (assert-response-status initial-response http-403-forbidden))
+            (assert-response-status initial-response (if spnego-disabled? http-403-forbidden http-401-unauthorized)))
           (testing "oidc enabled endpoint"
             (let [response (make-request-with-debug-info
                              {:x-waiter-token waiter-token}
