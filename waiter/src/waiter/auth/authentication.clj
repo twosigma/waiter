@@ -202,14 +202,15 @@
         (let [auth-header (select-auth-header request #(str/starts-with? % single-user-prefix))
               {:strs [x-waiter-single-user]} headers
               auth-path (when auth-header
-                          (str/trim (subs auth-header (count single-user-prefix))))]
+                          (str/trim (subs auth-header (count single-user-prefix))))
+              waiter-token (utils/request->discovered-token request)]
           (cond
             (or (= "unauthorized" x-waiter-single-user) (= "unauthorized" auth-path))
             (utils/attach-waiter-source
-              {:headers {"www-authenticate" "SingleUser"} :status http-401-unauthorized})
+              {:headers {"www-authenticate" "SingleUser"} :status http-401-unauthorized :waiter/token waiter-token})
             (or (= "forbidden" x-waiter-single-user) (= "forbidden" auth-path))
             (utils/attach-waiter-source
-              {:headers {} :status http-403-forbidden})
+              {:headers {} :status http-403-forbidden :waiter/token waiter-token})
             (str/blank? auth-path)
             (let [auth-params-map (build-auth-params-map :single-user run-as-user)]
               (handle-request-auth request-handler request auth-params-map password nil true))

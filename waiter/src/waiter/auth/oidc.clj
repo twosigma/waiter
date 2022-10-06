@@ -269,7 +269,7 @@
     (utils/exception->response
       (throw (ex-info "OIDC authentication disabled" {:status http-501-not-implemented}))
       request)
-    (let [client-id (or (get-in request [:waiter-discovery :token])
+    (let [client-id (or (utils/request->discovered-token request)
                         (some-> request utils/request->host utils/authority->host))
           waiter-host? (contains? waiter-hostnames client-id)
           enabled? (if waiter-host?
@@ -347,7 +347,8 @@
       (promote-401-to-403? response)
       (merge (-> {:message (str "Too many OIDC challenge cookies (allowed: "
                                 num-allowed ", provided: " (count-challenge-cookies request) ")")
-                  :status http-403-forbidden}
+                  :status http-403-forbidden
+                  :waiter/token (utils/request->discovered-token request)}
                  (utils/data->error-response request)
                  (cookies/cookies-response))))))
 

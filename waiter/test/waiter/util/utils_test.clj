@@ -189,13 +189,23 @@
         (is (= expected-text-response-headers headers))
         (is (str/includes? body "TestCase Exception"))))
     (testing "json response"
-      (let [{:keys [body headers status]}
+      (let [{:keys [body headers status waiter/token]}
             (exception->response
               (ex-info "TestCase Exception" (map->TestResponse {:status http-500-internal-server-error}))
               (assoc-in request [:headers "accept"] "application/json"))]
         (is (= http-500-internal-server-error status))
         (is (= expected-json-response-headers headers))
-        (is (str/includes? body "TestCase Exception"))))))
+        (is (str/includes? body "TestCase Exception"))
+        (is (nil? token))))
+    (testing "waiter token"
+      (let [{:keys [body headers status waiter/token]}
+            (exception->response
+              (ex-info "TestCase Exception" (map->TestResponse {:status http-500-internal-server-error :waiter/token "foo-bar"}))
+              (assoc-in request [:headers "accept"] "application/json"))]
+        (is (= http-500-internal-server-error status))
+        (is (= expected-json-response-headers headers))
+        (is (str/includes? body "TestCase Exception"))
+        (is (= "foo-bar" token))))))
 
 (deftest test-log-and-suppress-when-exception-thrown
   (let [counter-atom (atom 0)

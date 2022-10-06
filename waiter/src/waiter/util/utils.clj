@@ -793,6 +793,11 @@
   [request]
   (get-in request [:headers "host"]))
 
+(defn request->discovered-token
+  "Extracts the discovered token from the request."
+  [request]
+  (get-in request [:waiter-discovery :token]))
+
 (defn same-origin
   "Returns true if the host and origin are non-nil and are equivalent."
   [{:keys [headers] :as request}]
