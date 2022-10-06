@@ -131,6 +131,7 @@
                                      (s/optional-key :drain-request-buffer-size) schema/positive-int
                                      (s/optional-key :http2?) s/Bool
                                      (s/optional-key :http2c?) s/Bool
+                                     (s/optional-key :images-url) schema/non-empty-string
                                      (s/optional-key :keystore) schema/non-empty-string
                                      (s/optional-key :keystore-scan-interval-secs) schema/positive-int
                                      (s/optional-key :keystore-type) schema/non-empty-string

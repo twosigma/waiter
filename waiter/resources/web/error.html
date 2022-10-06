@@ -94,6 +94,9 @@
   <p>
   <%= message %>
   </p>
+  <% (when image-url %>
+  <img height="60%" width="60%" src="<%= image-url %>" />
+  <% ) %>
 </div>
 
 <div class="additional-info">
@@ -161,6 +164,7 @@
       </li>
       <% ) %>
     </ul>
+  <div>
 </div>
 <% ) %>
 

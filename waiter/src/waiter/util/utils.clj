@@ -31,7 +31,7 @@
             [waiter.util.http-utils :as hu])
   (:import (clojure.core.async.impl.channels ManyToManyChannel)
            (clojure.lang ExceptionInfo)
-           (java.io ByteArrayInputStream InputStreamReader OutputStreamWriter SequenceInputStream)
+           (java.io ByteArrayInputStream ByteArrayOutputStream InputStream InputStreamReader OutputStreamWriter SequenceInputStream)
            (java.lang Process)
            (java.net ServerSocket URI)
            (java.nio ByteBuffer)
@@ -321,27 +321,29 @@
   "Creates a context from a data map and a request.
    The data map is expected to contain the following keys: details, message, and status."
   [{:keys [details message status] :as data-map}
-   {:keys [headers query-string request-method request-time support-info uri] :as request}]
+   {:keys [headers query-string request-method request-time support-info uri waiter-images-url] :as request}]
   (let [{:strs [host x-cid]} headers
         {:keys [authorization/principal descriptor instance]} (merge request details)
         {:keys [service-id]} descriptor
-        {:keys [error-class]} details
+        {:keys [error-class waiter/error-image]} details
         error-title (or (error-class->error-title error-class)
                         (str "Waiter Error " status))]
-    {:cid x-cid
-     :details details
-     :host host
-     :instance-id (:id instance)
-     :message message
-     :principal principal
-     :query-string query-string
-     :request-method (-> (or request-method "") name str/upper-case)
-     :service-id service-id
-     :status status
-     :support-info support-info
-     :timestamp (du/date-to-str request-time)
-     :title error-title
-     :uri uri}))
+    (cond-> {:cid x-cid
+             :details details
+             :host host
+             :instance-id (:id instance)
+             :message message
+             :principal principal
+             :query-string query-string
+             :request-method (-> (or request-method "") name str/upper-case)
+             :service-id service-id
+             :status status
+             :support-info support-info
+             :timestamp (du/date-to-str request-time)
+             :title error-title
+             :uri uri}
+      (and waiter-images-url error-image)
+      (assoc :image-url (str waiter-images-url "/" error-image)))))
 
 (defn- build-maintenance-context
   "Creates a context from a data map and request.
@@ -353,7 +355,7 @@
     {:name name :token token :token-owner token-owner}))
 
 (let [html-fn (template/fn
-                [{:keys [cid details host instance-id message principal query-string request-method
+                [{:keys [cid details host image-url instance-id message principal query-string request-method
                          service-id status support-info timestamp title uri]}]
                 (slurp (io/resource "web/error.html")))]
   (defn- render-error-html
@@ -988,3 +990,17 @@
   "Returns true if the response is from a backend sidecar proxy."
   [response]
   (boolean (get-in response [:headers "x-raven-response-flags"])))
+
+(defn slurp-bytes
+  "Slurp the bytes from an input stream."
+  [^InputStream in]
+  (with-open [out (ByteArrayOutputStream.)]
+    (io/copy (io/input-stream in) out)
+    (.toByteArray out)))
+
+(defn load-resource-bytes
+  "Returns bytes for the provided resource."
+  [resource-path]
+  (let [class-loader (.getContextClassLoader (Thread/currentThread))
+        resource-stream (.getResourceAsStream class-loader resource-path)]
+    (slurp-bytes resource-stream)))

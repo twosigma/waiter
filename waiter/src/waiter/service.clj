@@ -270,7 +270,8 @@
                         {:error-map {:error-class error-class-deployment-error
                                      :log-level :info
                                      :service-id service-id
-                                     :status http-503-service-unavailable}
+                                     :status http-503-service-unavailable
+                                     :waiter/error-image error-image-503-deployment-error}
                          :error-message (utils/message instance)}
                         (and service-deployment-error-msg service-deployment-error-details)
                         (-> (assoc :error-message service-deployment-error-msg)
@@ -301,6 +302,7 @@
                                 :slots-available (counters/value (metrics/service-counter service-id "instance-counts" "slots-available"))
                                 :slots-in-use (counters/value (metrics/service-counter service-id "instance-counts" "slots-in-use"))
                                 :status http-503-service-unavailable
+                                :waiter/error-image error-image-503-instance-unavailable
                                 :waiting-for-available-instance waiting-for-available-instance
                                 :work-stealing-offers-received (counters/value (metrics/service-counter service-id "work-stealing" "received-from" "in-flight"))
                                 :work-stealing-offers-sent (counters/value (metrics/service-counter service-id "work-stealing" "sent-to" "in-flight"))})))

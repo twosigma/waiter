@@ -143,6 +143,9 @@
                   ;; Whether or not to  enable HTTP2 cleartext transport, default true
                   :http2c? true
 
+                  ;; When present, provides the base url for images used in error responses
+                  :images-url "http://cdn.waiter.com/images"
+
                   ;; When SSL is enabled, the keystore to use for SSL connections
                   :keystore "/path/to/keystore.p12"
                   ;; When SSL is enabled, the scanning interval to detect changes to and reload the keystore

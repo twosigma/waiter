@@ -72,21 +72,26 @@
   "Classifies the error responses from the backend into the following vector:
    - error cause (:client-eagerly-closed, :client-error, :instance-error, :generic-error, or :server-eagerly-closed),
    - associated error message,
-   - the http status code, and
+   - the http status code,
+   - the error image to use, and
    - the canonical name of the exception that 'caused' the error."
   [label error]
   (let [error-class (-> error .getClass .getCanonicalName)
         error-message (str (.getMessage error))
         classification (cond (instance? ExceptionInfo error)
                              (if-let [ex-info-cause (ex-cause error)]
-                               (let [[error-cause message status error-class] (classify-error label ex-info-cause)
+                               (let [[error-cause message status error-image error-class] (classify-error label ex-info-cause)
                                      error-cause (or (-> error ex-data :error-cause) error-cause)]
-                                 [error-cause message status error-class])
+                                 [error-cause message status error-image error-class])
                                (let [error-status (or (-> error ex-data :status) http-500-internal-server-error)
-                                     error-cause (or (-> error ex-data :error-cause) :generic-error)]
-                                 [error-cause error-message error-status error-class]))
+                                     error-cause (or (-> error ex-data :error-cause) :generic-error)
+                                     error-image (or (-> error ex-data :waiter/error-image)
+                                                     (cond
+                                                       (= http-400-bad-request error-status) error-image-400-bad-request
+                                                       (= http-500-internal-server-error error-status) error-image-500-internal-server-error))]
+                                 [error-cause error-message error-status error-image error-class]))
                              (instance? IllegalStateException error)
-                             [:generic-error error-message http-400-bad-request error-class]
+                             [:generic-error error-message http-400-bad-request error-image-400-bad-request error-class]
                              ;; internal_error due to reset stream for http/1 requests means client send bad data to server
                              ;; TODO shams verify http/1 request
                              (and (instance? IOException error)
@@ -94,32 +99,33 @@
                                   (when-let [^StackTraceElement stack-element (some-> error (.getStackTrace) (seq) (first))]
                                     (and (str/ends-with? (.getClassName stack-element) "HttpReceiverOverHTTP2")
                                          (= (.getMethodName stack-element) "onReset"))))
-                             [:client-error "Client send invalid data to HTTP/2 backend" http-400-bad-request error-class]
+                             [:client-error "Client send invalid data to HTTP/2 backend" http-400-bad-request error-image-400-bad-request error-class]
                              ;; cancel_stream_error is used to indicate that the stream is no longer needed
                              (and (instance? IOException error) (= "cancel_stream_error" error-message))
-                             [:client-error "Client action means stream is no longer needed" http-400-bad-request error-class]
+                             [:client-error "Client action means stream is no longer needed" http-400-bad-request error-image-400-bad-request error-class]
                              ;; no_error is used to indicate that the stream is no longer needed
                              ;; HTTP2 spec: The associated condition is not a result of an error...indicate graceful shutdown of a connection.
                              (and (instance? IOException error) (= "no_error" error-message))
-                             [:server-eagerly-closed "Connection eagerly closed by server" http-400-bad-request error-class]
+                             [:server-eagerly-closed "Connection eagerly closed by server" http-400-bad-request error-image-400-bad-request error-class]
                              ;; connection has already been closed by the client
                              (and (instance? EofException error) (= "reset" error-message))
-                             [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request error-class]
+                             [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request error-image-400-bad-request error-class]
                              (instance? EofException error)
-                             [:client-error "Connection unexpectedly closed while streaming request" http-400-bad-request error-class]
+                             [:client-error "Connection unexpectedly closed while streaming request" http-400-bad-request error-image-400-bad-request error-class]
                              (instance? TimeoutException error)
                              (if (some->> error (.getSuppressed) (map #(.getMessage %)) (some #(str/includes? % "HttpInput idle timeout")))
-                               [:client-error "Timeout receiving bytes from client" http-408-request-timeout error-class]
-                               [:instance-error (utils/message :backend-request-timed-out) http-504-gateway-timeout error-class])
+                               [:client-error "Timeout receiving bytes from client" http-408-request-timeout error-image-408-request-timeout error-class]
+                               [:instance-error (utils/message :backend-request-timed-out) http-504-gateway-timeout error-image-504-gateway-timeout error-class])
                              (instance? UpgradeException error)
                              (let [response-status-code (.getResponseStatusCode error)
-                                   status-code (if (pos? response-status-code) response-status-code http-400-bad-request)]
-                               [:client-error "Failed to upgrade to websocket connection" status-code error-class])
+                                   status-code (if (pos? response-status-code) response-status-code http-400-bad-request)
+                                   error-image (when (= http-400-bad-request status-code) error-image-400-bad-request)]
+                               [:client-error "Failed to upgrade to websocket connection" status-code error-image error-class])
                              (or (instance? ConnectException error)
                                  (and (instance? SocketTimeoutException error) (= (.getMessage error) "Connect Timeout")))
-                             [:instance-error (utils/message :backend-connect-error) http-502-bad-gateway error-class]
+                             [:instance-error (utils/message :backend-connect-error) http-502-bad-gateway error-image-502-connection-failed error-class]
                              :else
-                             [:instance-error (utils/message :backend-request-failed) http-502-bad-gateway error-class])
+                             [:instance-error (utils/message :backend-request-failed) http-502-bad-gateway error-image-502-connection-failed error-class])
         error-cause (first classification)]
     (log/info error-class error-message "identified as" error-cause "for" label)
     classification))
@@ -311,11 +317,12 @@
 (defn- handle-response-error
   "Handles error responses from the backend."
   [error reservation-status-promise service-id request]
-  (let [[error-cause message status error-class] (classify-error "handle-response-error" error)
+  (let [[error-cause message status error-image error-class] (classify-error "handle-response-error" error)
         metrics-map (metrics/retrieve-local-stats-for-service service-id)
         error-map (assoc metrics-map
                     :error-class error-class
-                    :status status)]
+                    :status status
+                    :waiter/error-image error-image)]
     (deliver reservation-status-promise error-cause)
     (utils/exception->response (ex-info message error-map error) request)))
 
@@ -343,7 +350,8 @@
             (let [description-map {:bytes-pending bytes-read
                                    :error-class error-class-stream-timeout
                                    :status http-503-service-unavailable
-                                   :streaming-timeout-ms streaming-timeout-ms}]
+                                   :streaming-timeout-ms streaming-timeout-ms
+                                   :waiter/error-image error-image-503-service-overloaded}]
               (log/error "unable to stream request bytes" description-map)
               (error-handler-fn (ex-info "unable to stream request bytes" description-map))))))
       bytes-read)))
@@ -939,7 +947,10 @@
                            (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
         (log/info "service has been suspended" response-map)
         (meters/mark! (metrics/service-meter service-id "response-rate" "error" "suspended"))
-        (-> {:details response-map, :message "Service has been suspended", :status http-503-service-unavailable}
+        (-> {:details response-map
+             :message "Service has been suspended"
+             :status http-503-service-unavailable
+             :waiter/error-image error-image-503-service-suspended}
           (utils/data->error-response request)))
       (handler request))))
 
@@ -960,7 +971,8 @@
           (meters/mark! (metrics/waiter-meter "maintenance" "response-rate"))
           (on-maintenance-mode-error {:details response-map
                                       :message (get maintenance "message")
-                                      :status http-503-service-unavailable}
+                                      :status http-503-service-unavailable
+                                      :waiter/error-image error-image-503-maintenance}
                                      request))
         (handler request)))))
 
@@ -996,7 +1008,10 @@
                             :service-id service-id}]
           (log/info "max queue length exceeded" response-map)
           (meters/mark! (metrics/service-meter service-id "response-rate" "error" "queue-length"))
-          (-> {:details response-map, :message "Max queue length exceeded", :status http-503-service-unavailable}
+          (-> {:details response-map
+               :message "Max queue length exceeded"
+               :status http-503-service-unavailable
+               :waiter/error-image error-image-503-service-overloaded}
             (utils/data->error-response request)))
         (handler request)))))
 
