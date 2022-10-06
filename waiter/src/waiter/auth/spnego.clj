@@ -155,7 +155,8 @@
               (async/>!! response-chan
                          {:error (ex-info "Error during Kerberos authentication"
                                           {:details (.getMessage ex)
-                                           :status http-403-forbidden}
+                                           :status http-403-forbidden
+                                           :waiter/token (utils/request->discovered-token request)}
                                           ex)}))
             (catch Throwable th
               (log/error th "error while performing kerberos auth")

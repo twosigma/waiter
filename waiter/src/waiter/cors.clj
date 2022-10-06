@@ -59,10 +59,12 @@
       (do
         (counters/inc! (metrics/waiter-counter "requests" "cors-preflight"))
         (let [{:keys [headers request-method]} request
-              {:strs [origin]} headers]
+              {:strs [origin]} headers
+              waiter-token (utils/request->discovered-token request)]
           (when (str/blank? origin)
             (throw (ex-info "No origin provided" {:error-class error-class-cors-preflight-forbidden
-                                                  :status http-403-forbidden})))
+                                                  :status http-403-forbidden
+                                                  :waiter/token waiter-token})))
           (let [{:keys [allowed? allowed-methods summary]}
                 (if (waiter-request? request)
                   {:allowed? true :summary {:type "waiter-request"}}
@@ -74,10 +76,11 @@
               (log/info "cors preflight request not allowed" summary)
               (throw (ex-info "Cross-origin request not allowed" {:cors-checks summary
                                                                   :error-class error-class-cors-preflight-forbidden
+                                                                  :log-level :warn
                                                                   :origin origin
                                                                   :request-method request-method
                                                                   :status http-403-forbidden
-                                                                  :log-level :warn})))
+                                                                  :waiter/token waiter-token})))
             (log/info "cors preflight request allowed" summary)
             (let [{:strs [access-control-request-headers]} headers]
               (utils/attach-waiter-source
@@ -114,7 +117,8 @@
             {:strs [origin]} headers
             {:keys [allowed? summary]} (if origin
                                          (request-check cors-validator request)
-                                         {:allowed? false :summary {:wrap-cors-request [:origin-absent]}})]
+                                         {:allowed? false :summary {:wrap-cors-request [:origin-absent]}})
+            waiter-token (utils/request->discovered-token request)]
         (if (or (true? skip-cors-check?) (not origin))
           (handler request)
           (do
@@ -123,10 +127,11 @@
               (throw (ex-info "Cross-origin request not allowed"
                               {:cors-checks summary
                                :error-class error-class-cors-request-forbidden
+                               :log-level :warn
                                :origin origin
                                :request-method request-method
                                :status http-403-forbidden
-                               :log-level :warn})))
+                               :waiter/token waiter-token})))
             (log/info "cors request allowed" summary)
             (-> (handler request)
               (ru/update-response #(bless-cors-response % request waiter-request? exposed-headers-str)))))))))

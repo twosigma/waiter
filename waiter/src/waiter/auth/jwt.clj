@@ -276,56 +276,66 @@
   (if (str/blank? iss)
     (throw (ex-info (str "Issuer not provided in claims")
                     {:log-level :info
-                     :status http-401-unauthorized}))
+                     :status http-401-unauthorized
+                     :waiter/token aud}))
     (when-not (some #(validate-issuer % iss) issuer-constraints)
       (throw (ex-info (str "Issuer does not match provided constraints")
                       {:issuer iss
                        :log-level :info
-                       :status http-401-unauthorized}))))
+                       :status http-401-unauthorized
+                       :waiter/token aud}))))
   ;; Check the `:aud` claim.
   (when (and aud (not= aud (:aud claims)))
     (throw (ex-info (str "Audience does not match " aud)
                     {:log-level :info
-                     :status http-401-unauthorized})))
+                     :status http-401-unauthorized
+                     :waiter/token aud})))
   ;; Check the `:exp` claim.
   (when (nil? exp)
     (throw (ex-info "No expiry provided in the token payload"
                     {:log-level :info
-                     :status http-401-unauthorized})))
+                     :status http-401-unauthorized
+                     :waiter/token aud})))
   (let [now-epoch (tc/to-epoch (t/now))
         max-epoch (+ now-epoch max-expiry-duration-ms)
         claims-exp (:exp claims)]
     (when (and claims-exp (<= claims-exp now-epoch))
       (throw (ex-info (format "Token is expired (%s)" claims-exp)
                       {:log-level :info
-                       :status http-401-unauthorized})))
+                       :status http-401-unauthorized
+                       :waiter/token aud})))
     (when (and claims-exp (> claims-exp max-epoch))
       (throw (ex-info (format "Token expiry is too far into the future (%s)" claims-exp)
                       {:log-level :info
-                       :status http-401-unauthorized}))))
+                       :status http-401-unauthorized
+                       :waiter/token aud}))))
   ;; Check the `:sub` claim.
   (when (str/blank? sub)
     (throw (ex-info "No subject provided in the token payload"
                     {:log-level :info
-                     :status http-401-unauthorized})))
+                     :status http-401-unauthorized
+                     :waiter/token aud})))
   ;; check the subject
   (when-not (= subject-key :sub)
     (when (str/blank? (subject-key claims))
       (throw (ex-info (str "No " (name subject-key) " provided in the token payload")
                       {:log-level :info
-                       :status http-401-unauthorized}))))
+                       :status http-401-unauthorized
+                       :waiter/token aud}))))
   (let [subject (subject-key claims)]
     (when-not (re-find subject-regex subject)
       (throw (ex-info "Provided subject in the token payload does not satisfy the validation regex"
                       {:log-level :info
                        :status http-401-unauthorized
                        :subject subject
-                       :subject-regex subject-regex}))))
+                       :subject-regex subject-regex
+                       :waiter/token aud}))))
   (when (and (not accept-scope?) (some? scope))
     (throw (ex-info "Token payload includes a scope"
                     {:log-level :info
                      :scope scope
-                     :status http-403-forbidden})))
+                     :status http-403-forbidden
+                     :waiter/token aud})))
   claims)
 
 (defrecord JwtValidator [issuer-constraints max-expiry-duration-ms subject-key subject-regex
@@ -370,17 +380,20 @@
     (throw (ex-info "JWT authentication can only be used with host header"
                     {:log-level :info
                      :message "Host header is missing"
-                     :status http-403-forbidden})))
+                     :status http-403-forbidden
+                     :waiter/token realm})))
   (when (not= :https request-scheme)
     (throw (ex-info "JWT authentication can only be used with HTTPS connections"
                     {:log-level :info
                      :message "Must use HTTPS connection"
-                     :status http-403-forbidden})))
+                     :status http-403-forbidden
+                     :waiter/token realm})))
   (when (str/blank? access-token)
     (throw (ex-info "Must provide Bearer token in Authorization header"
                     {:log-level :info
                      :message "Access token is empty"
-                     :status http-401-unauthorized})))
+                     :status http-401-unauthorized
+                     :waiter/token realm})))
   (let [[jwt-header jwt-payload jwt-signature] (str/split access-token #"\." 3)]
     (when (or (str/blank? jwt-header)
               (str/blank? jwt-payload)
@@ -388,36 +401,42 @@
       (throw (ex-info "JWT access token is malformed"
                       {:log-level :info
                        :message "JWT access token is malformed"
-                       :status http-401-unauthorized})))
+                       :status http-401-unauthorized
+                       :waiter/token realm})))
     (let [{:keys [alg kid typ] :as decoded-header} (jwe/decode-header access-token)]
       (log/info "access token header:" decoded-header)
       (when (empty? decoded-header)
         (throw (ex-info "JWT authentication must include header part"
                         {:log-level :info
                          :message "JWT header is missing"
-                         :status http-403-forbidden})))
+                         :status http-403-forbidden
+                         :waiter/token realm})))
       (when-not (contains? supported-algorithms alg)
         (throw (ex-info (str "Unsupported algorithm " alg " in token header, supported algorithms: " supported-algorithms)
                         {:log-level :info
                          :message "JWT header contains unsupported algorithm"
-                         :status http-401-unauthorized})))
+                         :status http-401-unauthorized
+                         :waiter/token realm})))
       (when (str/blank? kid)
         (throw (ex-info "JWT header is missing key ID"
                         {:log-level :info
                          :message "JWT header is missing key ID"
-                         :status http-401-unauthorized})))
+                         :status http-401-unauthorized
+                         :waiter/token realm})))
       (when (not= typ token-type)
         (throw (ex-info (str "Unsupported type " typ)
                         {:log-level :info
                          :message "JWT header contains unsupported type"
-                         :status http-401-unauthorized})))
+                         :status http-401-unauthorized
+                         :waiter/token realm})))
       (let [public-key (get-in key-id->jwk [kid ::public-key])]
         (when (nil? public-key)
           (throw (ex-info (str "No matching JWKS key found for key " kid)
                           {:key-id kid
                            :log-level :info
                            :message "No matching JWKS key found"
-                           :status http-401-unauthorized})))
+                           :status http-401-unauthorized
+                           :waiter/token realm})))
         (let [options {:alg alg
                        :skip-validation true}
               claims (try
