@@ -48,33 +48,91 @@
           request-id "request-1"
           out-chan (async/chan 10)
           ws-request {:out out-chan, :request-id request-id}
-          in-router-metrics-state {:ws-requests-key {router-id ws-request, :foo :bar}, :fee :fie}
+          in-router-metrics-state {:deregister-history [] :ws-requests-key {router-id ws-request, :foo :bar}, :fee :fie}
           encrypt identity
           out-router-metrics-state (deregister-router-ws in-router-metrics-state router-ws-key router-id request-id encrypt)]
-      (is (= {:ws-requests-key {:foo :bar}, :fee :fie} out-router-metrics-state))
+      (is (= {:deregister-history [{:request-id request-id :router-id router-id :type (name router-ws-key)}]
+              :ws-requests-key {:foo :bar}
+              :fee :fie}
+             out-router-metrics-state))
       (is (= {:message "deregistering existing websocket request"} (async/<!! out-chan)))
       (is (nil? (async/<!! out-chan)) "Channel is closed.")))
 
-  (testing "deregister-router-ws:different-request-id"
+  (testing "deregister-router-ws:different-request-id:no-retry"
     (let [router-ws-key :ws-requests-key
           router-id "router-1"
           request-id "request-1"
           out-chan (async/chan 10)
           ws-request {:out out-chan, :request-id (str request-id "A")}
-          in-router-metrics-state {:ws-requests-key {router-id ws-request, :foo :bar}, :fee :fie}
+          in-router-metrics-state {:deregister-history [] :ws-requests-key {router-id ws-request, :foo :bar}, :fee :fie}
           encrypt identity
           out-router-metrics-state (deregister-router-ws in-router-metrics-state router-ws-key router-id request-id encrypt)]
+      (is (= (update in-router-metrics-state :deregister-history conj
+                     {:request-id request-id :router-id router-id :type (name router-ws-key)})
+             out-router-metrics-state))
+      (is (async/>!! out-chan {:message "successful-put-to-ensure-channel-is-open"}))
+      (is (= {:message "successful-put-to-ensure-channel-is-open"} (async/<!! out-chan)))))
+
+  (testing "deregister-router-ws:different-request-id:history-overflow"
+    (let [router-ws-key :ws-requests-key
+          router-id "router-1"
+          request-id "request-1"
+          out-chan (async/chan 10)
+          ws-request {:out out-chan, :request-id (str request-id "A")}
+          deregister-history (map (fn [i] {:request-id (str request-id "." i) :router-id router-id :type (name router-ws-key)})
+                                  (range max-deregister-history-length))
+          in-router-metrics-state {:deregister-history (vec deregister-history) :ws-requests-key {router-id ws-request, :foo :bar}, :fee :fie}
+          encrypt identity
+          out-router-metrics-state (deregister-router-ws in-router-metrics-state router-ws-key router-id request-id encrypt)]
+      (is (= (-> in-router-metrics-state
+                 (update :deregister-history conj {:request-id request-id :router-id router-id :type (name router-ws-key)})
+                 (update :deregister-history #(drop 1 %)))
+             out-router-metrics-state))
+      (is (async/>!! out-chan {:message "successful-put-to-ensure-channel-is-open"}))
+      (is (= {:message "successful-put-to-ensure-channel-is-open"} (async/<!! out-chan)))))
+
+  (testing "deregister-router-ws:different-request-id:history-contains"
+    (let [router-ws-key :ws-requests-key
+          router-id "router-1"
+          request-id-prefix "request-1"
+          out-chan (async/chan 10)
+          ws-request {:out out-chan, :request-id (str request-id-prefix "A")}
+          deregister-history (map (fn [i] {:request-id (str request-id-prefix "." i) :router-id router-id :type (name router-ws-key)})
+                                  (range max-deregister-history-length))
+          in-router-metrics-state {:deregister-history (vec deregister-history) :ws-requests-key {router-id ws-request, :foo :bar}, :fee :fie}
+          encrypt identity
+          out-router-metrics-state (deregister-router-ws in-router-metrics-state router-ws-key router-id (str request-id-prefix ".1") encrypt)]
       (is (= in-router-metrics-state out-router-metrics-state))
       (is (async/>!! out-chan {:message "successful-put-to-ensure-channel-is-open"}))
       (is (= {:message "successful-put-to-ensure-channel-is-open"} (async/<!! out-chan))))))
 
 (deftest test-register-router-ws
-  (testing "register-router-ws:matching-request-id"
+  (testing "register-router-ws:matching-request-id-with-empty-history"
     (let [router-ws-key :ws-requests-key
           router-id "router-1"
           ctrl-chan (async/chan)
-          ws-request {:ctrl ctrl-chan, :out :baz, :request-id "request-1"}
-          initial-state {:ws-requests-key {:foo :bar} :fee :fie}
+          ws-request {:ctrl ctrl-chan :out :baz :request-id "request-1"}
+          initial-state {:deregister-history []
+                         :ws-requests-key {:foo :bar}
+                         :fee :fie}
+          in-router-metrics-state initial-state
+          router-metrics-agent (agent in-router-metrics-state)
+          encrypt identity
+          out-router-metrics-state (register-router-ws in-router-metrics-state router-ws-key router-id ws-request encrypt router-metrics-agent)]
+      (is (= (assoc-in initial-state [:ws-requests-key router-id] ws-request) out-router-metrics-state))
+      (async/close! ctrl-chan)))
+
+  (testing "register-router-ws:matching-request-id-with-nonempty-history"
+    (let [router-ws-key :ws-requests-key
+          router-id "router-1"
+          ctrl-chan (async/chan)
+          request-id "request-1"
+          ws-request {:ctrl ctrl-chan :out :baz :request-id request-id}
+          initial-state {:deregister-history [{:request-id (str request-id ".0") :router-id router-id :type (name router-ws-key)}
+                                              {:request-id (str request-id ".1") :router-id router-id :type (name router-ws-key)}
+                                              {:request-id (str request-id ".2") :router-id router-id :type (name router-ws-key)}]
+                         :ws-requests-key {:foo :bar}
+                         :fee :fie}
           in-router-metrics-state initial-state
           router-metrics-agent (agent in-router-metrics-state)
           encrypt identity
@@ -86,29 +144,52 @@
     (let [router-ws-key :ws-requests-key
           router-id "router-1"
           ws-request {:out :baz}
-          initial-state {:ws-requests-key {:foo :bar} :fee :fie}
+          initial-state {:deregister-history []
+                         :ws-requests-key {:foo :bar}
+                         :fee :fie}
           in-router-metrics-state initial-state
           router-metrics-agent (agent in-router-metrics-state)
           encrypt identity
           out-router-metrics-state (register-router-ws in-router-metrics-state router-ws-key router-id ws-request encrypt router-metrics-agent)]
-      (is (= initial-state, out-router-metrics-state)))))
+      (is (= initial-state out-router-metrics-state))))
+
+  (testing "register-router-ws:previously-deregistered-request-id"
+    (let [router-ws-key :ws-requests-key
+          router-id "router-1"
+          request-id-prefix "request-1"
+          ctrl-chan (async/chan)
+          ws-request {:ctrl ctrl-chan :out :baz :request-id (str request-id-prefix ".2")}
+          initial-state {:deregister-history [{:request-id (str request-id-prefix ".0") :router-id router-id :type (name router-ws-key)}
+                                              {:request-id (str request-id-prefix ".1") :router-id router-id :type (name router-ws-key)}
+                                              {:request-id (str request-id-prefix ".2") :router-id router-id :type (name router-ws-key)}]
+                         :ws-requests-key {:foo :bar} :fee :fie}
+          in-router-metrics-state initial-state
+          router-metrics-agent (agent in-router-metrics-state)
+          encrypt identity
+          out-router-metrics-state (register-router-ws in-router-metrics-state router-ws-key router-id ws-request encrypt router-metrics-agent)]
+      (is (= initial-state out-router-metrics-state))
+      (async/close! ctrl-chan))))
 
 (deftest test-register-router-ws-with-ctrl-chan
   (testing "register-router-ws:deregistering-on-ctrl-chan"
     (let [router-ws-key :ws-requests-key
           router-id "router-1"
-          ws-request {:ctrl (async/chan 1), :in (async/chan 1), :out (async/chan 1), :request-id "request-1"}
-          in-router-metrics-state {:ws-requests-key {:foo :bar} :fee :fie}
+          request-id "request-1"
+          ws-request {:ctrl (async/chan 1) :in (async/chan 1) :out (async/chan 1) :request-id request-id}
+          in-router-metrics-state {:deregister-history [] :ws-requests-key {:foo :bar} :fee :fie}
           router-metrics-agent (agent in-router-metrics-state)
 
           encrypt identity]
       (send router-metrics-agent register-router-ws router-ws-key router-id ws-request encrypt router-metrics-agent)
       (let [out-router-metrics-state (retrieve-agent-state router-metrics-agent)]
-        (is (= {:ws-requests-key {:foo :bar, router-id ws-request}, :fee :fie} out-router-metrics-state)))
+        (is (= {:deregister-history [] :ws-requests-key {:foo :bar router-id ws-request} :fee :fie} out-router-metrics-state)))
       (async/>!! (:ctrl ws-request) :close)
       (async/<!! (:out ws-request))
       (let [out-router-metrics-state (retrieve-agent-state router-metrics-agent)]
-        (is (= {:ws-requests-key {:foo :bar}, :fee :fie} out-router-metrics-state))))))
+        (is (= {:deregister-history [{:request-id request-id :router-id router-id :type (name router-ws-key)}] 
+                :ws-requests-key {:foo :bar}
+                :fee :fie} 
+               out-router-metrics-state))))))
 
 (deftest test-update-router-metrics
   (testing "update-router-metrics:new-router-metrics"
@@ -464,7 +545,8 @@
 
 (deftest test-new-router-metrics-agent
   (let [metrics-agent (new-router-metrics-agent "router-0" {:router-id "router-1", :metrics {:routers {"r1" {:a :b}}}})]
-    (is (= {:external-metrics {}
+    (is (= {:deregister-history []
+            :external-metrics {}
             :last-update-times {}
             :metrics {:routers {"r1" {:a :b}}}
             :router-id "router-0"
