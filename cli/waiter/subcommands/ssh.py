@@ -7,7 +7,7 @@ from waiter import plugins, terminal
 from waiter.display import get_user_selection, tabulate_service_instances, tabulate_token_services
 from waiter.querying import get_service_id_from_instance_id, get_target_cluster_from_token, print_no_data, \
     print_no_services, query_service, query_token, get_services_on_cluster, print_no_instances
-from waiter.util import guard_no_cluster, is_admin_enabled, print_info
+from waiter.util import guard_no_cluster, print_info
 
 BASH_PATH = '/bin/bash'
 
@@ -177,10 +177,9 @@ def register(add_parser):
                         description='ssh to an instance given the token, service id, or instance id. Working directory '
                                     'will be the log directory.')
     parser.add_argument('token-or-service-id-or-instance-id')
-    if is_admin_enabled():
-        parser.add_argument('--container-name', '-c',
-                            help='specify the container name you want to ssh into. Defaults to "waiter-app". Has no '
-                                 'effect if instance is not k8s pod.')
+    parser.add_argument('--container-name', '-c',
+                        help='specify the container name you want to ssh into. Defaults to "waiter-app". Has no '
+                                'effect if instance is not k8s pod.')
     id_group = parser.add_mutually_exclusive_group(required=False)
     id_group.add_argument('--token', '-t', dest='ssh_destination', action='store_const', const=Destination.TOKEN,
                           default=Destination.TOKEN, help='Default; ssh with token')
