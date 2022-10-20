@@ -42,7 +42,8 @@
             [waiter.util.ring-utils :as ru]
             [waiter.util.utils :as utils])
   (:import (clojure.lang ExceptionInfo)
-           (java.io ByteArrayOutputStream InputStream IOException)
+           (java.io ByteArrayOutputStream IOException InputStream)
+           (java.net ConnectException SocketTimeoutException)
            (java.nio ByteBuffer)
            (java.util.concurrent TimeoutException)
            (javax.servlet ReadListener ServletInputStream ServletOutputStream)
@@ -71,21 +72,26 @@
   "Classifies the error responses from the backend into the following vector:
    - error cause (:client-eagerly-closed, :client-error, :instance-error, :generic-error, or :server-eagerly-closed),
    - associated error message,
-   - the http status code, and
+   - the http status code,
+   - the error image to use, and
    - the canonical name of the exception that 'caused' the error."
-  [error]
+  [label error]
   (let [error-class (-> error .getClass .getCanonicalName)
         error-message (str (.getMessage error))
         classification (cond (instance? ExceptionInfo error)
                              (if-let [ex-info-cause (ex-cause error)]
-                               (let [[error-cause message status error-class] (classify-error ex-info-cause)
+                               (let [[error-cause message status error-image error-class] (classify-error label ex-info-cause)
                                      error-cause (or (-> error ex-data :error-cause) error-cause)]
-                                 [error-cause message status error-class])
+                                 [error-cause message status error-image error-class])
                                (let [error-status (or (-> error ex-data :status) http-500-internal-server-error)
-                                     error-cause (or (-> error ex-data :error-cause) :generic-error)]
-                                 [error-cause error-message error-status error-class]))
+                                     error-cause (or (-> error ex-data :error-cause) :generic-error)
+                                     error-image (or (-> error ex-data :waiter/error-image)
+                                                     (cond
+                                                       (= http-400-bad-request error-status) error-image-400-bad-request
+                                                       (= http-500-internal-server-error error-status) error-image-500-internal-server-error))]
+                                 [error-cause error-message error-status error-image error-class]))
                              (instance? IllegalStateException error)
-                             [:generic-error error-message http-400-bad-request error-class]
+                             [:generic-error error-message http-400-bad-request error-image-400-bad-request error-class]
                              ;; internal_error due to reset stream for http/1 requests means client send bad data to server
                              ;; TODO shams verify http/1 request
                              (and (instance? IOException error)
@@ -93,37 +99,41 @@
                                   (when-let [^StackTraceElement stack-element (some-> error (.getStackTrace) (seq) (first))]
                                     (and (str/ends-with? (.getClassName stack-element) "HttpReceiverOverHTTP2")
                                          (= (.getMethodName stack-element) "onReset"))))
-                             [:client-error "Client send invalid data to HTTP/2 backend" http-400-bad-request error-class]
+                             [:client-error "Client send invalid data to HTTP/2 backend" http-400-bad-request error-image-400-bad-request error-class]
                              ;; cancel_stream_error is used to indicate that the stream is no longer needed
                              (and (instance? IOException error) (= "cancel_stream_error" error-message))
-                             [:client-error "Client action means stream is no longer needed" http-400-bad-request error-class]
+                             [:client-error "Client action means stream is no longer needed" http-400-bad-request error-image-400-bad-request error-class]
                              ;; no_error is used to indicate that the stream is no longer needed
                              ;; HTTP2 spec: The associated condition is not a result of an error...indicate graceful shutdown of a connection.
                              (and (instance? IOException error) (= "no_error" error-message))
-                             [:server-eagerly-closed "Connection eagerly closed by server" http-400-bad-request error-class]
+                             [:server-eagerly-closed "Connection eagerly closed by server" http-400-bad-request error-image-400-bad-request error-class]
                              ;; connection has already been closed by the client
                              (and (instance? EofException error) (= "reset" error-message))
-                             [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request error-class]
+                             [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request error-image-400-bad-request error-class]
                              (instance? EofException error)
-                             [:client-error "Connection unexpectedly closed while streaming request" http-400-bad-request error-class]
+                             [:client-error "Connection unexpectedly closed while streaming request" http-400-bad-request error-image-400-bad-request error-class]
                              (instance? TimeoutException error)
                              (if (some->> error (.getSuppressed) (map #(.getMessage %)) (some #(str/includes? % "HttpInput idle timeout")))
-                               [:client-error "Timeout receiving bytes from client" http-408-request-timeout error-class]
-                               [:instance-error (utils/message :backend-request-timed-out) http-504-gateway-timeout error-class])
+                               [:client-error "Timeout receiving bytes from client" http-408-request-timeout error-image-408-request-timeout error-class]
+                               [:instance-error (utils/message :backend-request-timed-out) http-504-gateway-timeout error-image-504-gateway-timeout error-class])
                              (instance? UpgradeException error)
                              (let [response-status-code (.getResponseStatusCode error)
-                                   status-code (if (pos? response-status-code) response-status-code http-400-bad-request)]
-                               [:client-error "Failed to upgrade to websocket connection" status-code error-class])
+                                   status-code (if (pos? response-status-code) response-status-code http-400-bad-request)
+                                   error-image (when (= http-400-bad-request status-code) error-image-400-bad-request)]
+                               [:client-error "Failed to upgrade to websocket connection" status-code error-image error-class])
+                             (or (instance? ConnectException error)
+                                 (and (instance? SocketTimeoutException error) (= (.getMessage error) "Connect Timeout")))
+                             [:instance-error (utils/message :backend-connect-error) http-502-bad-gateway error-image-502-connection-failed error-class]
                              :else
-                             [:instance-error (utils/message :backend-request-failed) http-502-bad-gateway error-class])
+                             [:instance-error (utils/message :backend-request-failed) http-502-bad-gateway error-image-502-connection-failed error-class])
         error-cause (first classification)]
-    (log/info error-class error-message "identified as" error-cause)
+    (log/info error-class error-message "identified as" error-cause "for" label)
     classification))
 
 (defn- determine-client-error
   "Classifies the error into one of :client-eagerly-closed or :client-error"
   [error]
-  (let [[error-cause] (classify-error error)]
+  (let [[error-cause] (classify-error "determine-client-error" error)]
     (or (get #{:client-eagerly-closed :client-error} error-cause)
         :client-error)))
 
@@ -194,38 +204,40 @@
 (defn- lookup-configured-timeout
   "Parses the header value to an integer and return it if it is inside the allowed maximum value.
    Else it returns the old value."
-  ([old-value header-value display-name]
-   (lookup-configured-timeout old-value header-value display-name nil))
-  ([old-value header-value display-name allowed-max-value]
-   (let [parsed-value (when header-value
-                        (try
-                          (log/info "request wants to configure" display-name "to" header-value)
-                          (Integer/parseInt (str header-value))
-                          (catch Exception _
-                            (log/warn "cannot convert header for" display-name "to an int:" header-value)
-                            nil)))]
-     (if (and parsed-value (pos? parsed-value))
-       (if (and (integer? allowed-max-value)
-                (> parsed-value allowed-max-value))
-         (do
-           (log/warn "limiting" display-name "to" allowed-max-value)
-           allowed-max-value)
-         parsed-value)
-       old-value))))
+  [old-value header-value default-value display-name allowed-max-value]
+  (let [parsed-value (or (when header-value
+                           (try
+                             (log/info "request wants to configure" display-name "to" header-value)
+                             (Integer/parseInt (str header-value))
+                             (catch Exception _
+                               (log/warn "cannot convert header for" display-name "to an int:" header-value)
+                               nil)))
+                         default-value)]
+    (if (and parsed-value (pos? parsed-value))
+      (if (and (integer? allowed-max-value)
+               (> parsed-value allowed-max-value))
+        (do
+          (log/warn "limiting" display-name "to" allowed-max-value)
+          allowed-max-value)
+        parsed-value)
+      old-value)))
 
 (defn prepare-request-properties
-  [{:keys [async-request-max-timeout-ms] :as instance-request-properties} waiter-headers]
+  [{:keys [async-request-max-timeout-ms] :as instance-request-properties}
+   {:strs [x-waiter-async-check-interval x-waiter-async-request-timeout x-waiter-queue-timeout x-waiter-streaming-timeout
+           x-waiter-timeout]}
+   {:strs [queue-timeout-ms socket-timeout-ms streaming-timeout-ms]}]
   (-> instance-request-properties
-    (update :async-check-interval-ms lookup-configured-timeout
-            (headers/get-waiter-header waiter-headers "async-check-interval") "async request check interval")
-    (update :async-request-timeout-ms lookup-configured-timeout
-            (headers/get-waiter-header waiter-headers "async-request-timeout") "async request timeout" async-request-max-timeout-ms)
-    (update :initial-socket-timeout-ms lookup-configured-timeout
-            (headers/get-waiter-header waiter-headers "timeout") "socket timeout")
-    (update :queue-timeout-ms lookup-configured-timeout
-            (headers/get-waiter-header waiter-headers "queue-timeout") "instance timeout")
-    (update :streaming-timeout-ms lookup-configured-timeout
-            (headers/get-waiter-header waiter-headers "streaming-timeout") "streaming timeout")))
+      (update :async-check-interval-ms lookup-configured-timeout
+              x-waiter-async-check-interval nil "async request check interval" nil)
+      (update :async-request-timeout-ms lookup-configured-timeout
+              x-waiter-async-request-timeout nil "async request timeout" async-request-max-timeout-ms)
+      (update :initial-socket-timeout-ms lookup-configured-timeout
+              x-waiter-timeout socket-timeout-ms "socket timeout" du/one-hour-in-millis)
+      (update :queue-timeout-ms lookup-configured-timeout
+              x-waiter-queue-timeout queue-timeout-ms "instance timeout" du/one-hour-in-millis)
+      (update :streaming-timeout-ms lookup-configured-timeout
+              x-waiter-streaming-timeout streaming-timeout-ms "streaming timeout" du/one-hour-in-millis)))
 
 (defn timeout-value->millis
   "Converts a TimeoutValue quantity string with an associated timeout unit to a numeric value.
@@ -255,8 +267,8 @@
 
 (defn prepare-grpc-compliant-request-properties
   "Processes request headers and converts them to instance request properties."
-  [instance-request-properties backend-proto passthrough-headers waiter-headers]
-  (cond-> (prepare-request-properties instance-request-properties waiter-headers)
+  [instance-request-properties backend-proto passthrough-headers waiter-headers token-metadata]
+  (cond-> (prepare-request-properties instance-request-properties waiter-headers token-metadata)
     (let [proto-version (hu/backend-protocol->http-version backend-proto)]
       (and (hu/grpc? passthrough-headers proto-version)
            (contains? passthrough-headers "grpc-timeout")
@@ -305,11 +317,12 @@
 (defn- handle-response-error
   "Handles error responses from the backend."
   [error reservation-status-promise service-id request]
-  (let [[error-cause message status error-class] (classify-error error)
+  (let [[error-cause message status error-image error-class] (classify-error "handle-response-error" error)
         metrics-map (metrics/retrieve-local-stats-for-service service-id)
         error-map (assoc metrics-map
                     :error-class error-class
-                    :status status)]
+                    :status status
+                    :waiter/error-image error-image)]
     (deliver reservation-status-promise error-cause)
     (utils/exception->response (ex-info message error-map error) request)))
 
@@ -337,7 +350,8 @@
             (let [description-map {:bytes-pending bytes-read
                                    :error-class error-class-stream-timeout
                                    :status http-503-service-unavailable
-                                   :streaming-timeout-ms streaming-timeout-ms}]
+                                   :streaming-timeout-ms streaming-timeout-ms
+                                   :waiter/error-image error-image-503-service-overloaded}]
               (log/error "unable to stream request bytes" description-map)
               (error-handler-fn (ex-info "unable to stream request bytes" description-map))))))
       bytes-read)))
@@ -389,7 +403,7 @@
                                              (counters/dec! request-body-streaming-counter)
                                              (report-request-size-metrics 0 true))
                                            (let [[error-cause] (when throwable
-                                                                 (classify-error throwable))]
+                                                                 (classify-error "complete-request-streaming" throwable))]
                                              (if (and throwable (not (eagerly-closed? error-cause)))
                                                (let [identifier-map {:identifier complete-trigger-id}
                                                      ;; the callback is necessary as there is a data race between aborting the
@@ -623,7 +637,7 @@
           (catch Exception e
             (log/info e "exception occurred while streaming response for" service-id)
             (meters/mark! stream-exception-meter)
-            (let [[error-cause] (classify-error e)]
+            (let [[error-cause] (classify-error "stream-http-response" e)]
               (deliver reservation-status-promise error-cause)
               (when-not (eagerly-closed? error-cause)
                 (log/info "sending poison pill to response channel")
@@ -688,11 +702,13 @@
   "Adds logging for tracking response trailers for requests.
    When only headers are provided jetty terminates the request with an empty data frame,
    we work around that limitation by sending trailers that carry the same grpc error message."
-  [{:keys [headers trailers] :as response}]
+  [{:keys [headers trailers] :as response} service-id]
   (if trailers
     (let [correlation-id (cid/get-correlation-id)
           trailers-copy-ch (async/chan 1)
           {:strs [grpc-status] :as grpc-headers} (select-keys headers ["grpc-message" "grpc-status"])]
+      (when grpc-status
+        (counters/inc! (metrics/service-counter service-id "grpc-response-status" (str grpc-status))))
       (if (hu/grpc-status-success? grpc-status)
         (do
           (async/go
@@ -782,7 +798,7 @@
         (utils/attach-waiter-source :backend)
         (introspect-trailers)
         (handle-grpc-error-response request backend-proto reservation-status-promise)
-        (forward-successful-grpc-status-headers-in-trailers)
+        (forward-successful-grpc-status-headers-in-trailers service-id)
         (assoc :body resp-body)
         (update-in [:headers] (fn update-response-headers [headers]
                                 (utils/filterm #(not= "connection" (str/lower-case (str (key %)))) headers)))))))
@@ -812,7 +828,7 @@
     [scheduler make-request-fn populate-maintainer-chan! start-new-service-fn
      instance-request-properties determine-priority-fn process-backend-response-fn
      request-abort-callback-factory local-usage-agent
-     {:keys [ctrl descriptor request-id request-time] :as request}]
+     {:keys [ctrl descriptor request-id request-time waiter-discovery] :as request}]
     (let [reservation-status-promise (promise)
           control-mult (async/mult ctrl)
           {:keys [uri] :as request} (-> request (dissoc :ctrl) (assoc :ctrl-mult control-mult))
@@ -820,11 +836,7 @@
           confirm-live-connection-factory #(confirm-live-connection-factory
                                              control-mult reservation-status-promise correlation-id %1)
           confirm-live-connection-without-abort (confirm-live-connection-factory nil)
-          waiter-debug-enabled? (utils/request->debug-enabled? request)
-          assoc-debug-header (fn [response header value]
-                               (if waiter-debug-enabled?
-                                 (assoc-in response [:headers header] value)
-                                 response))]
+          waiter-debug-enabled? (utils/request->debug-enabled? request)]
       (async/go
         (if waiter-debug-enabled?
           (log/info "process request to" (get-in request [:headers "host"]) "at path" uri)
@@ -835,7 +847,8 @@
                 {:strs [backend-proto metric-group]} service-description]
             (send local-usage-agent metrics/update-last-request-time-usage-metric service-id request-time)
             (try
-              (let [{:keys [waiter-headers passthrough-headers]} descriptor]
+              (let [{:keys [waiter-headers passthrough-headers]} descriptor
+                    {:keys [token-metadata]} waiter-discovery]
                 (meters/mark! (metrics/service-meter service-id "request-rate"))
                 (counters/inc! (metrics/service-counter service-id "request-counts" "total"))
                 (statsd/inc! metric-group "request")
@@ -846,7 +859,8 @@
                 (metrics/with-timer!
                   (metrics/service-timer service-id "process")
                   (fn [nanos] (statsd/histo! metric-group "process" nanos))
-                  (let [instance-request-properties (prepare-grpc-compliant-request-properties instance-request-properties backend-proto passthrough-headers waiter-headers)
+                  (let [instance-request-properties (prepare-grpc-compliant-request-properties
+                                                      instance-request-properties backend-proto passthrough-headers waiter-headers token-metadata)
                         start-new-service-fn (fn start-new-service-in-process [] (start-new-service-fn descriptor))
                         priority (determine-priority-fn waiter-headers)
                         reason-map (cond-> {:reason :serve-request
@@ -873,45 +887,49 @@
                     (when-not instance
                       (throw (ex-info "Suggested instance was nil" reason-map)))
                     (statsd/histo! metric-group "get_instance" instance-elapsed)
-                    (-> (try
-                          (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
-                          (confirm-live-connection-without-abort)
-                          (let [timed-response (metrics/with-timer
-                                                 (metrics/service-timer service-id "backend-response")
-                                                 (async/<!
-                                                   (make-request-fn instance request instance-request-properties
-                                                                    passthrough-headers uri metric-group
-                                                                    request-proto proto-version)))
-                                response-elapsed (:elapsed timed-response)
-                                {:keys [error] :as response} (assoc (:out timed-response)
-                                                               :backend-response-latency-ns response-elapsed)]
-                            (statsd/histo! metric-group "backend_response" response-elapsed)
-                            (-> (if error
-                                  (let [error-response (handle-response-error error reservation-status-promise service-id request)]
-                                    ; must close `request-state-chan` after calling `handle-response-error`
-                                    ; which resolves the `reservation-status-promise`
+                    (cond-> (-> (try
+                                  (log/info "suggested instance:" (:id instance) (:host instance) (:port instance))
+                                  (confirm-live-connection-without-abort)
+                                  (let [timed-response (metrics/with-timer
+                                                         (metrics/service-timer service-id "backend-response")
+                                                         (async/<!
+                                                           (make-request-fn instance request instance-request-properties
+                                                                            passthrough-headers uri metric-group
+                                                                            request-proto proto-version)))
+                                        response-elapsed (:elapsed timed-response)
+                                        {:keys [error] :as response} (assoc (:out timed-response)
+                                                                       :backend-response-latency-ns response-elapsed)]
+                                    (statsd/histo! metric-group "backend_response" response-elapsed)
+                                    (cond-> (if error
+                                              (let [error-response (handle-response-error error reservation-status-promise service-id request)]
+                                                ; must close `request-state-chan` after calling `handle-response-error`
+                                                ; which resolves the `reservation-status-promise`
+                                                (async/close! request-state-chan)
+                                                error-response)
+                                              (try
+                                                (let [request-abort-callback (request-abort-callback-factory response)
+                                                      confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
+                                                  (process-backend-response-fn local-usage-agent instance-request-properties descriptor
+                                                                               instance request reason-map reservation-status-promise
+                                                                               confirm-live-connection-with-abort request-state-chan response))
+                                                (catch Exception e
+                                                  (async/close! request-state-chan)
+                                                  (handle-process-exception e request))))
+                                      waiter-debug-enabled? (hu/merge-response-headers {"x-waiter-backend-response-ns" response-elapsed})))
+                                  (catch Exception e
                                     (async/close! request-state-chan)
-                                    error-response)
-                                  (try
-                                    (let [request-abort-callback (request-abort-callback-factory response)
-                                          confirm-live-connection-with-abort (confirm-live-connection-factory request-abort-callback)]
-                                      (process-backend-response-fn local-usage-agent instance-request-properties descriptor
-                                                                   instance request reason-map reservation-status-promise
-                                                                   confirm-live-connection-with-abort request-state-chan response))
-                                    (catch Exception e
-                                      (async/close! request-state-chan)
-                                      (handle-process-exception e request))))
-                              (assoc-debug-header "x-waiter-backend-response-ns" (str response-elapsed))))
-                          (catch Exception e
-                            (async/close! request-state-chan)
-                            (handle-process-exception e request)))
-                      (update :headers headers/dissoc-hop-by-hop-headers proto-version)
-                      (update :headers auth/remove-auth-set-cookie)
-                      (assoc :get-instance-latency-ns instance-elapsed
-                             :instance instance
-                             :instance-proto request-proto
-                             :protocol proto-version)
-                      (assoc-debug-header "x-waiter-get-available-instance-ns" (str instance-elapsed))))))
+                                    (handle-process-exception e request)))
+                                (update :headers headers/dissoc-hop-by-hop-headers proto-version)
+                                (update :headers auth/remove-auth-set-cookie)
+                                (assoc :get-instance-latency-ns instance-elapsed
+                                       :instance instance
+                                       :instance-proto request-proto
+                                       :protocol proto-version))
+                      waiter-debug-enabled? (hu/merge-response-headers
+                                              {"x-waiter-get-available-instance-ns" instance-elapsed
+                                               "x-waiter-queue-timeout-ms" (get instance-request-properties :queue-timeout-ms)
+                                               "x-waiter-socket-timeout-ms" (get instance-request-properties :initial-socket-timeout-ms)
+                                               "x-waiter-streaming-timeout-ms" (get instance-request-properties :streaming-timeout-ms)})))))
               (catch Exception e ; Handle case where we couldn't get an instance
                 (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
                 (statsd/gauge-delta! metric-group "request_outstanding" -1)
@@ -929,7 +947,10 @@
                            (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
         (log/info "service has been suspended" response-map)
         (meters/mark! (metrics/service-meter service-id "response-rate" "error" "suspended"))
-        (-> {:details response-map, :message "Service has been suspended", :status http-503-service-unavailable}
+        (-> {:details response-map
+             :message "Service has been suspended"
+             :status http-503-service-unavailable
+             :waiter/error-image error-image-503-service-suspended}
           (utils/data->error-response request)))
       (handler request))))
 
@@ -950,7 +971,8 @@
           (meters/mark! (metrics/waiter-meter "maintenance" "response-rate"))
           (on-maintenance-mode-error {:details response-map
                                       :message (get maintenance "message")
-                                      :status http-503-service-unavailable}
+                                      :status http-503-service-unavailable
+                                      :waiter/error-image error-image-503-maintenance}
                                      request))
         (handler request)))))
 
@@ -986,7 +1008,10 @@
                             :service-id service-id}]
           (log/info "max queue length exceeded" response-map)
           (meters/mark! (metrics/service-meter service-id "response-rate" "error" "queue-length"))
-          (-> {:details response-map, :message "Max queue length exceeded", :status http-503-service-unavailable}
+          (-> {:details response-map
+               :message "Max queue length exceeded"
+               :status http-503-service-unavailable
+               :waiter/error-image error-image-503-service-overloaded}
             (utils/data->error-response request)))
         (handler request)))))
 
@@ -1066,34 +1091,54 @@
       (catch Exception ex
         (utils/exception->response ex request)))))
 
+(defn make-ping-request-handler
+  "Generates the health check response after service discovery including maintenance mode.
+   Includes writing the result of the health check ping into the request log."
+  [process-request-handler-fn wrap-descriptor-fn wrap-maintenance-mode-fn user-agent {:keys [health-check-accept-header]}]
+  (-> (fn ping-request-handler-fn [{:keys [descriptor headers] :as request}]
+        (async/go
+          (try
+            (let [{:keys [core-service-description service-description service-id]} descriptor
+                  request (assoc-in request [:headers "user-agent"] user-agent)
+                  idle-timeout-ms (Integer/parseInt (get headers "x-waiter-timeout" "300000"))
+                  ping-response (async/<! (make-health-check-request process-request-handler-fn idle-timeout-ms request health-check-accept-header))]
+              (let [{:strs [health-check-url]} service-description
+                    health-check-protocol (scheduler/service-description->health-check-protocol service-description)
+                    backend-protocol (hu/backend-protocol->http-version health-check-protocol)
+                    backend-scheme (hu/backend-proto->scheme health-check-protocol)
+                    request (assoc request
+                              :client-protocol backend-protocol
+                              :internal-protocol backend-protocol
+                              :request-method :get
+                              :scheme backend-scheme
+                              :uri health-check-url)
+                    auth-params (auth/select-auth-params request)
+                    response (-> (merge auth-params ping-response)
+                                 (assoc :descriptor descriptor
+                                        :latest-service-id service-id
+                                        :request-type "ping"
+                                        :waiter-api-call? false))]
+                (rlog/log-request! request response))
+              (assoc ping-response
+                :core-service-description core-service-description
+                :service-id service-id))
+            (catch Exception ex
+              (-> (utils/exception->response ex request)
+                  (select-keys [:body :headers :status])
+                  (assoc :result :ping-internal-error))))))
+      wrap-descriptor-fn
+      wrap-maintenance-mode-fn))
+
 (defn ping-service
   "Performs a health check on an arbitrary instance of the service specified in the descriptor.
    If the service is not running, an instance will be started.
    The response body contains the following map: {:ping-response ..., :service-state ...}"
-  [user-agent process-request-handler-fn service-state-fn {:keys [health-check-accept-header]} {:keys [descriptor headers] :as request}]
+  [ping-request-handler-fn service-state-fn request]
   (async/go
     (try
-      (let [{:keys [core-service-description service-description service-id]} descriptor
-            request (assoc-in request [:headers "user-agent"] user-agent)
-            idle-timeout-ms (Integer/parseInt (get headers "x-waiter-timeout" "300000"))
-            ping-response (async/<! (make-health-check-request process-request-handler-fn idle-timeout-ms request health-check-accept-header))]
-        (let [{:strs [health-check-url]} service-description
-              health-check-protocol (scheduler/service-description->health-check-protocol service-description)
-              backend-protocol (hu/backend-protocol->http-version health-check-protocol)
-              backend-scheme (hu/backend-proto->scheme health-check-protocol)
-              request (assoc request
-                        :client-protocol backend-protocol
-                        :internal-protocol backend-protocol
-                        :request-method :get
-                        :scheme backend-scheme
-                        :uri health-check-url)
-              auth-params (auth/select-auth-params request)
-              response (-> (merge auth-params ping-response)
-                         (assoc :descriptor descriptor
-                                :latest-service-id service-id
-                                :request-type "ping"
-                                :waiter-api-call? false))]
-          (rlog/log-request! request response))
+      (let [ping-response-ch-or-map (ping-request-handler-fn request)
+            {:keys [core-service-description service-id] :as ping-response} (cond-> ping-response-ch-or-map
+                                                                              (au/chan? ping-response-ch-or-map) (async/<!))]
         (let [request-params (-> request ru/query-params-request :query-params)
               exclude-service-state (utils/param-contains? request-params "exclude" "service-state")
               service-state (if exclude-service-state
@@ -1103,15 +1148,20 @@
               redirect-ping? (ru/redirect-response? ping-response)
               redirect-response (when redirect-ping?
                                   (ssl/ssl-redirect-response request {}))
-              response-instance (:instance ping-response)]
+              response-instance (:instance ping-response)
+              response-result (or (:result ping-response)
+                                  ;; response can be generated outside of the health check call
+                                  (when (utils/waiter-generated-response? ping-response)
+                                    :waiter-response))]
           (merge
             (dissoc ping-response [:body :error-chan :headers :request :result :status :trailers])
             (utils/clj->json-response
-              {:ping-response (-> ping-response
-                                  (select-keys [:body :headers :result :status])
-                                  (assoc :instance {:host (:host response-instance)
-                                                    :id (:id response-instance)
-                                                    :port (:port response-instance)}))
+              {:ping-response (cond-> (-> ping-response
+                                          (select-keys [:body :headers :status])
+                                          (assoc :result response-result))
+                                response-instance (assoc :instance {:host (:host response-instance)
+                                                                    :id (:id response-instance)
+                                                                    :port (:port response-instance)}))
                :service-description core-service-description
                :service-state service-state}
               :headers (if redirect-ping? (:headers redirect-response) {})
@@ -1122,8 +1172,6 @@
 (defn exception->ping-response
   "Renders a ping response when there is an error in determining the descriptor for the request."
   [^Exception ex request]
-  (utils/clj->json-response
-    {:ping-response (-> (utils/exception->response ex request)
-                      (select-keys [:body :headers :status])
-                      (assoc :result :descriptor-error))}
-    :status http-200-ok))
+  (-> (utils/exception->response ex request)
+      (select-keys [:body :headers :status])
+      (assoc :result :descriptor-error)))

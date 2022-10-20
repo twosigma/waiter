@@ -775,7 +775,8 @@
   "Safely kill the Kubernetes pod corresponding to the given Waiter Service Instance.
    Also adjusts the ReplicaSet replica count to prevent a replacement pod from being started.
    Returns nil on success, but throws on failure."
-  [{:keys [api-server-url] :as scheduler} {:keys [service-id] :as instance} service]
+  [{:keys [api-server-url service-id->service-description-fn] {:keys [force-sigterm-secs sigterm-grace-period-secs]} :pod-bypass :as scheduler}
+   {:keys [service-id] :as instance} service]
   ;; SAFE DELETION STRATEGY:
   ;; 1) Delete the target pod with a grace period of 5 minutes
   ;;    Since the target pod is currently in the "Terminating" state,
@@ -794,18 +795,31 @@
   ;; doesn't hurt us significantly. If it takes more than 5 minutes to get from step 1
   ;; to step 3, then the pod was already deleted, and the force-delete is no longer needed.
   ;; The force-delete can fail with a 404 (object not found), but this operation still succeeds.
-  (let [pod-url (instance->pod-url api-server-url instance)]
+  (let [pod-url (instance->pod-url api-server-url instance)
+        desc (service-id->service-description-fn service-id)
+        bypass-enabled? (sd/service-description-bypass-enabled? desc)
+        ;; We have to add both of these durations together because K8s gracePeriodSeconds countdown is done
+        ;; in parallel with the preStop hook and issuing the SIGTERM signal.
+        ;; https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination
+        force-sigterm-secs (utils/parse-int (get-in desc ["env" "WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS"] (str force-sigterm-secs)))
+        sigterm-grace-period-secs (utils/parse-int (get-in desc ["env" "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS"] (str sigterm-grace-period-secs)))
+        total-bypass-grace-period-secs (+ force-sigterm-secs sigterm-grace-period-secs)
+        grace-period-seconds (if bypass-enabled? total-bypass-grace-period-secs 300)]
+    (when bypass-enabled?
+      (log/info "deleting pod for bypass service" {:grace-period-seconds grace-period-seconds}))
     ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
     (api-request pod-url scheduler :request-method :delete
-                 :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds 300}))
+                 :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds grace-period-seconds}))
     ; scale down the replicaset to reflect removal of this instance
     (try
       (scale-service-by-delta scheduler service -1)
       (catch Throwable t
         (log/error t "Error while scaling down ReplicaSet after pod termination")))
-    ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
-    ; (note that the pod's default grace period is different from the 300s period set above)
-    (hard-delete-service-instance scheduler instance)
+    ; don't hard delete the pod if the service is bypass because the default gracePeriodSeconds may be too aggressive
+    (when (not bypass-enabled?)
+      ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
+      ; (note that the pod's default grace period is different from the 300s period set above)
+      (hard-delete-service-instance scheduler instance))
     (comment "Success! Even if the scale-down or force-kill operation failed,
               the pod will be force-killed after the grace period is up.")))
 
@@ -936,6 +950,7 @@
                                 pdb-api-version
                                 pdb-spec-builder-fn
                                 pod-base-port
+                                pod-bypass
                                 pod-sigkill-delay-secs
                                 pod-suffix-length
                                 raven-sidecar
@@ -1339,10 +1354,25 @@
     (when (nil? (str/index-of waiter-config-token ","))
       waiter-config-token)))
 
+(defn add-pre-stop-config-for-bypass-service
+  "Returns a new vector of container configurations that include the desired preStop command and environment variables
+   that will be used by the preStop command to know how long to delay the SIGTERM signal to the container."
+  [container-configs base-env pre-stop-cmd force-sigterm-secs sigterm-grace-period-secs]
+  (mapv #(-> %
+             (assoc-in [:lifecycle :preStop :exec :command] pre-stop-cmd)
+             (assoc :env (get % :env []))
+             (update :env conj {:name "WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS"
+                                :value (get base-env "WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS" (str force-sigterm-secs))})
+             (update :env conj {:name "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS"
+                                :value (get base-env "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS" (str sigterm-grace-period-secs))}))
+        container-configs))
+
 (defn default-replicaset-builder
   "Factory function which creates a Kubernetes ReplicaSet spec for the given Waiter Service."
   [{:keys [cluster-name determine-replicaset-namespace-fn fileserver pod-base-port pod-sigkill-delay-secs
-           replicaset-api-version raven-sidecar service-id->password-fn] :as scheduler}
+           replicaset-api-version raven-sidecar service-id->password-fn]
+    {:keys [force-sigterm-secs pre-stop-cmd sigterm-grace-period-secs]} :pod-bypass
+    :as scheduler}
    service-id
    {:strs [backend-proto cmd cpus grace-period-secs health-check-interval-secs
            health-check-max-consecutive-failures health-check-port-index health-check-proto image
@@ -1433,7 +1463,9 @@
         fileserver-predicate-fn (-> fileserver :predicate-fn)
         fileserver-enabled? (fileserver-predicate-fn scheduler service-id service-description context)
         fileserver-label (if fileserver-enabled? "enabled" "disabled")
-        waiter-config-token (retrieve-unique-service-mapping-token service-description)]
+        waiter-config-token (retrieve-unique-service-mapping-token service-description)
+        ;; Services that are in bypass will need to safely scale down. Configuring 'preStop' will delay the sigterm for each contianer.
+        bypass-enabled? (sd/service-description-bypass-enabled? service-description)]
     (cond->
       {:kind "ReplicaSet"
        :apiVersion replicaset-api-version
@@ -1559,7 +1591,11 @@
 
       ;; Optional raven sidecar container
       has-raven?
-      (attach-raven-sidecar raven-sidecar service-description base-env service-port port0 raven-force-downstream-tls?))))
+      (attach-raven-sidecar raven-sidecar service-description base-env service-port port0 raven-force-downstream-tls?)
+
+      ;; When bypass is enabled, we should attach a preStop command to all containers to delay SIGTERM to be handled for a period of time
+      bypass-enabled?
+      (update-in [:spec :template :spec :containers] add-pre-stop-config-for-bypass-service base-env pre-stop-cmd force-sigterm-secs sigterm-grace-period-secs))))
 
 (defn default-pdb-spec-builder
   "Factory function which creates a Kubernetes PodDisruptionBudget spec for the given ReplicaSet."
@@ -2039,6 +2075,7 @@
     {:keys [default-namespace] :as replicaset-spec-builder} :replicaset-spec-builder
     {service-id->deployment-error-cache-threshold :threshold service-id->deployment-error-cache-ttl-sec :ttl} :service-id->deployment-error-cache
     {k8s-object-key->event-cache-threshold :threshold k8s-object-key->event-cache-ttl-sec :ttl} :k8s-object-key->event-cache
+    {pod-bypass-force-sigterm-secs :force-sigterm-secs pod-bypass-pre-stop-cmd :pre-stop-cmd pod-bypass-sigterm-grace-period-secs :sigterm-grace-period-secs :as pod-bypass} :pod-bypass
     :as context}]
   {:pre [(or (nil? authenticate-health-checks?) (boolean? authenticate-health-checks?))
          (schema/contains-kind-sub-map? authorizer)
@@ -2067,6 +2104,11 @@
          (or (nil? pdb-spec-builder) (symbol? (:factory-fn pdb-spec-builder)))
          (integer? pod-base-port)
          (< 0 pod-base-port 65527) ; max port is 65535, and we need to reserve up to 10 ports
+         (map? pod-bypass)
+         (pos-int? pod-bypass-force-sigterm-secs)
+         (vector? pod-bypass-pre-stop-cmd)
+         (every? string? pod-bypass-pre-stop-cmd)
+         (pos-int? pod-bypass-sigterm-grace-period-secs)
          (integer? pod-sigkill-delay-secs)
          (<= 0 pod-sigkill-delay-secs 300)
          (pos-int? pod-suffix-length)
@@ -2196,6 +2238,7 @@
                             :pdb-api-version pdb-api-version
                             :pdb-spec-builder-fn pdb-spec-builder-fn
                             :pod-base-port pod-base-port
+                            :pod-bypass pod-bypass
                             :pod-sigkill-delay-secs pod-sigkill-delay-secs
                             :pod-suffix-length pod-suffix-length
                             :raven-sidecar raven-sidecar

@@ -109,6 +109,7 @@
                      "eject" :eject-instance-handler-fn
                      "ejected" {["/" :service-id] :ejected-instances-list-handler-fn}
                      "favicon.ico" :favicon-handler-fn
+                     "images" {["/" :image-name] :render-image-handler-fn}
                      "metrics" {"" :metrics-request-handler-fn
                                 "/external" :external-metrics-handler-fn}
                      (subs oidc/oidc-callback-uri 1) :oidc-callback-handler-fn
@@ -243,7 +244,7 @@
         request-cid
         (log/info "request received:"
                   (-> (dissoc request :body :ctrl :in :out :request-time :server-name :server-port :servlet-request
-                              :ssl-client-cert :support-info :trailers-fn)
+                              :ssl-client-cert :support-info :trailers-fn :waiter-images-url)
                     (update :headers headers/truncate-header-values)))
         (let [response (handler request)
               get-request-cid (fn get-request-cid [] request-cid)]
@@ -279,7 +280,7 @@
 
 (defn wrap-request-info
   "Attaches request info to the request."
-  [handler router-id support-info]
+  [handler router-id support-info waiter-images-url]
   (fn wrap-request-info-fn [{:keys [servlet-request] :as request}]
     (let [client-protocol (request->protocol request)
           internal-protocol (some-> servlet-request .getProtocol)]
@@ -289,7 +290,8 @@
                :request-id (str (utils/unique-identifier) "-" (-> request utils/request->scheme name))
                :request-time (t/now)
                :router-id router-id
-               :support-info support-info)
+               :support-info support-info
+               :waiter-images-url waiter-images-url)
         handler
         (ru/update-response
           (fn wrap-request-protocols-into-response [response]
@@ -695,6 +697,9 @@
                               :socket-timeout client-connection-idle-timeout-ms})
    :http-clients (pc/fnk [http-client-properties]
                    (hu/prepare-http-clients http-client-properties))
+   :image-cache (pc/fnk []
+                  (cu/cache-factory {:threshold 100
+                                     :ttl (-> 30 t/minutes t/in-millis)}))
    :interstitial-state-atom (pc/fnk [] (atom {:initialized? false
                                               :service-id->interstitial-promise {}}))
    :jwt-auth-server (pc/fnk [[:settings authenticator-config]]
@@ -842,6 +847,10 @@
                                 waiter-router-ip (.getHostAddress local-router)
                                 hostnames (conj waiter-hostnames waiter-router-hostname waiter-router-ip)]
                             (waiter-request?-factory hostnames)))
+   :waiter-images-url (pc/fnk [[:settings hostname port server-options]]
+                        (or (get server-options :images-url)
+                            (let [hostname (if (sequential? hostname) (first hostname) hostname)]
+                              (str "http://" hostname ":" (primary-port port) "/images"))))
    :websocket-client (pc/fnk [[:settings [:websocket-config ws-max-binary-message-size ws-max-text-message-size]]
                               http-client-properties]
                        ;; do not share HttpClient instance as WebSocketClient modifies HttpClient properties
@@ -1068,13 +1077,16 @@
    :make-basic-auth-fn (pc/fnk []
                          (fn make-basic-auth-fn [uri username password]
                            (BasicAuthentication$BasicResult. (URI. uri) username password)))
-   :make-http-request-fn (pc/fnk [[:settings instance-request-properties]
+   :make-http-request-fn (pc/fnk [[:settings [:token-config token-defaults] instance-request-properties]
                                   [:state http-clients]
                                   make-basic-auth-fn service-id->password-fn]
-                           (let [make-request-fn pr/make-request]
+                           (let [make-request-fn pr/make-request
+                                 prepare-request-properties-fn (fn prepare-request-properties-fn [instance-request-properties waiter-headers]
+                                                                 (pr/prepare-request-properties
+                                                                   instance-request-properties waiter-headers token-defaults))]
                              (handler/async-make-request-helper
                                http-clients instance-request-properties make-basic-auth-fn service-id->password-fn
-                               pr/prepare-request-properties make-request-fn)))
+                               prepare-request-properties-fn make-request-fn)))
    :make-inter-router-requests-async-fn (pc/fnk [[:settings [:instance-request-properties initial-socket-timeout-ms]]
                                                  [:state discovery http-clients passwords router-id]
                                                  make-basic-auth-fn]
@@ -1254,7 +1266,8 @@
                                                                    (str/join "', '" (sort authentication-providers)) "'")
                                                               {:authentication authentication
                                                                :error-class error-class-unsupported-auth
-                                                               :status http-400-bad-request}))))
+                                                               :status http-400-bad-request
+                                                               :waiter/error-image error-image-400-bad-request}))))
                                           (sd/validate service-description-builder service-description {}))))
    :waiter-request?-fn (pc/fnk [[:state waiter-request?-fn*]]
                          waiter-request?-fn*)
@@ -1659,11 +1672,14 @@
                                   process-request-fn wrap-descriptor-for-ping-fn wrap-ignore-disabled-auth-fn wrap-secure-request-fn]
                            (let [{{:keys [query-state-fn]} :maintainer} router-state-maintainer
                                  user-agent (str "waiter-ping/" user-agent-version)
-                                 handler (wrap-descriptor-for-ping-fn
-                                           (fn inner-ping-service-handler [request]
-                                             (let [retrieve-service-status-label-fn #(:service-status-label (service/retrieve-service-status-and-deployment-error % (query-state-fn)))
-                                                   service-state-fn (partial descriptor/extract-service-state router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn)]
-                                               (pr/ping-service user-agent process-request-fn service-state-fn health-check-config request))))]
+                                 ping-request-handler-fn (pr/make-ping-request-handler
+                                                           process-request-fn wrap-descriptor-for-ping-fn pr/wrap-maintenance-mode user-agent health-check-config)
+                                 retrieve-service-status-label-fn #(:service-status-label (service/retrieve-service-status-and-deployment-error % (query-state-fn)))
+                                 service-state-fn (fn extract-service-state-fn [service-id ping-result]
+                                                    (descriptor/extract-service-state
+                                                      router-id retrieve-service-status-label-fn fallback-state-atom make-inter-router-requests-async-fn service-id ping-result))
+                                 handler (fn inner-ping-service-handler [request]
+                                           (pr/ping-service ping-request-handler-fn service-state-fn request))]
                              (-> (fn ping-service-handler [request]
                                    (let [request-params (-> request ru/query-params-request :query-params)
                                          request (cond-> request
@@ -1713,6 +1729,9 @@
                               (wrap-secure-request-fn
                                 (fn profile-list-handler-fn [request]
                                   (handler/display-profiles-handler profile->defaults request))))
+   :render-image-handler-fn (pc/fnk [[:state image-cache]]
+                              (fn render-image-handler-fn [request]
+                                (handler/handle-render-image image-cache request)))
    :router-metrics-handler-fn (pc/fnk [[:daemons router-state-maintainer]
                                        [:routines crypt-helpers]
                                        [:settings [:metrics-config metrics-sync-interval-ms]]
@@ -1746,10 +1765,11 @@
                                    wrap-descriptor-fn wrap-ignore-disabled-auth-fn wrap-secure-request-fn]
                             (-> (fn service-id-handler-fn [request]
                                   (handler/service-id-handler request kv-store store-service-description-fn))
-                              wrap-descriptor-fn
-                              wrap-secure-request-fn
-                              wrap-ignore-disabled-auth-fn
-                              wrap-service-discovery-fn))
+                                wrap-descriptor-fn
+                                wrap-secure-request-fn
+                                wrap-ignore-disabled-auth-fn
+                                pr/wrap-maintenance-mode
+                                wrap-service-discovery-fn))
    :service-list-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
                                      [:routines prepend-waiter-url retrieve-token-based-fallback-fn router-metrics-helpers
                                       service-id->references-fn service-id->service-description-fn service-id->source-tokens-entries-fn

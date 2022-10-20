@@ -662,6 +662,25 @@
           (finally
             (delete-token-and-assert waiter-url token)))))))
 
+(deftest ^:parallel ^:integration-fast test-maintenance-mode-service-id
+  (testing-using-waiter-url
+    (let [token (str "token-" (rand-name))
+          maintenance-message (str token " is under maintenance")
+          token-parameters (assoc (kitchen-params)
+                             :maintenance {:message maintenance-message}
+                             :name (rand-name)
+                             :permitted-user (retrieve-username)
+                             :run-as-user (retrieve-username)
+                             :token token)]
+      (assert-response-status (post-token waiter-url token-parameters) http-200-ok)
+      (try
+        (let [headers {:x-waiter-token token}
+              response (make-request waiter-url "/service-id" :headers headers)]
+          (assert-response-status response http-503-service-unavailable)
+          (is (str/includes? (-> response :body str) maintenance-message)))
+        (finally
+          (delete-token-and-assert waiter-url token))))))
+
 (deftest ^:parallel ^:integration-fast test-last-request-time
   (testing-using-waiter-url
     (let [waiter-settings (waiter-settings waiter-url)

@@ -149,13 +149,14 @@
 
 (defmacro assert-grpc-unauthenticated-status
   "Asserts that the status represents a grpc UNAUTHENTICATED status."
-  [status assertion-message]
+  [status assertion-message expected-auth-message]
   `(let [status# ~status
-         assertion-message# ~assertion-message]
+         assertion-message# ~assertion-message
+         expected-auth-message# ~expected-auth-message]
      (is status# assertion-message#)
      (when status#
        (is (= "UNAUTHENTICATED" (some-> status# .getCode str)))
-       (is (= "Unauthorized" (some-> status# .getDescription))))))
+       (is (= expected-auth-message# (some-> status# .getDescription))))))
 
 (defmacro assert-grpc-server-exit-status
   "Asserts that the status represents a grpc OK status."
@@ -309,8 +310,9 @@
                   rpc-result (.sendPackage grpc-client request-headers id from content sleep-ms deadline-ms)
                   ^CourierReply reply (.result rpc-result)
                   ^Status status (.status rpc-result)
-                  assertion-message (grpc-result->assertion-message correlation-id rpc-result)]
-              (assert-grpc-unauthenticated-status status assertion-message)
+                  assertion-message (grpc-result->assertion-message correlation-id rpc-result)
+                  error-message (-> (waiter-settings waiter-url) :messages :http-401-spnego)]
+              (assert-grpc-unauthenticated-status status assertion-message error-message)
               (is (nil? reply) assertion-message))))
 
         (testing "http/1.1 call to service"
@@ -575,8 +577,9 @@
                                                    status (assoc :status {:code (-> status .getCode str)
                                                                           :description (.getDescription status)}))
                                               (into (sorted-map))
-                                              str)]
-                      (assert-grpc-unauthenticated-status status assertion-message)
+                                              str)
+                          error-message (-> (waiter-settings waiter-url) :messages :http-401-spnego)]
+                      (assert-grpc-unauthenticated-status status assertion-message error-message)
                       (is (zero? (count summaries)) assertion-message)))))
 
               (testing (str "independent mode " max-message-length " messages completion")

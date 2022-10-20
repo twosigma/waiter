@@ -108,3 +108,19 @@
 (def ^:const error-class-suspended "waiter.Suspended")
 (def ^:const error-class-unsupported-auth "waiter.UnsupportedAuth")
 
+;; waiter error images
+(def ^:const error-image-400-bad-request "http-400-bad-request.png")
+(def ^:const error-image-401-unauthorized "http-401-unauthorized.png")
+(def ^:const error-image-403-forbidden "http-403-forbidden.png")
+(def ^:const error-image-408-request-timeout "http-408-request-timeout.png")
+(def ^:const error-image-429-too-many-requests "http-429-too-many-requests.png")
+(def ^:const error-image-500-internal-server-error "http-500-internal-server-error.png")
+(def ^:const error-image-502-connection-failed "http-502-connection-failed.png")
+(def ^:const error-image-503-deployment-error "http-503-deployment-error.png")
+(def ^:const error-image-503-instance-unavailable "http-503-instance-unavailable.png")
+(def ^:const error-image-503-service-suspended "http-503-maintenance.png")
+(def ^:const error-image-503-maintenance "http-503-maintenance.png")
+(def ^:const error-image-503-service-overloaded "http-503-service-overloaded.png")
+(def ^:const error-image-504-gateway-timeout "http-504-gateway-timeout.png")
+
+

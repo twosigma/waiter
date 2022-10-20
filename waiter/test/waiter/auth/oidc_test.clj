@@ -428,7 +428,10 @@
                                              (assoc response :processed-by :oidc-updater))]
     (let [request-handler (fn [request] (assoc request
                                           :processed-by :request-handler
-                                          :waiter/response-source :waiter))]
+                                          :waiter/response-source :waiter))
+          auth-disabled-request-handler (fn [request]
+                                          (-> (request-handler request)
+                                              (assoc :processed-by :oidc-auth-disabled-updater :waiter/auth-disabled? true)))]
 
       (testing "allow oidc authentication combinations"
         (doseq [allow-oidc-auth-api? [false true]]
@@ -531,6 +534,34 @@
                                                    "host" "www.test.com:1234"}
                                          :status http-401-unauthorized
                                          :waiter-api-call? false}))))
+            (let [oidc-auth-handler (wrap-auth-handler oidc-authenticator auth-disabled-request-handler)]
+              (let [cookie-header (str/join ";" (take (inc num-challenge-cookies-allowed-in-request) challenge-cookies))
+                    response (oidc-auth-handler {:headers {"cookie" cookie-header
+                                                           "host" "www.test.com:1234"}
+                                                 :status http-401-unauthorized
+                                                 :waiter-api-call? false})]
+                (is (str/includes? (get response :body)
+                                   (str "Too many OIDC challenge cookies "
+                                        "(allowed: " num-challenge-cookies-allowed-in-request
+                                        ", provided: " (inc num-challenge-cookies-allowed-in-request) ")")))
+                (is (= {:headers {"content-type" "text/plain"}
+                        :processed-by :oidc-auth-disabled-updater
+                        :status http-403-forbidden
+                        :waiter-api-call? false
+                        :waiter/response-source :waiter}
+                       (select-keys response [:headers :processed-by :status :waiter-api-call? :waiter/response-source]))))
+              (let [cookie-header (str/join ";" (take num-challenge-cookies-allowed-in-request challenge-cookies))
+                    response (oidc-auth-handler {:headers {"cookie" cookie-header
+                                                           "host" "www.test.com:1234"}
+                                                 :status http-401-unauthorized
+                                                 :waiter-api-call? false})]
+                (is (= {:headers {"cookie" cookie-header
+                                  "host" "www.test.com:1234"}
+                        :processed-by :oidc-updater
+                        :status http-401-unauthorized
+                        :waiter-api-call? false
+                        :waiter/response-source :waiter}
+                       response))))
             (let [cookie-header (str/join ";" (take (inc num-challenge-cookies-allowed-in-request) challenge-cookies))]
               (is (= {:headers {"cookie" cookie-header
                                 "host" "www.test.com:1234"}

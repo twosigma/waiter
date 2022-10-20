@@ -82,6 +82,9 @@
      :pdb-api-version "policy/v1beta1"
      :pdb-spec-builder-fn waiter.scheduler.kubernetes/default-pdb-spec-builder
      :pod-base-port 8080
+     :pod-bypass {:force-sigterm-secs 120
+                  :pre-stop-cmd ["test" "pre-stop" "cmd" "config"]
+                  :sigterm-grace-period-secs 30}
      :pod-sigkill-delay-secs 3
      :pod-suffix-length default-pod-suffix-length
      :replicaset-api-version "apps/v1"
@@ -148,6 +151,56 @@
        (clojure.pprint/pprint
         (clojure.data/diff expected# actual#)))
      (is (= expected# actual#))))
+
+(deftest test-add-pre-stop-config-for-bypass-service
+  (testing "adds expected default environment variables and prestop command to configs"
+    (let [base-env {}
+          container-configs (vec (repeat 3 {}))
+          pre-stop-cmd ["this" "is" "a" "test"]
+          force-sigterm-secs 1
+          sigterm-grace-period-secs 2
+          actual-configs (add-pre-stop-config-for-bypass-service container-configs base-env pre-stop-cmd force-sigterm-secs sigterm-grace-period-secs)
+          expected-configs (vec (repeat 3 {:env [{:name "WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS" :value "1"}
+                                                 {:name "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS" :value "2"}]
+                                           :lifecycle {:preStop {:exec {:command pre-stop-cmd}}}}))]
+      (assert-data-equal expected-configs actual-configs)))
+  (testing "service description environment variables override the defaults"
+    (let [base-env {"WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS" "this value overrides defaults"
+                    "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS" "this value overrides defaults"}
+          container-configs (vec (repeat 3 {}))
+          pre-stop-cmd ["this" "is" "a" "test"]
+          force-sigterm-secs 1
+          sigterm-grace-period-secs 2
+          actual-configs (add-pre-stop-config-for-bypass-service container-configs base-env pre-stop-cmd force-sigterm-secs sigterm-grace-period-secs)
+          expected-configs (vec (repeat 3 {:env [{:name "WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS" :value "this value overrides defaults"}
+                                                 {:name "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS" :value "this value overrides defaults"}]
+                                           :lifecycle {:preStop {:exec {:command pre-stop-cmd}}}}))]
+      (assert-data-equal expected-configs actual-configs))))
+
+(deftest test-replicaset-spec-pre-stop-cmd
+  (with-redefs [config/retrieve-cluster-name (constantly "test-cluster")
+                config/retrieve-request-log-request-headers (constantly  #{})
+                config/retrieve-request-log-response-headers (constantly #{"content-type" "server"})
+                config/retrieve-waiter-principal (constantly "waiter@test.com")]
+    (let [custom-raven-flag "MY_RAVEN_FLAG"
+          service-description (assoc dummy-service-description
+                                     "env" {custom-raven-flag "true"}
+                                     "metadata" {"waiter-proxy-bypass-opt-in" "true"})
+          scheduler (make-dummy-scheduler ["test-service-id"]
+                                          {:raven-sidecar {:cmd ["/opt/waiter/raven/bin/raven-start"]
+                                                           :env-vars {:defaults {"PORT0" "P0"
+                                                                                 "RAVEN_E1" "V1"}
+                                                                      :flags [custom-raven-flag]}
+                                                           :image "twosigma/waiter-raven"
+                                                           :predicate-fn raven-sidecar-opt-in?
+                                                           :resources {:cpu 0.1 :mem 256}}
+                                           :service-id->service-description-fn (constantly service-description)})
+          rs-spec-builder-context {:run-as-user-source "unknown"}
+          replicaset-spec ((:replicaset-spec-builder-fn scheduler) scheduler "test-service-id" service-description rs-spec-builder-context)]
+      (doseq [container (get-in replicaset-spec [:spec :template :spec :containers])]
+        (is (= {:exec {:command ["test" "pre-stop" "cmd" "config"]}} (get-in container [:lifecycle :preStop])))
+        (is (contains? (set (:env container)) {:name "WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS" :value "120"}))
+        (is (contains? (set (:env container)) {:name "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS" :value "30"}))))))
 
 (deftest test-replicaset-spec-fileserver-container-and-metadata
   (let [current-time (t/now)]
@@ -1564,6 +1617,54 @@
                         :message "Successfully killed instance"
                         :status http-200-ok)
                  actual))))
+      (testing "successful-delete: bypass"
+        (let [dummy-scheduler (assoc dummy-scheduler :service-id->service-description-fn (constantly {"metadata" {"waiter-proxy-bypass-opt-in" "true"}}))
+              api-call-count-atom (atom 0)
+              expected-api-call-count 2 ;; should make one request for deleting the pod and one request for update the replicas count
+              pod-delete-grace-period-atom (atom nil)
+              expected-delete-grace-period 150 ;; should be the pod-bypass-force-sigterm-secs + pod-bypass-sigterm-grace-period-secs
+              actual (with-redefs [api-request (fn mock-api-request [resource-url _ & {:keys [body]}]
+                                                 (when (some-> resource-url (str/includes? "/pods/"))
+                                                   (some->> body
+                                                            ct/try-parse-json
+                                                            walk/keywordize-keys
+                                                            :gracePeriodSeconds
+                                                            (reset! pod-delete-grace-period-atom)))
+                                                 (swap! api-call-count-atom inc)
+                                                 {:status "OK"})]
+                       (scheduler/kill-instance dummy-scheduler instance))]
+          (is (= (assoc partial-expected
+                        :killed? true
+                        :message "Successfully killed instance"
+                        :status http-200-ok)
+                 actual))
+          (is (= expected-api-call-count @api-call-count-atom))
+          (is (= expected-delete-grace-period @pod-delete-grace-period-atom))))
+      (testing "successful-delete: bypass with WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS and WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS overrides"
+        (let [dummy-scheduler (assoc dummy-scheduler :service-id->service-description-fn (constantly {"env" {"WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS" "3"
+                                                                                                             "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS" "4"}
+                                                                                                      "metadata" {"waiter-proxy-bypass-opt-in" "true"}}))
+              api-call-count-atom (atom 0)
+              expected-api-call-count 2 ;; should make one request for deleting the pod and one request for update the replicas count
+              pod-delete-grace-period-atom (atom nil)
+              expected-delete-grace-period 7 ;; should be the pod-bypass-force-sigterm-secs + pod-bypass-sigterm-grace-period-secs (env variables overrides 3 + 4)
+              actual (with-redefs [api-request (fn mock-api-request [resource-url _ & {:keys [body]}]
+                                                 (when (some-> resource-url (str/includes? "/pods/"))
+                                                   (some->> body
+                                                            ct/try-parse-json
+                                                            walk/keywordize-keys
+                                                            :gracePeriodSeconds
+                                                            (reset! pod-delete-grace-period-atom)))
+                                                 (swap! api-call-count-atom inc)
+                                                 {:status "OK"})]
+                       (scheduler/kill-instance dummy-scheduler instance))]
+          (is (= (assoc partial-expected
+                        :killed? true
+                        :message "Successfully killed instance"
+                        :status http-200-ok)
+                 actual))
+          (is (= expected-api-call-count @api-call-count-atom))
+          (is (= expected-delete-grace-period @pod-delete-grace-period-atom))))
       (testing "unsuccessful-delete: forbidden"
         (let [actual (with-redefs [api-request (fn mocked-api-request [_ _ & {:keys [request-method]}]
                                                  (when (= request-method :delete)
@@ -2037,6 +2138,9 @@
                     :max-patch-retries 5
                     :max-name-length 63
                     :pod-base-port 8080
+                    :pod-bypass {:force-sigterm-secs 120
+                                 :pre-stop-cmd ["test" "pre-stop" "cmd" "config"]
+                                 :sigterm-grace-period-secs 30}
                     :pod-sigkill-delay-secs 3
                     :pod-suffix-length default-pod-suffix-length
                     :replicaset-api-version "apps/v1"
@@ -2087,6 +2191,20 @@
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-base-port -1))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-base-port "8080"))))
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-base-port 1234567890)))))
+
+          (testing "bad pod-bypass-force-sigterm-secs"
+            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:pod-bypass :force-sigterm-secs] -1))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:pod-bypass :force-sigterm-secs] "10")))))
+
+          (testing "bad pod-bypass-pre-stop-cmd"
+            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:pod-bypass :pre-stop-cmd] [1 2 3 4]))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:pod-bypass :pre-stop-cmd] 5))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:pod-bypass :pre-stop-cmd] '("testing")))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:pod-bypass :pre-stop-cmd] "10")))))
+
+          (testing "bad pod-bypass-sigterm-grace-period-secs"
+            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:pod-bypass :sigterm-grace-period-secs] -1))))
+            (is (thrown? Throwable (kubernetes-scheduler (assoc-in base-config [:pod-bypass :sigterm-grace-period-secs] "10")))))
 
           (testing "bad pod termination grace period"
             (is (thrown? Throwable (kubernetes-scheduler (assoc base-config :pod-sigkill-delay-secs -1))))

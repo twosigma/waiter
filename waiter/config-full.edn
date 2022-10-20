@@ -143,6 +143,9 @@
                   ;; Whether or not to  enable HTTP2 cleartext transport, default true
                   :http2c? true
 
+                  ;; When present, provides the base url for images used in error responses
+                  :images-url "http://cdn.waiter.com/images"
+
                   ;; When SSL is enabled, the keystore to use for SSL connections
                   :keystore "/path/to/keystore.p12"
                   ;; When SSL is enabled, the scanning interval to detect changes to and reload the keystore
@@ -525,6 +528,21 @@
                                  ;; e.g., if pod-base-port is 31000, and the random offset was 390, then $PORT0==31390 and $PORT9==31399:
                                  :pod-base-port 31000
 
+                                 :pod-bypass {;; The maximum amount of time before the SIGTERM signal will be sent in each container of the pod.
+                                              ;; This will allow requests to drain during this period without killing any containers.
+                                              :force-sigterm-secs 120
+
+                                              ;; The preStop command put on all containers that gets configured for pods of bypass services
+                                              ;; This command prevents the SIGTERM signal from reaching or doing various cleanup work
+                                              ;; preStop commands do not log anywhere by default in k8s, so append logs to the containers main process stdout
+                                              ;; which is symlinked with "/proc/1/fd/1" https://github.com/kubernetes/kubernetes/issues/54247#issuecomment-827694001
+                                              :pre-stop-cmd ["/bin/sh"
+                                                             "-c"
+                                                             "echo $(date +%Y-%m-%dT%H:%M:%S.%3NZ) INFO preStop: sleeping for ${WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS} secs >> /proc/1/fd/1 ; sleep ${WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS} ; echo $(date +%Y-%m-%dT%H:%M:%S.%3NZ) INFO preStop: ending sleep, and container will receive SIGTERM shortly >> /proc/1/fd/1"]
+
+                                              ;; The grace period that allows containers to handle SIGTERM before getting fully deleted.
+                                              :sigterm-grace-period-secs 30}
+
                                  ;; The number of seconds between the SIGTERM and SIGKILL signals sent to a pod on shutdown.
                                  ;; This value should be placed in the terminationGracePeriodSeconds field in the pod template.
                                  ;; Should be set between 0 and 300 seconds, inclusive.
@@ -884,8 +902,7 @@
                                :output-buffer-size 4096
 
                                ;; The default amount of time (milliseconds) each request will wait in
-                               ;; the Waiter queue before an instance is available to process it. This
-                               ;; can be overriden in the service description:
+                               ;; the Waiter queue before an instance is available to process it.
                                :queue-timeout-ms 300000
 
                                ;; Configures the idle timeout (milliseconds) in the response output stream:
@@ -1058,7 +1075,8 @@
                                :show-locked-synchronizers false}}
 
  ;; Certain messages that Waiter returns can be customized:
- :messages {:backend-request-failed "Request to service backend failed"
+ :messages {:backend-connect-error "Request failed to connect to service backend"
+            :backend-request-failed "Request to service backend failed"
             :backend-request-timed-out "Request to service backend timed out"
             :bad-socket "Backend is closing socket without responding (ensure backend-proto is correctly configured)"
             :bad-startup-command "Invalid startup command"
@@ -1067,6 +1085,7 @@
             :environment-variable-error-info "Error in environment variables"
             :health-check-requires-authentication "Health check requires authentication"
             :health-check-timed-out "Health check timed out"
+            :http-401-spnego "Unauthorized"
             :invalid-health-check-response "Health check returned an invalid response"
             :invalid-service-description "Service description using waiter headers/token improperly configured"
             :metadata-error-info "Error in metadata"
@@ -1146,10 +1165,20 @@
                                  ;; By default, Waiter allows non-secure HTTP requests from clients to services.
                                  "https-redirect" false
 
+                                 ;; The amount of time (milliseconds) each request will wait in
+                                 ;; the Waiter queue before an instance is available to process it.
+                                 "queue-timeout-ms" 300000
+
+                                 ;; The HTTP idle timeout (milliseconds) for initial response bytes from the backend.
+                                 "socket-timeout-ms" 900000
+
                                  ;; Stale services are detected by looking at the version of the
                                  ;; token used to create them, such services will have their idle timeout
                                  ;; reduced to stale-timeout-mins + fallback-period-secs.
-                                 "stale-timeout-mins" 15}}
+                                 "stale-timeout-mins" 15
+
+                                 ;; The HTTP idle timeout (milliseconds) between successive bytes in the response output stream.
+                                 "streaming-timeout-ms" 20000}}
 
  ;; Waiter provides watch endpoints to listen on changes of a resource
  ;; This configures various watch providers for different resources

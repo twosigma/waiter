@@ -286,3 +286,10 @@
   [user-agent-products request]
   (when-let [user-agent (some-> request (get-in [:headers "user-agent"]) str/lower-case)]
     (some #(str/includes? user-agent %) user-agent-products)))
+
+(defn merge-response-headers
+  "Attaches provided headers into the response."
+  [response kvm]
+  (->> kvm
+       (pc/map-vals str)
+       (update response :headers merge)))

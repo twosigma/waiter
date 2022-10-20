@@ -43,6 +43,8 @@
        (counters/inc! (metrics/waiter-counter "metrics-syncer" "errors"))
        ~default-value)))
 
+(def ^:const max-deregister-history-length 10)
+
 (defn- close-router-metrics-request
   "Closes the websocket request after sending it a message."
   [{:keys [out request-id]} message]
@@ -60,38 +62,59 @@
        (str/includes? key-name# "outgoing") "outgoing"
        :else key-name#)))
 
+(defn- update-deregister-history
+  "Attaches provided entry into to deregister history and caps the history information to most recent max-history-length entries."
+  [deregister-history max-history-length {:keys [request-id] :as entry}]
+  (->> (cond-> deregister-history
+         (not-any? #(= request-id (:request-id %)) deregister-history)
+         (conj entry))
+       (take-last max-history-length)
+       (vec)))
+
 (defn deregister-router-ws
   "Deregisters the websocket request with the specified request-id from the agent's state."
   [router-metrics-state router-ws-key router-id request-id encrypt]
   (with-catch
     router-metrics-state
-    (let [ws-request (get-in router-metrics-state [router-ws-key router-id])]
-      (if (= request-id (:request-id ws-request))
-        (do
-          (cid/cinfo request-id "deregistering request from router" router-id)
-          (counters/inc! (metrics/waiter-counter "metrics-syncer" (router-ws-key->name router-ws-key) router-id "deregister"))
-          (close-router-metrics-request ws-request (encrypt {:message "deregistering existing websocket request"}))
-          (utils/dissoc-in router-metrics-state [router-ws-key router-id]))
-        (do
-          (cid/cinfo "metrics-router-syncer" "ignoring deregister request for" request-id
-                     ", current" [router-ws-key router-id] "request-id is" (:request-id ws-request))
-          router-metrics-state)))))
+    (let [ws-request (get-in router-metrics-state [router-ws-key router-id])
+          ws-request-id (:request-id ws-request)]
+      (-> (if (= request-id ws-request-id)
+            (do
+              (cid/cinfo request-id "deregistering request from router" router-id)
+              (counters/inc! (metrics/waiter-counter "metrics-syncer" (router-ws-key->name router-ws-key) router-id "deregister"))
+              (close-router-metrics-request ws-request (encrypt {:message "deregistering existing websocket request"}))
+              (utils/dissoc-in router-metrics-state [router-ws-key router-id]))
+            (do
+              (cid/cinfo "metrics-router-syncer" "ignoring deregister request for" request-id
+                         ", current" [router-ws-key router-id] "request-id is" ws-request-id)
+              router-metrics-state))
+          (update :deregister-history update-deregister-history max-deregister-history-length
+                  {:request-id request-id :router-id router-id :type (router-ws-key->name router-ws-key)})))))
 
 (defn- listen-on-ctrl-chan
   "Deregister any requests corresponding to request-id on router-ws-key when data is received on ctrl channel."
   [ctrl router-ws-key router-id request-id encrypt router-metrics-agent]
   (async/go
     (when-let [ctrl-data (async/<! ctrl)]
-      (cid/cinfo request-id "triggering deregister, data received on control channel is" ctrl-data)
+      (cid/cinfo request-id "triggering deregister for" router-id "data received on control channel is" ctrl-data)
       (send router-metrics-agent deregister-router-ws router-ws-key router-id request-id encrypt))))
 
 (defn register-router-ws
   "Registers the websocket request with the specified request-id into the agent's state.
    It also attaches a callback to deregister the request when the connection receives data on the `ctrl` channel."
-  [router-metrics-state router-ws-key router-id {:keys [ctrl request-id] :as ws-request} encrypt router-metrics-agent]
+  [{:keys [deregister-history] :as router-metrics-state} router-ws-key router-id {:keys [ctrl request-id] :as ws-request} encrypt router-metrics-agent]
   (with-catch
     router-metrics-state
-    (if request-id
+    (cond
+      (str/blank? request-id)
+      (do
+        (log/error "not registering request as it is missing request id")
+        router-metrics-state)
+      (some #(= request-id (:request-id %)) deregister-history)
+      (do
+        (log/error "not registering request which was previously deregistered")
+        router-metrics-state)
+      :else
       (do
         (cid/cinfo request-id "registering" (name router-ws-key) "request" router-id)
         (counters/inc! (metrics/waiter-counter "metrics-syncer" (router-ws-key->name router-ws-key) router-id "register"))
@@ -102,10 +125,7 @@
                       (select-keys ws-request [:ctrl :in :out :request-id :time])))
           (do
             (cid/cerror request-id "not registering request as no ctrl-chan available to monitor request")
-            router-metrics-state)))
-      (do
-        (log/error "not registering request as it is missing request id")
-        router-metrics-state))))
+            router-metrics-state))))))
 
 (defn- clean-service-id->instance-id->metric
   "Remove services from outer map that are not tracked by this router. Remove instances in the instance-id->metric map
@@ -424,7 +444,8 @@
 (defn new-router-metrics-agent
   "Factory method for the router metrics agent."
   [router-id agent-initial-state]
-  (let [initial-state (merge {:external-metrics {}
+  (let [initial-state (merge {:deregister-history []
+                              :external-metrics {}
                               :last-update-times {}
                               :metrics {:routers {}}
                               :router-id router-id
@@ -563,8 +584,7 @@
         (throw-error-response-if-invalid-body
           #(nat-int? %) service-metrics [service-id instance-id "metrics" "active-request-count"] "Must be non-negative integer.")))
 
-    (log/info "received service metrics from external source." {:service-ids-preview (take 10 (keys service-metrics))
-                                                                :service-ids-count (count (keys service-metrics))})
+    (log/info "received service metrics from external source." {:service-metric-pairs-preview (take 10 service-metrics)})
     (let [clean-service-metrics (clean-service-id->instance-id->metric query-state-fn service-metrics)]
       (log/info "removed irrelevant services and instances." {:service-ids-preview (take 10 (keys clean-service-metrics))
                                                               :service-ids-count (count (keys clean-service-metrics))})

@@ -125,7 +125,8 @@
     (try
       (let [{:strs [cookie]} headers
             encoded-cookie-value (cookie-value cookie cookie-name)
-            cookie-value (decode-cookie-cached encoded-cookie-value password)]
+            cookie-value (when encoded-cookie-value
+                           (decode-cookie-cached encoded-cookie-value password))]
         (-> {cookie-name (cond-> {"raw-content" cookie-value}
                            (some? cookie-value) (assoc "formatted-content" (value->data cookie-value)))}
             (utils/clj->json-response)))

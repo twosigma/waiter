@@ -131,6 +131,7 @@
                                      (s/optional-key :drain-request-buffer-size) schema/positive-int
                                      (s/optional-key :http2?) s/Bool
                                      (s/optional-key :http2c?) s/Bool
+                                     (s/optional-key :images-url) schema/non-empty-string
                                      (s/optional-key :keystore) schema/non-empty-string
                                      (s/optional-key :keystore-scan-interval-secs) schema/positive-int
                                      (s/optional-key :keystore-type) schema/non-empty-string
@@ -201,8 +202,11 @@
                                    (s/required-key :limit-per-owner) schema/positive-int
                                    (s/required-key :token-defaults) {(s/required-key "fallback-period-secs") schema/non-negative-int
                                                                      (s/required-key "https-redirect") s/Bool
+                                                                     (s/required-key "queue-timeout-ms") schema/non-negative-int
                                                                      (s/optional-key "service-mapping") schema/non-empty-string
-                                                                     (s/required-key "stale-timeout-mins") schema/non-negative-int}
+                                                                     (s/required-key "socket-timeout-ms") schema/non-negative-int
+                                                                     (s/required-key "stale-timeout-mins") schema/non-negative-int
+                                                                     (s/required-key "streaming-timeout-ms") schema/non-negative-int}
                                    (s/required-key :validator) (s/constrained
                                                                  {:kind s/Keyword
                                                                   s/Keyword schema/require-symbol-factory-fn}
@@ -353,7 +357,8 @@
                        :ttl 60}
                :encrypt true
                :relative-path "tokens"}
-   :messages {:backend-request-failed "Request to service backend failed"
+   :messages {:backend-connect-error "Request failed to connect to service backend"
+              :backend-request-failed "Request to service backend failed"
               :backend-request-timed-out "Request to service backend timed out"
               :bad-socket "Backend is closing socket without responding (ensure backend-proto is correctly configured)"
               :bad-startup-command "Invalid startup command"
@@ -362,6 +367,7 @@
               :cannot-identify-service "Unable to identify service using waiter headers/token"
               :health-check-requires-authentication "Health check requires authentication"
               :health-check-timed-out "Health check timed out"
+              :http-401-spnego "Unauthorized"
               :invalid-health-check-response "Health check returned an invalid response"
               :invalid-service-description "Service description using waiter headers/token improperly configured"
               :not-enough-memory "Not enough memory allocated"
@@ -417,6 +423,11 @@
                                    :max-patch-retries 5
                                    :max-name-length 63
                                    :pod-base-port 31000
+                                   :pod-bypass {:force-sigterm-secs 120
+                                                :pre-stop-cmd ["/bin/sh"
+                                                               "-c"
+                                                               "echo $(date +%Y-%m-%dT%H:%M:%S.%3NZ) INFO preStop: sleeping for ${WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS} secs >> /proc/1/fd/1 ; sleep ${WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS} ; echo $(date +%Y-%m-%dT%H:%M:%S.%3NZ) INFO preStop: ending sleep, and container will receive SIGTERM shortly >> /proc/1/fd/1"]
+                                                :sigterm-grace-period-secs 30}
                                    ; Marathon also defaults this value to 3 seconds:
                                    ; https://mesosphere.github.io/marathon/docs/health-checks.html#taskkillgraceperiodseconds
                                    :pod-sigkill-delay-secs 3
@@ -518,8 +529,11 @@
                   :limit-per-owner 1000
                   :token-defaults {"fallback-period-secs" (-> 5 t/minutes t/in-seconds)
                                    "https-redirect" false
+                                   "queue-timeout-ms" 300000
                                    "service-mapping" "legacy"
-                                   "stale-timeout-mins" 15}
+                                   "socket-timeout-ms" 900000
+                                   "stale-timeout-mins" 15
+                                   "streaming-timeout-ms" 20000}
                   :validator {:kind :default
                               :default {:factory-fn 'waiter.token-validator/create-default-token-validator}}}
    :watch-config {:tokens {:channels-update-chan-buffer-size 1024

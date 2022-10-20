@@ -31,6 +31,7 @@
             [waiter.test-helpers :refer :all]
             [waiter.util.utils :as utils])
   (:import (java.io ByteArrayOutputStream IOException)
+           (java.net ConnectException SocketTimeoutException)
            (java.util.concurrent TimeoutException)
            (org.eclipse.jetty.client HttpClient)
            (org.eclipse.jetty.io EofException)
@@ -40,83 +41,107 @@
   (let [test-cases (list
                      {:name "test-prepare-request-properties:nil-inputs"
                       :input {:request-properties nil :waiter-headers nil}
-                      :expected {:async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:empty-nil-inputs"
                       :input {:request-properties {} :waiter-headers nil}
-                      :expected {:async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:nil-empty-inputs"
                       :input {:request-properties nil :waiter-headers {}}
-                      :expected {:async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:empty-inputs"
                       :input {:request-properties {} :waiter-headers {}}
-                      :expected {:async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:missing-timeout-header-1"
                       :input {:request-properties {:fie "foe"} :waiter-headers {:foo "bar"}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:missing-timeout-header-2"
-                      :input {:request-properties {:fie "foe", :initial-socket-timeout-ms 100, :streaming-timeout-ms 200}
+                      :input {:request-properties {:fie "foe" :initial-socket-timeout-ms 100 :streaming-timeout-ms 200}
                               :waiter-headers {:foo "bar"}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 100, :queue-timeout-ms nil, :streaming-timeout-ms 200}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms 100 :queue-timeout-ms nil :streaming-timeout-ms 200}
                       }
                      {:name "test-prepare-request-properties:invalid-timeout-header"
-                      :input {:request-properties {:fie "foe", :initial-socket-timeout-ms 100, :queue-timeout-ms 150, :streaming-timeout-ms nil}
+                      :input {:request-properties {:fie "foe" :initial-socket-timeout-ms 100 :queue-timeout-ms 150 :streaming-timeout-ms nil}
                               :waiter-headers {"timeout" "bar"}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 100, :queue-timeout-ms 150, :streaming-timeout-ms nil}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms 100 :queue-timeout-ms 150 :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:negative-timeout-header"
-                      :input {:request-properties {:fie "foe", :initial-socket-timeout-ms 100}
+                      :input {:request-properties {:fie "foe" :initial-socket-timeout-ms 100}
                               :waiter-headers {"timeout" -50}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 100, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms 100 :queue-timeout-ms nil :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:valid-timeout-header"
-                      :input {:request-properties {:fie "foe", :initial-socket-timeout-ms 100, :streaming-timeout-ms 200}
-                              :waiter-headers {"timeout" 50, "streaming-timeout" 250}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 50, :queue-timeout-ms nil, :streaming-timeout-ms 250}
+                      :input {:request-properties {:fie "foe" :initial-socket-timeout-ms 100 :streaming-timeout-ms 200}
+                              :waiter-headers {"timeout" 50 "streaming-timeout" 250}}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms 50 :queue-timeout-ms nil :streaming-timeout-ms 250}
                       }
                      {:name "test-prepare-request-properties:invalid-queue-timeout-header"
-                      :input {:request-properties {:fie "foe", :queue-timeout-ms 150}
+                      :input {:request-properties {:fie "foe" :queue-timeout-ms 150}
                               :waiter-headers {"queue-timeout" "bar"}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms 150, :streaming-timeout-ms nil}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms nil :queue-timeout-ms 150 :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:negative-queue-timeout-header"
-                      :input {:request-properties {:fie "foe", :queue-timeout-ms 150}
+                      :input {:request-properties {:fie "foe" :queue-timeout-ms 150}
                               :waiter-headers {"queue-timeout" -50}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms 150, :streaming-timeout-ms nil}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms nil :queue-timeout-ms 150 :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:valid-queue-timeout-header"
-                      :input {:request-properties {:fie "foe", :queue-timeout-ms 150, :streaming-timeout-ms nil}
+                      :input {:request-properties {:fie "foe" :queue-timeout-ms 150 :streaming-timeout-ms nil}
                               :waiter-headers {"queue-timeout" 50}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms nil, :queue-timeout-ms 50, :streaming-timeout-ms nil}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms nil :queue-timeout-ms 50 :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:valid-both-timeout-headers"
-                      :input {:request-properties {:fie "foe", :initial-socket-timeout-ms 100, :queue-timeout-ms 150}
-                              :waiter-headers {"timeout" 75, "queue-timeout" 50}}
-                      :expected {:fie "foe", :async-check-interval-ms nil, :async-request-timeout-ms nil, :initial-socket-timeout-ms 75, :queue-timeout-ms 50, :streaming-timeout-ms nil}
+                      :input {:request-properties {:fie "foe" :initial-socket-timeout-ms 100 :queue-timeout-ms 150}
+                              :waiter-headers {"queue-timeout" 50 "timeout" 75}}
+                      :expected {:fie "foe" :async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms 75 :queue-timeout-ms 50 :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:invalid-async-headers"
-                      :input {:request-properties {:fie "foe", :async-check-interval-ms 100, :async-request-timeout-ms 200}
-                              :waiter-headers {"async-check-interval" -50, "async-request-timeout" "foo"}}
-                      :expected {:fie "foe", :async-check-interval-ms 100, :async-request-timeout-ms 200, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :input {:request-properties {:fie "foe" :async-check-interval-ms 100 :async-request-timeout-ms 200}
+                              :waiter-headers {"async-check-interval" -50 "async-request-timeout" "foo"}}
+                      :expected {:fie "foe" :async-check-interval-ms 100 :async-request-timeout-ms 200 :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:valid-async-headers"
-                      :input {:request-properties {:fie "foe", :async-check-interval-ms 100, :async-request-timeout-ms 200}
-                              :waiter-headers {"async-check-interval" 50, "async-request-timeout" 250}}
-                      :expected {:fie "foe", :async-check-interval-ms 50, :async-request-timeout-ms 250, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :input {:request-properties {:fie "foe" :async-check-interval-ms 100 :async-request-timeout-ms 200}
+                              :waiter-headers {"async-check-interval" 50 "async-request-timeout" 250}}
+                      :expected {:fie "foe" :async-check-interval-ms 50 :async-request-timeout-ms 250 :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
                       }
                      {:name "test-prepare-request-properties:too-large-async-request-timeout-header"
-                      :input {:request-properties {:fie "foe", :async-check-interval-ms 100, :async-request-max-timeout-ms 100000 :async-request-timeout-ms 200}
+                      :input {:request-properties {:fie "foe" :async-check-interval-ms 100 :async-request-max-timeout-ms 100000 :async-request-timeout-ms 200}
                               :waiter-headers {"async-request-timeout" 101000}}
-                      :expected {:fie "foe", :async-check-interval-ms 100, :async-request-max-timeout-ms 100000 :async-request-timeout-ms 100000, :initial-socket-timeout-ms nil, :queue-timeout-ms nil, :streaming-timeout-ms nil}
+                      :expected {:fie "foe" :async-check-interval-ms 100 :async-request-max-timeout-ms 100000 :async-request-timeout-ms 100000 :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
+                      }
+                     {:name "test-prepare-request-properties:too-large-async-request-timeout-header"
+                      :input {:request-properties {:fie "foe" :async-check-interval-ms 100 :async-request-max-timeout-ms 100000 :async-request-timeout-ms 200}
+                              :waiter-headers {"async-request-timeout" 101000}}
+                      :expected {:fie "foe" :async-check-interval-ms 100 :async-request-max-timeout-ms 100000 :async-request-timeout-ms 100000 :initial-socket-timeout-ms nil :queue-timeout-ms nil :streaming-timeout-ms nil}
+                      }
+                     {:name "test-prepare-request-properties:empty-request-properties-with-token-defaults"
+                      :input {:request-properties {:initial-socket-timeout-ms 100 :queue-timeout-ms 150 :streaming-timeout-ms nil}
+                              :token-metadata {"queue-timeout-ms" 300000 "socket-timeout-ms" 900000 "streaming-timeout-ms" 20000}
+                              :waiter-headers nil}
+                      :expected {:async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms 900000 :queue-timeout-ms 300000 :streaming-timeout-ms 20000}
+                      }
+                     {:name "test-prepare-request-properties:empty-request-properties-with-token-defaults-and-some-headers"
+                      :input {:request-properties {:initial-socket-timeout-ms 100 :queue-timeout-ms 150 :streaming-timeout-ms nil}
+                              :token-metadata {"queue-timeout-ms" 300000 "socket-timeout-ms" 900000 "streaming-timeout-ms" 20000}
+                              :waiter-headers {"queue-timeout" 50 "timeout" 75}}
+                      :expected {:async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms 75 :queue-timeout-ms 50 :streaming-timeout-ms 20000}
+                      }
+                     {:name "test-prepare-request-properties:empty-request-properties-with-token-defaults-and-most-timeout-headers"
+                      :input {:request-properties {:initial-socket-timeout-ms 100 :queue-timeout-ms 150 :streaming-timeout-ms nil}
+                              :token-metadata {"queue-timeout-ms" 300000 "socket-timeout-ms" 900000 "streaming-timeout-ms" 20000}
+                              :waiter-headers {"queue-timeout" 50 "streaming-timeout" 95 "timeout" 75}}
+                      :expected {:async-check-interval-ms nil :async-request-timeout-ms nil :initial-socket-timeout-ms 75 :queue-timeout-ms 50 :streaming-timeout-ms 95}
                       })]
     (doseq [{:keys [name input expected]} test-cases]
       (testing (str "Test " name)
-        (let [actual (prepare-request-properties (:request-properties input)
-                                                 (pc/map-keys #(str headers/waiter-header-prefix %) (:waiter-headers input)))]
+        (let [{:keys [request-properties token-metadata waiter-headers]} input
+              waiter-headers' (pc/map-keys #(str headers/waiter-header-prefix %) waiter-headers)
+              actual (prepare-request-properties request-properties waiter-headers' token-metadata)]
           (is (= expected actual)))))))
 
 (deftest test-prepare-grpc-compliant-request-properties
@@ -125,7 +150,7 @@
                                  :initial-socket-timeout-ms 1030
                                  :queue-timeout-ms 1040
                                  :streaming-timeout-ms 1050}]
-    (doseq [{:keys [backend-proto request-headers request-properties-expected] :as test-case}
+    (doseq [{:keys [backend-proto request-headers request-properties-expected token-metadata] :as test-case}
             [{:backend-proto "h2c"
               :request-headers {"x-waiter-async-check-interval" "2100"
                                 "x-waiter-async-request-timeout" "2200"
@@ -162,10 +187,20 @@
               :request-headers {"content-type" "application/grpc"
                                 "grpc-timeout" "3S"
                                 "x-waiter-queue-timeout" "2000"}
-              :request-properties-expected {:queue-timeout-ms 2000}}]]
+              :request-properties-expected {:queue-timeout-ms 2000}}
+             {:backend-proto "h2c"
+              :request-headers {"content-type" "application/grpc"
+                                "grpc-timeout" "3S"
+                                "x-waiter-queue-timeout" "2000"}
+              :request-properties-expected {:initial-socket-timeout-ms 900000
+                                            :queue-timeout-ms 2000
+                                            :streaming-timeout-ms 20000}
+              :token-metadata {"queue-timeout-ms" 300000
+                               "socket-timeout-ms" 900000
+                               "streaming-timeout-ms" 20000}}]]
       (let [{:keys [passthrough-headers waiter-headers]} (headers/split-headers request-headers)
             request-properties-actual  (prepare-grpc-compliant-request-properties
-                                         request-properties-base backend-proto passthrough-headers waiter-headers)]
+                                         request-properties-base backend-proto passthrough-headers waiter-headers token-metadata)]
         (is (= (merge request-properties-base request-properties-expected) request-properties-actual) (str test-case))))))
 
 (deftest test-stream-http-response-configure-idle-timeout
@@ -583,45 +618,58 @@
     (is (= 103 @position-generator-atom))))
 
 (deftest test-classify-error
-  (is (= [:generic-error "Test Exception" http-500-internal-server-error "clojure.lang.ExceptionInfo"]
-         (classify-error (ex-info "Test Exception" {:source :test}))))
-  (is (= [:test-error "Test Exception" http-500-internal-server-error "clojure.lang.ExceptionInfo"]
-         (classify-error (ex-info "Test Exception" {:error-cause :test-error :source :test}))))
-  (is (= [:generic-error "Test Exception" http-400-bad-request "clojure.lang.ExceptionInfo"]
-         (classify-error (ex-info "Test Exception" {:source :test :status http-400-bad-request}))))
-  (is (= [:instance-error nil http-502-bad-gateway "java.io.IOException"]
-         (classify-error (ex-info "Test Exception" {:source :test :status http-400-bad-request} (IOException. "Test")))))
-  (is (= [:instance-error nil http-502-bad-gateway "java.io.IOException"]
-         (classify-error (IOException. "Test"))))
-  (is (= [:client-error "Client action means stream is no longer needed" http-400-bad-request "java.io.IOException"]
-         (classify-error (ex-info "Test Exception" {:source :test :status http-400-bad-request} (IOException. "cancel_stream_error")))))
-  (is (= [:client-error "Client action means stream is no longer needed" http-400-bad-request "java.io.IOException"]
-         (classify-error (IOException. "cancel_stream_error"))))
-  (let [exception (IOException. "internal_error")]
-    (->> (into-array StackTraceElement
-                     [(StackTraceElement. "org.eclipse.jetty.http2.client.http.HttpReceiverOverHTTP2" "onReset" "HttpReceivedOverHTTP2.java" 169)
-                      (StackTraceElement. "org.eclipse.jetty.http2.api.Stream$Listener" "onReset" "Stream.java" 177)
-                      (StackTraceElement. "org.eclipse.jetty.http2.HTTP2Stream" "notifyReset" "HTTP2Stream.java" 574)])
-      (.setStackTrace exception))
-    (is (= [:client-error "Client send invalid data to HTTP/2 backend" http-400-bad-request "java.io.IOException"]
-           (classify-error exception))))
-  (is (= [:instance-error nil http-502-bad-gateway "java.io.IOException"]
-         (classify-error (IOException. "internal_error"))))
-  (is (= [:server-eagerly-closed "Connection eagerly closed by server" http-400-bad-request "java.io.IOException"]
-         (classify-error (IOException. "no_error"))))
-  (is (= [:client-error "Connection unexpectedly closed while streaming request" http-400-bad-request "org.eclipse.jetty.io.EofException"]
-         (classify-error (ex-info "Test Exception" {:source :test :status http-400-bad-request} (EofException. "Test")))))
-  (is (= [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request "org.eclipse.jetty.io.EofException"]
-         (classify-error (ex-info "Test Exception" {:source :test :status http-400-bad-request} (EofException. "reset")))))
-  (is (= [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request "org.eclipse.jetty.io.EofException"]
-         (classify-error (EofException. "reset"))))
-  (is (= [:instance-error nil http-504-gateway-timeout "java.util.concurrent.TimeoutException"]
-         (classify-error (TimeoutException. "timeout"))))
-  (is (=[:client-error "Timeout receiving bytes from client" http-408-request-timeout "java.util.concurrent.TimeoutException"]
-         (let [timeout-exception (TimeoutException. "timeout")]
-           (.addSuppressed timeout-exception (Throwable. "HttpInput idle timeout"))
-           (classify-error timeout-exception))))
-  (is (= [:client-error "Failed to upgrade to websocket connection" http-400-bad-request "org.eclipse.jetty.websocket.api.UpgradeException"]
-         (classify-error (UpgradeException. nil http-400-bad-request "websocket upgrade failed"))))
-  (is (= [:instance-error nil http-502-bad-gateway "java.lang.Exception"]
-         (classify-error (Exception. "Test Exception")))))
+  (with-redefs [utils/message name]
+    (is (= [:generic-error "Test Exception" http-500-internal-server-error error-image-500-internal-server-error "clojure.lang.ExceptionInfo"]
+           (classify-error "test-classify-error" (ex-info "Test Exception" {:source :test}))))
+    (is (= [:test-error "Test Exception" http-500-internal-server-error error-image-500-internal-server-error "clojure.lang.ExceptionInfo"]
+           (classify-error "test-classify-error" (ex-info "Test Exception" {:error-cause :test-error :source :test}))))
+    (is (= [:generic-error "Test 401 Exception" http-401-unauthorized nil "clojure.lang.ExceptionInfo"]
+           (classify-error "test-classify-error" (ex-info "Test 401 Exception" {:source :test :status http-401-unauthorized}))))
+    (is (= [:generic-error "Test 400 Exception" http-400-bad-request error-image-400-bad-request "clojure.lang.ExceptionInfo"]
+           (classify-error "test-classify-error" (ex-info "Test 400 Exception" {:source :test :status http-400-bad-request}))))
+    (is (= [:generic-error "Test 500 Exception" http-500-internal-server-error error-image-500-internal-server-error "clojure.lang.ExceptionInfo"]
+           (classify-error "test-classify-error" (ex-info "Test 500 Exception" {:source :test :status http-500-internal-server-error}))))
+    (is (= [:generic-error "Test Exception" http-400-bad-request error-image-400-bad-request "clojure.lang.ExceptionInfo"]
+           (classify-error "test-classify-error" (ex-info "Test Exception" {:source :test :status http-400-bad-request :waiter/error-image error-image-400-bad-request}))))
+    (is (= [:instance-error "backend-request-failed" http-502-bad-gateway error-image-502-connection-failed "java.io.IOException"]
+           (classify-error "test-classify-error" (ex-info "Test Exception" {:source :test :status http-400-bad-request} (IOException. "Test")))))
+    (is (= [:instance-error "backend-request-failed" http-502-bad-gateway error-image-502-connection-failed "java.io.IOException"]
+           (classify-error "test-classify-error" (IOException. "Test"))))
+    (is (= [:client-error "Client action means stream is no longer needed" http-400-bad-request error-image-400-bad-request "java.io.IOException"]
+           (classify-error "test-classify-error" (ex-info "Test Exception" {:source :test :status http-400-bad-request} (IOException. "cancel_stream_error")))))
+    (is (= [:client-error "Client action means stream is no longer needed" http-400-bad-request error-image-400-bad-request "java.io.IOException"]
+           (classify-error "test-classify-error" (IOException. "cancel_stream_error"))))
+    (let [exception (IOException. "internal_error")]
+      (->> (into-array StackTraceElement
+                       [(StackTraceElement. "org.eclipse.jetty.http2.client.http.HttpReceiverOverHTTP2" "onReset" "HttpReceivedOverHTTP2.java" 169)
+                        (StackTraceElement. "org.eclipse.jetty.http2.api.Stream$Listener" "onReset" "Stream.java" 177)
+                        (StackTraceElement. "org.eclipse.jetty.http2.HTTP2Stream" "notifyReset" "HTTP2Stream.java" 574)])
+           (.setStackTrace exception))
+      (is (= [:client-error "Client send invalid data to HTTP/2 backend" http-400-bad-request error-image-400-bad-request "java.io.IOException"]
+             (classify-error "test-classify-error" exception))))
+    (is (= [:instance-error "backend-request-failed" http-502-bad-gateway error-image-502-connection-failed "java.io.IOException"]
+           (classify-error "test-classify-error" (IOException. "internal_error"))))
+    (is (= [:server-eagerly-closed "Connection eagerly closed by server" http-400-bad-request error-image-400-bad-request "java.io.IOException"]
+           (classify-error "test-classify-error" (IOException. "no_error"))))
+    (is (= [:client-error "Connection unexpectedly closed while streaming request" http-400-bad-request error-image-400-bad-request "org.eclipse.jetty.io.EofException"]
+           (classify-error "test-classify-error" (ex-info "Test Exception" {:source :test :status http-400-bad-request} (EofException. "Test")))))
+    (is (= [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request error-image-400-bad-request "org.eclipse.jetty.io.EofException"]
+           (classify-error "test-classify-error" (ex-info "Test Exception" {:source :test :status http-400-bad-request} (EofException. "reset")))))
+    (is (= [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request error-image-400-bad-request "org.eclipse.jetty.io.EofException"]
+           (classify-error "test-classify-error" (EofException. "reset"))))
+    (is (= [:instance-error "backend-request-timed-out" http-504-gateway-timeout error-image-504-gateway-timeout "java.util.concurrent.TimeoutException"]
+           (classify-error "test-classify-error" (TimeoutException. "timeout"))))
+    (is (= [:client-error "Timeout receiving bytes from client" http-408-request-timeout error-image-408-request-timeout "java.util.concurrent.TimeoutException"]
+           (let [timeout-exception (TimeoutException. "timeout")]
+             (.addSuppressed timeout-exception (Throwable. "HttpInput idle timeout"))
+             (classify-error "test-classify-error" timeout-exception))))
+    (is (= [:client-error "Failed to upgrade to websocket connection" http-400-bad-request error-image-400-bad-request "org.eclipse.jetty.websocket.api.UpgradeException"]
+           (classify-error "test-classify-error" (UpgradeException. nil http-400-bad-request "websocket upgrade failed"))))
+    (is (= [:instance-error "backend-connect-error" http-502-bad-gateway error-image-502-connection-failed "java.net.ConnectException"]
+           (classify-error "test-classify-error" (ConnectException. "Connection refused"))))
+    (is (= [:instance-error "backend-connect-error" http-502-bad-gateway error-image-502-connection-failed "java.net.SocketTimeoutException"]
+           (classify-error "test-classify-error" (SocketTimeoutException. "Connect Timeout"))))
+    (is (= [:instance-error "backend-request-failed" http-502-bad-gateway error-image-502-connection-failed "java.net.SocketTimeoutException"]
+           (classify-error "test-classify-error" (SocketTimeoutException. "Connection refused"))))
+    (is (= [:instance-error "backend-request-failed" http-502-bad-gateway error-image-502-connection-failed "java.lang.Exception"]
+           (classify-error "test-classify-error" (Exception. "Test Exception"))))))
