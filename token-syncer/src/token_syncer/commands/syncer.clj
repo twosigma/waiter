@@ -14,9 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns token-syncer.commands.syncer
-  (:require [clojure.pprint :as pp]
-            [clojure.set :as set]
-            [clojure.string :as str]
+  (:require [clojure.set :as set]
             [clojure.tools.logging :as log]
             [plumbing.core :as pc]
             [token-syncer.utils :as utils]))
@@ -50,19 +48,30 @@
                 :token-etag (:token-etag token-data)}))))
        (pc/map-vals (fnil identity {}))))
 
+(defn hard-delete-token-on-cluster
+  "Hard-deletes a given token on a specific cluster."
+  [{:keys [hard-delete-token]} cluster-url token token-etag]
+  (let [{:keys [headers status] :as response} (hard-delete-token cluster-url token token-etag)]
+    {:code (if (utils/successful? response)
+             :success/hard-delete
+             :error/hard-delete)
+     :details (cond-> {:status status}
+                (utils/successful? response) (assoc :etag (get headers "etag")))}))
+
 (defn hard-delete-token-on-all-clusters
-  "Hard-deletes a given token on all clusters."
-  [{:keys [hard-delete-token]} cluster-urls token token-etag]
-  (log/info "hard-delete" token "on clusters" cluster-urls)
+  "Hard-deletes a given token on all clusters where it is already soft-deleted."
+  [waiter-api cluster-urls cluster-url->deleted token token-etag]
   (reduce
     (fn [cluster-sync-result cluster-url]
       (->> (try
-             (let [{:keys [headers status] :as response} (hard-delete-token cluster-url token token-etag)]
-               {:code (if (utils/successful? response)
-                        :success/hard-delete
-                        :error/hard-delete)
-                :details (cond-> {:status status}
-                                 (utils/successful? response) (assoc :etag (get headers "etag")))})
+             (if (get cluster-url->deleted cluster-url)
+               (do
+                 (log/info "hard-deleting" token "on cluster" cluster-url)
+                 (hard-delete-token-on-cluster waiter-api cluster-url token token-etag))
+               (do
+                 (log/info "not hard-deleting" token "on cluster" cluster-url "as it is not soft-deleted on cluster")
+                 {:code :success/skip-hard-delete
+                  :details {:message "Token not soft-deleted in cluster" :soft-deleted (get cluster-url->deleted cluster-url)}}))
              (catch Exception ex
                (log/error ex "unable to delete" token "on" cluster-url)
                {:code :error/hard-delete
@@ -75,7 +84,7 @@
   "Syncs a given token description on all clusters.
    If the cluster-url->token-data says that a given token was not successfully loaded, it is skipped.
    Token sync-ing is also skipped if the tokens are active and the roots are different."
-  [{:keys [store-token]} cluster-urls token latest-token-description opt-out-metadata-name cluster-url->token-data]
+  [{:keys [store-token] :as waiter-api} cluster-urls token latest-token-description opt-out-metadata-name cluster-url->token-data]
   (pc/map-from-keys
     (fn [cluster-url]
       (let [;; don't include "deleted" system metadata key, this must be considered for determining root-mismatch
@@ -84,7 +93,9 @@
             (try
               (let [{:keys [description error status] :as token-data} (get cluster-url->token-data cluster-url)
                     {latest-root "root" latest-update-user "last-update-user"} latest-token-description
-                    {cluster-root "root" cluster-update-user "last-update-user"} description
+                    {cluster-deleted "deleted" cluster-root "root" cluster-update-user "last-update-user"} description
+                    latest-opt-out? (= "true" (get-in latest-token-description ["metadata" opt-out-metadata-name]))
+                    cluster-opt-out? (= "true" (get-in description ["metadata" opt-out-metadata-name]))
                     {:keys [code] :as result}
                     (cond
                       error
@@ -111,9 +122,12 @@
 
                       (and (some? opt-out-metadata-name)
                            ;; opt-out of syncing if any of the descriptions signal opt-out intent
-                           (or (= "true" (get-in latest-token-description ["metadata" opt-out-metadata-name]))
-                               (= "true" (get-in description ["metadata" opt-out-metadata-name]))))
-                      {:code :success/skip-opt-out}
+                           (or latest-opt-out? cluster-opt-out?))
+                      (if (and cluster-opt-out? cluster-deleted)
+                        (let [token-etag (:token-etag token-data)]
+                          (log/info "hard-deleting soft-deleted and sync opt-out" token "on cluster" cluster-url)
+                          (hard-delete-token-on-cluster waiter-api cluster-url token token-etag))
+                        {:code :success/skip-opt-out})
 
                       ;; token user-specified content (including "deleted") is different, and the last update user or root is different
                       (and (seq description)
@@ -170,12 +184,19 @@
         (let [{:keys [cluster-url description]} (token->latest-description token)
               token-etag (get-in token->url->token-data [token cluster-url :token-etag])
               remaining-cluster-urls (disj cluster-urls cluster-url)
-              all-soft-deleted (every? (fn soft-delete-pred [[_ token-data]]
-                                         (get-in token-data [:description "deleted"]))
-                                       (token->url->token-data token))]
-          (log/info "syncing" token "with token description from" cluster-url {:all-soft-deleted all-soft-deleted})
-          (let [sync-result (if all-soft-deleted
-                              (hard-delete-token-on-all-clusters waiter-api cluster-urls token token-etag)
+              cluster-url->deleted (->> (token->url->token-data token)
+                                        (pc/map-vals (fn [{:keys [description]}]
+                                                       (when (not-empty description)
+                                                         (get description "deleted" false)))))
+              all-soft-deleted? (some->> cluster-url->deleted
+                                  (vals)
+                                  (remove nil?)
+                                  (not-empty)
+                                  (every? true?))]
+          (log/info "syncing" token "with token description from" cluster-url
+                    {:all-soft-deleted? all-soft-deleted? :cluster-url->deleted cluster-url->deleted})
+          (let [sync-result (if all-soft-deleted?
+                              (hard-delete-token-on-all-clusters waiter-api cluster-urls cluster-url->deleted token token-etag)
                               (sync-token-on-clusters waiter-api remaining-cluster-urls token description opt-out-metadata-name
                                                       (token->url->token-data token)))]
             {:latest (token->latest-description token)

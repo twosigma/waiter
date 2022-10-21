@@ -148,25 +148,56 @@
                                            {:body (str cluster-url ":" token)
                                             :headers {"etag" in-token-etag}
                                             :status 200}))}]
-    (is (= {"www.cluster-1.com" {:code :success/hard-delete
-                                 :details {:etag test-token-etag
-                                           :status 200}}
-            "www.cluster-2-error.com" {:code :error/hard-delete
-                                       :details {:message "Error in hard-delete thrown from test"}}
-            "www.cluster-3.com" {:code :success/hard-delete
-                                 :details {:etag test-token-etag
-                                           :status 200}}}
-           (hard-delete-token-on-all-clusters waiter-api test-cluster-urls test-token test-token-etag)))))
+    (let [cluster-url->deleted (pc/map-from-keys (constantly true) test-cluster-urls)]
+      (is (= {"www.cluster-1.com" {:code :success/hard-delete
+                                   :details {:etag test-token-etag
+                                             :status 200}}
+              "www.cluster-2-error.com" {:code :error/hard-delete
+                                         :details {:message "Error in hard-delete thrown from test"}}
+              "www.cluster-3.com" {:code :success/hard-delete
+                                   :details {:etag test-token-etag
+                                             :status 200}}}
+             (hard-delete-token-on-all-clusters waiter-api test-cluster-urls cluster-url->deleted test-token test-token-etag))))
+
+    (let [cluster-url->deleted (-> (pc/map-from-keys (constantly true) test-cluster-urls)
+                                   (dissoc "www.cluster-2-error.com")
+                                   (assoc "www.cluster-3.com" false))]
+      (is (= {"www.cluster-1.com" {:code :success/hard-delete
+                                   :details {:etag test-token-etag
+                                             :status 200}}
+              "www.cluster-2-error.com" {:code :success/skip-hard-delete
+                                         :details {:message "Token not soft-deleted in cluster"
+                                                   :soft-deleted nil}}
+              "www.cluster-3.com" {:code :success/skip-hard-delete
+                                   :details {:message "Token not soft-deleted in cluster"
+                                             :soft-deleted false}}}
+             (hard-delete-token-on-all-clusters waiter-api test-cluster-urls cluster-url->deleted test-token test-token-etag))))))
 
 (deftest test-sync-token-on-clusters
   (let [test-token-etag (System/currentTimeMillis)
         opt-out-metadata-name nil
-        waiter-api {:store-token (fn [cluster-url token token-etag token-description]
+        waiter-api {:hard-delete-token (fn [cluster-url token token-etag]
+                                         (cond
+                                           (str/includes? cluster-url "cluster-1")
+                                           (is (= (str test-token-etag ".1") token-etag))
+                                           (str/includes? cluster-url "cluster-2")
+                                           (is (= (str test-token-etag ".2") token-etag))
+                                           (str/includes? cluster-url "cluster-3")
+                                           (is (= (str test-token-etag ".3") token-etag))
+                                           (str/includes? cluster-url "cluster-4")
+                                           (is (= (str test-token-etag ".4") token-etag)))
+                                         (if (str/includes? cluster-url "error")
+                                           (throw (Exception. "Error in storing token thrown from test"))
+                                           {:body (str "deleted " token)
+                                            :headers {}
+                                            :status 200}))
+                    :store-token (fn [cluster-url token token-etag token-description]
                                    (cond
                                      (str/includes? cluster-url "cluster-1")
                                      (is (= (str test-token-etag ".1") token-etag))
                                      (str/includes? cluster-url "cluster-2")
-                                     (is (= (str test-token-etag ".2") token-etag))
+                                     (when token-etag
+                                       (is (= (str test-token-etag ".2") token-etag)))
                                      (str/includes? cluster-url "cluster-3")
                                      (is (= (str test-token-etag ".3") token-etag))
                                      (str/includes? cluster-url "cluster-4")
@@ -536,6 +567,26 @@
                                                :status 200}}}
                (sync-token-on-clusters waiter-api cluster-urls test-token token-description opt-out-metadata-name cluster-url->token-data)))))
 
+    (testing "sync cluster successfully when token missing"
+      (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {"last-update-user" "john.doe"
+                               "name" "test-name"
+                               "owner" "test-user-1"
+                               "root" "test-cluster-1"}
+            cluster-url->token-data {"www.cluster-1.com" {:description {"last-update-user" "john.doe"
+                                                                        "name" "test-name"
+                                                                        "owner" "test-user-1"
+                                                                        "root" "test-cluster-1"}
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:status 404}}]
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :success/sync-update
+                                     :details {:etag ".new"
+                                               :status 200}}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description opt-out-metadata-name cluster-url->token-data)))))
+
     (testing "sync cluster error"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2-error.com"]
             test-token "test-token-1"
@@ -629,6 +680,32 @@
                                                           :status 200}}]
         (is (= {"www.cluster-1.com" {:code :success/token-match}
                 "www.cluster-2.com" {:code :success/skip-opt-out}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description opt-out-metadata-name cluster-url->token-data)))))
+
+    (testing "sync cluster hard-delete on metadata field opt-out in sync cluster"
+      (let [opt-out-metadata-name "sync-opt-out"
+            cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {"last-update-user" "john.doe"
+                               "name" "test-name"
+                               "owner" "test-user-1"
+                               "root" "test-cluster-1"}
+            cluster-url->token-data {"www.cluster-1.com" {:description {"last-update-user" "john.doe"
+                                                                        "name" "test-name"
+                                                                        "owner" "test-user-1"
+                                                                        "root" "test-cluster-1"}
+                                                          :token-etag (str test-token-etag ".1")
+                                                          :status 200}
+                                     "www.cluster-2.com" {:description {"deleted" true
+                                                                        "metadata" {"sync-opt-out" "true"}
+                                                                        "owner" "test-user-1"
+                                                                        "root" "test-cluster-1"}
+                                                          :token-etag (str test-token-etag ".2")
+                                                          :status 200}}]
+        (is (= {"www.cluster-1.com" {:code :success/token-match}
+                "www.cluster-2.com" {:code :success/hard-delete
+                                     :details {:etag nil
+                                               :status 200}}}
                (sync-token-on-clusters waiter-api cluster-urls test-token token-description opt-out-metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster success on metadata field opt-out non-true value"
@@ -892,7 +969,7 @@
                   retrieve-token->latest-description (fn [in-token->cluster-url->token-data]
                                                        (is (= token->cluster-url->token-data in-token->cluster-url->token-data))
                                                        token->latest-description)
-                  hard-delete-token-on-all-clusters (fn [_ cluster-urls token _]
+                  hard-delete-token-on-all-clusters (fn [_ cluster-urls _ token _]
                                                       (compute-sync-result cluster-urls token :success/hard-delete))
                   sync-token-on-clusters (fn [_ cluster-urls token description in-metadata-name _]
                                            (is (= opt-out-metadata-name in-metadata-name))
