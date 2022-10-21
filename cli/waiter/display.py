@@ -65,7 +65,8 @@ def tabulate_token_services(services, token_name, token_etag=None, show_index=Fa
                                           ('Last request', format_last_request_time(s)),
                                           ('Current?',
                                            format_using_current_token(s, token_etag or s.get('etag', None),
-                                                                      token_name))]
+                                                                      token_name)),
+                                          ('Scaling State', s['scaling-state'])]
                                          if key in column_names or show_index and key == 'Index'])
                 for index, s in enumerate(services)]
         service_table = tabulate(rows, headers='keys', tablefmt='plain')

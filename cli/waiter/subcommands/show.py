@@ -52,7 +52,7 @@ def tabulate_token(cluster_or_cluster_group_name, token, token_name, services, t
     last_update_time = format_timestamp_string(token['last-update-time'])
     last_update_user = f' ({token["last-update-user"]})' if 'last-update-user' in token else ''
     column_names = ['Service Id', 'Cluster', 'Run as user', 'Instances', 'CPUs', 'Memory', 'Version', 'Status', 'Last request',
-                    'Current?']
+                    'Current?', 'Scaling State']
     service_table, _ = tabulate_token_services(services, token_name, token_etag=token_etag, column_names=column_names)
     return f'\n' \
         f'=== {terminal.bold(cluster_or_cluster_group_name)} / {terminal.bold(token_name)} ===\n' \
