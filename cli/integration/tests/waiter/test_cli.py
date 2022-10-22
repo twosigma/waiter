@@ -1154,6 +1154,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(service_description_2, service_2['service-description'])
             self.assertEqual('Running', service_1['status'])
             self.assertIn(service_2['status'], ['Failing', 'Starting'])
+            self.assertIn(service_2['scaling-state'], ["stable", "scale-up", "scale-down"])
 
             # Run show without --json
             cp = cli.show(self.waiter_url, token_name)
@@ -1163,8 +1164,10 @@ class WaiterCliTest(util.WaiterTest):
             self.assertIsNotNone(re.search('^# Instances\\s+([12])$', cli.stdout(cp), re.MULTILINE))
             self.assertIsNotNone(re.search('^Total Memory\\s+(128|384) MiB$', cli.stdout(cp), re.MULTILINE))
             self.assertIsNotNone(re.search('^Total CPUs\\s+0\\.([13])$', cli.stdout(cp), re.MULTILINE))
-            self.assertIsNotNone(re.search(f'^{service_id_1}.+Running.+Not Current$', cli.stdout(cp), re.MULTILINE))
-            self.assertIsNotNone(re.search(f'^{service_id_2}.+(Failing|Starting).+Current$',
+            self.assertIsNotNone(re.search(f'^{service_id_1}.+Running.+Not Current.', cli.stdout(cp), re.MULTILINE))
+            self.assertIsNotNone(re.search(f'^{service_id_2}.+(Failing|Starting).+Current.',
+                                           cli.stdout(cp), re.MULTILINE))
+            self.assertIsNotNone(re.search(f'^{service_id_2}.+(stable|scale-up|scale-down)$',
                                            cli.stdout(cp), re.MULTILINE))
 
             # Run show without --json and with --no-services
