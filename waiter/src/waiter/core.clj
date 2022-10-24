@@ -98,6 +98,7 @@
                      "app-name" :app-name-handler-fn
                      "apps" {"" :service-list-handler-fn
                              ["/" "instances"] :instances-list-handler-fn
+			     ["/" :instance-id "/signal"] :signal-handler-fn
                              ["/" :service-id] :service-handler-fn
                              ["/" :service-id "/await/" :goal-state] :service-await-handler-fn
                              ["/" :service-id "/logs"] :service-view-logs-handler-fn
@@ -1742,6 +1743,7 @@
                                     (metrics-sync/incoming-router-metrics-handler
                                       router-metrics-agent metrics-sync-interval-ms bytes-encryptor bytes-decryptor
                                       query-state-fn request))))
+   :signal-handler-fn (pc/fnk )
    :service-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
                                 [:routines admin-user?-fn allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-async-fn
                                  retrieve-token-based-fallback-fn router-metrics-helpers service-id->references-fn
