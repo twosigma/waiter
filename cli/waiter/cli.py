@@ -3,7 +3,7 @@ import logging
 from urllib.parse import urlparse
 
 from waiter import configuration, http_util, metrics, version
-from waiter.subcommands import create, delete, init, kill, maintenance, ping, show, ssh, tokens, update
+from waiter.subcommands import create, delete, init, kill, maintenance, ping, show, ssh, tokens, update, sigkill
 import waiter.plugins as waiter_plugins
 
 parser = argparse.ArgumentParser(description='waiter is the Waiter CLI')
@@ -56,6 +56,9 @@ actions = {
     'update': {
         'run-function': update.register(subparsers.add_parser),
         'implicit-args-function': update.add_implicit_arguments
+    },
+    'sigkill': {
+        'run-function': sigkill.register(subparsers.add_parser)
     }
 }
 
