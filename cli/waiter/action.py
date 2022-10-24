@@ -287,3 +287,28 @@ def process_ping_request(clusters, token_name_or_service_id, is_service_id, time
                 success = True
         overall_success = overall_success and success
     return overall_success
+
+def process_sigkill_request(clusters, instance_id):
+    """Send sigkill request to the specific instance"""
+    cluster_name = cluster['name']
+    params = {}
+    try:
+        print(f'Sending sigkill request to instance {terminal.bold(instance_id)} in {terminal.bold(cluster_name)}...')
+        resp = http_util.delete(cluster, f'/apps/{instance_id}/sigkill', params=params)
+        logging.debug(f'Response status code: {resp.status_code}')
+        if resp.status_code == 200:
+                    routers_agree = resp.json().get('routers-agree')
+                    if routers_agree:
+                        print(f'Successfully killed {instance_id} in {cluster_name}.')
+                        return True
+                    else:
+                        print(f'Successfully killed {instance_id} in {cluster_name}. '
+                              f'Server-side timeout waiting for routers to update.')
+                        return False
+        else:
+            print_error(response_message(resp.json()))
+            return False
+    except Exception:
+        message = f'Encountered error while killing {instance_id} in {cluster_name}.'
+        logging.exception(message)
+        print_error(message)
