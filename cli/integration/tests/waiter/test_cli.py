@@ -2268,6 +2268,10 @@ class WaiterCliTest(util.WaiterTest):
         self.__test_ssh(lambda _, instances: instances['active-instances'], admin=True,
                         container_name='waiter-files')
 
+    def test_ssh_token_custom_container_all_users(self):
+        self.__test_ssh(lambda _, instances: instances['active-instances'], admin=False,
+                        container_name='waiter-files')
+
     def test_ssh_token_invalid_token(self):
         token_name = "nonexistent"
         cp = cli.ssh(self.waiter_url, token_name)
