@@ -8,7 +8,7 @@ from tabulate import tabulate
 from waiter import http_util, terminal
 from waiter.format import format_last_request_time
 from waiter.format import format_status
-from waiter.querying import get_service, get_services_using_token
+from waiter.querying import get_service, get_services_using_token, get_service_id_from_instance_id
 from waiter.querying import print_no_data, query_service, query_services, query_token
 from waiter.util import is_service_current, str2bool, response_message, print_error, wait_until
 
@@ -294,7 +294,8 @@ def process_sigkill_request(clusters, instance_id):
     params = {}
     try:
         print(f'Sending sigkill request to instance {terminal.bold(instance_id)} in {terminal.bold(cluster_name)}...')
-        resp = http_util.delete(cluster, f'/apps/{instance_id}/sigkill', params=params)
+        params = {'timeout': timeout_seconds * 1000}
+        resp = http_util.delete(cluster, f'/apps/{instance_id}/signal', params=params)
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
                     routers_agree = resp.json().get('routers-agree')
@@ -312,3 +313,36 @@ def process_sigkill_request(clusters, instance_id):
         message = f'Encountered error while killing {instance_id} in {cluster_name}.'
         logging.exception(message)
         print_error(message)
+
+def process_sigkill_request(clusters, instance_id, timeout_secs, no_instance_result=False):
+    # Send SIGKILL to an instance
+    service_id = get_service_id_from_instance_id(instance_id)
+    query_result = query_service(clusters, service_id)
+    num_services = query_result['count']
+    if num_services == 0:
+        print_no_data(clusters)
+        return no_instance_result
+
+    cluster_data_pairs = sorted(query_result['clusters'].items())
+    clusters_by_name = {c['name']: c for c in clusters}
+    for cluster_name, data in cluster_data_pairs:
+        service = data['service']
+        cluster = clusters_by_name[cluster_name]
+        active_instances = service['instances']['active-instances']
+
+        status_string = service['status']
+        status = format_status(status_string)
+        service_inactive = status_string == 'Inactive'
+
+        if service_inactive:
+            continue
+
+        for instance in active_instances:
+            if instance['id'] == instance_id:
+                return kill_instance_on_cluster(cluster, instance_id, timeout_secs)
+
+    print(f'No active instance with ID {terminal.bold(instance_id)}')
+    return True
+ 
+
+
