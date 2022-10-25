@@ -1743,7 +1743,18 @@
                                     (metrics-sync/incoming-router-metrics-handler
                                       router-metrics-agent metrics-sync-interval-ms bytes-encryptor bytes-decryptor
                                       query-state-fn request))))
-   :signal-handler-fn (pc/fnk )
+   :signal-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! router-state-maintainer]
+                                      [:routines peers-acknowledged-eject-requests-fn]
+                                      [:scheduler scheduler]
+                                      [:state scaling-timeout-config scheduler-interactions-thread-pool]
+                                      wrap-router-auth-fn]
+                               (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]
+                                 (wrap-router-auth-fn
+                                   (fn signal-handler-fn [request]
+                                     (scaling/signal-handler
+                                       notify-instance-killed-fn peers-acknowledged-eject-requests-fn
+                                       scheduler populate-maintainer-chan! scaling-timeout-config
+                                       scheduler-interactions-thread-pool request)))))
    :service-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]
                                 [:routines admin-user?-fn allowed-to-manage-service?-fn generate-log-url-fn make-inter-router-requests-async-fn
                                  retrieve-token-based-fallback-fn router-metrics-helpers service-id->references-fn

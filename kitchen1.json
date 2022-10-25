@@ -1,5 +1,5 @@
 {"cmd-type" : "shell",
-  "name" : "kitchen",
+  "name" : "kitchen1",
   "version" : "version-does-not-matter",
   "grace-period-secs" : 120,
   "idle-timeout-mins" : 10,
@@ -8,5 +8,5 @@
   "cpus" : 0.1,
   "mem" : 256,
   "cmd" : "/Users/joshshin/desktop/opensource/waiter/containers/test-apps/kitchen/bin/kitchen -p $PORT0",
-  "token" : "kitchen.localtest.me"
+  "token" : "kitchen1.localtest.me"
 }
