@@ -39,6 +39,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -772,13 +773,38 @@ public class GrpcClient {
     }
 
     private static void runCollectPackagesSuccess(final GrpcClient client, final String correlationId) {
-        final HashMap<String, Object> headers = new HashMap<>();
+        final Map<String, String> environment = System.getenv();
+        final int numMessages = Integer.parseInt(environment.getOrDefault("COURIER_NUM_MESSAGES", "10"));
+        final int messageLength = Integer.parseInt(environment.getOrDefault("COURIER_MESSAGE_LENGTH", "100000"));
+        String[] messageArray = new String[10];
+        for (int index = 0; index < messageArray.length; index++) {
+            final StringBuilder sb = new StringBuilder();
+            char letter = (char) ('a' + (index % messageArray.length));
+            for (int i = 0; i < messageLength; i++) {
+                sb.append(letter);
+                if (i % 1000 == 0) {
+                    sb.append(".");
+                }
+            }
+            messageArray[index] = sb.toString();
+        }
+
+        final Map<String, Object> headers = new TreeMap<>();
         headers.put("x-cid", correlationId);
-        final List<String> ids = IntStream.range(0, 10).mapToObj(i -> "id-" + i).collect(Collectors.toList());
-        final List<String> messages = IntStream.range(0, 10).mapToObj(i -> "message-" + i).collect(Collectors.toList());
+        for (String envKey : environment.keySet()) {
+            if (envKey.startsWith("X_WAITER_")) {
+                headers.put(envKey.toLowerCase().replaceAll("_", "-"), environment.get(envKey));
+            }
+        }
+        client.logFunction.apply("collectPackages[success] headers = " + headers);
+
+        final List<String> ids = IntStream.range(0, numMessages).mapToObj(i -> "id-" + i).collect(Collectors.toList());
+        final List<String> messages = IntStream.range(0, numMessages).mapToObj(i -> "message-" + i + "-" + messageArray[i % messageArray.length]).collect(Collectors.toList());
+        final int interMessageSleepMs = 100;
+        final long deadlineDurationMillis = 10000L + (10L * numMessages * interMessageSleepMs);
         final RpcResult<List<CourierSummary>> rpcResult =
-            client.collectPackages(headers, ids, "User", messages, 100, true,
-                messages.size() + 1, CancellationPolicy.NONE, 10000);
+            client.collectPackages(headers, ids, "User", messages, interMessageSleepMs, true,
+                messages.size() + 1, CancellationPolicy.NONE, deadlineDurationMillis);
         final List<CourierSummary> courierSummaries = rpcResult.result();
         client.logFunction.apply("collectPackages[success] summary = " + courierSummaries);
         final Status status = rpcResult.status();
