@@ -106,6 +106,10 @@
                       {:code :error/token-read
                        :details {:message "status missing from response"}}
 
+                      ;; short-lived token which was deleted between the index retrieval and token info retrieval
+                      (and (empty? latest-token-description) (empty? description))
+                      {:code :success/skip-missing}
+
                       (nil? latest-root)
                       {:code :error/token-read
                        :details {:message "token root missing from latest token description"}}

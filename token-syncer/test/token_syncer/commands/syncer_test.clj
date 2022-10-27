@@ -567,7 +567,7 @@
                                                :status 200}}}
                (sync-token-on-clusters waiter-api cluster-urls test-token token-description opt-out-metadata-name cluster-url->token-data)))))
 
-    (testing "sync cluster successfully when token missing"
+    (testing "sync cluster successfully when token missing on one cluster"
       (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
             test-token "test-token-1"
             token-description {"last-update-user" "john.doe"
@@ -585,6 +585,16 @@
                 "www.cluster-2.com" {:code :success/sync-update
                                      :details {:etag ".new"
                                                :status 200}}}
+               (sync-token-on-clusters waiter-api cluster-urls test-token token-description opt-out-metadata-name cluster-url->token-data)))))
+
+    (testing "sync cluster successfully when token missing on all clusters"
+      (let [cluster-urls ["www.cluster-1.com" "www.cluster-2.com"]
+            test-token "test-token-1"
+            token-description {}
+            cluster-url->token-data {"www.cluster-1.com" {:status 404}
+                                     "www.cluster-2.com" {:status 404}}]
+        (is (= {"www.cluster-1.com" {:code :success/skip-missing}
+                "www.cluster-2.com" {:code :success/skip-missing}}
                (sync-token-on-clusters waiter-api cluster-urls test-token token-description opt-out-metadata-name cluster-url->token-data)))))
 
     (testing "sync cluster error"
