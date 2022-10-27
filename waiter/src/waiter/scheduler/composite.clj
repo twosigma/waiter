@@ -60,6 +60,12 @@
          (pmap #(retrieve-services % service-id->scheduler))
          (reduce into [])))
 
+  (signal-instance [_ instance signal-type]
+    (-> instance 
+        :service-id
+        service-id->scheduler
+        (scheduler/kill-instance instance)))
+
   (kill-instance [_ instance]
     (-> instance
         :service-id
