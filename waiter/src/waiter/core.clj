@@ -1744,15 +1744,15 @@
                                       router-metrics-agent metrics-sync-interval-ms bytes-encryptor bytes-decryptor
                                       query-state-fn request))))
    :signal-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! router-state-maintainer]
-                                      [:routines peers-acknowledged-eject-requests-fn]
+                                      [:routines peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn]
                                       [:scheduler scheduler]
                                       [:state scaling-timeout-config scheduler-interactions-thread-pool]
-                                      wrap-router-auth-fn]
+                                      wrap-secure-request-fn]
                                (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]
-                                 (wrap-router-auth-fn
+                                 (wrap-secure-request-fn
                                    (fn signal-handler-fn [request]
-                                     (scaling/signal-handler
-                                       notify-instance-killed-fn peers-acknowledged-eject-requests-fn
+                                     (handler/signal-handler
+                                       notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn
                                        scheduler populate-maintainer-chan! scaling-timeout-config
                                        scheduler-interactions-thread-pool request)))))
    :service-handler-fn (pc/fnk [[:daemons autoscaler router-state-maintainer]

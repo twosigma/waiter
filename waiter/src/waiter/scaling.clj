@@ -195,7 +195,7 @@
                                       :status (or status http-500-internal-server-error))
             (update :headers assoc "x-cid" correlation-id))))))
 
-(defn- execute-signal
+#_(defn- execute-signal
   "Helper function to send signals to instances of a service.
    An instance needs to be approved for killing by peers before an actual kill attempt is made.
    When an instance receives a veto or is not killed, we will iteratively search for another instance to successfully kill.
@@ -206,7 +206,7 @@
   (= 1 1))
 
 
-#_(defn- execute-signal-wewe
+#_(defn- execute-signal
   "Helper function to send signals to instances of a service.
    An instance needs to be approved for killing by peers before an actual kill attempt is made.
    When an instance receives a veto or is not killed, we will iteratively search for another instance to successfully kill.
@@ -276,7 +276,8 @@
             (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "fail"))
             (log/error ex "unable to scale down service" service-id)))))))
 
-(defn signal-handler
+
+#_(defn signal-handler
   "Handler that supports sending signals to instances of a particular service on a specific router."
   [notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler populate-maintainer-chan! timeout-config
    scale-service-thread-pool {:keys [route-params] {:keys [src-router-id]} :basic-authentication}]
@@ -300,7 +301,6 @@
                                        :success instance-killed?}
                                       :status (or status http-500-internal-server-error))
             (update :headers assoc "x-cid" correlation-id))))))
-
 
 
 

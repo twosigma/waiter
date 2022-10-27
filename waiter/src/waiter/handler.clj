@@ -1282,3 +1282,108 @@
         request))
     (catch Throwable th
       (utils/exception->response th request))))
+
+
+(defn get-service-id-from-instance-id [instance-id]
+  (nth (str/split instance-id #"\.") 0))
+
+(defn- execute-signal
+  "Helper function to send signals to instances of a service.
+   An instance needs to be approved for killing by peers before an actual kill attempt is made.
+   The function stops and returns true when a successful kill is made.
+   Else, it terminates after we have exhausted all candidate instances to kill or when a kill attempt returns a non-truthy value."
+  [notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn scheduler populate-maintainer-chan! timeout-config
+   instance-id correlation-id thread-pool response-chan]
+  (let [{:keys [eject-backoff-base-time-ms inter-kill-request-wait-time-ms max-eject-time-ms]} timeout-config]
+    (cid/with-correlation-id
+      correlation-id
+      (async/go
+        (try
+          ;; DONT KNOW IF WE NEED REASON AND RESULT MAP
+          (let [request-id (utils/unique-identifier) ; new unique identifier for this reservation request
+                reason-map-fn (fn [] {:cid correlation-id :reason :kill-instance :request-id request-id :time (t/now)})
+                result-map-fn (fn [status] {:cid correlation-id :request-id request-id :status status})]
+            (log/info "Attempting to kill" instance-id)
+            ;; (timers/start-stop-time!
+              ;; MAKE OUR OWN TIMER FOR INSTANCES?
+              ;; (metrics/service-timer instance-id "kill-instance")
+              ;;loop [exclude-ids-set #{}]
+                ;;let [instance (service/get-rand-inst populate-maintainer-chan! service-id (reason-map-fn) exclude-ids-set inter-kill-request-wait-time-ms)]
+                (let [service-id (get-service-id-from-instance-id instance-id)]
+                    (def instance {:id instance-id :service-id service-id})
+                    (if (peers-acknowledged-eject-requests-fn instance true eject-backoff-base-time-ms :prepare-to-kill)
+                      (do
+                        ;; CHANGED INSTANCE TO INSTANCE-ID
+                        (log/info "sending sigkill to instance " instance-id service-id)
+                        ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "attempt"))
+                        (scheduler/track-kill-candidate! instance-id :prepare-to-kill eject-backoff-base-time-ms)
+                        (let [{:keys [killed?] :as kill-result}
+                              (-> (au/execute
+                                    (fn kill-instance-for-scale-down-task []
+                                      ;; ADD ARG TO SPECIFY TYPE OF SIGNAL
+                                      (scheduler/signal-instance scheduler instance "sigkill"))
+                                    thread-pool)
+                                  async/<!
+                                  :result)]
+                          (if killed?
+                            (do
+                              (log/info "marking instance" instance-id "as killed")
+                              (counters/inc! (metrics/service-counter service-id "instance-counts" "killed"))
+                              ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "success"))
+                              (scheduler/track-kill-candidate! instance-id :killed eject-backoff-base-time-ms)
+                              (service/release-instance! populate-maintainer-chan! instance (result-map-fn :killed))
+                              (notify-instance-killed-fn instance)
+                              (peers-acknowledged-eject-requests-fn instance false max-eject-time-ms :killed))
+                            (do
+                              (log/info "failed kill attempt, releasing instance" instance-id)
+                              ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "kill-fail"))
+                              (service/release-instance! populate-maintainer-chan! instance (result-map-fn :not-killed))))
+                          (when response-chan (async/>! response-chan kill-result))
+                          killed?))
+                      (do
+                        (log/info "kill was vetoed, releasing instance" instance-id)
+                        ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "vetoed-instance"))
+                        (service/release-instance! populate-maintainer-chan! instance (result-map-fn :not-killed))
+                        ;; make best effort to find another instance that is not veto-ed
+                        ;; (recur (conj exclude-ids-set instance-id))
+                        ))
+                    ;; (do
+                      ;; (log/info "no instance available to kill")
+                      ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "unavailable"))
+                      ;; false)
+                               ))
+          (catch Exception ex
+            ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "fail"))
+            (log/error ex "unable to send signal to instance " instance-id)))))))
+
+
+
+(defn signal-handler
+  "Handler that supports sending signals to instances of a particular service on a specific router."
+  [notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn scheduler populate-maintainer-chan! timeout-config
+   scale-service-thread-pool {:keys [route-params] {:keys [src-router-id]} :basic-authentication}]
+  (let [{:keys [instance-id]} route-params
+        correlation-id (cid/get-correlation-id)]
+    (cid/cinfo correlation-id "received request to kill instance of" instance-id "from" src-router-id)
+    (log/info "CORRELATION-ID: " correlation-id)
+    (async/go
+      (let [response-chan (async/promise-chan)
+            instance-killed? (async/<!
+                               (execute-signal
+                                 notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn
+                                 scheduler populate-maintainer-chan! timeout-config instance-id correlation-id
+                                 scale-service-thread-pool response-chan))
+            {:keys [instance-id status] :as kill-response} (or (async/poll! response-chan)
+                                                               {:message :no-instance-killed, :status http-404-not-found})]
+        (log/info "STATUS: " status)
+        (if instance-killed?
+          (cid/cinfo correlation-id "killed instance" instance-id)
+          (cid/cinfo correlation-id "unable to kill instance" kill-response))
+        (-> (utils/clj->json-response {:kill-response kill-response
+                                       :source-router-id src-router-id
+                                       :success instance-killed?}
+                                      :status (or status http-500-internal-server-error))
+            (update :headers assoc "x-cid" correlation-id))))))
+
+
+

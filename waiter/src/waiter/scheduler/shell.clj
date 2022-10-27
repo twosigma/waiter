@@ -607,6 +607,29 @@
     (let [id->service @id->service-agent]
       (map (fn [[_ {:keys [service]}]] service) id->service)))
 
+  (signal-instance [this {:keys [id service-id] :as instance} signal-type] 
+   (log/info "IN SIGNAL-INSTANCE" signal-type)
+   (if (scheduler/service-exists? this service-id)
+      (let [completion-promise (promise)
+            message "Killed using scheduler API"]
+        (send id->service-agent kill-instance service-id id message
+              port->reservation-atom port-grace-period-ms
+              completion-promise)
+        (let [result (deref completion-promise)
+              success (= result :deleted)]
+          (when success
+            (scheduler/log-service-instance instance :kill :info))
+          {:killed? true
+           :success success
+           :result result
+           :message (if success
+                      (str "Deleted " id)
+                      (str "Unable to delete " id))}))
+      {:success false
+       :result :no-such-service-exists
+       :message (str service-id " does not exist!")}))
+
+
   (kill-instance [this {:keys [id service-id] :as instance}]
     (if (scheduler/service-exists? this service-id)
       (let [completion-promise (promise)

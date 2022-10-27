@@ -128,6 +128,10 @@
   (get-services [this]
     "Returns a list of scheduler/Service records")
 
+  (signal-instance [this instance signal-type] 
+    "Instructs the scheduler to send the specified signal to a specific ServiceInstance.
+    Returns a truth-y value if the signal was successfully sent.")
+
   (kill-instance [this instance]
     "Instructs the scheduler to kill a specific ServiceInstance.
      Returns a map containing the following structure:

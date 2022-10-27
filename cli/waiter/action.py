@@ -295,7 +295,10 @@ def process_sigkill_request(clusters, instance_id):
     try:
         print(f'Sending sigkill request to instance {terminal.bold(instance_id)} in {terminal.bold(cluster_name)}...')
         params = {'timeout': timeout_seconds * 1000}
-        resp = http_util.delete(cluster, f'/apps/{instance_id}/signal', params=params)
+        resp = http_util.delete(cluster, f'/apps/{instance_id}/signal', params=params, read_timeout=timeout_seconds)
+        
+        print(resp.status_code)
+
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
                     routers_agree = resp.json().get('routers-agree')
@@ -309,6 +312,10 @@ def process_sigkill_request(clusters, instance_id):
         else:
             print_error(response_message(resp.json()))
             return False
+    except requests.exceptions.ReadTimeout:
+        message = f'Request timed out while killing {service_id} in {cluster_name}.'
+        logging.exception(message)
+        print_error(message)
     except Exception:
         message = f'Encountered error while killing {instance_id} in {cluster_name}.'
         logging.exception(message)
