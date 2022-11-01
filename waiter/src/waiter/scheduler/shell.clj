@@ -269,7 +269,7 @@
             {:keys [:shell-scheduler/process] :as instance} (get id->instance instance-id)]
         (if (and instance (active? instance))
           (do
-            (log/info "deleting instance" instance-id "process" process)
+            (log/info "deleting 2 instance" instance-id "process" process)
             (kill-process! instance port->reservation-atom port-grace-period-ms)
             (deliver completion-promise :deleted)
             (-> id->service
@@ -290,6 +290,36 @@
       (log/error e "error attempting to delete instance" instance-id)
       (deliver completion-promise :failed)
       id->service)))
+
+(defn- signal-instance
+  "Deletes the instance corresponding to service-id/instance-id and returns if successful"
+  [id->service service-id instance-id message port->reservation-atom port-grace-period-ms]
+  (try
+    (if (contains? id->service service-id)
+      (let [{:keys [id->instance]} (get id->service service-id)
+            {:keys [:shell-scheduler/process] :as instance} (get id->instance instance-id)]
+        (if (and instance (active? instance))
+          (do
+            (log/info "deleting instance" instance-id "process" process)
+            (kill-process! instance port->reservation-atom port-grace-period-ms)
+            (-> id->service
+                (update-in [service-id :service :instances] dec)
+                (update-in [service-id :id->instance instance-id] assoc
+                           :killed? true
+                           :message message
+                           :shell-scheduler/process nil))
+            true)
+
+          (do
+            (log/info "instance" instance-id "does not exist")
+            false)))
+      (do
+        (log/info "service" service-id "does not exist")
+        false))
+    (catch Throwable e
+      (log/error e "error attempting to delete instance" instance-id)
+      false)))
+
 
 (defn- delete-service
   "Deletes the service corresponding to service-id and returns the updated id->service map"
@@ -608,15 +638,15 @@
       (map (fn [[_ {:keys [service]}]] service) id->service)))
 
   (signal-instance [this {:keys [id service-id] :as instance} signal-type] 
-   (log/info "IN SIGNAL-INSTANCE" signal-type)
+   (log/info "in signal-instance")
    (if (scheduler/service-exists? this service-id)
       (let [completion-promise (promise)
             message "Killed using scheduler API"]
-        (send id->service-agent kill-instance service-id id message
-              port->reservation-atom port-grace-period-ms
-              completion-promise)
-        (let [result (deref completion-promise)
-              success (= result :deleted)]
+        (let [result (signal-instance
+                  service-id id message
+                  port->reservation-atom port-grace-period-ms
+                  completion-promise)
+              success (= result true)]
           (when success
             (scheduler/log-service-instance instance :kill :info))
           {:killed? true
@@ -624,13 +654,16 @@
            :result result
            :message (if success
                       (str "Deleted " id)
-                      (str "Unable to delete " id))}))
+                      (str "Unable to delete " id))
+           :status "GOOD"}))
       {:success false
        :result :no-such-service-exists
-       :message (str service-id " does not exist!")}))
+       :message (str service-id " does not exist!")
+       :status "FAIL"}))
 
 
   (kill-instance [this {:keys [id service-id] :as instance}]
+    (log/info "in kill-instance")
     (if (scheduler/service-exists? this service-id)
       (let [completion-promise (promise)
             message "Killed using scheduler API"]

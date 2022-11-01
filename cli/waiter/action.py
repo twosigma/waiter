@@ -298,17 +298,15 @@ def kill_instance_on_cluster(cluster, instance_id, timeout_seconds):
         params = {'timeout': timeout_seconds * 1000}
         resp = http_util.delete(cluster, f'/apps/{instance_id}/signal', params=params, read_timeout=timeout_seconds)
         
-        print(resp.status_code)
-
+        print(resp)
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
-                    routers_agree = resp.json().get('routers-agree')
-                    if routers_agree:
+                    success = resp.json().get('success')
+                    if success == 'true':
                         print(f'Successfully killed {instance_id} in {cluster_name}.')
                         return True
                     else:
-                        print(f'Successfully killed {instance_id} in {cluster_name}. '
-                              f'Server-side timeout waiting for routers to update.')
+                        print(f'Was not able to kill {instance_id} in {cluster_name}. ')
                         return False
         else:
             print_error(response_message(resp.json()))
