@@ -298,11 +298,10 @@ def kill_instance_on_cluster(cluster, instance_id, timeout_seconds):
         params = {'timeout': timeout_seconds * 1000}
         resp = http_util.delete(cluster, f'/apps/{instance_id}/signal', params=params, read_timeout=timeout_seconds)
         
-        print(resp)
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
-                    success = resp.json().get('success')
-                    if success == 'true':
+                    success = resp.json().get("kill-response").get('success')
+                    if success:
                         print(f'Successfully killed {instance_id} in {cluster_name}.')
                         return True
                     else:
