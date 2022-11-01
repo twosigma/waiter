@@ -1292,6 +1292,8 @@
    An instance needs to be approved for killing by peers before an actual kill attempt is made.
    The function stops and returns true when a successful kill is made.
    Else, it terminates after we have exhausted all candidate instances to kill or when a kill attempt returns a non-truthy value."
+  ;; PEER-ACK UNUSED
+  ;; dont need threadpool
   [notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn scheduler populate-maintainer-chan! timeout-config
    instance-id correlation-id thread-pool response-chan]
   (let [{:keys [eject-backoff-base-time-ms inter-kill-request-wait-time-ms max-eject-time-ms]} timeout-config]
@@ -1317,8 +1319,7 @@
                         (scheduler/track-kill-candidate! instance-id :prepare-to-kill eject-backoff-base-time-ms)
                         (let [{:keys [killed?] :as kill-result}
                               (-> (au/execute
-                                    (fn kill-instance-for-scale-down-task []
-                                      ;; ADD ARG TO SPECIFY TYPE OF SIGNAL
+                                    (fn send-signal-to-instance []
                                       (scheduler/signal-instance scheduler instance :sigkill))
                                     thread-pool)
                                   async/<!
@@ -1329,7 +1330,7 @@
                               (counters/inc! (metrics/service-counter service-id "instance-counts" "killed"))
                               ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "success"))
                               (scheduler/track-kill-candidate! instance-id :killed eject-backoff-base-time-ms)
-                              (service/release-instance! populate-maintainer-chan! instance (result-map-fn :killed))
+                              ;; (service/release-instance! populate-maintainer-chan! instance (result-map-fn :killed))
                               (notify-instance-killed-fn instance))
                             (do
                               (log/info "failed kill attempt, releasing instance" instance-id)
@@ -1363,8 +1364,8 @@
                                  notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn
                                  scheduler populate-maintainer-chan! timeout-config instance-id correlation-id
                                  scale-service-thread-pool response-chan)
-            {:keys [instance-id status] :as kill-response} (or (async/poll! response-chan)
-                                                               {:message :no-instance-killed, :status http-404-not-found})]
+            {:keys [instance-id status] :as kill-response} (or (async/<! response-chan)
+                                                               {:message :no-instance-killed, :status http-500-internal-server-error})]
         (log/info "STATUS: " status)
         (log/info kill-response)
         (-> (utils/clj->json-response {:kill-response kill-response
