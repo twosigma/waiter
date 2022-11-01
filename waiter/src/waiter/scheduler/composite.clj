@@ -64,7 +64,7 @@
     (-> instance 
         :service-id
         service-id->scheduler
-        (scheduler/kill-instance instance)))
+        (scheduler/signal-instance instance signal-type)))
 
   (kill-instance [_ instance]
     (-> instance

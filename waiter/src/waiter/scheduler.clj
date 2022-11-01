@@ -129,8 +129,9 @@
     "Returns a list of scheduler/Service records")
 
   (signal-instance [this instance signal-type] 
-    "Instructs the scheduler to send the specified signal to a specific ServiceInstance.
-    Returns a truth-y value if the signal was successfully sent.")
+    "Instructs the scheduler to send specified signal to a specific ServiceInstance.
+     Returns a map containing the following structure:
+     {:instance-id instance-id, :killed? <boolean>, :message <string>,  :service-id service-id, :status status-code}")
 
   (kill-instance [this instance]
     "Instructs the scheduler to kill a specific ServiceInstance.
