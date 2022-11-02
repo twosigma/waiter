@@ -822,6 +822,14 @@
     (track-process-error-metrics descriptor)
     (utils/exception->response exception request)))
 
+(defn mark-and-compute-error-delay-ms!
+  "Marks and computes the delay in milliseconds that will be introduced into an error response.
+   The delay relies on rate metrics granularity down to one minute."
+  [error-response-throttle error-meter]
+  (meters/mark! error-meter 1)
+  (let [errors-per-min (meters/rate-one error-meter)]
+    (utils/compute-error-delay-ms error-response-throttle errors-per-min)))
+
 (let [process-timer (metrics/waiter-timer "core" "process")]
   (defn process
     "Process the incoming request and stream back the response."
@@ -933,6 +941,11 @@
               (catch Exception e ; Handle case where we couldn't get an instance
                 (counters/dec! (metrics/service-counter service-id "request-counts" "outstanding"))
                 (statsd/gauge-delta! metric-group "request_outstanding" -1)
+                (when (= error-class-deployment-error (-> e (ex-data) (:error-class)))
+                  (let [deployment-error-meter (metrics/service-meter service-id "response-rate" "error" "deployment-error")
+                        {:keys [error-response-throttle]} instance-request-properties]
+                    (au/sleep! (mark-and-compute-error-delay-ms! error-response-throttle deployment-error-meter)
+                               "frequent deployment error failures")))
                 (handle-process-exception e request)))))))))
 
 (defn wrap-suspended-service
@@ -993,26 +1006,34 @@
                    status)]
     (make-maintenance-mode handler on-error)))
 
+(defn generate-throttled-error-response
+  "Generates an error response after a configured throttle delay."
+  [request error-response-throttle error-meter response-map]
+  (async/go
+    (au/sleep! (mark-and-compute-error-delay-ms! error-response-throttle error-meter)
+               "frequent queue length exceeded requests")
+    (utils/data->error-response response-map request)))
+
 (defn wrap-too-many-requests
   "Check if a service has more pending requests than max-queue-length and immediately return a 503"
-  [handler]
+  [handler error-response-throttle]
   (fn [{{:keys [service-id service-description]} :descriptor :as request}]
     (let [max-queue-length (get service-description "max-queue-length")
           current-queue-length (counters/value (metrics/service-counter service-id "request-counts" "waiting-for-available-instance"))]
       (if (> current-queue-length max-queue-length)
         (let [outstanding-requests (counters/value (metrics/service-counter service-id "request-counts" "outstanding"))
+              queue-length-meter (metrics/service-meter service-id "response-rate" "error" "queue-length")
               response-map {:current-queue-length current-queue-length
                             :error-class error-class-queue-length
                             :max-queue-length max-queue-length
                             :outstanding-requests outstanding-requests
                             :service-id service-id}]
           (log/info "max queue length exceeded" response-map)
-          (meters/mark! (metrics/service-meter service-id "response-rate" "error" "queue-length"))
-          (-> {:details response-map
-               :message "Max queue length exceeded"
-               :status http-503-service-unavailable
-               :waiter/error-image error-image-503-service-overloaded}
-            (utils/data->error-response request)))
+          (generate-throttled-error-response request error-response-throttle queue-length-meter
+                                             {:details response-map
+                                              :message "Max queue length exceeded"
+                                              :status http-503-service-unavailable
+                                              :waiter/error-image error-image-503-service-overloaded}))
         (handler request)))))
 
 (defn determine-priority

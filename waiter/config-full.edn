@@ -890,6 +890,16 @@
                                ;; The HTTP connect timeout (milliseconds) for instance requests:
                                :connection-timeout-ms 5000
 
+                               ;; Configures the delay introduced in generating some error responses to clients
+                               ;; e.g. using the below settings, an error rate of 500 would introduce a delay of 250 ms
+                               ;; while an error rate of 3000 would introduce a delay of 2000 ms.
+                               :error-response-throttle { ;; the maximum delay in generating the error response
+                                                         :max-delay-ms 2000
+                                                         ;; the increment in delay per step
+                                                         :step-delay-ms 50
+                                                         ;; step size used for per minute error rate
+                                                         :step-size-per-min 100}
+
                                ;; The HTTP idle timeout (milliseconds) for instance requests:
                                :initial-socket-timeout-ms 900000
 

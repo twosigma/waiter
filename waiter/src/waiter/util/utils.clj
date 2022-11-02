@@ -1009,3 +1009,8 @@
   (let [class-loader (.getContextClassLoader (Thread/currentThread))
         resource-stream (.getResourceAsStream class-loader resource-path)]
     (slurp-bytes resource-stream)))
+
+(defn compute-error-delay-ms
+  "Computes the delay in milliseconds that will be introduced into an error response."
+  [{:keys [max-delay-ms step-delay-ms step-size-per-min]} errors-per-min]
+  (-> errors-per-min (/ step-size-per-min) (int) (* step-delay-ms) (min max-delay-ms)))

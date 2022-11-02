@@ -19,6 +19,7 @@
             [clojure.string :as str]
             [clojure.test :refer :all]
             [metrics.counters :as counters]
+            [metrics.meters :as meters]
             [plumbing.core :as pc]
             [qbits.jet.client.http :as http]
             [waiter.core :refer :all]
@@ -29,6 +30,7 @@
             [waiter.statsd :as statsd]
             [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
+            [waiter.util.async-utils :as au]
             [waiter.util.utils :as utils])
   (:import (java.io ByteArrayOutputStream IOException)
            (java.net ConnectException SocketTimeoutException)
@@ -527,28 +529,44 @@
       (is (true? success?)))))
 
 (deftest test-wrap-too-many-requests
-  (testing "returns error for too many requests"
-    (let [service-id "my-service"
-          counter (metrics/service-counter service-id "request-counts" "waiting-for-available-instance")]
-      (counters/clear! counter)
-      (counters/inc! counter 10)
-      (let [handler (wrap-too-many-requests (fn [_] {:status http-200-ok}))
-            request {:descriptor {:service-id service-id
-                                  :service-description {"max-queue-length" 5}}}
-            {:keys [status body]} (handler request)]
-        (is (= http-503-service-unavailable status))
-        (is (str/includes? body "Max queue length")))))
+  (let [error-response-throttle {:max-delay-ms 1000
+                                 :step-delay-ms 50
+                                 :step-size-per-min 100}]
+    (testing "returns error for too many requests"
+      (let [service-id (str "my-service-" (System/currentTimeMillis))
+            counter (metrics/service-counter service-id "request-counts" "waiting-for-available-instance")]
+        (counters/inc! counter 10)
+        (let [handler (wrap-too-many-requests (fn [_] {:status http-200-ok}) error-response-throttle)
+              request {:descriptor {:service-id service-id
+                                    :service-description {"max-queue-length" 5}}}
+              response (handler request)
+              {:keys [status body]} (cond-> response (au/chan? response) (async/<!!))]
+          (is (= http-503-service-unavailable status))
+          (is (str/includes? body "Max queue length"))))
 
-  (testing "passes service with fewer requests"
-    (let [service-id "ok-service"
-          counter (metrics/service-counter service-id "request-counts" "waiting-for-available-instance")]
-      (counters/clear! counter)
-      (counters/inc! counter 3)
-      (let [handler (wrap-too-many-requests (fn [_] {:status http-200-ok}))
-            request {:descriptor {:service-id service-id
-                                  :service-description {"max-queue-length" 10}}}
-            {:keys [status]} (handler request)]
-        (is (= http-200-ok status))))))
+      (let [service-id (str "my-service-" (System/currentTimeMillis))
+            counter (metrics/service-counter service-id "request-counts" "waiting-for-available-instance")
+            queue-length-meter (metrics/service-meter service-id "response-rate" "error" "queue-length")]
+        (counters/inc! counter 10)
+        (meters/mark! queue-length-meter 1000000)
+        (let [handler (wrap-too-many-requests (fn [_] {:status http-200-ok}) error-response-throttle)
+              request {:descriptor {:service-id service-id
+                                    :service-description {"max-queue-length" 5}}}
+              response (handler request)
+              {:keys [status body]} (cond-> response (au/chan? response) (async/<!!))]
+          (is (= http-503-service-unavailable status))
+          (is (str/includes? body "Max queue length")))))
+
+    (testing "passes service with fewer requests"
+      (let [service-id (str "ok-service-" (System/currentTimeMillis))
+            counter (metrics/service-counter service-id "request-counts" "waiting-for-available-instance")]
+        (counters/clear! counter)
+        (counters/inc! counter 3)
+        (let [handler (wrap-too-many-requests (fn [_] {:status http-200-ok}) error-response-throttle)
+              request {:descriptor {:service-id service-id
+                                    :service-description {"max-queue-length" 10}}}
+              {:keys [status]} (handler request)]
+          (is (= http-200-ok status)))))))
 
 (deftest test-redirect-on-process-error
   (let [request->descriptor-fn (fn [_]

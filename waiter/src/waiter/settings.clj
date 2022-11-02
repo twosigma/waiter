@@ -76,6 +76,9 @@
                                                   (s/required-key :client-buffer-size) schema/positive-int
                                                   (s/required-key :client-connection-idle-timeout-ms) schema/positive-int
                                                   (s/required-key :connection-timeout-ms) schema/positive-int
+                                                  (s/required-key :error-response-throttle) {(s/required-key :max-delay-ms) schema/positive-int
+                                                                                             (s/required-key :step-delay-ms) schema/positive-int
+                                                                                             (s/required-key :step-size-per-min) schema/positive-int}
                                                   (s/required-key :initial-socket-timeout-ms) schema/positive-int
                                                   (s/required-key :lingering-request-threshold-ms) schema/positive-int
                                                   (s/required-key :output-buffer-size) schema/positive-int
@@ -340,6 +343,9 @@
                                  :client-buffer-size 32768 ;; 32 KiB
                                  :client-connection-idle-timeout-ms 10000 ; 10 seconds
                                  :connection-timeout-ms 5000 ; 5 seconds
+                                 :error-response-throttle {:max-delay-ms 2000
+                                                           :step-delay-ms 50
+                                                           :step-size-per-min 100}
                                  :initial-socket-timeout-ms 900000 ; 15 minutes
                                  :lingering-request-threshold-ms 60000 ; 1 minute
                                  :output-buffer-size 4096 ;; 4 KiB

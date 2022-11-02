@@ -244,3 +244,12 @@
                    (finally
                      (async/close! task-complete-chan))))))
     task-complete-chan))
+
+(defmacro sleep!
+  "Helper macro that wraps sleep call inside an async/go block."
+  [sleep-ms sleep-cause]
+  `(let [sleep-ms# ~sleep-ms
+         sleep-cause# ~sleep-cause]
+     (when (pos? sleep-ms#)
+       (log/info "sleeping for" sleep-ms# "ms due to" sleep-cause#)
+       (async/<! (async/timeout sleep-ms#)))))
