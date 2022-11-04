@@ -1708,22 +1708,23 @@
                                                  instance-request-properties determine-priority-fn process-response-fn
                                                  pr/abort-http-request-callback-factory local-usage-agent request))))
    :process-request-wrapper-fn (pc/fnk [[:routines wrap-service-discovery-fn]
+                                        [:settings [:instance-request-properties error-response-throttle]]
                                         [:state interstitial-state-atom]
                                         wrap-descriptor-fn wrap-secure-request-fn]
                                  ; If adding new middleware for process-request-wrapper-fn, consider adding the same middleware to
                                  ; websocket-request-acceptor for websocket upgrade requests
                                  (fn process-handler-wrapper-fn [handler]
                                    (-> handler
-                                     pr/wrap-too-many-requests
-                                     pr/wrap-suspended-service
-                                     pr/wrap-response-status-metrics
-                                     (interstitial/wrap-interstitial interstitial-state-atom)
-                                     wrap-descriptor-fn
-                                     wrap-secure-request-fn
-                                     auth/wrap-auth-bypass
-                                     handler/wrap-https-redirect
-                                     pr/wrap-maintenance-mode
-                                     wrap-service-discovery-fn)))
+                                       (pr/wrap-too-many-requests error-response-throttle)
+                                       pr/wrap-suspended-service
+                                       pr/wrap-response-status-metrics
+                                       (interstitial/wrap-interstitial interstitial-state-atom)
+                                       wrap-descriptor-fn
+                                       wrap-secure-request-fn
+                                       auth/wrap-auth-bypass
+                                       handler/wrap-https-redirect
+                                       pr/wrap-maintenance-mode
+                                       wrap-service-discovery-fn)))
    :profile-list-handler-fn (pc/fnk [[:state profile->defaults]
                                      wrap-secure-request-fn]
                               (wrap-secure-request-fn
