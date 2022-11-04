@@ -98,7 +98,7 @@
                      "app-name" :app-name-handler-fn
                      "apps" {"" :service-list-handler-fn
                              ["/" "instances"] :instances-list-handler-fn
-			     ["/" :instance-id "/signal"] :signal-handler-fn
+			     ["/" :service-id "/signal"] :signal-handler-fn
                              ["/" :service-id] :service-handler-fn
                              ["/" :service-id "/await/" :goal-state] :service-await-handler-fn
                              ["/" :service-id "/logs"] :service-view-logs-handler-fn

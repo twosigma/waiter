@@ -289,15 +289,14 @@ def process_ping_request(clusters, token_name_or_service_id, is_service_id, time
     return overall_success
 
 
-def kill_instance_on_cluster(cluster, instance_id, timeout_seconds):
+def send_signal_to_instance_on_cluster(cluster, service_id, instance_id, timeout_seconds):
     """Send sigkill request to the specific instance"""
     cluster_name = cluster['name']
     http_util.set_retries(0)
     try:
         print(f'Sending sigkill request to instance {terminal.bold(instance_id)} in {terminal.bold(cluster_name)}...')
-        params = {'timeout': timeout_seconds * 1000}
-        resp = http_util.delete(cluster, f'/apps/{instance_id}/signal', params=params, read_timeout=timeout_seconds)
-        
+        params = {'timeout': timeout_seconds * 1000, 'instance-id' : instance_id, 'signal-type' : 'sigkill'}
+        resp = http_util.delete(cluster, f'/apps/{service_id}/signal', params=params, read_timeout=timeout_seconds) 
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
                     success = resp.json().get("kill-response").get('success')
@@ -308,7 +307,7 @@ def kill_instance_on_cluster(cluster, instance_id, timeout_seconds):
                         print(f'Was not able to kill {instance_id} in {cluster_name}. ')
                         return False
         else:
-            print_error(response_message(resp.json()))
+            print_error(response_message(resp.json().get("kill-response").get("success")))
             return False
     except requests.exceptions.ReadTimeout:
         message = f'Request timed out while killing {service_id} in {cluster_name}.'
@@ -344,7 +343,7 @@ def process_sigkill_request(clusters, instance_id, timeout_secs, no_instance_res
 
         for instance in active_instances:
             if instance['id'] == instance_id:
-                return kill_instance_on_cluster(cluster, instance_id, timeout_secs)
+                return send_signal_to_instance_on_cluster(cluster, service_id, instance_id, timeout_secs)
 
     print(f'No active instance with ID {terminal.bold(instance_id)}')
     return True

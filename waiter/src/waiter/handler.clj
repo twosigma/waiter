@@ -1284,8 +1284,14 @@
       (utils/exception->response th request))))
 
 
-(defn get-service-id-from-instance-id [instance-id]
-  (nth (str/split instance-id #"\.") 0))
+(defn get-params-from-query [query]
+  (let [split-query (str/split query #"&")] 
+      (let [vector-query (map #(str/split % #"=") split-query)]
+          (log/info "new-format: " vector-query)
+          (into {} vector-query))))
+  ;;(-> (str/split query #"&")
+  ;;    (map #(str/split % #"="))
+  ;;    (log/info)))
 
 (defn- execute-signal
   "Helper function to send signals to instances of a service.
@@ -1295,7 +1301,7 @@
   ;; PEER-ACK UNUSED
   ;; dont need threadpool
   [notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn scheduler populate-maintainer-chan! timeout-config
-   instance-id correlation-id thread-pool response-chan]
+   instance-id service-id signal-type correlation-id thread-pool response-chan]
   (let [{:keys [eject-backoff-base-time-ms inter-kill-request-wait-time-ms max-eject-time-ms]} timeout-config]
     (cid/with-correlation-id
       correlation-id
@@ -1310,21 +1316,21 @@
               ;; (metrics/service-timer instance-id "kill-instance")
               ;;loop [exclude-ids-set #{}]
                 ;;let [instance (service/get-rand-inst populate-maintainer-chan! service-id (reason-map-fn) exclude-ids-set inter-kill-request-wait-time-ms)]
-                (let [service-id (get-service-id-from-instance-id instance-id)]
+                (let [dummy "forcompile"] ;; [instance (into {} [:id instance-id :service-id service-id])]
                     (def instance {:id instance-id :service-id service-id})
                       (do
                         ;; CHANGED INSTANCE TO INSTANCE-ID
                         (log/info "sending sigkill to instance " instance-id service-id)
                         ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "attempt"))
                         (scheduler/track-kill-candidate! instance-id :prepare-to-kill eject-backoff-base-time-ms)
-                        (let [{:keys [killed?] :as kill-result}
+                        (let [{:keys [success] :as kill-result}
                               (-> (au/execute
                                     (fn send-signal-to-instance []
-                                      (scheduler/signal-instance scheduler instance :sigkill))
+                                      (scheduler/signal-instance scheduler instance signal-type))
                                     thread-pool)
                                   async/<!
                                   :result)]
-                          (if killed?
+                          (if success
                             (do
                               (log/info "marking instance" instance-id "as killed")
                               (counters/inc! (metrics/service-counter service-id "instance-counts" "killed"))
@@ -1337,7 +1343,7 @@
                               ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "kill-fail"))
                               (service/release-instance! populate-maintainer-chan! instance (result-map-fn :not-killed))))
                           (when response-chan (async/>! response-chan kill-result))
-                          killed?))
+                          success))
                     ;; (do
                       ;; (log/info "no instance available to kill")
                       ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "unavailable"))
@@ -1353,17 +1359,18 @@
 (defn signal-handler
   "Handler that supports sending signals to instances of a particular service on a specific router."
   [notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn scheduler populate-maintainer-chan! timeout-config
-   scale-service-thread-pool {:keys [route-params] {:keys [src-router-id]} :basic-authentication}]
-  (let [{:keys [instance-id]} route-params
+   scale-service-thread-pool {:keys [route-params query-string] {:keys [src-router-id]} :basic-authentication}]
+  (let [{:keys [service-id]} route-params
+        {:strs [instance-id signal-type]} (get-params-from-query query-string)
         correlation-id (cid/get-correlation-id)]
-    (log/info "received request to kill instance of" instance-id "from" src-router-id)
+    (log/info "received request to send" signal-type "to instance" instance-id "from" src-router-id)
     (log/info "CORRELATION-ID: " correlation-id)
     (async/go
       (let [response-chan (async/promise-chan)
                               _ (execute-signal
                                  notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn
-                                 scheduler populate-maintainer-chan! timeout-config instance-id correlation-id
-                                 scale-service-thread-pool response-chan)
+                                 scheduler populate-maintainer-chan! timeout-config instance-id service-id signal-type 
+                                 correlation-id scale-service-thread-pool response-chan)
             {:keys [instance-id status] :as kill-response} (or (async/<! response-chan)
                                                                {:message :no-instance-killed, :status http-500-internal-server-error})]
         (log/info "STATUS: " status)
