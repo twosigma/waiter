@@ -1287,7 +1287,6 @@
 (defn get-params-from-query [query]
   (let [split-query (str/split query #"&")] 
       (let [vector-query (map #(str/split % #"=") split-query)]
-          (log/info "new-format: " vector-query)
           (into {} vector-query))))
   ;;(-> (str/split query #"&")
   ;;    (map #(str/split % #"="))
