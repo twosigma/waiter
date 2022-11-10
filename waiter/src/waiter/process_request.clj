@@ -90,6 +90,8 @@
                                                        (= http-400-bad-request error-status) error-image-400-bad-request
                                                        (= http-500-internal-server-error error-status) error-image-500-internal-server-error))]
                                  [error-cause error-message error-status error-image error-class]))
+                             (and (instance? IllegalStateException error) (= "session closed" error-message))
+                             [:generic-error "Internal error: session already closed" http-500-internal-server-error error-image-500-internal-server-error error-class]
                              (instance? IllegalStateException error)
                              [:generic-error error-message http-400-bad-request error-image-400-bad-request error-class]
                              ;; internal_error due to reset stream for http/1 requests means client send bad data to server
