@@ -109,14 +109,16 @@ class MultiWaiterCliTest(util.WaiterTest):
                             expected_total_mem = token_1["mem"] + token_2["mem"]
                             expected_total_cpus = token_1["cpus"] + token_2["cpus"]
                             self.assertEqual(1, cli.stdout(cp).count(service_id_2))
-                            self.assertIsNotNone(re.search(f'^{service_id_2}\\s+waiter2[^\\n]+Running[^\\n]+Not Current$', cli.stdout(cp), re.MULTILINE))
+                            self.assertIsNotNone(re.search(f'^{service_id_2}\\s+waiter2[^\\n]+Running[^\\n]+Not Current.', cli.stdout(cp), re.MULTILINE))
+                            self.assertIsNotNone(re.search(f'^{service_id_2}.+(stable|scale-up|scale-down)$', cli.stdout(cp), re.MULTILINE))
                         self.assertIsNotNone(re.search(f'^# Services\\s+{expected_service_count}$', cli.stdout(cp), re.MULTILINE))
                         self.assertIsNotNone(re.search(f'^# Failing\\s+0$', cli.stdout(cp), re.MULTILINE))
                         self.assertIsNotNone(re.search(f'^# Instances\\s+{expected_inst_count}$', cli.stdout(cp), re.MULTILINE))
                         self.assertIsNotNone(re.search(f'^Total Memory\\s+{expected_total_mem} MiB$', cli.stdout(cp), re.MULTILINE))
                         self.assertIsNotNone(re.search(f'^Total CPUs\\s+{expected_total_cpus}$', cli.stdout(cp), re.MULTILINE))
                         self.assertEqual(1, cli.stdout(cp).count(service_id_1))
-                        self.assertIsNotNone(re.search(f'^{service_id_1}\\s+waiter1[^\\n]+Running[^\\n]+Current$', cli.stdout(cp), re.MULTILINE))
+                        self.assertIsNotNone(re.search(f'^{service_id_1}\\s+waiter1[^\\n]+Running[^\\n]+Current.', cli.stdout(cp), re.MULTILINE))
+                        self.assertIsNotNone(re.search(f'^{service_id_1}.+(stable|scale-up|scale-down)$', cli.stdout(cp), re.MULTILINE))
             finally:
                 util.delete_token(self.waiter_url_2, token_name, assert_response=True, kill_services=True)
         finally:
@@ -176,11 +178,13 @@ class MultiWaiterCliTest(util.WaiterTest):
                         self.assertEqual(expected_token_count, len(re.findall('^# Instances\\s+1$', cli.stdout(cp), re.MULTILINE)))
                         self.assertEqual(expected_token_count, len(re.findall(f'^Total Memory\\s+{token_1["mem"]} MiB$', cli.stdout(cp), re.MULTILINE)))
                         self.assertEqual(expected_token_count, len(re.findall(f'^Total CPUs\\s+{token_1["cpus"]}$', cli.stdout(cp), re.MULTILINE)))
-                        self.assertIsNotNone(re.search(f'^{service_id_1}\\s+waiter1[^\\n]+Running[^\\n]+Current$', cli.stdout(cp), re.MULTILINE))
+                        self.assertIsNotNone(re.search(f'^{service_id_1}\\s+waiter1[^\\n]+Running[^\\n]+Current.', cli.stdout(cp), re.MULTILINE))
+                        self.assertIsNotNone(re.search(f'^{service_id_1}.+(stable|scale-up|scale-down)$', cli.stdout(cp), re.MULTILINE))
                         if not enforce_cluster:
                             self.assertEqual(1, cli.stdout(cp).count(service_id_2))
                             self.assertEqual(1, cli.stdout(cp).count(service_id_2))
-                            self.assertIsNotNone(re.search(f'^{service_id_2}\\s+waiter2[^\\n]+Running[^\\n]+Current$', cli.stdout(cp), re.MULTILINE))
+                            self.assertIsNotNone(re.search(f'^{service_id_2}\\s+waiter2[^\\n]+Running[^\\n]+Current.', cli.stdout(cp), re.MULTILINE))
+                            self.assertIsNotNone(re.search(f'^{service_id_2}.+(stable|scale-up|scale-down)$', cli.stdout(cp), re.MULTILINE))
             finally:
                 util.delete_token(self.waiter_url_2, token_name, assert_response=True, kill_services=True)
         finally:

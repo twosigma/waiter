@@ -948,3 +948,19 @@
              (formatted-message input-key {"role" "Authenticated user"
                                            "role-user" "john"
                                            "run-as-user" "jane"}))))))
+
+(deftest test-compute-error-delay-ms
+  (let [error-response-throttle {:max-delay-ms 1000
+                                 :step-delay-ms 50
+                                 :step-size-per-min 100}]
+    (is (= 0 (compute-error-delay-ms error-response-throttle 10)))
+    (is (= 0 (compute-error-delay-ms error-response-throttle 50)))
+    (is (= 50 (compute-error-delay-ms error-response-throttle 100)))
+    (is (= 50 (compute-error-delay-ms error-response-throttle 150)))
+    (is (= 100 (compute-error-delay-ms error-response-throttle 200)))
+    (is (= 250 (compute-error-delay-ms error-response-throttle 550)))
+    (is (= 500 (compute-error-delay-ms error-response-throttle 1000)))
+    (is (= 750 (compute-error-delay-ms error-response-throttle 1500)))
+    (is (= 1000 (compute-error-delay-ms error-response-throttle 2000)))
+    (is (= 1000 (compute-error-delay-ms error-response-throttle 2500)))
+    (is (= 1000 (compute-error-delay-ms error-response-throttle 3000)))))
