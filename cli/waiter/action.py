@@ -294,7 +294,7 @@ def send_signal_to_instance_on_cluster(cluster, signal_type, service_id, instanc
     cluster_name = cluster['name']
     params = {}
     try:
-        print(f'Sending sigkill request to instance {terminal.bold(instance_id)} in {terminal.bold(cluster_name)}...')
+        print(f'Sending {signal_type} request to instance {terminal.bold(instance_id)} in {terminal.bold(cluster_name)}...')
         params = {'timeout': timeout_seconds * 1000, 'instance-id' : instance_id, 'signal-type' : signal_type}
         resp = http_util.delete(cluster, f'/apps/{service_id}/signal', params=params, read_timeout=timeout_seconds) 
         logging.debug(f'Response status code: {resp.status_code}')
@@ -318,7 +318,7 @@ def send_signal_to_instance_on_cluster(cluster, signal_type, service_id, instanc
         logging.exception(message)
         print_error(message)
 
-def process_sigkill_request(clusters, signal_type, instance_id, timeout_secs, no_instance_result=False):
+def process_signal_request(clusters, signal_type, instance_id, timeout_secs, no_instance_result=False):
     # Send SIGKILL to an instance
     service_id = get_service_id_from_instance_id(instance_id)
     query_result = query_service(clusters, service_id)
