@@ -426,3 +426,11 @@ def stop(token_name, waiter_url=None, flags=None, maintenance_flags=None, stdin=
     args = f"stop {token_name} {maintenance_flags or ''}"
     cp = cli(args, waiter_url, flags, stdin, env=env)
     return cp
+
+def sigkill(waiter_url=None, instance_id=None, flags=None, kill_flags=None):
+    """Signal request for a specific instance using a instance_id via the CLI"""
+    args = f'sigkill {instance_id} {kill_flags or ""}'
+    cp = cli(args, waiter_url, flags)
+    return cp
+
+
