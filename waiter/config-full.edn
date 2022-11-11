@@ -950,23 +950,40 @@
  ;:statsd :disabled
 
  ;; or you can configure it as such:
- :statsd {
+ :statsd {;; must provide one or both of (1) a statsd server via :host + :port
+          ;; or (2) :dd-agent pointing at a datadog agent with dogstatsd enabled
+
           ;; The location of your StatsD server daemon:
           :host "statsd.example.com"
 
           ;; The port to publish metrics on:
           :port 8125
 
+          ;; datadog agent config for dogstatsd client
+          :dd-agent {;; host (usually local)
+                     :host "127.0.0.1"
+
+                     ;; port number for agent's dogstatsd udp listener
+                     :port 8126
+
+                     ;; optional predicate function for filtering which metrics
+                     ;; get sent to the local datadog agent
+                     ;; predicate takes two arguments: metric-group and metric-name
+                     :predicate-fn waiter.statsd/keep-all-metrics}
+
           ;; The environment, cluster, and server will all
-          ;; be included in the full name of the metric:
+          ;; be included in the full name of the statsd metric,
+          ;; or as tags on datadog metrics sent via dogstatsd:
           :environment "prod"
           :cluster "my_waiter_cluster"
           :server "router_1"
 
+          ;; (option ignored for dogstatsd)
           ;; Waiter aggregates metrics locally and publishes
           ;; to StatsD on the following interval (milliseconds):
           :publish-interval-ms 10000
 
+          ;; (option ignored for dogstatsd)
           ;; Waiter polls the router state for instances and resource
           ;; usage on the following interval (milliseconds):
           :sync-instances-interval-ms 5000}

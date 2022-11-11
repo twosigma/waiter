@@ -51,6 +51,7 @@
                   :exclusions [commons-codec commons-io org.clojure/tools.reader potemkin slingshot]]
                  [clj-time "0.15.2"
                   :exclusions [joda-time]]
+                 [com.datadoghq/java-dogstatsd-client "4.1.0"]
                  [com.google.guava/guava "20.0"] ;; apache curator dependency prevents upgrade to newer versions
                  [com.taoensso/nippy "2.14.0"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]

@@ -184,15 +184,22 @@
                                                    (s/required-key "scale-down-factor") schema/positive-fraction-less-than-1
                                                    (s/required-key "termination-grace-period-secs") schema/non-negative-int}
    (s/required-key :statsd) (s/either (s/eq :disabled)
-                                      {(s/required-key :cluster) schema/non-empty-string
-                                       (s/required-key :environment) schema/non-empty-string
-                                       (s/optional-key :histogram-max-size) schema/positive-int
-                                       (s/required-key :host) schema/non-empty-string
-                                       (s/required-key :port) schema/positive-int
-                                       (s/required-key :publish-interval-ms) schema/positive-int
-                                       (s/optional-key :refresh-interval-ms) schema/non-negative-int
-                                       (s/required-key :server) schema/non-empty-string
-                                       (s/required-key :sync-instances-interval-ms) schema/positive-int})
+                                      (s/constrained
+                                        {(s/required-key :cluster) schema/non-empty-string
+                                         (s/required-key :environment) schema/non-empty-string
+                                         (s/optional-key :histogram-max-size) schema/positive-int
+                                         (s/optional-key :host) schema/non-empty-string
+                                         (s/optional-key :port) schema/positive-int
+                                         (s/optional-key :dd-agent) {(s/required-key :host) schema/non-empty-string
+                                                                     (s/required-key :port) schema/positive-int
+                                                                     (s/optional-key :predicate-fn) s/Symbol}
+                                         (s/required-key :publish-interval-ms) schema/positive-int
+                                         (s/optional-key :refresh-interval-ms) schema/non-negative-int
+                                         (s/required-key :server) schema/non-empty-string
+                                         (s/required-key :sync-instances-interval-ms) schema/positive-int}
+                                        (fn hosts-required [{:keys [dd-agent host port]}]
+                                          (or dd-agent (and host port)))
+                                        "either a :dd-agent map or a statsd :host + :port pair is required"))
    (s/required-key :support-info) [{(s/required-key :label) schema/non-empty-string
                                     (s/required-key :link) {(s/required-key :type) s/Keyword
                                                             (s/required-key :value) schema/non-empty-string}}]

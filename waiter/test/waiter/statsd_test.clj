@@ -14,7 +14,8 @@
 ;; limitations under the License.
 ;;
 (ns waiter.statsd-test
-  (:require [clojure.test :refer :all]
+  (:require [clojure.string :as string]
+            [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [waiter.statsd :as statsd]
             [waiter.test-helpers :refer :all])
@@ -25,17 +26,18 @@
   (statsd/teardown))
 
 (defn- teardown-setup
-  [& opts]
-  (teardown)
-  (statsd/setup (merge {:host "localhost"
-                        :port 1234
-                        :environment "env"
-                        :cluster "cluster"
-                        :server "server"
-                        :publish-interval-ms 0
-                        :refresh-interval-ms 0}
-                       (apply hash-map opts)))
-  (statsd/await-agents))
+  ([] (teardown-setup {}))
+  ([opts]
+   (teardown)
+   (statsd/setup (merge {:host "localhost"
+                         :port 1234
+                         :environment "env"
+                         :cluster "cluster"
+                         :server "server"
+                         :publish-interval-ms 0
+                         :refresh-interval-ms 0}
+                        opts))
+   (statsd/await-agents)))
 
 (defmacro capture-packets
   [& body]
@@ -55,7 +57,7 @@
     (testing "should include environment, cluster, and server names"
       (teardown-setup)
       (is (= "something.env.cluster.server.amazing" (statsd/metric-path "something" "amazing")))
-      (teardown-setup :environment "abc" :cluster "def" :server "ghi")
+      (teardown-setup {:environment "abc" :cluster "def" :server "ghi"})
       (is (= "something.abc.def.ghi.amazing" (statsd/metric-path "something" "amazing")))
       (teardown))))
 
@@ -460,3 +462,91 @@
   (is (= (range 0 10000) (reduce #(statsd/bounded-conj %1 %2 "metric-grp") PersistentQueue/EMPTY (range 0 10000))))
   (is (= (range 1 10001) (reduce #(statsd/bounded-conj %1 %2 "metric-grp") PersistentQueue/EMPTY (range 0 10001))))
   (is (= (range 10000 20000) (reduce #(statsd/bounded-conj %1 %2 "metric-grp") PersistentQueue/EMPTY (range 0 20000)))))
+
+(defn remove-foobar-metrics
+  "test implementation of dogstatsd metric reporter filter,
+   dropping any metric with foober in the name"
+  [metric-group metric-name]
+  (not (string/includes? metric-name "foobar")))
+
+(deftest dd-agent-metrics-basic
+  (let [counter (atom {})
+        set-metric' (assoc statsd/set-metric
+                           :dogstatsd-client-fn (fn [_ _ mg m v]
+                                                  (swap! counter update-in [mg m]
+                                                         #(conj (or % #{}) v))))
+        gauge-delta-metric' (assoc statsd/gauge-delta-metric
+                                   :dogstatsd-client-fn (fn [_ _ mg m v]
+                                                          (swap! counter update-in [mg m]
+                                                                 #(+ (or % 0) v))))
+        gauge-metric' (assoc statsd/gauge-metric
+                             :dogstatsd-client-fn (fn [_ _ mg m v]
+                                                    (swap! counter assoc-in [mg m] v)))
+        counter-metric' (assoc statsd/counter-metric
+                               :dogstatsd-client-fn (fn [_ _ mg m v]
+                                                      (swap! counter update-in [mg m]
+                                                             #(+ (or % 0) v))))
+
+        histo-metric' (assoc statsd/histo-metric
+                               :dogstatsd-client-fn (fn [_ _ mg m v]
+                                                      (swap! counter update-in [mg m]
+                                                             #(conj (or % []) v))))
+        setup-opts {:host nil :port nil
+                    :dd-agent {:host "localhost" :port 1234}}]
+    (with-redefs [statsd/set-metric set-metric'
+                  statsd/gauge-delta-metric gauge-delta-metric'
+                  statsd/gauge-metric gauge-metric'
+                  statsd/counter-metric counter-metric'
+                  statsd/histo-metric histo-metric']
+      (testing "dd-agent sends metrics via dogstatsd client"
+        (teardown-setup setup-opts)
+        (statsd/inc! "metric-group-1" "metric-1")
+        (statsd/inc! "metric-group-1" "metric-2" 7)
+        (statsd/inc! "metric-group-1" "metric-1" 2)
+        (statsd/inc! "metric-group-1" "metric-1")
+        (is (= {"metric-group-1" {"metric-1" 4 "metric-2" 7}} @counter)))
+
+      (testing "dd-agent sends filtered metrics via dogstatsd client"
+        (teardown-setup (assoc-in setup-opts [:dd-agent :predicate-fn]
+                                  'waiter.statsd-test/remove-foobar-metrics))
+        (reset! counter {})
+        (statsd/inc! "metric-group-1" "metric-foo-1")
+        (statsd/inc! "metric-group-1" "metric-bar-2" 7)
+        (statsd/inc! "metric-group-1" "metric-foobar-3" 8)
+        (statsd/inc! "metric-group-1" "metric-foo-1" 2)
+        (statsd/inc! "metric-group-1" "metric-foo-1")
+        (is (= {"metric-group-1" {"metric-foo-1" 4 "metric-bar-2" 7}} @counter)))
+
+      (testing "dd-agent sends each type of metric via dogstatsd client"
+        (teardown-setup setup-opts)
+        ;; set metric
+        (reset! counter {})
+        (statsd/unique! "mg1" "m1" "x")
+        (statsd/unique! "mg1" "m1" "x")
+        (statsd/unique! "mg1" "m1" "y")
+        (is (= {"mg1" {"m1" #{"x" "y"}}} @counter))
+        ;; gauge-delta metric
+        (reset! counter {})
+        (statsd/gauge-delta! "mg1" "m2" 3)
+        (statsd/gauge-delta! "mg1" "m2" 5)
+        (is (= {"mg1" {"m2" 8}} @counter))
+        ;; gauge metric
+        (reset! counter {})
+        (statsd/gauge! "mg1" "m3" 3)
+        (statsd/gauge! "mg1" "m3" 5)
+        (statsd/gauge! "mg1" "m3" 2)
+        (is (= {"mg1" {"m3" 2}} @counter))
+        ;; counter metric
+        (reset! counter {})
+        (statsd/inc! "mg1" "m4" 3)
+        (statsd/inc! "mg1" "m4" -1)
+        (is (= {"mg1" {"m4" 2}} @counter))
+        ;; histrogram metric
+        (reset! counter {})
+        (statsd/histo! "mg1" "m5" 1)
+        (statsd/histo! "mg1" "m5" 1)
+        (statsd/histo! "mg1" "m5" 1)
+        (statsd/histo! "mg1" "m5" 3)
+        (statsd/histo! "mg1" "m5" 1)
+        (is (= {"mg1" {"m5" [1 1 1 3 1]}} @counter)))
+  (teardown))))
