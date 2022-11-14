@@ -88,7 +88,6 @@ def query_token(clusters, token, include_services=False, include_deleted=False):
 
 
 
-
 def get_service(cluster, service_id):
     """Retrieves the service with the given service id"""
     params = {'effective-parameters': True}
