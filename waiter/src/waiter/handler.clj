@@ -1288,9 +1288,7 @@
   (let [split-query (str/split query #"&")] 
       (let [vector-query (map #(str/split % #"=") split-query)]
           (into {} vector-query))))
-  ;;(-> (str/split query #"&")
-  ;;    (map #(str/split % #"="))
-  ;;    (log/info)))
+          
 
 (defn- execute-signal
   "Helper function to send signals to instances of a service.
@@ -1310,7 +1308,7 @@
           (let [request-id (utils/unique-identifier) ; new unique identifier for this reservation request
                 reason-map-fn (fn [] {:cid correlation-id :reason :kill-instance :request-id request-id :time (t/now)})
                 result-map-fn (fn [status] {:cid correlation-id :request-id request-id :status status})]
-            (log/info "Attempting to kill" instance-id)
+            (log/info "Attempting to send signal to " instance-id)
               ;; MAKE OUR OWN TIMER FOR INSTANCES?
               ;; (metrics/service-timer instance-id "kill-instance")
               ;;loop [exclude-ids-set #{}]
@@ -1319,7 +1317,7 @@
                     (def instance {:id instance-id :service-id service-id})
                       (do
                         ;; CHANGED INSTANCE TO INSTANCE-ID
-                        (log/info "sending sigkill to instance " instance-id service-id)
+                        (log/info "sending signal to instance " instance-id service-id)
                         ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "attempt"))
                         (scheduler/track-kill-candidate! instance-id :prepare-to-kill eject-backoff-base-time-ms)
                         (let [{:keys [success] :as kill-result}
@@ -1370,11 +1368,11 @@
                                  notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn
                                  scheduler populate-maintainer-chan! timeout-config instance-id service-id signal-type 
                                  correlation-id scale-service-thread-pool response-chan)
-            {:keys [instance-id status] :as kill-response} (or (async/<! response-chan)
+            {:keys [instance-id status] :as signal-response} (or (async/<! response-chan)
                                                                {:message :no-instance-killed, :status http-500-internal-server-error})]
         (log/info "STATUS: " status)
-        (log/info kill-response)
-        (-> (utils/clj->json-response {:kill-response kill-response
+        (log/info signal-response)
+        (-> (utils/clj->json-response {:signal-response signal-response
                                        :source-router-id src-router-id
                                       :status (or status http-500-internal-server-error)})
             (update :headers assoc "x-cid" correlation-id))))))
