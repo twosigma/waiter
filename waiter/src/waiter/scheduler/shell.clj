@@ -668,7 +668,7 @@
                port->reservation-atom port-grace-period-ms signal-type)
           (scheduler/log-service-instance instance :kill :info)
           {:success true
-           :message (str signal-type "successfully sent to " id)
+           :message (str signal-type " successfully sent to " id)
            :status 200})
       {:success false
        :message "service does not exist"
