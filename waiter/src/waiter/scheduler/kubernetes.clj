@@ -966,6 +966,7 @@
                                 service-id->password-fn
                                 service-id->service-description-fn
                                 scheduler-name
+                                truststore
                                 watch-state]
   scheduler/ServiceScheduler
 
@@ -2064,13 +2065,13 @@
 (defn kubernetes-scheduler
   "Returns a new KubernetesScheduler with the provided configuration. Validates the
    configuration against kubernetes-scheduler-schema and throws if it's not valid."
-  [{:keys [authenticate-health-checks? authentication authorizer cluster-name container-running-grace-secs custom-options 
+  [{:keys [authenticate-health-checks? authentication authorizer cluster-name container-running-grace-secs custom-options
            fetch-events-k8s-object-minimum-age-secs http-options determine-replicaset-namespace-fn kube-context leader?-fn log-bucket-sync-secs
            log-bucket-url max-patch-retries max-name-length namespace pdb-api-version pdb-spec-builder pod-base-port pod-sigkill-delay-secs
            pod-suffix-length replicaset-api-version response->deployment-error-msg-fn restart-expiry-threshold restart-kill-threshold
            raven-sidecar scheduler-name scheduler-state-chan scheduler-syncer-interval-secs service-id->service-description-fn
-           service-id->password-fn start-scheduler-syncer-fn url watch-chan-throttle-interval-ms watch-connect-timeout-ms watch-init-timeout-ms
-           watch-retries watch-socket-timeout-ms watch-validate-ssl]
+           service-id->password-fn start-scheduler-syncer-fn truststore url watch-chan-throttle-interval-ms watch-connect-timeout-ms
+           watch-init-timeout-ms watch-retries watch-socket-timeout-ms watch-validate-ssl]
     {fileserver-port :port fileserver-scheme :scheme :as fileserver} :fileserver
     {:keys [default-namespace] :as replicaset-spec-builder} :replicaset-spec-builder
     {service-id->deployment-error-cache-threshold :threshold service-id->deployment-error-cache-ttl-sec :ttl} :service-id->deployment-error-cache
@@ -2127,12 +2128,15 @@
          (fn? service-id->password-fn)
          (fn? service-id->service-description-fn)
          (fn? start-scheduler-syncer-fn)
+         (or (nil? truststore) (and (every? #(-> truststore % string?) [:path :password])
+                                    (= 2 (count truststore))))
          (or (nil? watch-chan-throttle-interval-ms) (pos-int? watch-chan-throttle-interval-ms))
          (or (nil? watch-connect-timeout-ms) (integer? watch-connect-timeout-ms))
          (or (nil? watch-init-timeout-ms) (integer? watch-init-timeout-ms))
          (or (nil? watch-retries) (integer? watch-retries))
          (or (nil? watch-socket-timeout-ms) (integer? watch-socket-timeout-ms))
          (or (nil? watch-validate-ssl) (boolean? watch-validate-ssl))
+         (or (nil? watch-validate-ssl) (nil? truststore))
          (pos-int? k8s-object-key->event-cache-threshold)
          (pos-int? k8s-object-key->event-cache-ttl-sec)]}
   (let [authorizer (utils/create-component authorizer)
@@ -2140,6 +2144,7 @@
         http-client (-> http-options
                         (utils/assoc-if-absent :client-name "waiter-k8s")
                         (utils/assoc-if-absent :user-agent "waiter-k8s")
+                        (cond-> truststore (assoc :ssl-context-factory (hu/make-ssl-context-factory truststore)))
                         hu/http-client-factory)
         k8s-object-key->event-cache (cu/cache-factory {:threshold k8s-object-key->event-cache-threshold
                                                        :ttl (-> k8s-object-key->event-cache-ttl-sec t/seconds t/in-millis)})
@@ -2168,9 +2173,10 @@
         response->deployment-error-msg-fn (-> response->deployment-error-msg-fn utils/resolve-symbol!)
         restart-kill-threshold (or restart-kill-threshold (+ 2 restart-expiry-threshold))
         watch-trigger-chan (au/latest-chan)
-        watch-options (cond-> (assoc default-watch-options
-                                     :insecure? (not watch-validate-ssl)
-                                     :watch-trigger-chan watch-trigger-chan)
+        watch-options (cond-> (assoc default-watch-options :watch-trigger-chan watch-trigger-chan)
+                        (not (or truststore watch-validate-ssl)) (assoc :insecure? true)
+                        truststore (assoc :trust-store (:path truststore)
+                                          :trust-store-pass (:password truststore))
                         (some? watch-retries) (assoc :watch-retries watch-retries)
                         watch-connect-timeout-ms (assoc :connect-timeout-ms watch-connect-timeout-ms)
                         watch-init-timeout-ms (assoc :init-timeout-ms watch-init-timeout-ms)
@@ -2254,6 +2260,7 @@
                             :service-id->failed-instances-transient-store service-id->failed-instances-transient-store
                             :service-id->password-fn service-id->password-fn
                             :service-id->service-description-fn service-id->service-description-fn
+                            :truststore truststore
                             :watch-state watch-state}
           scheduler (map->KubernetesScheduler scheduler-config)
           _ (deliver scheduler-promise scheduler)
