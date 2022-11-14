@@ -22,7 +22,7 @@
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
   (:import (clojure.lang PersistentQueue)
-           (com.timgroup.statsd NonBlockingStatsDClientBuilder StatsDClient)
+           (com.timgroup.statsd NonBlockingStatsDClient StatsDClient)
            (java.net DatagramPacket DatagramSocket InetAddress)))
 
 (defn sanitize
@@ -55,11 +55,10 @@
 (defn make-dd-client
   "build non-blocking dogstatsd client"
   [{:keys [host port]} {:keys [prefix]}]
-  (-> (NonBlockingStatsDClientBuilder.)
-      (.prefix (or prefix "waiter"))
-      (.hostname host)
-      (.port (sanitize-port port))
-      (.build)))
+  (NonBlockingStatsDClient.
+      ^String (or prefix "waiter")
+      ^String host
+      ^Integer (sanitize-port port)))
 
 (defn make-dd-tag-config
   "build string arrays for common datadog tags"
