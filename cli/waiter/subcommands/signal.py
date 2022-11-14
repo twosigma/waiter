@@ -9,7 +9,7 @@ class Signal(Enum):
 def signal(clusters, args, _, __):
     guard_no_cluster(clusters)
 
-    signal_type = args['signal_type']
+    signal_type = args.get('signal_type')
 
     instance_id = args.pop('instance-id')
 
@@ -29,8 +29,9 @@ def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
     parser = add_parser('signal', help='sends signal to instance')
     parser.add_argument('instance-id')
-    parser.add_argument('--signal-type', help='specify what signal type to send',
-                        default='sigkill')
+#     parser.add_argument('--signal-type', help='specify what signal type to send',
+#                         default='sigkill')
+    parser.add_argument('signal_type')
     parser.add_argument('--timeout', '-t', help='timeout (in seconds) for kill to complete',
                         type=check_positive, default=30)
 
