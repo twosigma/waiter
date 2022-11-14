@@ -771,6 +771,46 @@
       (catch Throwable t
         (log/error t "Error force-killing pod")))))
 
+(defn signal-service-instance
+  "Sends specified signal to the Kubernetes pod corresponding to the given Waiter Service Instance.
+   Returns nil on success, but throws on failure."
+  [{:keys [api-server-url service-id->service-description-fn] {:keys [force-sigterm-secs sigterm-grace-period-secs]} :pod-bypass :as scheduler}
+   {:keys [service-id] :as instance} service signal-type]
+  ;; SAFE DELETION STRATEGY:
+  ;; 1. Delete the target pod with a grace period of 5 minutes
+  ;;    Since the target pod is currently in the "Terminating" state,
+  ;;    the owner ReplicaSet will not immediately create a replacement pod.
+  ;;    Since we never expect the 5 minute period to elapse before step 3 completes,
+  ;;    we call this the "soft" delete.
+  ;; 2. Delete the target pod. This immediately removes the pod from Kubernetes.
+  ;;    The state of the ReplicaSet (desired vs actual pods) should now be consistent.
+  ;;    This eager delete overrides the 5-minute delay from above,
+  ;;    making this a "hard" delete, using the default grace period set on the pod.
+  ;; Note that if it takes more than 5 minutes to get from step 1 to step 2,
+  ;; we assume we're already so far out of sync that the possibility of non-atomic scaling
+  ;; doesn't hurt us significantly. If it takes more than 5 minutes to get from step 1
+  ;; to step 3, then the pod was already deleted, and the force-delete is no longer needed.
+  ;; The force-delete can fail with a 404 (object not found), but this operation still succeeds.
+  (let [pod-url (instance->pod-url api-server-url instance)
+        desc (service-id->service-description-fn service-id)
+        bypass-enabled? (sd/service-description-bypass-enabled? desc)
+        ;; We have to add both of these durations together because K8s gracePeriodSeconds countdown is done
+        ;; in parallel with the preStop hook and issuing the SIGTERM signal.
+        ;; https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination
+        force-sigterm-secs (utils/parse-int (get-in desc ["env" "WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS"] (str force-sigterm-secs)))
+        sigterm-grace-period-secs (utils/parse-int (get-in desc ["env" "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS"] (str sigterm-grace-period-secs)))
+        total-bypass-grace-period-secs (+ force-sigterm-secs sigterm-grace-period-secs)
+        grace-period-seconds (if bypass-enabled? total-bypass-grace-period-secs 300)]
+      (case signal-type
+        
+        ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
+        "sigterm" (api-request pod-url scheduler :request-method :delete
+                 :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds grace-period-seconds}))
+
+        ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
+        ; (note that the pod's default grace period is different from the 300s period set above)
+        "sigkill" (hard-delete-service-instance scheduler instance))))
+
 (defn kill-service-instance
   "Safely kill the Kubernetes pod corresponding to the given Waiter Service Instance.
    Also adjusts the ReplicaSet replica count to prevent a replacement pod from being started.
@@ -971,6 +1011,24 @@
 
   (get-services [this]
     (get-services this))
+
+  (signal-instance [this {:keys [id service-id] :as instance} signal-type]
+    (ss/try+
+      (let [service (service-id->service this service-id)]
+        (signal-service-instance this instance service signal-type)
+        (scheduler/log-service-instance instance :kill :info)
+        {:success true
+         :message (str signal-type "successfully sent to" id)
+         :status http-200-ok})
+      (catch [:status http-404-not-found] _
+        {:success false
+         :message "Instance not found"
+         :status http-404-not-found})
+      (catch Object ex
+        (log/error ex "error while killing instance")
+        {:success false
+         :message "Error while killing instance"
+         :status http-500-not-found})))
 
   (kill-instance [this {:keys [id service-id] :as instance}]
     (ss/try+
