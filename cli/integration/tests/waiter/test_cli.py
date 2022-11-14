@@ -2353,14 +2353,31 @@ class WaiterCliTest(util.WaiterTest):
     def test_stop_ping_service_no_kill(self):
         self.run_maintenance_start_test(cli.stop, start_args='--no-kill', ping_token=True)
 
-    def test_sigkill_instance(self):
+    def test_signal_sigkill_instance(self):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, util.minimal_service_description())
         try:
             service_id = util.ping_token(self.waiter_url, token_name)
             instance_id = util.get_instance_id_from_service_id(self.waiter_url, service_id)
-            cp = cli.sigkill(self.waiter_url, instance_id, kill_flags='')
+            signal_type = 'sigkill'
+            timeout_secs = 30
+            cp = cli.signal(self.waiter_url, signal_type, instance_id, timeout_secs)
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn('Successfully killed', cli.stdout(cp))
         finally:
             util.delete_token(self.waiter_url, token_name)
+
+    def test_signal_sigterm_instance(self):
+            token_name = self.token_name()
+            util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+            try:
+                service_id = util.ping_token(self.waiter_url, token_name)
+                instance_id = util.get_instance_id_from_service_id(self.waiter_url, service_id)
+                signal_type = 'sigterm'
+                timeout_secs = 30
+                cp = cli.signal(self.waiter_url, signal_type, instance_id, timeout_secs)
+                self.assertEqual(0, cp.returncode, cp.stderr)
+                self.assertIn('Successfully killed', cli.stdout(cp))
+            finally:
+                util.delete_token(self.waiter_url, token_name)
+
