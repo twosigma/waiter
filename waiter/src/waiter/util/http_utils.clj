@@ -31,6 +31,7 @@
            (org.eclipse.jetty.http2.client HTTP2Client)
            (org.eclipse.jetty.http2.client.http HttpClientTransportOverHTTP2)
            (org.eclipse.jetty.util HttpCookieStore$Empty)
+           (org.eclipse.jetty.util.ssl SslContextFactory$Client)
            (org.ietf.jgss GSSContext GSSManager GSSName Oid)))
 
 (def ^Oid spnego-oid (Oid. "1.3.6.1.5.5.2"))
@@ -293,3 +294,10 @@
   (->> kvm
        (pc/map-vals str)
        (update response :headers merge)))
+
+(defn make-ssl-context-factory
+  "create ssl context using the provided truststore"
+  [{:keys [path password] :as truststore}]
+  (doto (SslContextFactory$Client. false)
+    (.setTrustStorePath path)
+    (.setTrustStorePassword password)))
