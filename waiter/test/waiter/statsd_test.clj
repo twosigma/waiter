@@ -14,7 +14,7 @@
 ;; limitations under the License.
 ;;
 (ns waiter.statsd-test
-  (:require [clojure.string :as string]
+  (:require [clojure.string :as str]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
             [waiter.statsd :as statsd]
@@ -467,7 +467,7 @@
   "test implementation of dogstatsd metric reporter filter,
    dropping any metric with foober in the name"
   [metric-group metric-name]
-  (not (string/includes? metric-name "foobar")))
+  (not (str/includes? metric-name "foobar")))
 
 (deftest dd-agent-metrics-basic
   (let [counter (atom {})

@@ -64,8 +64,8 @@
   "build string arrays for common datadog tags"
   [{:keys [cluster environment server]}]
   (let [cluster-tags (list (str "env:" environment)
-                           (str "cluster:" cluster))
-        server-tags (conj cluster-tags (str "server:" server))]
+                           (str "waiter-cluster:" cluster))
+        server-tags (conj cluster-tags (str "waiter-hostname:" server))]
     {:cluster-tags cluster-tags
      :server-tags server-tags}))
 
