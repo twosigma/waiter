@@ -52,22 +52,22 @@
     (utils/resolve-symbol! predicate-fn-symbol)
     keep-all-metrics))
 
+(defn make-dd-tags
+  "build string arrays for common datadog tags"
+  ^"[Ljava.lang.String;" ; return-type hint as String[]
+  [{:keys [cluster environment server]}]
+  (into-array String (list (str "env:" environment)
+                           (str "waiter-cluster:" cluster)
+                           (str "waiter-hostname:" server))))
+
 (defn make-dd-client
   "build non-blocking dogstatsd client"
-  [{:keys [host port]} {:keys [prefix]}]
+  [{:keys [host port]} {:keys [prefix] :or {prefix "waiter"} :as config}]
   (NonBlockingStatsDClient.
-      ^String (or prefix "waiter")
-      ^String host
-      ^Integer (sanitize-port port)))
-
-(defn make-dd-tag-config
-  "build string arrays for common datadog tags"
-  [{:keys [cluster environment server]}]
-  (let [cluster-tags (list (str "env:" environment)
-                           (str "waiter-cluster:" cluster))
-        server-tags (conj cluster-tags (str "waiter-hostname:" server))]
-    {:cluster-tags cluster-tags
-     :server-tags server-tags}))
+    ^String prefix
+    ^String host
+    ^Integer (sanitize-port port)
+    (make-dd-tags config)))
 
 (def ^:const default-histogram-max-size 10000)
 
@@ -82,8 +82,6 @@
       (swap! config #(or % (merge {:dogstatsd-client dogstatsd-client
                                    :dd-filter-fn dd-filter-fn
                                    :socket-agent socket-agent}
-                                  (when dogstatsd-client
-                                    (make-dd-tag-config opts))
                                   (when socket-agent
                                     {:aggregation-agent (agent {})
                                      :host (sanitize-host host)
@@ -365,16 +363,14 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; helpers for getting datadog api tag arrays
 
-  (defn- dd-tags
-    "Return a string array of datadog tags,
-     for passing to the varargs String... argument
+  (defn- metric-group-tag
+    "Return a unary string array of the datadog tag
+     for the metric-group (passed as varargs argument)
      as expected by all methods on the java dogstatsd client."
     ^"[Ljava.lang.String;" ; return-type hint as String[]
-    [config tags-key metric-group]
-    (let [metric-group-tag (str "metric_group:" metric-group)
-          base-tags (get config tags-key)
-          tags (conj base-tags metric-group-tag)]
-      (into-array String tags)))
+    [metric-group]
+    (doto ^"[Ljava.lang.String;" (make-array java.lang.String 1)
+      (aset 0 (str "metric-group:" metric-group))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -386,7 +382,7 @@
     {:seed-fn (fn [^Object value] #{(.hashCode value)})
      :dogstatsd-client-fn (fn dd-set [config client metric-group metric value]
                             (.recordSetValue ^StatsDClient client ^String metric (str value)
-                              (dd-tags config :server-tags metric-group)))
+                              (metric-group-tag metric-group)))
      :aggregate-fn (fn [values-set ^Object value _] (conj values-set (.hashCode value)))
      :publish-fn set-publish
      :delete-on-publish?-fn (constantly true)
@@ -399,7 +395,7 @@
      :aggregate-fn (fn [sum value _] (+ sum value))
      :dogstatsd-client-fn (fn dd-gauge-delta [config client metric-group metric value]
                             (.count ^StatsDClient client ^String metric (long value)
-                              (dd-tags config :server-tags metric-group)))
+                              (metric-group-tag metric-group)))
      :publish-fn gauge-delta-publish
      :delete-on-publish?-fn zero?
      :metric-type :gauge-delta})
@@ -410,7 +406,7 @@
      :aggregate-fn (fn [_ value _] value)
      :dogstatsd-client-fn (fn dd-gauge [config client metric-group metric value]
                             (.recordGaugeValue ^StatsDClient client ^String metric (double value)
-                              (dd-tags config :cluster-tags metric-group)))
+                              (metric-group-tag metric-group)))
      :publish-fn gauge-publish
      :delete-on-publish?-fn (constantly true)
      :metric-type :gauge})
@@ -422,7 +418,7 @@
      :aggregate-fn (fn [sum value _] (+ sum value))
      :dogstatsd-client-fn (fn dd-counter [config client metric-group metric value]
                             (.count ^StatsDClient client ^String metric (long value)
-                              (dd-tags config :server-tags metric-group)))
+                              (metric-group-tag metric-group)))
      :publish-fn counter-publish
      :delete-on-publish?-fn (constantly true)
      :metric-type :counter})
@@ -433,7 +429,7 @@
      :aggregate-fn bounded-conj
      :dogstatsd-client-fn (fn dd-histogram [config client metric-group metric value]
                             (.recordHistogramValue ^StatsDClient client ^String metric (double value)
-                              (dd-tags config :server-tags metric-group)))
+                              (metric-group-tag metric-group)))
      :publish-fn histo-publish
      :delete-on-publish?-fn (constantly true)
      :metric-type :histo})
