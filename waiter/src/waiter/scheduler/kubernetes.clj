@@ -1013,7 +1013,7 @@
   (get-services [this]
     (get-services this))
 
-  (signal-instance [this {:keys [id service-id]} instance signal-type]
+  (signal-instance [this {:keys [id service-id] :as instance} signal-type]
     (ss/try+
       (let [service (service-id->service this service-id)
             {:keys [pod-name]} (unpack-instance-id id)
