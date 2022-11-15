@@ -298,14 +298,13 @@ def send_signal_to_instance_on_cluster(cluster, signal_type, service_id, instanc
         params = {'timeout': timeout_seconds * 1000, 'instance-id' : instance_id, 'signal-type' : signal_type}
         resp = http_util.delete(cluster, f'/apps/{service_id}/signal', params=params, read_timeout=timeout_seconds) 
         logging.debug(f'Response status code: {resp.status_code}')
-        print(resp.json())
         if resp.status_code == 200:
                     success = resp.json().get("signal-response").get('success')
                     if success:
-                        print(f'Successfully killed {instance_id} in {cluster_name}.')
+                        print(f'Successfully sent {signal_type} to {instance_id} in {cluster_name}.')
                         return True
                     else:
-                        print(f'Was not able to kill {instance_id} in {cluster_name}. ')
+                        print(f'Was not able to send {signal_type} to {instance_id} in {cluster_name}. ')
                         return False
         else:
             print_error(response_message(resp.json().get("signal-response").get("success")))
