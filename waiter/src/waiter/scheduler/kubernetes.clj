@@ -5,7 +5,7 @@
 ;; you may not use this file except in compliance with the License.
 ;; You may obtain a copy of the License at
 ;;
-;;  http://www.apache.org/licenses/LICENSE-2.0
+;; http://www.apache.org/licenses/LICENSE-2.0
 ;;
 ;; Unless required by applicable law or agreed to in writing, software
 ;; distributed under the License is distributed on an "AS IS" BASIS,
@@ -801,6 +801,7 @@
         sigterm-grace-period-secs (utils/parse-int (get-in desc ["env" "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS"] (str sigterm-grace-period-secs)))
         total-bypass-grace-period-secs (+ force-sigterm-secs sigterm-grace-period-secs)
         grace-period-seconds (if bypass-enabled? total-bypass-grace-period-secs 300)]
+      (log/info "pod-url" pod-url)
       (case signal-type
         
         ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
@@ -1012,23 +1013,31 @@
   (get-services [this]
     (get-services this))
 
-  (signal-instance [this {:keys [id service-id] :as instance} signal-type]
+  (signal-instance [this {:keys [id service-id]} instance signal-type]
     (ss/try+
-      (let [service (service-id->service this service-id)]
-        (signal-service-instance this instance service signal-type)
-        (scheduler/log-service-instance instance :kill :info)
-        {:success true
-         :message (str signal-type "successfully sent to" id)
-         :status http-200-ok})
-      (catch [:status http-404-not-found] _
-        {:success false
-         :message "Instance not found"
-         :status http-404-not-found})
+      (let [service (service-id->service this service-id)
+            {:keys [pod-name]} (unpack-instance-id id)
+            pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])
+            service-instance (pod->ServiceInstance this pod)
+            response (signal-service-instance this service-instance service signal-type)]
+        (log/info "qwer" response)
+        ;; response is a pod so it doesnt have :status
+        (if (= (:status response) http-200-ok) 
+          (do
+            (scheduler/log-service-instance instance :kill :info)
+            {:success true
+             :message (str signal-type "successfully sent to" id)
+             :status http-200-ok})
+          (do 
+            (log/error "non 200 status code on api request")
+            {:success false
+             :message (str "non 200 status code received" (:status response))
+             :status http-500-internal-server-error})))
       (catch Object ex
         (log/error ex "error while killing instance")
         {:success false
          :message "Error while killing instance"
-         :status http-500-not-found})))
+         :status http-500-internal-server-error})))
 
   (kill-instance [this {:keys [id service-id] :as instance}]
     (ss/try+
@@ -1039,7 +1048,7 @@
          :killed? true
          :message "Successfully killed instance"
          :service-id service-id
-         :status http-200-ok })
+         :status http-200-ok})
       (catch [:status http-404-not-found] _
         {:instance-id id
          :killed? false
@@ -2213,7 +2222,7 @@
                               (let [f (-> pdb-spec-builder-factory-fn
                                           utils/resolve-symbol
                                           deref)]
-                                (assert (fn? f) "PodDisruptionBudget spec function must be a Clojure fn")
+                            /    (assert (fn? f) "PodDisruptionBudget spec function must be a Clojure fn")
                                 f))
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
                                                :factory-fn
