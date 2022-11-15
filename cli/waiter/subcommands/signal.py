@@ -15,7 +15,6 @@ class Destination(Enum):
     INSTANCE_ID = 'instance_id'
 
 def signal_service_id(clusters, service_id):
-    print("hello")
     instances = get_instances_from_service_id(clusters, service_id)
     if instances is False:
         print_no_data(clusters)
@@ -33,7 +32,7 @@ def signal_token(clusters, token):
     query_result = query_token(clusters, token, include_services=True)
     if query_result['count'] == 0:
         print_no_data(clusters)
-        return 1
+        return None
     clusters_by_name = {c['name']: c for c in clusters}
     cluster_data = query_result['clusters']
     services = [{'cluster': cluster, 'etag': data['etag'], **service}
@@ -41,7 +40,7 @@ def signal_token(clusters, token):
                 for service in data['services']]
     if len(services) == 0:
         print_no_services(clusters, token)
-        return 1
+        return None
     column_names = ['Service Id', 'Cluster', 'Instances', 'In-flight req.', 'Status', 'Last request', 'Current?']
     tabular_output, sorted_services = tabulate_token_services(services, token, show_index=True, summary_table=False,
                                                                 column_names=column_names)
@@ -76,10 +75,16 @@ def signal(clusters, args, _, __):
     instance_id = None
     if signal_destination == Destination.TOKEN:
         selected_instance = signal_token(clusters, token_or_service_id_or_instance_id)
-        instance_id = selected_instance.get('id')
+        if selected_instance != None:
+            instance_id = selected_instance.get('id', None)
+        else:
+            return 0
     elif signal_destination == Destination.SERVICE_ID:
         selected_instance = signal_service_id(clusters, token_or_service_id_or_instance_id)
-        instance_id = selected_instance.get('id')
+        if selected_instance != None:
+            instance_id = selected_instance.get('id', None)
+        else:
+            return 0
     elif signal_destination == Destination.INSTANCE_ID:
         instance_id = token_or_service_id_or_instance_id
     
