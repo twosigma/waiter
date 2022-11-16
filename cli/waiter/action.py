@@ -292,7 +292,7 @@ def process_ping_request(clusters, token_name_or_service_id, is_service_id, time
 def send_signal_to_instance_on_cluster(cluster, signal_type, service_id, instance_id, timeout_seconds):
     """Send sigkill request to the specific instance"""
     cluster_name = cluster['name']
-    params = {}
+    http_util.set_retries(0)
     try:
         print(f'Sending {terminal.bold(signal_type)} request to instance {terminal.bold(instance_id)} in {terminal.bold(cluster_name)}...')
         params = {'timeout': timeout_seconds * 1000, 'instance-id' : instance_id, 'signal-type' : signal_type}
