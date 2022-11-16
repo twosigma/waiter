@@ -2353,31 +2353,96 @@ class WaiterCliTest(util.WaiterTest):
     def test_stop_ping_service_no_kill(self):
         self.run_maintenance_start_test(cli.stop, start_args='--no-kill', ping_token=True)
 
-    def test_signal_sigkill_instance(self):
+    def __test_signal(self, get_possible_instances_fn, signal_type=None, signal_flags=None, stdin=None,
+                      min_instances=1, multiple_services=False, is_failed_instance=False,
+                      test_service=False, test_instance=False):
         token_name = self.token_name()
-        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        token_fields = util.minimal_service_description()
+        token_fields['min-instances'] = min_instances
+        if is_failed_instance:
+            token_fields['cmd'] = 'this_is_an_invalid_command'
         try:
-            service_id = util.ping_token(self.waiter_url, token_name)
-            instance_id = util.get_instance_id_from_service_id(self.waiter_url, service_id)
-            signal_type = 'sigkill'
-            timeout_secs = 30
-            cp = cli.signal(self.waiter_url, signal_type, instance_id, timeout_secs)
+            if multiple_services:
+                token_new_fields = util.minimal_service_description()
+                util.post_token(self.waiter_url, token_name, token_new_fields)
+                util.ping_token(self.waiter_url, token_name)
+            util.post_token(self.waiter_url, token_name, token_fields)
+            service_id = util.ping_token(self.waiter_url, token_name,
+                                         expected_status_code=503 if is_failed_instance else 200)
+            if is_failed_instance:
+                goal_fn = lambda insts: 0 < len(insts['failed-instances']) and \
+                                        0 == len(insts['killed-instances'])
+            else:
+                goal_fn = lambda insts: min_instances == len(insts['active-instances']) and \
+                                        0 == len(insts['failed-instances']) and \
+                                        0 == len(insts['killed-instances'])
+            util.wait_until_routers_service(self.waiter_url, service_id, lambda service: goal_fn(service['instances']))
+            instances = util.instances_for_service(self.waiter_url, service_id)
+            possible_instances = get_possible_instances_fn(service_id, instances)
+            signal_flags = [signal_flags] if signal_flags else []
+            if test_instance:
+                possible_instances = possible_instances[0:1]
+                signal_dest = possible_instances[0]['id']
+                signal_flags.append('-i')
+            elif test_service:
+                signal_dest = service_id
+                signal_flags.append('-s')
+            else:
+                signal_dest = token_name
+            logging.info(f'{signal_dest} is id used!')
+            cp = cli.signal(self.waiter_url, signal_type, signal_dest, signal_flags=' '.join(signal_flags), stdin=stdin)
+            stdout = cli.stdout(cp)
             self.assertEqual(0, cp.returncode, cp.stderr)
-            self.assertIn('Successfully killed', cli.stdout(cp))
+            self.assertIn(f'Successfully sent {signal_type} to', stdout)
+
+#             if expect_out_of_range:
+#                 self.assertEqual(1, cp.returncode, cp.stderr)
+#                 self.assertIn('Input is out of range!', cli.stderr(cp))
+#             elif expect_no_data:
+#                 self.assertEqual(1, cp.returncode, cp.stderr)
+#                 self.assertIn('No matching data found', stdout)
+#             elif expect_no_instances:
+#                 self.assertEqual(1, cp.returncode, cp.stderr)
+#                 self.assertIn(f'There are no relevant instances using service id {service_id}', stdout)
+#             else:
+#                 self.assertEqual(0, cp.returncode, cp.stderr)
+#                 ssh_instance = util.get_ssh_instance_from_output(self.waiter_url, possible_instances, stdout,
+#                                                                  container_name=container_name,
+#                                                                  command_to_run=command_to_run)
+#                 self.assertIsNotNone(ssh_instance,
+#                                      msg=f"None of the possible instances {possible_instances} were detected in ssh "
+#                                          f"command output: \n{stdout}")
         finally:
-            util.delete_token(self.waiter_url, token_name)
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
 
-    def test_signal_sigterm_instance(self):
-            token_name = self.token_name()
-            util.post_token(self.waiter_url, token_name, util.minimal_service_description())
-            try:
-                service_id = util.ping_token(self.waiter_url, token_name)
-                instance_id = util.get_instance_id_from_service_id(self.waiter_url, service_id)
-                signal_type = 'sigterm'
-                timeout_secs = 30
-                cp = cli.signal(self.waiter_url, signal_type, instance_id, timeout_secs)
-                self.assertEqual(0, cp.returncode, cp.stderr)
-                self.assertIn('Successfully killed', cli.stdout(cp))
-            finally:
-                util.delete_token(self.waiter_url, token_name)
+    def test_signal_sigkill_valid_instance(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='sigkill', test_instance=True, min_instances=1)
 
+    def test_signal_sigkill_valid_service_multiple_instance(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='sigkill', stdin='1\n'.encode('utf8'), test_service=True, min_instances=2)
+
+    def test_signal_sigkill_valid_service_multiple_instance_two(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='sigkill', stdin='2\n'.encode('utf8'), test_service=True, min_instances=2)
+
+    def test_signal_sigkill_valid_token_multiple_service_multiple_instance(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='sigkill', stdin='1\n1\n'.encode('utf8'), multiple_services=True, min_instances=2)
+
+    def test_signal_sigterm_valid_instance(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='sigterm', test_instance=True, min_instances=1)
+
+    def test_signal_sigterm_valid_service_multiple_instance(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='sigterm', stdin='1\n'.encode('utf8'), test_service=True, min_instances=2)
+
+    def test_signal_sigkill_valid_service_multiple_instance_two(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='sigterm', stdin='2\n'.encode('utf8'), test_service=True, min_instances=2)
+
+    def test_signal_sigterm_valid_token_multiple_service_multiple_instance(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='sigterm', stdin='1\n1\n'.encode('utf8'), multiple_services=True, min_instances=2)
