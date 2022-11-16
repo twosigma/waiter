@@ -111,8 +111,8 @@
    (s/optional-key "instance-expiry-mins") (s/constrained s/Int #(<= 0 %))
    (s/optional-key "jitter-threshold") schema/greater-than-or-equal-to-0-less-than-1
    (s/optional-key "load-balancing") schema/valid-load-balancing
-   (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= minimum-min-instances % 1000) 'between-one-and-1000))
-   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= minimum-min-instances % 1000) 'between-one-and-1000))
+   (s/optional-key "max-instances") (s/both s/Int (s/pred #(<= minimum-min-instances % 2000) 'between-one-and-2000))
+   (s/optional-key "min-instances") (s/both s/Int (s/pred #(<= minimum-min-instances % 2000) 'between-one-and-2000))
    (s/optional-key "scale-down-factor") schema/positive-fraction-less-than-1
    (s/optional-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-2
    (s/optional-key "scale-up-factor") schema/positive-fraction-less-than-1
@@ -684,7 +684,7 @@
                                              parameter->issues :load-balancing
                                              (str "load-balancing must be one of 'oldest', 'youngest' or 'random'."))
                                            (attach-error-message-for-parameter
-                                             parameter->issues :max-instances "max-instances must be between 1 and 1000.")
+                                             parameter->issues :max-instances "max-instances must be between 1 and 2000.")
                                            (attach-error-message-for-parameter
                                              parameter->issues :mem "mem must be a positive number.")
                                            (attach-error-message-for-parameter
@@ -699,7 +699,7 @@
                                                   "start with a lowercase letter; and "
                                                   "only use dash and/or underscore as separators between alphanumeric portions."))
                                            (attach-error-message-for-parameter
-                                             parameter->issues :min-instances "min-instances must be between 1 and 1000.")
+                                             parameter->issues :min-instances "min-instances must be between 1 and 2000.")
                                            (attach-error-message-for-parameter
                                              parameter->issues :name "name must be a non-empty string.")
                                            (attach-error-message-for-parameter
