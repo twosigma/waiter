@@ -805,12 +805,12 @@
       (case signal-type
         
         ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
-        "sigterm" (api-request pod-url scheduler :request-method :delete
+        :sigterm (api-request pod-url scheduler :request-method :delete
                  :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds grace-period-seconds}))
 
         ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
         ; (note that the pod's default grace period is different from the 300s period set above)
-        "sigkill" (hard-delete-service-instance scheduler instance))))
+        :sigkill (hard-delete-service-instance scheduler instance))))
 
 (defn kill-service-instance
   "Safely kill the Kubernetes pod corresponding to the given Waiter Service Instance.
