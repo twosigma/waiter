@@ -1022,7 +1022,7 @@
             response (signal-service-instance this service-instance service signal-type)]
         (log/info "qwer" response)
         ;; response is a pod so it doesnt have :status
-        (if (= (:status response) http-200-ok) 
+        (if response 
           (do
             (scheduler/log-service-instance instance :kill :info)
             {:success true
