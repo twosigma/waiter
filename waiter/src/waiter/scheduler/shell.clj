@@ -660,7 +660,7 @@
   (signal-instance [this {:keys [id service-id] :as instance} signal-type] 
    (log/info "in signal-instance")
    (if (scheduler/service-exists? this service-id)
-      (let [message (str "Sent " (id signal-type) " using scheduler API")]
+      (let [message (str "Sent " (name signal-type) " using scheduler API")]
         (send id->service-agent signal-instance-fn service-id id message
                port->reservation-atom port-grace-period-ms signal-type)
           (scheduler/log-service-instance instance signal-type :info)
