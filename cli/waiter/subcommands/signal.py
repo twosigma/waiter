@@ -2,19 +2,13 @@ from waiter.util import guard_no_cluster, check_positive
 from waiter.action import process_signal_request
 from waiter.display import get_user_selection, tabulate_service_instances, tabulate_token_services
 from waiter.querying import print_no_data, print_no_services, query_service, query_token, print_no_instances
-from waiter.helper import get_instance_id_from_destination
+from waiter.instance_select import get_instance_id_from_destination, Destination
 from enum import Enum
 
 
 class Signal(Enum):
     SIGKILL = 'sigkill'
     SIGTERM = 'sigterm'
-
-
-class Destination(Enum):
-    TOKEN = 'token'
-    SERVICE_ID = 'service_id'
-    INSTANCE_ID = 'instance_id'
 
 
 def signal(clusters, args, _, enforce_cluster):
