@@ -33,7 +33,7 @@ def get_instances_from_service_id(clusters, service_id, include_active_instances
     return instances
 
 
-def instance_id(clusters, instance_id):
+def select_from_instance_id(clusters, instance_id):
 
     service_id = get_service_id_from_instance_id(instance_id)
     instances = get_instances_from_service_id(clusters, service_id, True, True, True)
@@ -50,7 +50,7 @@ def instance_id(clusters, instance_id):
     return instance_id
 
 
-def service_id(clusters, service_id, skip_prompts, include_active_instances,
+def select_from_service_id(clusters, service_id, skip_prompts, include_active_instances,
                    include_failed_instances, include_killed_instances):
     instances = get_instances_from_service_id(clusters, service_id, include_active_instances, include_failed_instances,
                                               include_killed_instances)
@@ -71,7 +71,7 @@ def service_id(clusters, service_id, skip_prompts, include_active_instances,
     return None
 
 
-def token(clusters, enforce_cluster, token, skip_prompts, include_active_instances,
+def select_from_token(clusters, enforce_cluster, token, skip_prompts, include_active_instances,
               include_failed_instances, include_killed_instances):
     if skip_prompts:
         cluster = get_target_cluster_from_token(clusters, token, enforce_cluster)
