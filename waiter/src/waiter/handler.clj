@@ -1356,10 +1356,10 @@
     (log/info "received request to send" signal-type "to instance" instance-id "from" src-router-id)
     (async/go
       (let [response-chan (async/promise-chan)
-                              _ (execute-signal
-                                 notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler 
-                                 populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type) 
-                                 correlation-id scale-service-thread-pool response-chan)
+        _ (execute-signal
+           notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler
+           populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type)
+           correlation-id scale-service-thread-pool response-chan)
             {:keys [instance-id status] :as signal-response} (or (async/<! response-chan)
                                                                {:message :no-instance-killed, :status http-500-internal-server-error})]
         (log/info signal-response)

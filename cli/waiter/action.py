@@ -319,7 +319,6 @@ def send_signal_to_instance_on_cluster(cluster, signal_type, service_id, instanc
         print_error(message)
 
 def process_signal_request(clusters, signal_type, instance_id, timeout_secs, no_instance_result=False):
-    # Send SIGKILL to an instance
     service_id = get_service_id_from_instance_id(instance_id)
     query_result = query_service(clusters, service_id)
     num_services = query_result['count']
