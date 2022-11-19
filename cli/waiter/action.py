@@ -299,7 +299,7 @@ def send_signal_to_instance_on_cluster(cluster, signal_type, service_id, instanc
         resp = http_util.delete(cluster, f'/apps/{service_id}/signal', params=params, read_timeout=30) 
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
-                    success = resp.json().get("signal-response").get('success')
+                    success = resp.json().get("signal-response", {}).get('success')
                     if success:
                         print(f'Successfully sent {signal_type} to {instance_id} in {cluster_name}.')
                         return True
@@ -313,13 +313,15 @@ def send_signal_to_instance_on_cluster(cluster, signal_type, service_id, instanc
         message = f'Request timed out while killing {service_id} in {cluster_name}.'
         logging.exception(message)
         print_error(message)
+        return False
     except Exception:
         message = f'Encountered error while killing {instance_id} in {cluster_name}.'
         logging.exception(message)
         print_error(message)
+        return False
+
 
 def process_signal_request(clusters, signal_type, instance_id, timeout_secs, no_instance_result=False):
-    # Send SIGKILL to an instance
     service_id = get_service_id_from_instance_id(instance_id)
     query_result = query_service(clusters, service_id)
     num_services = query_result['count']

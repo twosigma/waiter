@@ -111,7 +111,7 @@
   "Kills the process group with group iod pgid."
   [pgid]
   (log/info "killing process group with group" pgid)
-  (sh/sh "pkill" "-g" (str pgid)))
+  (sh/sh "pkill" "-15" "-g" (str pgid)))
 
 (defn kill-process!
   "Triggers killing of process and any children processes it spawned"
@@ -321,18 +321,15 @@
         (if (and instance (active? instance))
           (do
             (log/info "signaling instance" instance-id "process" process "with signal" signal-type)
-            
             (case signal-type
               :sigkill (kill-process! instance port->reservation-atom port-grace-period-ms)
               :sigterm (safe-kill-process! instance port->reservation-atom port-grace-period-ms))
-              
             (-> id->service
                 (update-in [service-id :service :instances] dec)
                 (update-in [service-id :id->instance instance-id] assoc
                            :killed? true
                            :message message
                            :shell-scheduler/process nil)))
-
           (do
             (log/info "instance" instance-id "does not exist")
             id->service)))
@@ -663,10 +660,10 @@
   (signal-instance [this {:keys [id service-id] :as instance} signal-type timeout] 
    (log/info "in signal-instance")
    (if (scheduler/service-exists? this service-id)
-      (let [message "Killed using scheduler API"]
+      (let [message (str "Sent " (name signal-type) " using scheduler API")]
         (send id->service-agent signal-instance-fn service-id id message
                port->reservation-atom port-grace-period-ms signal-type)
-          (scheduler/log-service-instance instance :kill :info)
+          (scheduler/log-service-instance instance signal-type :info)
           {:success true
            :message (str signal-type " successfully sent to " id)
            :status 200})

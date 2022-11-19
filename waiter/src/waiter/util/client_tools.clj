@@ -985,9 +985,10 @@
    Which results in the metric being sent to statsd."
   [f]
   (let [host (statsd-host)
-        port (statsd-port)]
+        port (statsd-port)
+        dd-agent nil]
     (if (and host port)
-      (statsd/init-configuration host port :prefix "waiter_tests.")
+      (statsd/init-configuration host port dd-agent {:prefix "waiter_tests"})
       (log/info "Statsd is not initialized")))
   (f))
 

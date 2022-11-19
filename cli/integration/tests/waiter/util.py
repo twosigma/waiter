@@ -403,18 +403,3 @@ def get_instances_not_in_output(possible_instances, stdout_output):
     return [instance
             for instance in possible_instances
             if instance['id'] not in stdout_output]
-
-# def get_instance_id_from_service_id(waiter_url, service_id, expected_status_code=200):
-#     headers = {
-#         'Content-Type': 'application/json',
-#         'x-cid': cid()
-#     }
-#     response = session.get(f'{waiter_url}/apps/{service_id}', headers=headers)
-#     service = response.json()
-#     assert expected_status_code == response.status_code, \
-#         f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
-#     instance_type = service['instances']
-#     active_instance = instance_type['active-instances']
-#     instance = active_instance[0]
-#     instance_id = instance['id']
-#     return instance_id

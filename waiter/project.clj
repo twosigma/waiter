@@ -51,6 +51,7 @@
                   :exclusions [commons-codec commons-io org.clojure/tools.reader potemkin slingshot]]
                  [clj-time "0.15.2"
                   :exclusions [joda-time]]
+                 [com.datadoghq/java-dogstatsd-client "2.9.0"] ;; metrics-datadog dependency prevents upgrade to newer version
                  [com.google.guava/guava "20.0"] ;; apache curator dependency prevents upgrade to newer versions
                  [com.taoensso/nippy "2.14.0"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
@@ -94,7 +95,8 @@
                  [org.clojure/tools.namespace "1.0.0"]
                  [org.clojure/tools.reader "1.3.2"]
                  [org.coursera/metrics-datadog "1.1.14"
-                  :exclusions [com.fasterxml.jackson.core/jackson-annotations
+                  :exclusions [com.datadoghq/java-dogstatsd-client
+                               com.fasterxml.jackson.core/jackson-annotations
                                com.fasterxml.jackson.core/jackson-databind
                                org.apache.httpcomponents/httpclient]]
                  [org.slf4j/slf4j-log4j12 "1.7.30"

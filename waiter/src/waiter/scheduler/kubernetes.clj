@@ -5,7 +5,7 @@
 ;; you may not use this file except in compliance with the License.
 ;; You may obtain a copy of the License at
 ;;
-;; http://www.apache.org/licenses/LICENSE-2.0
+;;  http://www.apache.org/licenses/LICENSE-2.0
 ;;
 ;; Unless required by applicable law or agreed to in writing, software
 ;; distributed under the License is distributed on an "AS IS" BASIS,
@@ -776,21 +776,6 @@
    Returns nil on success, but throws on failure."
   [{:keys [api-server-url service-id->service-description-fn] {:keys [force-sigterm-secs sigterm-grace-period-secs]} :pod-bypass :as scheduler}
    {:keys [service-id] :as instance} service signal-type timeout]
-  ;; SAFE DELETION STRATEGY:
-  ;; 1. Delete the target pod with a grace period of 5 minutes
-  ;;    Since the target pod is currently in the "Terminating" state,
-  ;;    the owner ReplicaSet will not immediately create a replacement pod.
-  ;;    Since we never expect the 5 minute period to elapse before step 3 completes,
-  ;;    we call this the "soft" delete.
-  ;; 2. Delete the target pod. This immediately removes the pod from Kubernetes.
-  ;;    The state of the ReplicaSet (desired vs actual pods) should now be consistent.
-  ;;    This eager delete overrides the 5-minute delay from above,
-  ;;    making this a "hard" delete, using the default grace period set on the pod.
-  ;; Note that if it takes more than 5 minutes to get from step 1 to step 2,
-  ;; we assume we're already so far out of sync that the possibility of non-atomic scaling
-  ;; doesn't hurt us significantly. If it takes more than 5 minutes to get from step 1
-  ;; to step 3, then the pod was already deleted, and the force-delete is no longer needed.
-  ;; The force-delete can fail with a 404 (object not found), but this operation still succeeds.
   (let [pod-url (instance->pod-url api-server-url instance)
         desc (service-id->service-description-fn service-id)
         bypass-enabled? (sd/service-description-bypass-enabled? desc)
@@ -1020,13 +1005,11 @@
             pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])
             service-instance (pod->ServiceInstance this pod)
             response (signal-service-instance this service-instance service signal-type timeout)]
-        (log/info "qwer" response)
-        ;; response is a pod so it doesnt have :status
         (if response 
           (do
             (scheduler/log-service-instance instance :kill :info)
             {:success true
-             :message (str signal-type "successfully sent to" id)
+             :message (str (name signal-type) "successfully sent to" id)
              :status http-200-ok})
           (do 
             (log/error "non 200 status code on api request")
@@ -1034,9 +1017,9 @@
              :message (str "non 200 status code received" (:status response))
              :status http-500-internal-server-error})))
       (catch Object ex
-        (log/error ex "error while killing instance")
+        (log/error ex "Error while signaling instance")
         {:success false
-         :message "Error while killing instance"
+         :message "Error while signaling instance"
          :status http-500-internal-server-error})))
 
   (kill-instance [this {:keys [id service-id] :as instance}]
@@ -2222,7 +2205,7 @@
                               (let [f (-> pdb-spec-builder-factory-fn
                                           utils/resolve-symbol
                                           deref)]
-                            /    (assert (fn? f) "PodDisruptionBudget spec function must be a Clojure fn")
+                                (assert (fn? f) "PodDisruptionBudget spec function must be a Clojure fn")
                                 f))
         replicaset-spec-builder-fn (let [f (-> replicaset-spec-builder
                                                :factory-fn

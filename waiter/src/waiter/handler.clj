@@ -1283,21 +1283,12 @@
     (catch Throwable th
       (utils/exception->response th request))))
 
-
-(defn get-params-from-query [query]
-  (let [split-query (str/split query #"&")] 
-      (let [vector-query (map #(str/split % #"=") split-query)]
-          (into {} vector-query))))
-          
-
 (defn- execute-signal
   "Helper function to send signals to instances of a service.
-   An instance needs to be approved for killing by peers before an actual kill attempt is made.
-   The function stops and returns true when a successful kill is made.
-   Else, it terminates after we have exhausted all candidate instances to kill or when a kill attempt returns a non-truthy value."
+   The instance will be marked as killed upon success."
   ;; PEER-ACK UNUSED
   ;; dont need threadpool
-  [notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn scheduler populate-maintainer-chan! timeout-config
+  [notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler populate-maintainer-chan! timeout-config
    instance-id service-id signal-type timeout correlation-id thread-pool response-chan]
   (let [{:keys [eject-backoff-base-time-ms inter-kill-request-wait-time-ms max-eject-time-ms]} timeout-config]
     (cid/with-correlation-id
@@ -1349,34 +1340,43 @@
           (catch Exception ex
             ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "fail"))
             (log/error ex "unable to send signal to instance " instance-id)
-            (when response-chan (async/>! response-chan {:instance-id instance-id :status http-500-internal-server-error :message (.getMessage ex)}))))))))
+            (when response-chan 
+              (async/>! response-chan {:instance-id instance-id :message (.getMessage ex) :status http-500-internal-server-error}))))))))
 
 
 
 (defn signal-handler
   "Handler that supports sending signals to instances of a particular service on a specific router."
   [notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn scheduler populate-maintainer-chan! timeout-config
-   scale-service-thread-pool {:keys [route-params] {:keys [src-router-id]} :basic-authentication :as request}]
+  service-id->service-description-fn scale-service-thread-pool {:keys [route-params] {:keys [src-router-id]} :basic-authentication :as request}]
   (let [{:keys [service-id]} route-params
         {:strs [instance-id signal-type timeout]} (-> request ru/query-params-request :query-params)
-        correlation-id (cid/get-correlation-id)]
-        
-    (log/info "received request to send" signal-type "to instance" instance-id "from" src-router-id)
-    (log/info "CORRELATION-ID: " correlation-id)
-    (async/go
-      (let [response-chan (async/promise-chan)
-                              _ (execute-signal
-                                 notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn
-                                 scheduler populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type) timeout 
-                                 correlation-id scale-service-thread-pool response-chan)
-            {:keys [instance-id status] :as signal-response} (or (async/<! response-chan)
-                                                               {:message :no-instance-killed, :status http-500-internal-server-error})]
-        (log/info "STATUS: " status)
-        (log/info signal-response)
-        (-> (utils/clj->json-response {:signal-response signal-response
-                                       :source-router-id src-router-id
-                                      :status (or status http-500-internal-server-error)})
-            (update :headers assoc "x-cid" correlation-id))))))
+        core-service-description (service-id->service-description-fn service-id :effective? false)
+        correlation-id (cid/get-correlation-id)
+        auth-user (get request :authorization/user)
+        run-as-user (get core-service-description "run-as-user")]
+    (log/info "Received request to send" signal-type "to instance" instance-id "from" src-router-id)
+    (if-not (allowed-to-manage-service?-fn service-id auth-user)
+      (throw
+        (ex-info "User not allowed to send signal to instance"
+                 {:current-user auth-user
+                  :existing-owner run-as-user
+                  :log-level :info
+                  :service-id service-id
+                  :status http-403-forbidden}))
+      (async/go
+        (let [response-chan (async/promise-chan)
+          _ (execute-signal
+            notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler
+            populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type) timeout
+            correlation-id scale-service-thread-pool response-chan)
+              {:keys [instance-id status] :as signal-response} (or (async/<! response-chan)
+                                                                {:message :no-instance-killed, :status http-500-internal-server-error})]
+          (log/info signal-response)
+          (-> (utils/clj->json-response {:signal-response signal-response
+                                        :source-router-id src-router-id
+                                        :status (or status http-500-internal-server-error)})
+              (update :headers assoc "x-cid" correlation-id)))))))
 
 
 

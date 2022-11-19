@@ -657,6 +657,10 @@
            (classify-error "test-classify-error" (ex-info "Test Exception" {:source :test :status http-400-bad-request} (IOException. "cancel_stream_error")))))
     (is (= [:client-error "Client action means stream is no longer needed" http-400-bad-request error-image-400-bad-request "java.io.IOException"]
            (classify-error "test-classify-error" (IOException. "cancel_stream_error"))))
+    (is (= [:generic-error "Internal error: session already closed" http-500-internal-server-error error-image-500-internal-server-error "java.lang.IllegalStateException"]
+           (classify-error "test-classify-error" (IllegalStateException. "session closed"))))
+    (is (= [:generic-error "invalid state" http-400-bad-request error-image-400-bad-request "java.lang.IllegalStateException"]
+           (classify-error "test-classify-error" (IllegalStateException. "invalid state"))))
     (let [exception (IOException. "internal_error")]
       (->> (into-array StackTraceElement
                        [(StackTraceElement. "org.eclipse.jetty.http2.client.http.HttpReceiverOverHTTP2" "onReset" "HttpReceivedOverHTTP2.java" 169)
