@@ -1364,19 +1364,19 @@
                   :log-level :info
                   :service-id service-id
                   :status http-403-forbidden}))
-    (async/go
-      (let [response-chan (async/promise-chan)
-        _ (execute-signal
-           notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler
-           populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type)
-           correlation-id scale-service-thread-pool response-chan)
-            {:keys [instance-id status] :as signal-response} (or (async/<! response-chan)
-                                                               {:message :no-instance-killed, :status http-500-internal-server-error})]
-        (log/info signal-response)
-        (-> (utils/clj->json-response {:signal-response signal-response
-                                       :source-router-id src-router-id
-                                       :status (or status http-500-internal-server-error)})
-            (update :headers assoc "x-cid" correlation-id)))))))
+      (async/go
+        (let [response-chan (async/promise-chan)
+          _ (execute-signal
+            notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler
+            populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type)
+            correlation-id scale-service-thread-pool response-chan)
+              {:keys [instance-id status] :as signal-response} (or (async/<! response-chan)
+                                                                {:message :no-instance-killed, :status http-500-internal-server-error})]
+          (log/info signal-response)
+          (-> (utils/clj->json-response {:signal-response signal-response
+                                        :source-router-id src-router-id
+                                        :status (or status http-500-internal-server-error)})
+              (update :headers assoc "x-cid" correlation-id)))))))
 
 
 
