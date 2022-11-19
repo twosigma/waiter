@@ -103,19 +103,19 @@ def select_from_token(clusters, enforce_cluster, token, skip_prompts, include_ac
         selected_service = get_user_selection(sorted_services, tabular_output)
         selected_service_id = selected_service['service-id']
         clusters = [clusters_by_name[selected_service['cluster']]]
-    return service_id(clusters, selected_service_id, skip_prompts,
+    return select_from_service_id(clusters, selected_service_id, skip_prompts,
                           include_active_instances, include_failed_instances, include_killed_instances)
 
 
 def get_instance_id_from_destination(clusters, enforce_cluster, token_or_service_id_or_instance_id, destination, skip_prompts=False,
                                      include_active_instances=True, include_failed_instances=False, include_killed_instances=False):
     if destination.value == Destination.TOKEN.value:
-        return token(clusters, enforce_cluster, token_or_service_id_or_instance_id,
+        return select_from_token(clusters, enforce_cluster, token_or_service_id_or_instance_id,
                          skip_prompts, include_active_instances, include_failed_instances, include_killed_instances)
     elif destination.value == Destination.SERVICE_ID.value:
-        return service_id(clusters, token_or_service_id_or_instance_id, skip_prompts,
+        return select_from_service_id(clusters, token_or_service_id_or_instance_id, skip_prompts,
                               include_active_instances, include_failed_instances, include_killed_instances)
     elif destination.value == Destination.INSTANCE_ID.value:
-        return instance_id(clusters, token_or_service_id_or_instance_id)
+        return select_from_instance_id(clusters, token_or_service_id_or_instance_id)
     else:
         return None
