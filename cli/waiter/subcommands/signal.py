@@ -116,6 +116,6 @@ def register(add_parser):
 
 
     parser.add_argument('--timeout', '-ti', help='timeout (in seconds) for kill to complete',
-                        type=check_positive, default=30)    
+                        type=check_positive, default=0)    
 
     return signal

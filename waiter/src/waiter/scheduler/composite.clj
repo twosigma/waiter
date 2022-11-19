@@ -60,11 +60,11 @@
          (pmap #(retrieve-services % service-id->scheduler))
          (reduce into [])))
 
-  (signal-instance [_ instance signal-type]
+  (signal-instance [_ instance signal-type timeout]
     (-> instance 
         :service-id
         service-id->scheduler
-        (scheduler/signal-instance instance signal-type)))
+        (scheduler/signal-instance instance signal-type timeout)))
 
   (kill-instance [_ instance]
     (-> instance

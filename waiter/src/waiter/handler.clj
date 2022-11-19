@@ -1298,7 +1298,7 @@
   ;; PEER-ACK UNUSED
   ;; dont need threadpool
   [notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn scheduler populate-maintainer-chan! timeout-config
-   instance-id service-id signal-type correlation-id thread-pool response-chan]
+   instance-id service-id signal-type timeout correlation-id thread-pool response-chan]
   (let [{:keys [eject-backoff-base-time-ms inter-kill-request-wait-time-ms max-eject-time-ms]} timeout-config]
     (cid/with-correlation-id
       correlation-id
@@ -1323,7 +1323,7 @@
                         (let [{:keys [success] :as kill-result}
                               (-> (au/execute
                                     (fn send-signal-to-instance []
-                                      (scheduler/signal-instance scheduler instance signal-type))
+                                      (scheduler/signal-instance scheduler instance signal-type timeout))
                                     thread-pool)
                                   async/<!
                                   :result)]
@@ -1358,7 +1358,7 @@
   [notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn scheduler populate-maintainer-chan! timeout-config
    scale-service-thread-pool {:keys [route-params] {:keys [src-router-id]} :basic-authentication :as request}]
   (let [{:keys [service-id]} route-params
-        {:strs [instance-id signal-type]} (-> request ru/query-params-request :query-params)
+        {:strs [instance-id signal-type timeout]} (-> request ru/query-params-request :query-params)
         correlation-id (cid/get-correlation-id)]
         
     (log/info "received request to send" signal-type "to instance" instance-id "from" src-router-id)
@@ -1367,7 +1367,7 @@
       (let [response-chan (async/promise-chan)
                               _ (execute-signal
                                  notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn
-                                 scheduler populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type) 
+                                 scheduler populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type) timeout 
                                  correlation-id scale-service-thread-pool response-chan)
             {:keys [instance-id status] :as signal-response} (or (async/<! response-chan)
                                                                {:message :no-instance-killed, :status http-500-internal-server-error})]

@@ -775,7 +775,7 @@
   "Sends specified signal to the Kubernetes pod corresponding to the given Waiter Service Instance.
    Returns nil on success, but throws on failure."
   [{:keys [api-server-url service-id->service-description-fn] {:keys [force-sigterm-secs sigterm-grace-period-secs]} :pod-bypass :as scheduler}
-   {:keys [service-id] :as instance} service signal-type]
+   {:keys [service-id] :as instance} service signal-type timeout]
   ;; SAFE DELETION STRATEGY:
   ;; 1. Delete the target pod with a grace period of 5 minutes
   ;;    Since the target pod is currently in the "Terminating" state,
@@ -806,7 +806,7 @@
         
         ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
         :sigterm (api-request pod-url scheduler :request-method :delete
-                 :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds grace-period-seconds}))
+                 :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds (or (if (zero? (Integer/parseInt timeout)) nil (Integer/parseInt timeout)) grace-period-seconds)}))
 
         ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
         ; (note that the pod's default grace period is different from the 300s period set above)
@@ -1013,13 +1013,13 @@
   (get-services [this]
     (get-services this))
 
-  (signal-instance [this {:keys [id service-id] :as instance} signal-type]
+  (signal-instance [this {:keys [id service-id] :as instance} signal-type timeout]
     (ss/try+
       (let [service (service-id->service this service-id)
             {:keys [pod-name]} (unpack-instance-id id)
             pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])
             service-instance (pod->ServiceInstance this pod)
-            response (signal-service-instance this service-instance service signal-type)]
+            response (signal-service-instance this service-instance service signal-type timeout)]
         (log/info "qwer" response)
         ;; response is a pod so it doesnt have :status
         (if response 

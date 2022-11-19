@@ -128,7 +128,7 @@
   (get-services [this]
     "Returns a list of scheduler/Service records")
 
-  (signal-instance [this instance signal-type] 
+  (signal-instance [this instance signal-type timeout] 
     "Instructs the scheduler to send specified signal to a specific ServiceInstance.
      Returns a map containing the following structure:
      {:success <boolean>, :message <string>, :status status-code}")
