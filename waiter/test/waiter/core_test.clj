@@ -187,24 +187,23 @@
         scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
         signal-instance-result-atom (atom nil)
         configuration {:daemons {:populate-maintainer-chan! {:query-state-fn (constantly {})}
-                                 :router-state-maintainer {:maintainer {:notify-instance-killed-fn (constantly {})}}} ;;fn [] @router-state-atom
+                                 :router-state-maintainer {:maintainer {:notify-instance-killed-fn (constantly {})}}}
                        :routines {:peers-acknowledged-eject-requests-fn (constantly true)
-                                  :allowed-to-manage-service?-fn (constantly true)}
+                                  :allowed-to-manage-service?-fn (constantly true)
+                                  :service-id->service-description-fn (constantly {})}
                        :scheduler {:scheduler (reify scheduler/ServiceScheduler
-                                                (signal-instance [_ _ _]
+                                                (signal-instance [_ _ _ _]
                                                   (let [result @signal-instance-result-atom]
                                                     (if (instance? Throwable result)
                                                       (throw result)
-                                                      result)
-                                                    )))}
+                                                      result))))}
                        :state {:scaling-timeout-config scaling-timeout-config
                                :scheduler-interactions-thread-pool scheduler-interactions-thread-pool}
                        :wrap-ignore-disabled-auth-fn utils/wrap-identity
                        :wrap-secure-request-fn utils/wrap-identity}
-        handlers {:signal-handler-fn ((:signal-handler-fn request-handlers) configuration)}
-        ]
-    (testing "signal-handler:valid-response-including-active-killed-and-failed"
-      (reset! signal-instance-result-atom {:success true, :message (str ":sigkill successfully sent to " instance-id) , :status 200})
+        handlers {:signal-handler-fn ((:signal-handler-fn request-handlers) configuration)}]
+    (testing "signal-handler:valid-response-including-active-killed"
+      (reset! signal-instance-result-atom {:success true, :message (str "sigkill successfully sent to " instance-id) , :status 200})
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:headers {"accept" "application/json"}
                        :query-string "timeout=5000&instance-id=test-service-1.A&signal-type=sigkill"
@@ -213,7 +212,7 @@
               {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= http-200-ok status))
           (let [body-json (json/read-str (str body))]
-            (is (= {"success" true, "message" (str ":sigkill successfully sent to " instance-id), "status" 200} (get body-json "signal-response")))
+            (is (= {"success" true, "message" (str "sigkill successfully sent to " instance-id), "status" 200} (get body-json "signal-response")))
             ))))
     (.shutdown scheduler-interactions-thread-pool)))
 
@@ -740,7 +739,7 @@
         (let [request {:headers {"accept" "application/json"}
                        :request-method :get
                        :uri (str "/apps/" service-id)}
-              {:keys [body headers status] :as resp} (ring-handler request)]
+              {:keys [body headers status]} (ring-handler request)]
           (is (= http-404-not-found status))
           (is (= expected-json-response-headers headers))
           (let [{{message "message"
