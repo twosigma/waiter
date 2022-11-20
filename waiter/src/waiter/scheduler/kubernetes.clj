@@ -998,10 +998,10 @@
   (get-services [this]
     (get-services this))
 
-  (signal-instance [this service-id instance-id signal-type timeout signal-type timeout]
+  (signal-instance [this service-id instance-id signal-type timeout]
     (ss/try+
       (let [service (service-id->service this service-id)
-            {:keys [pod-name]} (unpack-instance-id id)
+            {:keys [pod-name]} (unpack-instance-id instance-id)
             pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])
             service-instance (pod->ServiceInstance this pod)
             response (signal-service-instance this service-instance service signal-type timeout)]
