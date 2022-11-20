@@ -668,10 +668,10 @@
         (scheduler/log-service-instance instance signal-type :info)
         {:success true
           :message (str signal-type " successfully sent to " instance-id)
-          :status 200})
+          :status http-200-ok})
       {:success false
        :message "service does not exist"
-       :status nil}))
+       :status http-500-internal-server-error}))
 
 
   (kill-instance [this {:keys [id service-id] :as instance}]

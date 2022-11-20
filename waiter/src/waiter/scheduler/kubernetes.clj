@@ -1007,7 +1007,7 @@
             response (signal-service-instance this service-instance service signal-type timeout)]
         (if response 
           (do
-            (scheduler/log-service-instance service-instance :kill :info)
+            (scheduler/log-service-instance service-instance signal-type :info)
             {:success true
              :message (str (name signal-type) "successfully sent to" instance-id)
              :status http-200-ok})

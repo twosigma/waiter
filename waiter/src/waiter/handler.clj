@@ -1338,7 +1338,6 @@
                       ;; false)
                                ))
           (catch Exception ex
-            ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "fail"))
             (log/error ex "unable to send signal to instance " instance-id)
             (when response-chan 
               (async/>! response-chan {:instance-id instance-id :message (.getMessage ex) :status http-500-internal-server-error}))))))))
@@ -1374,8 +1373,8 @@
                                                                 {:message :no-instance-killed, :status http-500-internal-server-error})]
           (log/info signal-response)
           (-> (utils/clj->json-response {:signal-response signal-response
-                                        :source-router-id src-router-id
-                                        :status (or status http-500-internal-server-error)})
+                                         :source-router-id src-router-id
+                                         :status (or status http-500-internal-server-error)})
               (update :headers assoc "x-cid" correlation-id)))))))
 
 
