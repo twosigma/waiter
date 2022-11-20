@@ -657,16 +657,21 @@
     (let [id->service @id->service-agent]
       (map (fn [[_ {:keys [service]}]] service) id->service)))
 
-  (signal-instance [this {:keys [id service-id] :as instance} signal-type timeout] 
+  (signal-instance [this service-id instance-id signal-type timeout] 
    (log/info "in signal-instance")
+  ;;  (log/info "Hello" (keys (get-service->instances id->service-agent)))
+   (log/info "Instance: " (get (:id->instance (get @id->service-agent service-id)) instance-id))
    (if (scheduler/service-exists? this service-id)
-      (let [message (str "Sent " (name signal-type) " using scheduler API")]
-        (send id->service-agent signal-instance-fn service-id id message
+
+      (let [message (str "Sent " (name signal-type) " using scheduler API")
+            instance (get (:id->instance (get @id->service-agent service-id)) instance-id)]
+
+        (send id->service-agent signal-instance-fn service-id instance-id message
                port->reservation-atom port-grace-period-ms signal-type)
-          (scheduler/log-service-instance instance signal-type :info)
-          {:success true
-           :message (str signal-type " successfully sent to " id)
-           :status 200})
+        (scheduler/log-service-instance instance signal-type :info)
+        {:success true
+          :message (str signal-type " successfully sent to " instance-id)
+          :status 200})
       {:success false
        :message "service does not exist"
        :status nil}))

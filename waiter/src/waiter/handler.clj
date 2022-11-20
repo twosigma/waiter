@@ -1314,7 +1314,7 @@
                         (let [{:keys [success] :as kill-result}
                               (-> (au/execute
                                     (fn send-signal-to-instance []
-                                      (scheduler/signal-instance scheduler instance signal-type timeout))
+                                      (scheduler/signal-instance scheduler service-id instance-id signal-type timeout))
                                     thread-pool)
                                   async/<!
                                   :result)]
