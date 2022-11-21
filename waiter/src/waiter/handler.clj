@@ -1321,27 +1321,22 @@
                           (if success
                             (do
                               (log/info "marking instance" instance-id "as killed")
-                              (counters/inc! (metrics/service-counter service-id "instance-counts" "killed"))
+                              ;; (counters/inc! (metrics/service-counter service-id "instance-counts" "killed"))
                               ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "success"))
                               (scheduler/track-kill-candidate! instance-id :killed eject-backoff-base-time-ms)
+                              ;; do we need this? (below)
                               ;; (service/release-instance! populate-maintainer-chan! instance (result-map-fn :killed))
                               (notify-instance-killed-fn instance))
                             (do
                               (log/info "failed kill attempt, releasing instance" instance-id)
-                              ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "kill-fail"))
                               (service/release-instance! populate-maintainer-chan! instance (result-map-fn :not-killed))))
                           (when response-chan (async/>! response-chan kill-result))
-                          success))
-                    ;; (do
-                      ;; (log/info "no instance available to kill")
-                      ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "unavailable"))
-                      ;; false)
-                               ))
+                          success))))
           (catch Exception ex
             ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "fail"))
             (log/error ex "unable to send signal to instance " instance-id)
             (when response-chan 
-              (async/>! response-chan {:instance-id instance-id :message (.getMessage ex) :status http-500-internal-server-error}))))))))
+              (async/>! response-chan {:success false :message (.getMessage ex) :status http-500-internal-server-error}))))))))
 
 
 
@@ -1370,7 +1365,7 @@
             notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler
             populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type) timeout
             correlation-id scale-service-thread-pool response-chan)
-              {:keys [instance-id status] :as signal-response} (or (async/<! response-chan)
+              {:keys [status] :as signal-response} (or (async/<! response-chan)
                                                                 {:message :no-instance-killed, :status http-500-internal-server-error})]
           (log/info signal-response)
           (-> (utils/clj->json-response {:signal-response signal-response
