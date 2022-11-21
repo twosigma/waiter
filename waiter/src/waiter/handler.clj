@@ -1350,10 +1350,12 @@
             correlation-id scale-service-thread-pool response-chan)
               {:keys [status] :as signal-response} (or (async/<! response-chan)
                                                                 {:message :no-instance-killed, :status http-500-internal-server-error})]
+          (clojure.pprint/pprint (utils/clj->json-response {:signal-response signal-response
+                                                            :source-router-id src-router-id
+                                                            :status (or status http-500-internal-server-error)}))
           (-> (utils/clj->json-response {:signal-response signal-response
                                          :source-router-id src-router-id
-                                         :status (or status http-500-internal-server-error)})
-              (update :headers assoc "x-cid" correlation-id)))))))
+                                         :status (or status http-500-internal-server-error)})))))))
 
 
 

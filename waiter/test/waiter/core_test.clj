@@ -192,7 +192,7 @@
                                   :allowed-to-manage-service?-fn (constantly true)
                                   :service-id->service-description-fn (constantly {})}
                        :scheduler {:scheduler (reify scheduler/ServiceScheduler
-                                                (signal-instance [_ _ _ _]
+                                                (signal-instance [_ _ _ _ _]
                                                   (let [result @signal-instance-result-atom]
                                                     (if (instance? Throwable result)
                                                       (throw result)
@@ -202,18 +202,36 @@
                        :wrap-ignore-disabled-auth-fn utils/wrap-identity
                        :wrap-secure-request-fn utils/wrap-identity}
         handlers {:signal-handler-fn ((:signal-handler-fn request-handlers) configuration)}]
+
+
     (testing "signal-handler:valid-response-including-active-killed"
       (reset! signal-instance-result-atom {:success true, :message (str "sigkill successfully sent to " instance-id) , :status 200})
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
-        (let [request {:headers {"accept" "application/json"}
+        (let [request {:headers {"accept" "application/json", "x-cid" "245g4gd"}
                        :query-string "timeout=5000&instance-id=test-service-1.A&signal-type=sigkill"
                        :request-method :delete
                        :uri (str "/apps/" service-id "/signal")}
-              {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
+              {:keys [body headers status] :as response} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= http-200-ok status))
+          (is (= expected-json-response-headers headers))
           (let [body-json (json/read-str (str body))]
             (is (= {"success" true, "message" (str "sigkill successfully sent to " instance-id), "status" 200} (get body-json "signal-response")))
             ))))
+
+    ;(testing "signal-handler:valid-response-active-failed"
+    ;  (reset! signal-instance-result-atom {:success false, :message (str "Unable to find release-chan.") , :status 500})
+    ;  (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+    ;    (let [request {:headers {"accept" "application/json"}
+    ;                   :query-string "timeout=5000&instance-id=test-service-1.A&signal-type=sigkill"
+    ;                   :request-method :delete
+    ;                   :uri (str "/apps/" service-id "/signal")}
+    ;          {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
+    ;      (is (= http-200-ok status))
+    ;      (let [body-json (json/read-str (str body))]
+    ;        (println "Json-body: " body)
+    ;        (is (= {"success" false, "message" (str "Unable to find release-chan."), "status" 500} (get body-json "signal-response")))
+    ;        ))))
+
     (.shutdown scheduler-interactions-thread-pool)))
 
 (deftest test-suspend-or-resume-service-handler
