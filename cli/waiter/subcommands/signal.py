@@ -1,7 +1,5 @@
 from waiter.util import guard_no_cluster, check_positive
 from waiter.action import process_signal_request
-from waiter.display import get_user_selection, tabulate_service_instances, tabulate_token_services
-from waiter.querying import print_no_data, print_no_services, query_service, query_token, print_no_instances
 from waiter.instance_select import get_instance_id_from_destination, Destination
 from enum import Enum
 
@@ -37,7 +35,7 @@ def signal(clusters, args, _, enforce_cluster):
 def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
     parser = add_parser('signal', help='sends signal to instance')
-    parser.add_argument('signal_type', help='type of signal to send to instance')
+    parser.add_argument('--signal-type', help='type of signal to send to instance', default='sigkill')
 
     parser.add_argument('token-or-service-id-or-instance-id')
     id_group = parser.add_mutually_exclusive_group(required=False)

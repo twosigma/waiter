@@ -1,12 +1,9 @@
 import argparse
 import logging
 import os
-from enum import Enum
 
 from waiter import plugins, terminal
-from waiter.display import get_user_selection, tabulate_service_instances, tabulate_token_services
-from waiter.querying import get_service_id_from_instance_id, get_target_cluster_from_token, print_no_data, \
-    print_no_services, query_service, query_token, get_services_on_cluster, print_no_instances
+from waiter.querying import get_service_id_from_instance_id, print_no_data, query_service
 from waiter.util import guard_no_cluster, print_info
 from waiter.instance_select import get_instance_id_from_destination, Destination
 
