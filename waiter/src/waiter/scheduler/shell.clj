@@ -311,7 +311,7 @@
       (deliver completion-promise :failed)
       id->service)))
 
-(defn- signal-instance-fn
+(defn- send-signal-to-instance
   "Deletes the instance corresponding to service-id/instance-id and returns if successful"
   [id->service service-id instance-id message port->reservation-atom port-grace-period-ms signal-type]
   (try
@@ -320,7 +320,7 @@
             {:keys [:shell-scheduler/process] :as instance} (get id->instance instance-id)]
         (if (and instance (active? instance))
           (do
-            (log/info "signaling instance" instance-id "process" process "with signal" signal-type)
+            (log/info "signaling instance" instance-id "process" process "with signal" (name signal-type))
             (case signal-type
               :sigkill (kill-process! instance port->reservation-atom port-grace-period-ms)
               :sigterm (safe-kill-process! instance port->reservation-atom port-grace-period-ms))
@@ -337,7 +337,7 @@
         (log/info "service" service-id "does not exist")
         id->service))
     (catch Throwable e
-      (log/error e "error attempting to delete instance" instance-id)
+      (log/error e "error attempting to" (name signal-type) "instance" instance-id)
       id->service)))
 
 
@@ -657,19 +657,21 @@
     (let [id->service @id->service-agent]
       (map (fn [[_ {:keys [service]}]] service) id->service)))
 
-  (signal-instance [this {:keys [id service-id] :as instance} signal-type timeout] 
-   (log/info "in signal-instance")
+  (signal-instance [this service-id instance-id signal-type timeout] 
    (if (scheduler/service-exists? this service-id)
-      (let [message (str "Sent " (name signal-type) " using scheduler API")]
-        (send id->service-agent signal-instance-fn service-id id message
+
+      (let [message (str "Sent " (name signal-type) " using scheduler API")
+            instance (get-in @id->service-agent [service-id :id->instance instance-id])]
+
+        (send id->service-agent send-signal-to-instance service-id instance-id message
                port->reservation-atom port-grace-period-ms signal-type)
-          (scheduler/log-service-instance instance signal-type :info)
-          {:success true
-           :message (str signal-type " successfully sent to " id)
-           :status 200})
+        (scheduler/log-service-instance instance signal-type :info)
+        {:success true
+          :message (str signal-type " successfully sent to " instance-id)
+          :status http-200-ok})
       {:success false
        :message "service does not exist"
-       :status nil}))
+       :status http-500-internal-server-error}))
 
 
   (kill-instance [this {:keys [id service-id] :as instance}]

@@ -1314,7 +1314,7 @@
                         (let [{:keys [success] :as kill-result}
                               (-> (au/execute
                                     (fn send-signal-to-instance []
-                                      (scheduler/signal-instance scheduler instance signal-type timeout))
+                                      (scheduler/signal-instance scheduler service-id instance-id signal-type timeout))
                                     thread-pool)
                                   async/<!
                                   :result)]
@@ -1333,7 +1333,6 @@
                           (when response-chan (async/>! response-chan kill-result))
                           success))))
           (catch Exception ex
-            ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "fail"))
             (log/error ex "unable to send signal to instance " instance-id)
             (when response-chan 
               (async/>! response-chan {:success false :message (.getMessage ex) :status http-500-internal-server-error}))))))))
@@ -1367,10 +1366,9 @@
             correlation-id scale-service-thread-pool response-chan)
               {:keys [status] :as signal-response} (or (async/<! response-chan)
                                                                 {:message :no-instance-killed, :status http-500-internal-server-error})]
-          (log/info signal-response)
           (-> (utils/clj->json-response {:signal-response signal-response
-                                        :source-router-id src-router-id
-                                        :status (or status http-500-internal-server-error)})
+                                         :source-router-id src-router-id
+                                         :status (or status http-500-internal-server-error)})
               (update :headers assoc "x-cid" correlation-id)))))))
 
 
