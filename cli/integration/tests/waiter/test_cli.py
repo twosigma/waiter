@@ -2354,30 +2354,24 @@ class WaiterCliTest(util.WaiterTest):
         self.run_maintenance_start_test(cli.stop, start_args='--no-kill', ping_token=True)
 
     def __test_signal(self, get_possible_instances_fn, signal_type=None, signal_flags=None, stdin=None,
-                      min_instances=1, multiple_services=False, is_failed_instance=False,
+                      min_instances=1, multiple_services=False,
                       test_service=False, test_instance=False):
         token_name = self.token_name()
         token_fields = util.minimal_service_description()
         token_fields['min-instances'] = min_instances
-        if is_failed_instance:
-            token_fields['cmd'] = 'this_is_an_invalid_command'
         try:
             if multiple_services:
                 token_new_fields = util.minimal_service_description()
                 util.post_token(self.waiter_url, token_name, token_new_fields)
                 util.ping_token(self.waiter_url, token_name)
             util.post_token(self.waiter_url, token_name, token_fields)
-            service_id = util.ping_token(self.waiter_url, token_name,
-                                         expected_status_code=503 if is_failed_instance else 200)
-            if is_failed_instance:
-                goal_fn = lambda insts: 0 < len(insts['failed-instances']) and \
-                                        0 == len(insts['killed-instances'])
-            else:
-                goal_fn = lambda insts: min_instances == len(insts['active-instances']) and \
-                                        0 == len(insts['failed-instances']) and \
-                                        0 == len(insts['killed-instances'])
+            service_id = util.ping_token(self.waiter_url, token_name, 200)
+            goal_fn = lambda insts: min_instances == len(insts['active-instances']) and \
+                                    0 == len(insts['failed-instances']) and \
+                                    0 == len(insts['killed-instances'])
             util.wait_until_routers_service(self.waiter_url, service_id, lambda service: goal_fn(service['instances']))
             instances = util.instances_for_service(self.waiter_url, service_id)
+            logging.info(f'instances: {instances}')
             possible_instances = get_possible_instances_fn(service_id, instances)
             signal_flags = [signal_flags] if signal_flags else []
             if test_instance:
@@ -2399,9 +2393,13 @@ class WaiterCliTest(util.WaiterTest):
             stdout = cli.stdout(cp)
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn(f'Successfully sent {signal_type_output} to', stdout)
-            removed_instance_id = stdout[36:122]
-            active_instances = util.active_instances_for_service(self.waiter_url, service_id)
-            self.assertNotIn(removed_instance_id, active_instances, "instance is in active instances")
+            kill_fn = lambda insts: (min_instances - 1) == len(insts['active-instances']) and \
+                                    1 == len(insts['killed-instances'])
+            util.wait_until_routers_service(self.waiter_url, service_id, lambda service: kill_fn(service['instances']))
+            killed_instances = util.specific_instances_for_service(self.waiter_url, service_id, 'killed-instances')
+            killed_instance_id = killed_instances[0]['id']
+            active_instances = util.specific_instances_for_service(self.waiter_url, service_id,'active-instances' )
+            self.assertNotIn(killed_instance_id, active_instances, "instance is in active instances")
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 

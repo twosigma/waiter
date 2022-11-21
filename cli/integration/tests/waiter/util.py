@@ -404,8 +404,9 @@ def get_instances_not_in_output(possible_instances, stdout_output):
             for instance in possible_instances
             if instance['id'] not in stdout_output]
 
-def active_instances_for_service(waiter_url, service_id, expected_status_code=200):
-    """returns instances map of a service"""
+def specific_instances_for_service(waiter_url, service_id, instance_type, expected_status_code=200):
+
+    """returns specific instances map of a service"""
     headers = {
         'Content-Type': 'application/json',
         'x-cid': cid()
@@ -414,4 +415,12 @@ def active_instances_for_service(waiter_url, service_id, expected_status_code=20
     service = response.json()
     assert expected_status_code == response.status_code, \
         f'Expected {expected_status_code}, got {response.status_code} with body {response.text}'
-    return service['instances']['active-instances']
+    if instance_type == 'active-instances':
+        return service['instances']['active-instances']
+    elif instance_type == 'killed-instances':
+        return service['instances']['killed-instances']
+    elif instance_type == 'failed-instances':
+        return service['instances']['failed-instances']
+    else:
+        return service['instances']
+
