@@ -2389,29 +2389,13 @@ class WaiterCliTest(util.WaiterTest):
                 signal_flags.append('-s')
             else:
                 signal_dest = token_name
-            logging.info(f'{signal_dest} is id used!')
             cp = cli.signal(self.waiter_url, signal_type, signal_dest, signal_flags=' '.join(signal_flags), stdin=stdin)
             stdout = cli.stdout(cp)
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn(f'Successfully sent {signal_type} to', stdout)
-
-#             if expect_out_of_range:
-#                 self.assertEqual(1, cp.returncode, cp.stderr)
-#                 self.assertIn('Input is out of range!', cli.stderr(cp))
-#             elif expect_no_data:
-#                 self.assertEqual(1, cp.returncode, cp.stderr)
-#                 self.assertIn('No matching data found', stdout)
-#             elif expect_no_instances:
-#                 self.assertEqual(1, cp.returncode, cp.stderr)
-#                 self.assertIn(f'There are no relevant instances using service id {service_id}', stdout)
-#             else:
-#                 self.assertEqual(0, cp.returncode, cp.stderr)
-#                 ssh_instance = util.get_ssh_instance_from_output(self.waiter_url, possible_instances, stdout,
-#                                                                  container_name=container_name,
-#                                                                  command_to_run=command_to_run)
-#                 self.assertIsNotNone(ssh_instance,
-#                                      msg=f"None of the possible instances {possible_instances} were detected in ssh "
-#                                          f"command output: \n{stdout}")
+            removed_instance_id = stdout[36:122]
+            active_instances = util.active_instances_for_service(self.waiter_url, service_id)
+            self.assertNotIn(removed_instance_id, active_instances, "instance is in active instances")
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
