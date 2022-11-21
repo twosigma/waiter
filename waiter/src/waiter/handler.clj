@@ -1371,7 +1371,6 @@
             correlation-id scale-service-thread-pool response-chan)
               {:keys [instance-id status] :as signal-response} (or (async/<! response-chan)
                                                                 {:message :no-instance-killed, :status http-500-internal-server-error})]
-          (log/info signal-response)
           (-> (utils/clj->json-response {:signal-response signal-response
                                          :source-router-id src-router-id
                                          :status (or status http-500-internal-server-error)})

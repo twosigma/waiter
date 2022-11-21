@@ -786,7 +786,6 @@
         sigterm-grace-period-secs (utils/parse-int (get-in desc ["env" "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS"] (str sigterm-grace-period-secs)))
         total-bypass-grace-period-secs (+ force-sigterm-secs sigterm-grace-period-secs)
         grace-period-seconds (if bypass-enabled? total-bypass-grace-period-secs 300)]
-      (log/info "pod-url" pod-url)
       (case signal-type
         
         ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
