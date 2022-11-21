@@ -786,6 +786,8 @@
         sigterm-grace-period-secs (utils/parse-int (get-in desc ["env" "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS"] (str sigterm-grace-period-secs)))
         total-bypass-grace-period-secs (+ force-sigterm-secs sigterm-grace-period-secs)
         grace-period-seconds (if bypass-enabled? total-bypass-grace-period-secs 300)]
+
+      (scheduler/log-service-instance instance signal-type :info)
       (case signal-type
         
         ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
@@ -1006,7 +1008,6 @@
             response (signal-service-instance this service-instance service signal-type timeout)]
         (if response 
           (do
-            (scheduler/log-service-instance service-instance signal-type :info)
             {:success true
              :message (str (name signal-type) "successfully sent to" instance-id)
              :status http-200-ok})
