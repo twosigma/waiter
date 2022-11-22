@@ -664,7 +664,12 @@
 
       (let [message (str "Sent " (name signal-type) " using scheduler API")
             instance (get-in @id->service-agent [service-id :id->instance instance-id])]
-
+        (if (nil? instance)
+          (throw (IllegalArgumentException. "invalid instance-id"))) 
+        (if (get-in instance [:killed?])
+          (throw (IllegalArgumentException. "instance is already killed.")))
+        (if (and (not= signal-type :sigterm) (not= signal-type :sigkill))
+          (throw (IllegalArgumentException. "invalid signal type")))
         (send id->service-agent send-signal-to-instance service-id instance-id message
                port->reservation-atom port-grace-period-ms signal-type)
         (scheduler/log-service-instance instance signal-type :info)
