@@ -323,7 +323,9 @@
             (log/info "signaling instance" instance-id "process" process "with signal" (name signal-type))
             (case signal-type
               :sigkill (kill-process! instance port->reservation-atom port-grace-period-ms)
-              :sigterm (safe-kill-process! instance port->reservation-atom port-grace-period-ms))
+              :sigterm (safe-kill-process! instance port->reservation-atom port-grace-period-ms)
+              (throw (IllegalArgumentException. "Not a supported signal.")))
+        
             (-> id->service
                 (update-in [service-id :service :instances] dec)
                 (update-in [service-id :id->instance instance-id] assoc

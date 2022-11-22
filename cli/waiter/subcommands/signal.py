@@ -1,7 +1,6 @@
+
 from waiter.util import guard_no_cluster, check_positive
 from waiter.action import process_signal_request
-from waiter.display import get_user_selection, tabulate_service_instances, tabulate_token_services
-from waiter.querying import print_no_data, print_no_services, query_service, query_token, print_no_instances
 from waiter.instance_select import get_instance_id_from_destination, Destination
 from enum import Enum
 
@@ -9,7 +8,9 @@ from enum import Enum
 class Signal(Enum):
     SIGKILL = 'sigkill'
     SIGTERM = 'sigterm'
-
+    HARD_DELETE = 'hard-delete'
+    SOFT_DELETE = 'soft-delete'
+    
 
 def signal(clusters, args, _, enforce_cluster):
     guard_no_cluster(clusters)
@@ -22,22 +23,23 @@ def signal(clusters, args, _, enforce_cluster):
     if instance_id is None:
         return 0
 
-    signal_type = args.pop('signal_type')
+    signal_type = args.pop('signal-type')
     timeout_secs = args['timeout']
     success = False
 
-    if signal_type == Signal.SIGKILL.value:
-        success = process_signal_request(clusters, signal_type, instance_id, timeout_secs)
-    elif signal_type == Signal.SIGTERM.value:
-        success = process_signal_request(clusters, signal_type, instance_id, timeout_secs)
-
+    if signal_type == Signal.HARD_DELETE.value:
+        success = process_signal_request(clusters, Signal.SIGKILL.value, instance_id, timeout_secs)
+    elif signal_type == Signal.SOFT_DELETE.value:
+        success = process_signal_request(clusters, Signal.SIGTERM.value, instance_id, timeout_secs)
+    else:
+        success = False
     return 0 if success else 1
 
 
 def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
     parser = add_parser('signal', help='sends signal to instance')
-    parser.add_argument('signal_type', help='type of signal to send to instance')
+    parser.add_argument('signal-type', help='type of signal to send to instance')
 
     parser.add_argument('token-or-service-id-or-instance-id')
     id_group = parser.add_mutually_exclusive_group(required=False)

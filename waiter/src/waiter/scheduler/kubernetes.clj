@@ -793,6 +793,8 @@
         sigterm-grace-period-secs (utils/parse-int (get-in desc ["env" "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS"] (str sigterm-grace-period-secs)))
         total-bypass-grace-period-secs (+ force-sigterm-secs sigterm-grace-period-secs)
         grace-period-seconds (if bypass-enabled? total-bypass-grace-period-secs 300)]
+
+      (scheduler/log-service-instance instance signal-type :info)
       (case signal-type
         
         ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
@@ -800,7 +802,8 @@
 
         ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
         ; (note that the pod's default grace period is different from the 300s period set above)
-        :sigkill (hard-delete-service-instance scheduler instance))))
+        :sigkill (hard-delete-service-instance scheduler instance)
+        (throw (IllegalArgumentException. "Not a supported signal.")))))
 
 (defn kill-service-instance
   "Safely kill the Kubernetes pod corresponding to the given Waiter Service Instance.
@@ -1013,7 +1016,6 @@
         (log/info "softdelete" response)
         (if response 
           (do
-            (scheduler/log-service-instance service-instance signal-type :info)
             {:success true
              :message (str (name signal-type) "successfully sent to" instance-id)
              :status http-200-ok})

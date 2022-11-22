@@ -1295,21 +1295,12 @@
       correlation-id
       (async/go
         (try
-          ;; DONT KNOW IF WE NEED REASON AND RESULT MAP
           (let [request-id (utils/unique-identifier) ; new unique identifier for this reservation request
                 reason-map-fn (fn [] {:cid correlation-id :reason :kill-instance :request-id request-id :time (t/now)})
                 result-map-fn (fn [status] {:cid correlation-id :request-id request-id :status status})]
-            (log/info "Attempting to send signal to " instance-id)
-              ;; MAKE OUR OWN TIMER FOR INSTANCES?
-              ;; (metrics/service-timer instance-id "kill-instance")
-              ;;loop [exclude-ids-set #{}]
-                ;;let [instance (service/get-rand-inst populate-maintainer-chan! service-id (reason-map-fn) exclude-ids-set inter-kill-request-wait-time-ms)]
-                ;; [instance (into {} [:id instance-id :service-id service-id])]
-                    (let [instance {:id instance-id :service-id service-id}]
+                (log/info "Attempting to send signal to " instance-id)
                       (do
-                        ;; CHANGED INSTANCE TO INSTANCE-ID
                         (log/info "sending signal to instance " instance-id service-id)
-                        ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "attempt"))
                         (scheduler/track-kill-candidate! instance-id :prepare-to-kill eject-backoff-base-time-ms)
                         (let [{:keys [success] :as kill-result}
                               (-> (au/execute
@@ -1321,17 +1312,10 @@
                           (if success
                             (do
                               (log/info "marking instance" instance-id "as killed")
-                              ;; (counters/inc! (metrics/service-counter service-id "instance-counts" "killed"))
-                              ;; (counters/inc! (metrics/service-counter service-id "scaling" "scale-down" "success"))
                               (scheduler/track-kill-candidate! instance-id :killed eject-backoff-base-time-ms)
-                              ;; do we need this? (below)
-                              ;; (service/release-instance! populate-maintainer-chan! instance (result-map-fn :killed))
-                              (notify-instance-killed-fn instance))
-                            (do
-                              (log/info "failed kill attempt, releasing instance" instance-id)
-                              (service/release-instance! populate-maintainer-chan! instance (result-map-fn :not-killed))))
+                              (notify-instance-killed-fn {:id instance-id :service-id service-id})))
                           (when response-chan (async/>! response-chan kill-result))
-                          success))))
+                          success)))
           (catch Exception ex
             (log/error ex "unable to send signal to instance " instance-id)
             (when response-chan 
@@ -1370,8 +1354,7 @@
                                                                 {:message :no-instance-killed, :status http-500-internal-server-error})]
             (-> (utils/clj->json-response {:signal-response signal-response
                                          :source-router-id src-router-id
-                                         :status (or status http-500-internal-server-error)})
-              (update :headers assoc "x-cid" correlation-id)))))
+                                         :status (or status http-500-internal-server-error)})))))
       (do
         (log/error "Expected POST request but got" request-method "request instead")
         (utils/clj->json-response {:status http-500-internal-server-error})))))
