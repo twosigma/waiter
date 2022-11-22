@@ -1343,33 +1343,38 @@
   "Handler that supports sending signals to instances of a particular service on a specific router."
   [notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn scheduler populate-maintainer-chan! timeout-config
   service-id->service-description-fn scale-service-thread-pool {:keys [route-params] {:keys [src-router-id]} :basic-authentication :as request}]
-  (let [{:keys [service-id]} route-params
-        {:strs [instance-id signal-type timeout]} (-> request ru/query-params-request :query-params)
+  (let [{:keys [instance-id signal-type]} route-params
+        {:strs [service-id timeout]} (-> request ru/query-params-request :query-params)
+        {:keys [request-method]} request
         core-service-description (service-id->service-description-fn service-id :effective? false)
         correlation-id (cid/get-correlation-id)
         auth-user (get request :authorization/user)
         run-as-user (get core-service-description "run-as-user")]
     (log/info "Received request to send" signal-type "to instance" instance-id "from" src-router-id)
-    (if-not (allowed-to-manage-service?-fn service-id auth-user)
-      (throw
-        (ex-info "User not allowed to send signal to instance"
-                 {:current-user auth-user
-                  :existing-owner run-as-user
-                  :log-level :info
-                  :service-id service-id
-                  :status http-403-forbidden}))
-      (async/go
-        (let [response-chan (async/promise-chan)
-          _ (execute-signal
-            notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler
-            populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type) timeout
-            correlation-id scale-service-thread-pool response-chan)
-              {:keys [status] :as signal-response} (or (async/<! response-chan)
+    (if (= request-method :post)
+      (if-not (allowed-to-manage-service?-fn service-id auth-user)
+        (throw
+          (ex-info "User not allowed to send signal to instance"
+                   {:current-user auth-user
+                    :existing-owner run-as-user
+                    :log-level :info
+                    :service-id service-id
+                    :status http-403-forbidden}))
+        (async/go
+          (let [response-chan (async/promise-chan)
+            _ (execute-signal
+              notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler
+              populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type) timeout
+              correlation-id scale-service-thread-pool response-chan)
+                {:keys [status] :as signal-response} (or (async/<! response-chan)
                                                                 {:message :no-instance-killed, :status http-500-internal-server-error})]
-          (-> (utils/clj->json-response {:signal-response signal-response
+            (-> (utils/clj->json-response {:signal-response signal-response
                                          :source-router-id src-router-id
                                          :status (or status http-500-internal-server-error)})
-              (update :headers assoc "x-cid" correlation-id)))))))
+              (update :headers assoc "x-cid" correlation-id)))))
+      (do
+        (log/error "Expected POST request but got" request-method "request instead")
+        (utils/clj->json-response {:status http-500-internal-server-error})))))
 
 
 

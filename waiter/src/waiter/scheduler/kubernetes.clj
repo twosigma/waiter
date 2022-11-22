@@ -763,13 +763,20 @@
 (defn hard-delete-service-instance
   "Force kill the Kubernetes pod corresponding to the given Waiter Service Instance.
    Does not adjust ReplicaSet replica count; preventing scheduling of a replacement pod must be ensured by the callee.
-   Returns nil on success, but throws on failure."
+   Returns nil on failure, returns the pod object on success."
   [{:keys [api-server-url] :as scheduler} {:keys [service-id] :as instance}]
   (let [pod-url (instance->pod-url api-server-url instance)]
     (try
       (api-request pod-url scheduler :request-method :delete)
       (catch Throwable t
         (log/error t "Error force-killing pod")))))
+
+(defn soft-delete-service-instance
+  [pod-url scheduler body] 
+  (try 
+    (api-request pod-url scheduler :request-method :delete :body body)
+    (catch Throwable t
+      (log/error t "Error soft-killing pod"))))
 
 (defn signal-service-instance
   "Sends specified signal to the Kubernetes pod corresponding to the given Waiter Service Instance.
@@ -789,8 +796,7 @@
       (case signal-type
         
         ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
-        :sigterm (api-request pod-url scheduler :request-method :delete
-                 :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds (or (if (zero? (Integer/parseInt timeout)) nil (Integer/parseInt timeout)) grace-period-seconds)}))
+        :sigterm (soft-delete-service-instance pod-url scheduler (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds (or (if (zero? (Integer/parseInt timeout)) nil (Integer/parseInt timeout)) grace-period-seconds)}))
 
         ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
         ; (note that the pod's default grace period is different from the 300s period set above)
@@ -1004,6 +1010,7 @@
             pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])
             service-instance (pod->ServiceInstance this pod)
             response (signal-service-instance this service-instance service signal-type timeout)]
+        (log/info "softdelete" response)
         (if response 
           (do
             (scheduler/log-service-instance service-instance signal-type :info)
