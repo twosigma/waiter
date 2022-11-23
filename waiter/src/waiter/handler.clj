@@ -1289,8 +1289,8 @@
   ;; PEER-ACK UNUSED
   ;; dont need threadpool
   [notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler populate-maintainer-chan! timeout-config
-   instance-id service-id signal-type timeout correlation-id thread-pool response-chan]
-  (let [{:keys [eject-backoff-base-time-ms inter-kill-request-wait-time-ms max-eject-time-ms]} timeout-config]
+   instance-id service-id signal-type timeout-ms correlation-id thread-pool response-chan]
+  (let [{:keys [eject-backoff-base-time-ms]} timeout-config]
     (cid/with-correlation-id
       correlation-id
       (async/go
@@ -1305,7 +1305,7 @@
                         (let [{:keys [success] :as kill-result}
                               (-> (au/execute
                                     (fn send-signal-to-instance []
-                                      (scheduler/signal-instance scheduler service-id instance-id signal-type timeout))
+                                      (scheduler/signal-instance scheduler service-id instance-id signal-type timeout-ms))
                                     thread-pool)
                                   async/<!
                                   :result)]
@@ -1327,8 +1327,8 @@
   "Handler that supports sending signals to instances of a particular service on a specific router."
   [notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn scheduler populate-maintainer-chan! timeout-config
   service-id->service-description-fn scale-service-thread-pool {:keys [route-params] {:keys [src-router-id]} :basic-authentication :as request}]
-  (let [{:keys [instance-id signal-type]} route-params
-        {:strs [service-id timeout]} (-> request ru/query-params-request :query-params)
+  (let [{:keys [instance-id signal-type service-id]} route-params
+        {:strs [timeout]} (-> request ru/query-params-request :query-params)
         {:keys [request-method]} request
         core-service-description (service-id->service-description-fn service-id :effective? false)
         correlation-id (cid/get-correlation-id)
@@ -1343,12 +1343,13 @@
                     :existing-owner run-as-user
                     :log-level :info
                     :service-id service-id
+                    :instance-id instance-id
                     :status http-403-forbidden}))
         (async/go
           (let [response-chan (async/promise-chan)
             _ (execute-signal
               notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler
-              populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type) timeout
+              populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type) (if (zero? (Integer/parseInt timeout)) nil (Integer/parseInt timeout))
               correlation-id scale-service-thread-pool response-chan)
                 {:keys [status] :as signal-response} (or (async/<! response-chan)
                                                                 {:message :no-instance-killed, :status http-500-internal-server-error})]
@@ -1357,7 +1358,8 @@
                                          :status (or status http-500-internal-server-error)})))))
       (do
         (log/error "Expected POST request but got" request-method "request instead")
-        (utils/clj->json-response {:status http-500-internal-server-error})))))
+        (utils/clj->json-response {:status http-405-method-not-allowed
+                                   :message "Method not allowed"})))))
 
 
 

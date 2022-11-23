@@ -773,6 +773,9 @@
 
 (defn soft-delete-service-instance
   [pod-url scheduler body] 
+  "Gracefully kill the Kubernetes pod corresponding to the given Waiter Service Instance.
+   Does not adjust ReplicaSet replica count; preventing scheduling of a replacement pod must be ensured by the callee.
+   Returns nil on failure, returns the pod object on success."
   (try 
     (api-request pod-url scheduler :request-method :delete :body body)
     (catch Throwable t
@@ -782,7 +785,7 @@
   "Sends specified signal to the Kubernetes pod corresponding to the given Waiter Service Instance.
    Returns nil on success, but throws on failure."
   [{:keys [api-server-url service-id->service-description-fn] {:keys [force-sigterm-secs sigterm-grace-period-secs]} :pod-bypass :as scheduler}
-   {:keys [service-id] :as instance} service signal-type timeout]
+   {:keys [service-id] :as instance} service signal-type timeout-ms]
   (let [pod-url (instance->pod-url api-server-url instance)
         desc (service-id->service-description-fn service-id)
         bypass-enabled? (sd/service-description-bypass-enabled? desc)
@@ -798,7 +801,7 @@
       (case signal-type
         
         ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
-        :sigterm (soft-delete-service-instance pod-url scheduler (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds (or (if (zero? (Integer/parseInt timeout)) nil (Integer/parseInt timeout)) grace-period-seconds)}))
+        :sigterm (soft-delete-service-instance pod-url scheduler (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds (or timeout-ms grace-period-seconds)}))
 
         ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
         ; (note that the pod's default grace period is different from the 300s period set above)
@@ -1006,13 +1009,13 @@
   (get-services [this]
     (get-services this))
 
-  (signal-instance [this service-id instance-id signal-type timeout]
+  (signal-instance [this service-id instance-id signal-type timeout-ms]
     (ss/try+
       (let [service (service-id->service this service-id)
             {:keys [pod-name]} (unpack-instance-id instance-id)
             pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])
             service-instance (pod->ServiceInstance this pod)
-            response (signal-service-instance this service-instance service signal-type timeout)]
+            response (signal-service-instance this service-instance service signal-type timeout-ms)]
         (log/info "softdelete" response)
         (if response 
           (do

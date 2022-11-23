@@ -659,7 +659,7 @@
     (let [id->service @id->service-agent]
       (map (fn [[_ {:keys [service]}]] service) id->service)))
 
-  (signal-instance [this service-id instance-id signal-type timeout] 
+  (signal-instance [this service-id instance-id signal-type timeout-ms] 
    (if (scheduler/service-exists? this service-id)
 
       (let [message (str "Sent " (name signal-type) " using scheduler API")
