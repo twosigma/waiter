@@ -307,7 +307,7 @@ def send_signal_to_instance_on_cluster(cluster, signal_type, service_id, instanc
                         print(f'Was not able to send {signal_type} to {instance_id} in {cluster_name}. ')
                         return False
         else:
-            print_error(response_message(resp.json().get("signal-response").get("success")))
+            print_error(response_message(resp.json()))
             return False
     except requests.exceptions.ReadTimeout:
         message = f'Request timed out while killing {service_id} in {cluster_name}.'

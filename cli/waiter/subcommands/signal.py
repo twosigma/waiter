@@ -6,8 +6,6 @@ from enum import Enum
 
 
 class Signal(Enum):
-    SIGKILL = 'sigkill'
-    SIGTERM = 'sigterm'
     HARD_DELETE = 'hard-delete'
     SOFT_DELETE = 'soft-delete'
     
@@ -28,9 +26,9 @@ def signal(clusters, args, _, enforce_cluster):
     success = False
 
     if signal_type == Signal.HARD_DELETE.value:
-        success = process_signal_request(clusters, Signal.SIGKILL.value, instance_id, timeout_secs)
+        success = process_signal_request(clusters, "sigkill", instance_id, timeout_secs)
     elif signal_type == Signal.SOFT_DELETE.value:
-        success = process_signal_request(clusters, Signal.SIGTERM.value, instance_id, timeout_secs)
+        success = process_signal_request(clusters, "sigterm", instance_id, timeout_secs)
     else:
         success = False
     return 0 if success else 1
@@ -51,7 +49,7 @@ def register(add_parser):
                           const=Destination.INSTANCE_ID, help='signal directly to instance id')
 
 
-    parser.add_argument('--timeout', '-ti', help='timeout (in seconds) for kill to complete',
+    parser.add_argument('--timeout', help='timeout (in seconds) for kill to complete',
                         type=check_positive, default=0)    
 
     return signal
