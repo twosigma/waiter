@@ -208,9 +208,9 @@
       (reset! signal-instance-result-atom {:success true, :message (str "sigkill successfully sent to " instance-id) , :status 200})
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:headers {"accept" "application/json"}
-                       :query-string "timeout=5000&service-id=test-service-1"
+                       :query-string "timeout=5000"
                        :request-method :post
-                       :uri (str "/apps/" instance-id "/" signal-type)}
+                       :uri (str "/apps/" service-id "/signal/" signal-type "/" instance-id)}
               {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= http-200-ok status))
           (is (= expected-json-response-headers headers))
@@ -222,9 +222,9 @@
       (reset! signal-instance-result-atom {:success false, :message (str "service does not exist") , :status 500})
       (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
         (let [request {:headers {"accept" "application/json"}
-                       :query-string "timeout=5000&service-id=test-service-1"
+                       :query-string "timeout=5000"
                        :request-method :post
-                       :uri (str "/apps/" instance-id "/" signal-type)}
+                       :uri (str "/apps/" service-id "/signal/" signal-type "/" instance-id)}
               {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= http-200-ok status))
           (is (= expected-json-response-headers headers))
