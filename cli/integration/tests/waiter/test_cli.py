@@ -2375,7 +2375,6 @@ class WaiterCliTest(util.WaiterTest):
             signal_flags = [signal_flags] if signal_flags else []
             if test_instance:
                 possible_instances = possible_instances[0:1]
-#                 logging.info(f'possible instance: {possible_instances}')
                 signal_dest = possible_instances[0]['id']
                 signal_flags.append('-i')
             elif test_service:
@@ -2393,22 +2392,26 @@ class WaiterCliTest(util.WaiterTest):
             stdout = cli.stdout(cp)
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn(f'Successfully sent {signal_type_output} to', stdout)
+            cli_output = stdout.split()
+            for i,w in enumerate(cli_output):
+                if w == "instance":
+                    killed_instance_id = cli_output[i+1]
             kill_fn = lambda insts: (min_instances - 1) == len(insts['active-instances']) and \
                                     1 >= len(insts['killed-instances'])
             util.wait_until_routers_service(self.waiter_url, service_id, lambda service: kill_fn(service['instances']))
-            killed_instances = util.specific_instances_for_service(self.waiter_url, service_id,'killed-instances')
-            killed_instance_id = killed_instances[0]['id']
             active_instances_map = util.specific_instances_for_service(self.waiter_url, service_id,'active-instances')
-            active_instances = []
-            for i in range(len(active_instances_map)):
-                active_instances.append(active_instances_map[i]['id'])
-            self.assertNotIn(killed_instance_id, active_instances, "Assert Failed: killed-instance is in active instances")
+            active_instance_ids = list(map(lambda x: active_instances_map[active_instances_map.index(x)].get('id', None), active_instances_map))
+            self.assertNotIn(killed_instance_id, active_instance_ids, "Assert Failed: killed-instance is in active instances")
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
     def test_signal_sigkill_valid_instance(self):
         self.__test_signal(lambda _, instances: instances['active-instances'],
         signal_type='hard-delete', test_instance=True, min_instances=1)
+
+    def test_signal_sigkill_valid_multiple_instance(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='hard-delete',stdin='3\n'.encode('utf8'), test_service=True, min_instances=5)
 
     def test_signal_sigkill_valid_service_multiple_instance(self):
         self.__test_signal(lambda _, instances: instances['active-instances'],
@@ -2426,6 +2429,10 @@ class WaiterCliTest(util.WaiterTest):
         self.__test_signal(lambda _, instances: instances['active-instances'],
         signal_type='soft-delete', test_instance=True, min_instances=1)
 
+    def test_signal_sigterm_valid_multiple_instance(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='soft-delete',stdin='3\n'.encode('utf8'), test_service=True, min_instances=5)
+
     def test_signal_sigterm_valid_service_multiple_instance(self):
         self.__test_signal(lambda _, instances: instances['active-instances'],
         signal_type='soft-delete', stdin='1\n'.encode('utf8'), test_service=True, min_instances=2)
@@ -2438,6 +2445,3 @@ class WaiterCliTest(util.WaiterTest):
         self.__test_signal(lambda _, instances: instances['active-instances'],
         signal_type='soft-delete', stdin='1\n1\n'.encode('utf8'), multiple_services=True, min_instances=2)
 
-    def test_signal_sigkill_valid_multiple_instance(self):
-            self.__test_signal(lambda _, instances: instances['active-instances'],
-            signal_type='hard-delete',stdin='3\n'.encode('utf8'), test_service=True, min_instances=5)
