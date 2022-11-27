@@ -26,6 +26,7 @@
             [full.async :refer [<?]]
             [metrics.counters :as counters]
             [metrics.meters :as meters]
+            [metrics.timers :as timers]
             [plumbing.core :as pc]
             [ring.middleware.multipart-params :as multipart-params]
             [ring.middleware.ssl :as ssl]
@@ -1334,32 +1335,34 @@
         correlation-id (cid/get-correlation-id)
         auth-user (get request :authorization/user)
         run-as-user (get core-service-description "run-as-user")]
-    (log/info "Received request to send" signal-type "to instance" instance-id "from" src-router-id)
-    (if (= request-method :post)
-      (if-not (allowed-to-manage-service?-fn service-id auth-user)
-        (throw
-          (ex-info "User not allowed to send signal to instance"
-                   {:current-user auth-user
-                    :existing-owner run-as-user
-                    :log-level :info
-                    :service-id service-id
-                    :instance-id instance-id
-                    :status http-403-forbidden}))
-        (async/go
-          (let [response-chan (async/promise-chan)
-            _ (execute-signal
-              notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler
-              populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type) (if (zero? (Integer/parseInt timeout)) nil (Integer/parseInt timeout))
-              correlation-id scale-service-thread-pool response-chan)
-                {:keys [status] :as signal-response} (or (async/<! response-chan)
-                                                                {:message :no-instance-killed, :status http-500-internal-server-error})]
-            (-> (utils/clj->json-response {:signal-response signal-response
-                                         :source-router-id src-router-id
-                                         :status (or status http-500-internal-server-error)})))))
-      (do
-        (log/error "Expected POST request but got" request-method "request instead")
-        (utils/clj->json-response {:status http-405-method-not-allowed
-                                   :message "Method not allowed"})))))
+    (timers/start-stop-time!
+      (metrics/waiter-timer "handler" "signal-handler-duration")
+      (log/info "Received request to send" signal-type "to instance" instance-id "from" src-router-id)
+      (if (= request-method :post)
+        (if-not (allowed-to-manage-service?-fn service-id auth-user)
+          (throw
+            (ex-info "User not allowed to send signal to instance"
+                    {:current-user auth-user
+                      :existing-owner run-as-user
+                      :log-level :info
+                      :service-id service-id
+                      :instance-id instance-id
+                      :status http-403-forbidden}))
+          (async/go
+            (let [response-chan (async/promise-chan)
+              _ (execute-signal
+                notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler
+                populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type) (if (zero? (Integer/parseInt timeout)) nil (Integer/parseInt timeout))
+                correlation-id scale-service-thread-pool response-chan)
+                  {:keys [status] :as signal-response} (or (async/<! response-chan)
+                                                                  {:message :no-instance-killed, :status http-500-internal-server-error})]
+              (-> (utils/clj->json-response {:signal-response signal-response
+                                          :source-router-id src-router-id
+                                          :status (or status http-500-internal-server-error)})))))
+        (do
+          (log/error "Expected POST request but got" request-method "request instead")
+          (utils/clj->json-response {:status http-405-method-not-allowed
+                                    :message "Method not allowed"}))))))
 
 
 
