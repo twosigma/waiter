@@ -325,7 +325,6 @@
               :sigkill (kill-process! instance port->reservation-atom port-grace-period-ms)
               :sigterm (safe-kill-process! instance port->reservation-atom port-grace-period-ms)
               (throw (IllegalArgumentException. "Not a supported signal.")))
-        
             (-> id->service
                 (update-in [service-id :service :instances] dec)
                 (update-in [service-id :id->instance instance-id] assoc
@@ -661,7 +660,6 @@
 
   (signal-instance [this service-id instance-id signal-type timeout-ms] 
    (if (scheduler/service-exists? this service-id)
-
       (let [message (str "Sent " (name signal-type) " using scheduler API")
             instance (get-in @id->service-agent [service-id :id->instance instance-id])]
         (if (nil? instance)

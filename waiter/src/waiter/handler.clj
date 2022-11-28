@@ -1287,8 +1287,6 @@
 (defn- execute-signal
   "Helper function to send signals to instances of a service.
    The instance will be marked as killed upon success."
-  ;; PEER-ACK UNUSED
-  ;; dont need threadpool
   [notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler populate-maintainer-chan! timeout-config
    instance-id service-id signal-type timeout-ms correlation-id thread-pool response-chan]
   (let [{:keys [eject-backoff-base-time-ms]} timeout-config]
@@ -1300,29 +1298,27 @@
                 reason-map-fn (fn [] {:cid correlation-id :reason :kill-instance :request-id request-id :time (t/now)})
                 result-map-fn (fn [status] {:cid correlation-id :request-id request-id :status status})]
                 (log/info "Attempting to send signal to " instance-id)
+                (do
+                  (log/info "sending signal to instance " instance-id service-id)
+                  (scheduler/track-kill-candidate! instance-id :prepare-to-kill eject-backoff-base-time-ms)
+                  (let [{:keys [success] :as kill-result}
+                        (-> (au/execute
+                              (fn send-signal-to-instance []
+                                (scheduler/signal-instance scheduler service-id instance-id signal-type timeout-ms))
+                              thread-pool)
+                            async/<!
+                            :result)]
+                    (if success
                       (do
-                        (log/info "sending signal to instance " instance-id service-id)
-                        (scheduler/track-kill-candidate! instance-id :prepare-to-kill eject-backoff-base-time-ms)
-                        (let [{:keys [success] :as kill-result}
-                              (-> (au/execute
-                                    (fn send-signal-to-instance []
-                                      (scheduler/signal-instance scheduler service-id instance-id signal-type timeout-ms))
-                                    thread-pool)
-                                  async/<!
-                                  :result)]
-                          (if success
-                            (do
-                              (log/info "marking instance" instance-id "as killed")
-                              (scheduler/track-kill-candidate! instance-id :killed eject-backoff-base-time-ms)
-                              (notify-instance-killed-fn {:id instance-id :service-id service-id})))
-                          (when response-chan (async/>! response-chan kill-result))
-                          success)))
+                        (log/info "marking instance" instance-id "as killed")
+                        (scheduler/track-kill-candidate! instance-id :killed eject-backoff-base-time-ms)
+                        (notify-instance-killed-fn {:id instance-id :service-id service-id})))
+                    (when response-chan (async/>! response-chan kill-result))
+                    success)))
           (catch Exception ex
             (log/error ex "unable to send signal to instance " instance-id)
             (when response-chan 
               (async/>! response-chan {:success false :message (.getMessage ex) :status http-500-internal-server-error}))))))))
-
-
 
 (defn signal-handler
   "Handler that supports sending signals to instances of a particular service on a specific router."
@@ -1362,7 +1358,7 @@
         (do
           (log/error "Expected POST request but got" request-method "request instead")
           (utils/clj->json-response {:status http-405-method-not-allowed
-                                    :message "Method not allowed"}))))))
+                                     :message "Method not allowed"}))))))
 
 
 
