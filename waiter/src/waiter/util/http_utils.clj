@@ -73,6 +73,12 @@
   (and (integer? status)
        (<= http-200-ok status 299)))
 
+(defn status-5XX?
+  "Returns true if the status is in the range [500, 599]."
+  [status]
+  (and (integer? status)
+       (<= http-500-internal-server-error status 599)))
+
 (defn http-streaming-request-async
   "This wraps the qbits.jet.client.http/request function and makes a streaming request. An abort-ch can be provided to
   abort the streaming response when a message is pushed to it.
