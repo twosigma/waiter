@@ -519,6 +519,9 @@
         {:keys [body error status] :as response} (clj-http/get url request-options)]
     (when error
       (throw error))
+    (when (hu/status-5XX? status)
+      (log/warn "received 5XX response from k8s api server streaming request" {:url url :response response})
+      (counters/inc! (metrics/waiter-counter "k8s-api" "5XX")))
     (when-not (hu/status-2XX? status)
       (ss/throw+ response))
     (-> body
@@ -577,6 +580,9 @@
       (ss/throw+ response))
     (catch [:client http-client] response
       (log/error "request to K8s API server failed: " url options body response)
+      (when (hu/status-5XX? (:status response))
+        (log/warn "received 5XX response from k8s api server request" {:url url :response response})
+        (counters/inc! (metrics/waiter-counter "k8s-api" "5XX")))
       (ss/throw+ response))))
 
 (defn api-request-async
