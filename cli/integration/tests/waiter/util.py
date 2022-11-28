@@ -404,7 +404,7 @@ def get_instances_not_in_output(possible_instances, stdout_output):
             for instance in possible_instances
             if instance['id'] not in stdout_output]
 
-def specific_instances_for_service(waiter_url, service_id, instance_type, expected_status_code=200):
+def get_specific_instances_for_service(waiter_url, service_id, instance_type, expected_status_code=200):
     """returns specific instances map of a service"""
     headers = {
         'Content-Type': 'application/json',

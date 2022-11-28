@@ -2393,13 +2393,15 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(0, cp.returncode, cp.stderr)
             self.assertIn(f'Successfully sent {signal_type_output} to', stdout)
             cli_output = stdout.split()
+            killed_instance_id = None
             for i,w in enumerate(cli_output):
                 if w == "instance":
                     killed_instance_id = cli_output[i+1]
+            self.assertNotEqual(None, killed_instance_id)
             kill_fn = lambda insts: (min_instances - 1) == len(insts['active-instances']) and \
                                     1 >= len(insts['killed-instances'])
             util.wait_until_routers_service(self.waiter_url, service_id, lambda service: kill_fn(service['instances']))
-            active_instances_map = util.specific_instances_for_service(self.waiter_url, service_id,'active-instances')
+            active_instances_map = util.get_specific_instances_for_service(self.waiter_url, service_id,'active-instances')
             active_instance_ids = list(map(lambda x: active_instances_map[active_instances_map.index(x)].get('id', None), active_instances_map))
             self.assertNotIn(killed_instance_id, active_instance_ids, "Assert Failed: killed-instance is in active instances")
         finally:
