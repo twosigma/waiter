@@ -1716,3 +1716,37 @@
        (is (contains? details "id"))
        (is (contains? details "name"))
        (is (contains? details "port"))))))
+
+(deftest ^:parallel ^:integration-fast test-signal-sigkill-instance
+  (testing-using-waiter-url
+    (let [
+          headers {:x-waiter-name (rand-name)}
+          _ (log/info "making canary request...")
+          {:keys [cookies instance-id service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+
+      (with-service-cleanup
+        service-id
+        (assert-service-on-all-routers waiter-url service-id cookies)
+        ;; assert instance-id is in active instances
+        (let [service-settings (service-settings waiter-url service-id)
+              active-instances (get-in service-settings [:instances :active-instances])
+              active-instance-id (set (map #(get % "service-id") active-instances))]
+              (is (contains? active-instances active-instance-id))
+          )
+        ;; call our endpoint and validate response
+        (let [service-settings (service-settings waiter-url service-id)
+              active-instances (get-in service-settings [:instances :active-instances])
+              active-instance-id (set (map #(get % "service-id") active-instances))
+              {:keys [body] :as response} (make-request waiter-url "/" :service-id "/signal/kill/" :active-instance-id
+                                                        (utils/clj->json overrides) :method :post)])
+        ;; assert instance-id is not in active instances
+        (is (wait-for (fn fool []
+                        (let [service-settings (service-settings waiter-url service-id)
+                              active-instances (get-in service-settings [:instances :active-instances])]
+                              active-instance-id (set (map #(get % "service-id") active-instances))
+                          (not (contains? active-instances active-instance-id))
+                          )
+                        )
+                      :interval 2 :timeout 30))
+
+        ))))
