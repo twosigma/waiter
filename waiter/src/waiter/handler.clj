@@ -1322,8 +1322,6 @@
             (when response-chan 
               (async/>! response-chan {:success false :message (.getMessage ex) :status http-500-internal-server-error}))))))))
 
-
-
 (defn signal-handler
   "Handler that supports sending signals to instances of a particular service on a specific router."
   [notify-instance-killed-fn peers-acknowledged-eject-requests-fn allowed-to-manage-service?-fn scheduler populate-maintainer-chan! timeout-config

@@ -299,13 +299,13 @@ def send_signal_to_instance_on_cluster(cluster, signal_type, service_id, instanc
         resp = http_util.post(cluster, f'/apps/{service_id}/signal/{signal_type}/{instance_id}', '', params=params)
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
-                    success = resp.json().get("signal-response", {}).get('success')
-                    if success:
-                        print(f'Successfully sent {signal_type} to {instance_id} in {cluster_name}.')
-                        return True
-                    else:
-                        print(f'Was not able to send {signal_type} to {instance_id} in {cluster_name}. ')
-                        return False
+            success = resp.json().get("signal-response", {}).get('success')
+            if success:
+                print(f'Successfully sent {signal_type} to {instance_id} in {cluster_name}.')
+                return True
+            else:
+                print(f'Was not able to send {signal_type} to {instance_id} in {cluster_name}. ')
+                return False
         else:
             print_error(response_message(resp.json()))
             return False
