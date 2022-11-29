@@ -1308,7 +1308,7 @@
                               thread-pool)
                             async/<!
                             :result)]
-                    (if success
+                    (if (and success (or (= signal-type :sigterm) (= signal-type :sigkill)))
                       (do
                         (log/info "marking instance" instance-id "as killed")
                         (scheduler/track-kill-candidate! instance-id :killed eject-backoff-base-time-ms)
