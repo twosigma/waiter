@@ -1727,21 +1727,15 @@
       (with-service-cleanup
         service-id
         (testing "failed overrides"
-          (let [overrides {:max-instances 20 :min-instances 5 :scale-factor 0.3}]
+          (let [signal-response {:success true :message (str ":sigkill successfully sent to " instance-id) :status 200}]
                 (-> (make-request waiter-url (str "/apps/" service-id "/signal/sigkill/" instance-id) :method :post :query-params {"timeout"  10000})
                     (assert-response-status http-200-ok))
                 (let [{:keys [body] :as response}
                       (make-request waiter-url (str "/apps/" service-id "/signal/sigkill/" instance-id) :method :post :query-params {"timeout"  10000})]
                   (assert-response-status response http-200-ok)
                   (let [response-data (-> body str try-parse-json walk/keywordize-keys)]
-                    (is (= (retrieve-username) (:last-updated-by response-data)))
-                    (is (= overrides (:overrides response-data)))
-                    (is (= service-id (:service-id response-data)))
-                    (is (contains? response-data :time)))
-                  (println body)
-                  (println service-id)
-                  (println instance-id)
-                  )
+                    (is (= signal-response (:signal-response response-data)))
+                  ))
 
         ;(assert-service-on-all-routers waiter-url service-id cookies)
         ;;; assert instance-id is in active instances
