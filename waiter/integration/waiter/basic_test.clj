@@ -1728,10 +1728,10 @@
         service-id
         (testing "failed overrides"
           (let [overrides {:max-instances 20 :min-instances 5 :scale-factor 0.3}]
-                (-> (make-request waiter-url (str "/apps/" service-id "/signal/signal-kill/" instance-id) :method :post :query-params {"timeout"  10000})
+                (-> (make-request waiter-url (str "/apps/" service-id "/signal/sigkill/" instance-id) :method :post :query-params {"timeout"  10000})
                     (assert-response-status http-200-ok))
                 (let [{:keys [body] :as response}
-                      (make-request waiter-url (str "/apps/" service-id "/signal/signal-kill/" instance-id) :method :post :query-params {"timeout"  10000})]
+                      (make-request waiter-url (str "/apps/" service-id "/signal/sigkill/" instance-id) :method :post :query-params {"timeout"  10000})]
                   (assert-response-status response http-200-ok)
                   (let [response-data (-> body str try-parse-json walk/keywordize-keys)]
                     (is (= (retrieve-username) (:last-updated-by response-data)))
