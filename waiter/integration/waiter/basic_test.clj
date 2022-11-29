@@ -1723,30 +1723,51 @@
           headers {:x-waiter-name (rand-name)}
           _ (log/info "making canary request...")
           {:keys [cookies instance-id service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-
+          ;signal-endpoint (str "/apps/" service-id "/signal/signal-kill/" instance-id)
       (with-service-cleanup
         service-id
-        (assert-service-on-all-routers waiter-url service-id cookies)
-        ;; assert instance-id is in active instances
-        (let [service-settings (service-settings waiter-url service-id)
-              active-instances (get-in service-settings [:instances :active-instances])
-              active-instance-id (set (map #(get % "service-id") active-instances))]
-              (is (contains? active-instances active-instance-id))
-          )
-        ;; call our endpoint and validate response
-        (let [service-settings (service-settings waiter-url service-id)
-              active-instances (get-in service-settings [:instances :active-instances])
-              active-instance-id (set (map #(get % "service-id") active-instances))
-              {:keys [body] :as response} (make-request waiter-url "/" :service-id "/signal/kill/" :active-instance-id
-                                                        (utils/clj->json overrides) :method :post)])
-        ;; assert instance-id is not in active instances
-        (is (wait-for (fn fool []
-                        (let [service-settings (service-settings waiter-url service-id)
-                              active-instances (get-in service-settings [:instances :active-instances])]
-                              active-instance-id (set (map #(get % "service-id") active-instances))
-                          (not (contains? active-instances active-instance-id))
-                          )
-                        )
-                      :interval 2 :timeout 30))
+        (testing "failed overrides"
+          (let [overrides {:max-instances 20 :min-instances 5 :scale-factor 0.3}]
+                (-> (make-request waiter-url (str "/apps/" service-id "/signal/signal-kill/" instance-id) :method :post :query-params {"timeout"  10000})
+                    (assert-response-status http-200-ok))
+                (let [{:keys [body] :as response}
+                      (make-request waiter-url (str "/apps/" service-id "/signal/signal-kill/" instance-id) :method :post :query-params {"timeout"  10000})]
+                  (assert-response-status response http-200-ok)
+                  (let [response-data (-> body str try-parse-json walk/keywordize-keys)]
+                    (is (= (retrieve-username) (:last-updated-by response-data)))
+                    (is (= overrides (:overrides response-data)))
+                    (is (= service-id (:service-id response-data)))
+                    (is (contains? response-data :time)))
+                  (println body)
+                  (println service-id)
+                  (println instance-id)
+                  )
 
-        ))))
+        ;(assert-service-on-all-routers waiter-url service-id cookies)
+        ;;; assert instance-id is in active instances
+        ;(let [service-settings (service-settings waiter-url service-id)
+        ;      active-instances (get-in service-settings [:instances :active-instances])
+        ;      active-instance-id (set (map #(get % "service-id") active-instances))]
+        ;      (is (contains? active-instances active-instance-id))
+        ;      (println active-instance-id)
+        ;  )
+        ;; call our endpoint and validate response
+        ;(let [service-settings (service-settings waiter-url service-id)
+        ;      active-instances (get-in service-settings [:instances :active-instances])
+        ;      active-instance-id (set (map #(get % "service-id") active-instances))
+        ;      {:keys [body] :as response} (make-request waiter-url "/" :service-id "/signal/kill/" :active-instance-id
+        ;                                                ;(utils/clj->json overrides)
+        ;                                                :method :post)]
+        ;  (println body))
+
+        ;; assert instance-id is not in active instances
+        ;(is (wait-for (fn fool []
+        ;                (let [service-settings (service-settings waiter-url service-id)
+        ;                      active-instances (get-in service-settings [:instances :active-instances])]
+        ;                      active-instance-id (set (map #(get % "service-id") active-instances))
+        ;                  (not (contains? active-instances active-instance-id))
+        ;                  )
+        ;                )
+        ;              :interval 2 :timeout 30))
+
+        ))))))
