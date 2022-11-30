@@ -772,12 +772,12 @@
         (log/error t "Error force-killing pod")))))
 
 (defn soft-delete-service-instance
-  [pod-url scheduler body] 
+  [pod-url scheduler timeout-ms] 
   "Gracefully kill the Kubernetes pod corresponding to the given Waiter Service Instance.
    Does not adjust ReplicaSet replica count; preventing scheduling of a replacement pod must be ensured by the callee.
    Returns nil on failure, returns the pod object on success."
   (try 
-    (api-request pod-url scheduler :request-method :delete :body body)
+    (api-request pod-url scheduler :request-method :delete :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds timeout-ms}))
     (catch Throwable t
       (log/error t "Error soft-killing pod"))))
 
@@ -801,7 +801,7 @@
       (case signal-type
         
         ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
-        :sigterm (soft-delete-service-instance pod-url scheduler (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds (or timeout-ms grace-period-seconds)}))
+        :sigterm (soft-delete-service-instance pod-url scheduler (or timeout-ms grace-period-seconds))
 
         ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
         ; (note that the pod's default grace period is different from the 300s period set above)
