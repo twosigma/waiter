@@ -1726,7 +1726,15 @@
           ;signal-endpoint (str "/apps/" service-id "/signal/signal-kill/" instance-id)
       (with-service-cleanup
         service-id
-        (testing "failed overrides"
+        (testing "Call signal sigkill endpoint"
+          (assert-service-on-all-routers waiter-url service-id cookies)
+          ;; assert instance-id is in active instances
+          (let [service-settings (service-settings waiter-url service-id)
+                active-instances (get-in service-settings [:instances :active-instances])
+                num-active-instances (count (get-in service-settings [:instances :active-instances]))
+                active-instance-ids (set (map #(get % :id) active-instances))]
+            (is (<= 1 num-active-instances))
+            (is (contains? active-instance-ids instance-id)))
           (let [signal-response {:success true :message (str ":sigkill successfully sent to " instance-id) :status 200}]
                 (-> (make-request waiter-url (str "/apps/" service-id "/signal/sigkill/" instance-id) :method :post :query-params {"timeout"  10000})
                     (assert-response-status http-200-ok))
@@ -1737,14 +1745,7 @@
                     (is (= signal-response (:signal-response response-data)))
                   ))
 
-        ;(assert-service-on-all-routers waiter-url service-id cookies)
-        ;;; assert instance-id is in active instances
-        ;(let [service-settings (service-settings waiter-url service-id)
-        ;      active-instances (get-in service-settings [:instances :active-instances])
-        ;      active-instance-id (set (map #(get % "service-id") active-instances))]
-        ;      (is (contains? active-instances active-instance-id))
-        ;      (println active-instance-id)
-        ;  )
+
         ;; call our endpoint and validate response
         ;(let [service-settings (service-settings waiter-url service-id)
         ;      active-instances (get-in service-settings [:instances :active-instances])
