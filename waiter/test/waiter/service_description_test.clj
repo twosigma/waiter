@@ -121,6 +121,10 @@
     (is (nil? (s/check service-description-schema (assoc basic-description "ports" 5))))
     (is (s/check service-description-schema (assoc basic-description "ports" 11)))
 
+    (doseq [routing-mode ["default" "headless" "ingress-centralized" "ingress-distributed" "waiter-router"]]
+      (is (nil? (s/check service-description-schema (assoc basic-description "routing-mode" routing-mode)))))
+    (is (s/check service-description-schema (assoc basic-description "routing-mode" "invalid")))
+
     (is (s/check service-description-schema (dissoc basic-description "run-as-user")))
     (is (s/check service-description-schema (assoc basic-description "run-as-user" "")))
 
@@ -2713,6 +2717,15 @@
                                    {:allow-missing-required-fields? true})))
         (is (nil? (validate-schema profile-description constraints-schema profile->defaults
                                    {:allow-missing-required-fields? false})))))
+
+    (testing "testing invalid routing-mode"
+      (doseq [routing-mode ["default" "headless" "ingress-centralized" "ingress-distributed" "waiter-router"]]
+        (is (nil? (validate-schema (assoc valid-description "routing-mode" routing-mode)
+                                   constraints-schema profile->defaults config))))
+      (run-validate-schema-test
+        (assoc valid-description "routing-mode" "invalid")
+        constraints-schema profile->defaults config
+        "routing-mode must be one of default, waiter-router, headless, ingress-distributed or ingress-centralized"))
 
     (testing "testing termination-grace-period-secs"
       (doseq [termination-grace-period-secs [900 "5" -1]]

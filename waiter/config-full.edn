@@ -822,6 +822,7 @@
                                 "permitted-user" "*"
                                 "ports" 1
                                 "restart-backoff-factor" 2
+                                "routing-mode" "default"
                                 "scale-down-factor" 0.001
                                 "scale-factor" 1
                                 "scale-up-factor" 0.1

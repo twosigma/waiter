@@ -89,6 +89,11 @@
   "Validator for health check port index."
   (s/pred #(<= 0 % 9) 'between-0-and-9))
 
+(def valid-routing-mode
+  "Validator for the routing-mode parameter.
+   Valid values are 'default', 'waiter-router', 'headless', 'ingress-distributed' or 'ingress-centralized'."
+  (s/pred #(contains? #{"default" "headless" "ingress-centralized" "ingress-distributed" "waiter-router"} %) 'invalid-routing-mode))
+
 (def valid-zookeeper-connect-config
   "Validator for the Zookeeper connection configuration. We allow either
   a non-empty string (representing a connection string), or the keyword

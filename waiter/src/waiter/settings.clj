@@ -179,6 +179,7 @@
                                                    (s/required-key "permitted-user") schema/non-empty-string
                                                    (s/required-key "ports") schema/valid-number-of-ports
                                                    (s/required-key "restart-backoff-factor") schema/positive-number-greater-than-or-equal-to-1
+                                                   (s/required-key "routing-mode") schema/valid-routing-mode
                                                    (s/required-key "scale-factor") schema/positive-fraction-less-than-or-equal-to-1
                                                    (s/required-key "scale-up-factor") schema/positive-fraction-less-than-1
                                                    (s/required-key "scale-down-factor") schema/positive-fraction-less-than-1
@@ -527,6 +528,7 @@
                                   "permitted-user" "*"
                                   "ports" 1
                                   "restart-backoff-factor" 2
+                                  "routing-mode" "default"
                                   "scale-down-factor" 0.001
                                   "scale-factor" 1
                                   "scale-up-factor" 0.1
