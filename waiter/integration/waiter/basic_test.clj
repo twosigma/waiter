@@ -1745,7 +1745,6 @@
                   (assert-response-status response http-200-ok)
                   (let [response-data (-> body str try-parse-json walk/keywordize-keys)]
                     (is (= signal-response (:signal-response response-data)))
-                    (println body)
                   ))
           (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :killed-instances])
                               (map :id)
@@ -1796,9 +1795,8 @@
               (assert-response-status response http-200-ok)
               (let [response-data (-> body str try-parse-json walk/keywordize-keys)]
                 (is (= signal-response (:signal-response response-data)))
-                (println body)
                 ))
-            (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :terminated-instances])
+            (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :killed-instances])
                                 (map :id)
                                 set
                                 seq)
@@ -1810,9 +1808,9 @@
                 (str "No active instances found for " service-id))
             ;(assert-service-on-all-routers waiter-url service-id cookies)
             (let [service-settings (service-settings waiter-url service-id)
-                  terminated-instances (get-in service-settings [:instances :terminated-instances])
+                  terminated-instances (get-in service-settings [:instances :killed-instances])
                   active-instances (get-in service-settings [:instances :active-instances])
-                  terminated-instance-ids (set (map #(get % :id) terminate-instances))
+                  terminated-instance-ids (set (map #(get % :id) terminated-instances))
                   active-instance-ids (set (map #(get % :id) active-instances))]
               (is (contains? terminated-instance-ids instance-id))
               (is (not (contains? active-instance-ids instance-id))))
