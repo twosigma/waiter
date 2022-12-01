@@ -1016,7 +1016,6 @@
             pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])
             service-instance (pod->ServiceInstance this pod)
             response (signal-service-instance this service-instance service signal-type timeout-ms)]
-        (log/info "softdelete" response)
         (if response 
           (do
             {:success true
