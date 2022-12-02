@@ -672,7 +672,7 @@
                port->reservation-atom port-grace-period-ms signal-type)
         (scheduler/log-service-instance instance signal-type :info)
         {:success true
-         :message (str signal-type " successfully sent to " instance-id)
+         :message (str (name signal-type) " successfully sent to " instance-id)
          :status http-200-ok})
       {:success false
        :message "service does not exist"
