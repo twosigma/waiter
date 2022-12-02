@@ -1212,8 +1212,10 @@
            (exec-routes-mapper "/apps")))
     (is (= {:handler :service-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/apps/test-service")))
-    (is (= {:handler :signal-handler-fn, :route-params {:service-id "test-service"}}
-           (exec-routes-mapper "/apps/test-service/signal")))
+    (is (= {:handler :signal-handler-fn, :route-params {:service-id "test-service" :signal-type "sigkill" :instance-id "test-instance"}}
+           (exec-routes-mapper "/apps/test-service/signal/sigkill/test-instance")))
+    (is (= {:handler :signal-handler-fn, :route-params {:service-id "test-service" :signal-type "sigterm" :instance-id "test-instance"}}
+           (exec-routes-mapper "/apps/test-service/signal/sigterm/test-instance")))
     (is (= {:handler :service-await-handler-fn, :route-params {:service-id "test-service" :goal-state "exists"}}
            (exec-routes-mapper "/apps/test-service/await/exists")))
     (is (= {:handler :service-view-logs-handler-fn, :route-params {:service-id "test-service"}}

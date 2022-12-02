@@ -2366,9 +2366,7 @@ class WaiterCliTest(util.WaiterTest):
                 util.ping_token(self.waiter_url, token_name)
             util.post_token(self.waiter_url, token_name, token_fields)
             service_id = util.ping_token(self.waiter_url, token_name, 200)
-            goal_fn = lambda insts: min_instances == len(insts['active-instances']) and \
-                                    0 == len(insts['failed-instances']) and \
-                                    0 == len(insts['killed-instances'])
+            goal_fn = lambda insts: min_instances == len(insts['active-instances'])
             util.wait_until_routers_service(self.waiter_url, service_id, lambda service: goal_fn(service['instances']))
             instances = util.instances_for_service(self.waiter_url, service_id)
             possible_instances = get_possible_instances_fn(service_id, instances)
