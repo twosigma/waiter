@@ -1016,17 +1016,24 @@
             pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])
             service-instance (pod->ServiceInstance this pod)
             response (signal-service-instance this service-instance service signal-type timeout-ms)]
-        (log/info "softdelete" response)
-        (if response 
-          (do
-            {:success true
-             :message (str (name signal-type) "successfully sent to" instance-id)
-             :status http-200-ok})
-          (do 
-            (log/error "non 200 status code on api request")
+        (if (scheduler/service-exists? this service-id) 
+          (if pod 
+            (if response 
+              (do
+                {:success true
+                 :message (str (name signal-type) "successfully sent to" instance-id)
+                 :status http-200-ok})
+              (do 
+                (log/error "non 200 status code on api request")
+                {:success false
+                 :message (str "non 200 status code received" (:status response))
+                 :status http-500-internal-server-error}))
             {:success false
-             :message (str "non 200 status code received" (:status response))
-             :status http-500-internal-server-error})))
+             :message (str "pod" pod-name "does not exist")
+             :status http-404-not-found})
+          {:success false
+           :message (str "service" service-id "does not exist")
+           :status http-404-not-found}))
       (catch Object ex
         (log/error ex "Error while signaling instance")
         {:success false

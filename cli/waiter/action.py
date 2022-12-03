@@ -296,7 +296,7 @@ def send_signal_to_instance_on_cluster(cluster, signal_type, service_id, instanc
     try:
         print(f'Sending {terminal.bold(signal_type)} request to instance {terminal.bold(instance_id)} in {terminal.bold(cluster_name)}...')
         params = {'timeout': timeout_seconds * 1000}
-        resp = http_util.post(cluster, f'/apps/{service_id}/signal/{signal_type}/{instance_id}', '', params=params)
+        resp = http_util.post(cluster, f'/apps/{service_id}/signal/{instance_id}/{signal_type}', '', params=params)
         logging.debug(f'Response status code: {resp.status_code}')
         if resp.status_code == 200:
             success = resp.json().get("signal-response", {}).get('success')
