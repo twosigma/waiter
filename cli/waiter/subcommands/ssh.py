@@ -5,7 +5,7 @@ import os
 from waiter import plugins, terminal
 from waiter.querying import get_service_id_from_instance_id, print_no_data, query_service
 from waiter.util import guard_no_cluster, print_info
-from waiter.instance_select import get_instance_id_from_destination, Destination
+from waiter.instance_select import Destination, get_instance_id_from_destination
 
 BASH_PATH = '/bin/bash'
 

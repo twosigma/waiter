@@ -1294,29 +1294,28 @@
       correlation-id
       (async/go
         (try
-          (let [request-id (utils/unique-identifier) ; new unique identifier for this reservation request
-                reason-map-fn (fn [] {:cid correlation-id :reason :kill-instance :request-id request-id :time (t/now)})
-                result-map-fn (fn [status] {:cid correlation-id :request-id request-id :status status})]
+          (let [request-id (utils/unique-identifier)] ; new unique identifier for this reservation request
                 (log/info "Attempting to send signal to " instance-id)
                 (do
                   (log/info "sending signal to instance " instance-id service-id)
-                  (scheduler/track-kill-candidate! instance-id :prepare-to-kill eject-backoff-base-time-ms)
-                  (let [{:keys [success] :as kill-result}
+                  (when (contains? #{:sigkill :sigterm} signal-type)
+                    (scheduler/track-kill-candidate! instance-id :prepare-to-kill eject-backoff-base-time-ms))
+                  (let [{:keys [success] :as signal-result}
                         (-> (au/execute
                               (fn send-signal-to-instance []
                                 (scheduler/signal-instance scheduler service-id instance-id signal-type timeout-ms))
                               thread-pool)
                             async/<!
                             :result)]
-                    (if (and success (or (= signal-type :sigterm) (= signal-type :sigkill)))
+                    (when (and success (contains? #{:sigkill :sigterm} signal-type))
                       (do
                         (log/info "marking instance" instance-id "as killed")
                         (scheduler/track-kill-candidate! instance-id :killed eject-backoff-base-time-ms)
                         (notify-instance-killed-fn {:id instance-id :service-id service-id})))
-                    (when response-chan (async/>! response-chan kill-result))
+                    (when response-chan (async/>! response-chan signal-result))
                     success)))
           (catch Exception ex
-            (log/error ex "unable to send signal to instance " instance-id)
+            (log/error ex "unable to send signal" signal-type "to instance" instance-id)
             (when response-chan 
               (async/>! response-chan {:success false :message (.getMessage ex) :status http-500-internal-server-error}))))))))
 
@@ -1346,12 +1345,12 @@
                       :status http-403-forbidden}))
           (async/go
             (let [response-chan (async/promise-chan)
-              _ (execute-signal
-                notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler
-                populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type) (if (zero? (Integer/parseInt timeout)) nil (Integer/parseInt timeout))
-                correlation-id scale-service-thread-pool response-chan)
+                  _ (execute-signal
+                    notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler
+                    populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type) (if (zero? (Integer/parseInt timeout)) nil (Integer/parseInt timeout))
+                    correlation-id scale-service-thread-pool response-chan)
                   {:keys [status] :as signal-response} (or (async/<! response-chan)
-                                                                  {:message :no-instance-killed, :status http-500-internal-server-error})]
+                                                            {:message :no-instance-killed, :status http-500-internal-server-error})]
               (-> (utils/clj->json-response {:signal-response signal-response
                                           :source-router-id src-router-id
                                           :status (or status http-500-internal-server-error)})))))

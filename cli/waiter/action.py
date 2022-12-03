@@ -322,6 +322,9 @@ def send_signal_to_instance_on_cluster(cluster, signal_type, service_id, instanc
 
 
 def process_signal_request(clusters, signal_type, instance_id, timeout_secs, no_instance_result=False):
+    """Sends signal to the instance given the instance id.
+    Returns False if there are no instances or if there is no active instance with the same instance id
+    Returns True if the signal request is sent successfully."""
     service_id = get_service_id_from_instance_id(instance_id)
     query_result = query_service(clusters, service_id)
     num_services = query_result['count']
@@ -348,7 +351,7 @@ def process_signal_request(clusters, signal_type, instance_id, timeout_secs, no_
                 return send_signal_to_instance_on_cluster(cluster, signal_type, service_id, instance_id, timeout_secs)
 
     print(f'No active instance with ID {terminal.bold(instance_id)}')
-    return True
+    return False
  
 
 

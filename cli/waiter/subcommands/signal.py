@@ -1,7 +1,7 @@
 
 from waiter.util import guard_no_cluster, check_positive
 from waiter.action import process_signal_request
-from waiter.instance_select import get_instance_id_from_destination, Destination
+from waiter.instance_select import Destination, get_instance_id_from_destination
 from enum import Enum
 
 
