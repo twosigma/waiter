@@ -1717,53 +1717,45 @@
        (is (contains? details "name"))
        (is (contains? details "port"))))))
 
-(deftest ^:parallel ^:integration-fast test-signal-sigkill-instance
+(deftest ^:parallel ^:integration-fast test-signal-instance [signal-type]
   (testing-using-waiter-url
-    (let [
-          headers {:x-waiter-name (rand-name)
+    (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-min-instances 2}
           _ (log/info "making canary request...")
           {:keys [cookies instance-id service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-          ;signal-endpoint (str "/apps/" service-id "/signal/signal-kill/" instance-id)
       (with-service-cleanup
         service-id
         (testing "Call signal sigkill endpoint"
           (assert-service-on-all-routers waiter-url service-id cookies)
-          ;; assert instance-id is in active instances
           (let [service-settings (service-settings waiter-url service-id)
                 active-instances (get-in service-settings [:instances :active-instances])
                 num-active-instances (count (get-in service-settings [:instances :active-instances]))
                 active-instance-ids (set (map #(get % :id) active-instances))]
             (is (<= 1 num-active-instances))
             (is (contains? active-instance-ids instance-id)))
-          ; call our endpoint and validate response
-          (let [signal-response {:success true :message (str ":sigkill successfully sent to " instance-id) :status 200}]
-                (-> (make-request waiter-url (str "/apps/" service-id "/signal/sigkill/" instance-id) :method :post :query-params {"timeout"  10000})
-                    (assert-response-status http-200-ok))
-                (let [{:keys [body] :as response}
-                      (make-request waiter-url (str "/apps/" service-id "/signal/sigkill/" instance-id) :method :post :query-params {"timeout"  10000})]
-                  (assert-response-status response http-200-ok)
-                  (let [response-data (-> body str try-parse-json walk/keywordize-keys)]
-                    (is (= signal-response (:signal-response response-data)))
-                    (println body)
-                  ))
-          (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :killed-instances])
-                              (map :id)
-                              set
-                              seq)
-                        :interval 2 :timeout 1000)
-              (str "No killed instances found for " service-id))
-          (is (wait-for #(->> (= 0 (count (get-in (service-settings waiter-url service-id) [:instances :active-instances])))
-                              )
-                        :interval 2 :timeout 1000)
-              (str "No active instances found for " service-id))
-          ;(assert-service-on-all-routers waiter-url service-id cookies)
-          (let [service-settings (service-settings waiter-url service-id)
-                kill-instances (get-in service-settings [:instances :killed-instances])
-                active-instances (get-in service-settings [:instances :active-instances])
-                kill-instance-ids (set (map #(get % :id) kill-instances))
-                active-instance-ids (set (map #(get % :id) active-instances))]
-            (is (contains? kill-instance-ids instance-id))
-            (is (not (contains? active-instance-ids instance-id))))
+          (let [signal-response {:success true :message (str "sigkill successfully sent to " instance-id) :status 200}]
+            (let [{:keys [body] :as response}
+                  (make-request waiter-url (str "/apps/" service-id "/signal/" instance-id "/" signal-type) :method :post :query-params {"timeout"  10000})]
+              (assert-response-status response http-200-ok)
+              (let [response-data (-> body str try-parse-json walk/keywordize-keys)]
+                (is (= signal-response (:signal-response response-data)))))
+            (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :killed-instances])
+                                (map :id) set seq)
+                          :interval 2 :timeout 10000)
+                (str "No killed instances found for " service-id))
+            (is (wait-for #(->> (= 0 (count (get-in (service-settings waiter-url service-id) [:instances :active-instances]))))
+                          :interval 2 :timeout 10000)
+                (str "No active instances found for " service-id))
+            (let [service-settings (service-settings waiter-url service-id)
+                  killed-instances (get-in service-settings [:instances :killed-instances])
+                  active-instances (get-in service-settings [:instances :active-instances])
+                  killed-instance-ids (set (map #(get % :id) killed-instances))
+                  active-instance-ids (set (map #(get % :id) active-instances))]
+              (is (contains? killed-instance-ids instance-id))
+              (is (not (contains? active-instance-ids instance-id))))))))))
 
-        ))))))
+(deftest ^:parallel ^:integration-fast test-signal-sigkill-instance
+  (test-signal-instance "sigkill"))
+
+(deftest ^:parallel ^:integration-fast test-signal-sigkill-instance
+  (test-signal-instance "sigterm"))
