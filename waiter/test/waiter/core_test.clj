@@ -210,7 +210,7 @@
         (let [request {:headers {"accept" "application/json"}
                        :query-string "timeout=5000"
                        :request-method :post
-                       :uri (str "/apps/" service-id "/signal/" signal-type "/" instance-id)}
+                       :uri (str "/apps/" service-id "/signal/" instance-id "/" signal-type)}
               {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= http-200-ok status))
           (is (= expected-json-response-headers headers))
@@ -224,7 +224,7 @@
         (let [request {:headers {"accept" "application/json"}
                        :query-string "timeout=5000"
                        :request-method :post
-                       :uri (str "/apps/" service-id "/signal/" signal-type "/" instance-id)}
+                       :uri (str "/apps/" service-id "/signal/" instance-id "/" signal-type)}
               {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= http-200-ok status))
           (is (= expected-json-response-headers headers))
