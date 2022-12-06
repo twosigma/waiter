@@ -1717,7 +1717,7 @@
        (is (contains? details "name"))
        (is (contains? details "port"))))))
 
-(deftest ^:parallel ^:integration-fast test-signal-instance [signal-type]
+(def test-signal-instance [signal-type]
   (testing-using-waiter-url
     (let [headers {:x-waiter-name (rand-name)
                    :x-waiter-min-instances 2}
