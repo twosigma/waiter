@@ -1347,7 +1347,7 @@
             (let [response-chan (async/promise-chan)
                   _ (execute-signal
                     notify-instance-killed-fn peers-acknowledged-eject-requests-fn scheduler
-                    populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type) (if (zero? (Integer/parseInt timeout)) nil (Integer/parseInt timeout))
+                    populate-maintainer-chan! timeout-config instance-id service-id (keyword signal-type) (if (<= 0 (Integer/parseInt timeout)) nil (Integer/parseInt timeout))
                     correlation-id scale-service-thread-pool response-chan)
                   {:keys [status] :as signal-response} (or (async/<! response-chan)
                                                             {:message :no-instance-killed, :status http-500-internal-server-error})]
