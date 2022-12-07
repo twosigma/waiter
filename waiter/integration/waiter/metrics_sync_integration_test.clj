@@ -509,6 +509,8 @@
                            :x-waiter-metadata-waiter-proxy-bypass-opt-in "true"
                            :x-waiter-min-instances 1
                            :x-waiter-name (rand-name)
+                           ; force outstanding metrics to use external metrics for outstanding metrics calculation
+                           :x-waiter-routing-mode "ingress-distributed"
                            ; used for assertions on scale-to-instances target
                            :x-waiter-scale-up-factor 0.99
                            :x-waiter-scale-down-factor 0.99}

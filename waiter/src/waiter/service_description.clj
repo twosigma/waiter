@@ -1889,6 +1889,6 @@
 
 (defn service-description-bypass-enabled?
   "Returns true if the provided service description has bypass enabled and false otherwise."
-  [service-desc]
-  (= "true"
-     (get-in service-desc ["metadata" "waiter-proxy-bypass-opt-in"])))
+  [{:strs [routing-mode] :as service-desc}]
+  (or (contains? #{"headless" "ingress-centralized" "ingress-distributed"} routing-mode)
+      (= "true" (get-in service-desc ["metadata" "waiter-proxy-bypass-opt-in"]))))
