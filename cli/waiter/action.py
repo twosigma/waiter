@@ -8,7 +8,7 @@ from tabulate import tabulate
 from waiter import http_util, terminal
 from waiter.format import format_last_request_time
 from waiter.format import format_status
-from waiter.querying import get_service, get_services_using_token
+from waiter.querying import get_service, get_services_using_token, get_service_id_from_instance_id
 from waiter.querying import print_no_data, query_service, query_services, query_token
 from waiter.util import is_service_current, str2bool, response_message, print_error, wait_until
 
@@ -299,3 +299,71 @@ def process_ping_request(clusters, token_name_or_service_id, is_service_id, time
                 success = True
         overall_success = overall_success and success
     return overall_success
+
+
+def send_signal_to_instance_on_cluster(cluster, signal_type, service_id, instance_id, timeout_seconds):
+    """Send sigkill request to the specific instance"""
+    cluster_name = cluster['name']
+    http_util.set_retries(0)
+    try:
+        print(f'Sending {terminal.bold(signal_type)} request to instance {terminal.bold(instance_id)} in {terminal.bold(cluster_name)}...')
+        params = {'timeout': timeout_seconds * 1000}
+        resp = http_util.post(cluster, f'/apps/{service_id}/signal/{instance_id}/{signal_type}', '', params=params)
+        logging.debug(f'Response status code: {resp.status_code}')
+        if resp.status_code == 200:
+            success = resp.json().get("signal-response", {}).get('success')
+            if success:
+                print(f'Successfully sent {signal_type} to {instance_id} in {cluster_name}.')
+                return True
+            else:
+                print(f'Was not able to send {signal_type} to {instance_id} in {cluster_name}. ')
+                return False
+        else:
+            print_error(response_message(resp.json()))
+            return False
+    except requests.exceptions.ReadTimeout:
+        message = f'Request timed out while killing {service_id} in {cluster_name}.'
+        logging.exception(message)
+        print_error(message)
+        return False
+    except Exception:
+        message = f'Encountered error while killing {instance_id} in {cluster_name}.'
+        logging.exception(message)
+        print_error(message)
+        return False
+
+
+def process_signal_request(clusters, signal_type, instance_id, timeout_secs, no_instance_result=False):
+    """Sends signal to the instance given the instance id.
+    Returns False if there are no instances or if there is no active instance with the same instance id
+    Returns True if the signal request is sent successfully."""
+    service_id = get_service_id_from_instance_id(instance_id)
+    query_result = query_service(clusters, service_id)
+    num_services = query_result['count']
+    if num_services == 0:
+        print_no_data(clusters)
+        return no_instance_result
+
+    cluster_data_pairs = sorted(query_result['clusters'].items())
+    clusters_by_name = {c['name']: c for c in clusters}
+    for cluster_name, data in cluster_data_pairs:
+        service = data['service']
+        cluster = clusters_by_name[cluster_name]
+        active_instances = service['instances']['active-instances']
+
+        status_string = service['status']
+        status = format_status(status_string)
+        service_inactive = status_string == 'Inactive'
+
+        if service_inactive:
+            continue
+
+        for instance in active_instances:
+            if instance['id'] == instance_id:
+                return send_signal_to_instance_on_cluster(cluster, signal_type, service_id, instance_id, timeout_secs)
+
+    print(f'No active instance with ID {terminal.bold(instance_id)}')
+    return False
+ 
+
+

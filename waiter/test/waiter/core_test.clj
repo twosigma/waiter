@@ -174,6 +174,66 @@
             (service-gc-block service-data-atom num-times)
             (is (= (set (keys expected-service-data)) (set (keys @service-data-atom))))))))))
 
+(deftest test-signal-handler
+  (let [user "waiter-user"
+        service-id "test-service-1"
+        signal-type "sigkill"
+        instance-id "test-service-1.A"
+        waiter-request?-fn (fn [_] true)
+        inter-kill-request-wait-time-ms 10
+        scaling-timeout-config {:eject-backoff-base-time-ms 10000
+                              :inter-kill-request-wait-time-ms inter-kill-request-wait-time-ms
+                              :max-eject-time-ms 60000}
+        scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
+        signal-instance-result-atom (atom nil)
+        configuration {:daemons {:populate-maintainer-chan! {:query-state-fn (constantly {})}
+                                 :router-state-maintainer {:maintainer {:notify-instance-killed-fn (constantly {})}}}
+                       :routines {:peers-acknowledged-eject-requests-fn (constantly true)
+                                  :allowed-to-manage-service?-fn (constantly true)
+                                  :service-id->service-description-fn (constantly {})}
+                       :scheduler {:scheduler (reify scheduler/ServiceScheduler
+                                                (signal-instance [_ _ _ _ _]
+                                                  (let [result @signal-instance-result-atom]
+                                                    (if (instance? Throwable result)
+                                                      (throw result)
+                                                      result))))}
+                       :state {:scaling-timeout-config scaling-timeout-config
+                               :scheduler-interactions-thread-pool scheduler-interactions-thread-pool}
+                       :wrap-ignore-disabled-auth-fn utils/wrap-identity
+                       :wrap-secure-request-fn utils/wrap-identity}
+        handlers {:signal-handler-fn ((:signal-handler-fn request-handlers) configuration)}]
+
+
+    (testing "signal-handler:valid-response-including-active-killed"
+      (reset! signal-instance-result-atom {:success true, :message (str "sigkill successfully sent to " instance-id) , :status 200})
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+        (let [request {:headers {"accept" "application/json"}
+                       :query-string "timeout=5000"
+                       :request-method :post
+                       :uri (str "/apps/" service-id "/signal/" instance-id "/" signal-type)}
+              {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
+          (is (= http-200-ok status))
+          (is (= expected-json-response-headers headers))
+          (let [body-json (json/read-str (str body))]
+            (is (= {"success" true, "message" (str "sigkill successfully sent to " instance-id), "status" 200} (get body-json "signal-response")))
+            ))))
+
+    (testing "signal-handler:valid-response-active-failed"
+      (reset! signal-instance-result-atom {:success false, :message (str "service does not exist") , :status 500})
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+        (let [request {:headers {"accept" "application/json"}
+                       :query-string "timeout=5000"
+                       :request-method :post
+                       :uri (str "/apps/" service-id "/signal/" instance-id "/" signal-type)}
+              {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
+          (is (= http-200-ok status))
+          (is (= expected-json-response-headers headers))
+          (let [body-json (json/read-str (str body))]
+            (is (= {"success" false, "message" (str "service does not exist"), "status" 500} (get body-json "signal-response")))
+            ))))
+
+    (.shutdown scheduler-interactions-thread-pool)))
+
 (deftest test-suspend-or-resume-service-handler
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         service-description-defaults {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "run-as-user" "tu1", "permitted-user" "tu2"}
@@ -1152,6 +1212,10 @@
            (exec-routes-mapper "/apps")))
     (is (= {:handler :service-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/apps/test-service")))
+    (is (= {:handler :signal-handler-fn, :route-params {:service-id "test-service" :signal-type "sigkill" :instance-id "test-instance"}}
+           (exec-routes-mapper "/apps/test-service/signal/sigkill/test-instance")))
+    (is (= {:handler :signal-handler-fn, :route-params {:service-id "test-service" :signal-type "sigterm" :instance-id "test-instance"}}
+           (exec-routes-mapper "/apps/test-service/signal/sigterm/test-instance")))
     (is (= {:handler :service-await-handler-fn, :route-params {:service-id "test-service" :goal-state "exists"}}
            (exec-routes-mapper "/apps/test-service/await/exists")))
     (is (= {:handler :service-view-logs-handler-fn, :route-params {:service-id "test-service"}}

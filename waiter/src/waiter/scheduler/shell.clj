@@ -107,6 +107,12 @@
   (log/info "killing process group with group" pgid)
   (sh/sh "pkill" "-9" "-g" (str pgid)))
 
+(defn- safe-kill-process-group!
+  "Kills the process group with group iod pgid."
+  [pgid]
+  (log/info "killing process group with group" pgid)
+  (sh/sh "pkill" "-15" "-g" (str pgid)))
+
 (defn kill-process!
   "Triggers killing of process and any children processes it spawned"
   [{:keys [:shell-scheduler/process :shell-scheduler/pid extra-ports port] :as instance}
@@ -120,6 +126,20 @@
       (release-ports! port->reservation-atom reserved-ports port-grace-period-ms))
     (catch Throwable e
       (log/error e "error attempting to kill process:" instance))))
+
+(defn safe-kill-process!
+  "Triggers killing of process and any children processes it spawned"
+  [{:keys [:shell-scheduler/process :shell-scheduler/pid extra-ports port] :as instance}
+   port->reservation-atom port-grace-period-ms]
+  (try
+    (log/info "safe killing process:" instance)
+    (when process
+      (.destroyForcibly process))
+    (safe-kill-process-group! pid)
+    (let [reserved-ports (cons port extra-ports)]
+      (release-ports! port->reservation-atom reserved-ports port-grace-period-ms))
+    (catch Throwable e
+      (log/error e "error attempting to safe kill process:" instance))))
 
 (defn port-reserved?
   "Returns true if port is currently reserved"
@@ -290,6 +310,37 @@
       (log/error e "error attempting to delete instance" instance-id)
       (deliver completion-promise :failed)
       id->service)))
+
+(defn- send-signal-to-instance
+  "Deletes the instance corresponding to service-id/instance-id and returns if successful"
+  [id->service service-id instance-id message port->reservation-atom port-grace-period-ms signal-type]
+  (try
+    (if (contains? id->service service-id)
+      (let [{:keys [id->instance]} (get id->service service-id)
+            {:keys [:shell-scheduler/process] :as instance} (get id->instance instance-id)]
+        (if (and instance (active? instance))
+          (do
+            (log/info "signaling instance" instance-id "process" process "with signal" (name signal-type))
+            (case signal-type
+              :sigkill (kill-process! instance port->reservation-atom port-grace-period-ms)
+              :sigterm (safe-kill-process! instance port->reservation-atom port-grace-period-ms)
+              (throw (IllegalArgumentException. "Not a supported signal.")))
+            (-> id->service
+                (update-in [service-id :service :instances] dec)
+                (update-in [service-id :id->instance instance-id] assoc
+                           :killed? true
+                           :message message
+                           :shell-scheduler/process nil)))
+          (do
+            (log/info "instance" instance-id "does not exist")
+            id->service)))
+      (do
+        (log/info "service" service-id "does not exist")
+        id->service))
+    (catch Throwable e
+      (log/error e "error attempting to" (name signal-type) "instance" instance-id)
+      id->service)))
+
 
 (defn- delete-service
   "Deletes the service corresponding to service-id and returns the updated id->service map"
@@ -606,6 +657,27 @@
   (get-services [_]
     (let [id->service @id->service-agent]
       (map (fn [[_ {:keys [service]}]] service) id->service)))
+
+  (signal-instance [this service-id instance-id signal-type timeout-ms] 
+   (if (scheduler/service-exists? this service-id)
+      (let [message (str "Sent " (name signal-type) " using scheduler API")
+            instance (get-in @id->service-agent [service-id :id->instance instance-id])]
+        (if (nil? instance)
+          (throw (IllegalArgumentException. "invalid instance-id"))) 
+        (if (get-in instance [:killed?])
+          (throw (IllegalArgumentException. "instance is already killed.")))
+        (if (and (not= signal-type :sigterm) (not= signal-type :sigkill))
+          (throw (IllegalArgumentException. "invalid signal type")))
+        (send id->service-agent send-signal-to-instance service-id instance-id message
+               port->reservation-atom port-grace-period-ms signal-type)
+        (scheduler/log-service-instance instance signal-type :info)
+        {:success true
+         :message (str (name signal-type) " successfully sent to " instance-id)
+         :status http-200-ok})
+      {:success false
+       :message "service does not exist"
+       :status http-404-not-found}))
+
 
   (kill-instance [this {:keys [id service-id] :as instance}]
     (if (scheduler/service-exists? this service-id)
