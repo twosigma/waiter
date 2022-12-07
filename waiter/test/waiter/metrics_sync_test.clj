@@ -566,9 +566,9 @@
           time-5 (du/str-to-date "2000-01-01T00:00:05.000Z")
           service-id->desc {"s3" {}
                             "s4" {"metadata" {}}
-                            "s5" {"metadata" {"waiter-proxy-bypass-opt-in" "false"}}
-                            "s6" {"metadata" {"waiter-proxy-bypass-opt-in" "true"}}
-                            "s7" {"metadata" {"waiter-proxy-bypass-opt-in" "true"}}}
+                            "s5" {"routing-mode" "default"}
+                            "s6" {"routing-mode" "ingress-distributed"}
+                            "s7" {"routing-mode" "ingress-distributed"}}
           service-id->service-description-fn (fn service-id->service-description [service-id & {}]
                                                (get service-id->desc service-id))
           in-router-metrics-state {:external-metrics {"s6" {"s6.i1" {"metrics" {"active-request-count" 3

@@ -185,7 +185,7 @@
     (let [custom-raven-flag "MY_RAVEN_FLAG"
           service-description (assoc dummy-service-description
                                      "env" {custom-raven-flag "true"}
-                                     "metadata" {"waiter-proxy-bypass-opt-in" "true"})
+                                     "routing-mode" "ingress-distributed")
           scheduler (make-dummy-scheduler ["test-service-id"]
                                           {:raven-sidecar {:cmd ["/opt/waiter/raven/bin/raven-start"]
                                                            :env-vars {:defaults {"PORT0" "P0"
@@ -1618,7 +1618,7 @@
                         :status http-200-ok)
                  actual))))
       (testing "successful-delete: bypass"
-        (let [dummy-scheduler (assoc dummy-scheduler :service-id->service-description-fn (constantly {"metadata" {"waiter-proxy-bypass-opt-in" "true"}}))
+        (let [dummy-scheduler (assoc dummy-scheduler :service-id->service-description-fn (constantly {"routing-mode" "ingress-distributed"}))
               api-call-count-atom (atom 0)
               expected-api-call-count 2 ;; should make one request for deleting the pod and one request for update the replicas count
               pod-delete-grace-period-atom (atom nil)
@@ -1643,7 +1643,7 @@
       (testing "successful-delete: bypass with WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS and WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS overrides"
         (let [dummy-scheduler (assoc dummy-scheduler :service-id->service-description-fn (constantly {"env" {"WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS" "3"
                                                                                                              "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS" "4"}
-                                                                                                      "metadata" {"waiter-proxy-bypass-opt-in" "true"}}))
+                                                                                                      "routing-mode" "ingress-distributed"}))
               api-call-count-atom (atom 0)
               expected-api-call-count 2 ;; should make one request for deleting the pod and one request for update the replicas count
               pod-delete-grace-period-atom (atom nil)
