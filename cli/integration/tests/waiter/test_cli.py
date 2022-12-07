@@ -2352,3 +2352,96 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_stop_ping_service_no_kill(self):
         self.run_maintenance_start_test(cli.stop, start_args='--no-kill', ping_token=True)
+
+    def __test_signal(self, get_possible_instances_fn, signal_type=None, signal_flags=None, stdin=None,
+                      min_instances=1, multiple_services=False,
+                      test_service=False, test_instance=False):
+        token_name = self.token_name()
+        token_fields = util.minimal_service_description()
+        token_fields['min-instances'] = min_instances
+        try:
+            if multiple_services:
+                token_new_fields = util.minimal_service_description()
+                util.post_token(self.waiter_url, token_name, token_new_fields)
+                util.ping_token(self.waiter_url, token_name)
+            util.post_token(self.waiter_url, token_name, token_fields)
+            service_id = util.ping_token(self.waiter_url, token_name, 200)
+            goal_fn = lambda insts: min_instances == len(insts['active-instances'])
+            util.wait_until_routers_service(self.waiter_url, service_id, lambda service: goal_fn(service['instances']))
+            instances = util.instances_for_service(self.waiter_url, service_id)
+            possible_instances = get_possible_instances_fn(service_id, instances)
+            signal_flags = [signal_flags] if signal_flags else []
+            if test_instance:
+                possible_instances = possible_instances[0:1]
+                signal_dest = possible_instances[0]['id']
+                signal_flags.append('-i')
+            elif test_service:
+                signal_dest = service_id
+                signal_flags.append('-s')
+            else:
+                signal_dest = token_name
+            if signal_type == 'soft-delete':
+                signal_type_output = 'sigterm'
+            elif signal_type == 'hard-delete':
+                signal_type_output = 'sigkill'
+            else:
+                signal_type_output = ''
+            cp = cli.signal(self.waiter_url, signal_type, signal_dest, signal_flags=' '.join(signal_flags), stdin=stdin)
+            stdout = cli.stdout(cp)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn(f'Successfully sent {signal_type_output} to', stdout)
+            cli_output = stdout.split()
+            killed_instance_id = None
+            for i,w in enumerate(cli_output):
+                if w == "instance":
+                    killed_instance_id = cli_output[i+1]
+            self.assertNotEqual(None, killed_instance_id)
+            kill_fn = lambda insts: (min_instances - 1) == len(insts['active-instances']) and \
+                                    1 >= len(insts['killed-instances'])
+            util.wait_until_routers_service(self.waiter_url, service_id, lambda service: kill_fn(service['instances']))
+            active_instances_map = util.get_specific_instances_for_service(self.waiter_url, service_id,'active-instances')
+            active_instance_ids = list(map(lambda x: active_instances_map[active_instances_map.index(x)].get('id', None), active_instances_map))
+            self.assertNotIn(killed_instance_id, active_instance_ids, "Assert Failed: killed-instance is in active instances")
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+
+    def test_signal_sigkill_valid_instance(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='hard-delete', test_instance=True, min_instances=1)
+
+    def test_signal_sigkill_valid_multiple_instance(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='hard-delete',stdin='3\n'.encode('utf8'), test_service=True, min_instances=5)
+
+    def test_signal_sigkill_valid_service_multiple_instance(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='hard-delete', stdin='1\n'.encode('utf8'), test_service=True, min_instances=2)
+
+    def test_signal_sigkill_valid_service_multiple_instance_two(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='hard-delete', stdin='2\n'.encode('utf8'), test_service=True, min_instances=2)
+
+    def test_signal_sigkill_valid_token_multiple_service_multiple_instance(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='hard-delete', stdin='1\n1\n'.encode('utf8'), multiple_services=True, min_instances=2)
+
+    def test_signal_sigterm_valid_instance(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='soft-delete', test_instance=True, min_instances=1)
+
+    def test_signal_sigterm_valid_multiple_instance(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='soft-delete',stdin='3\n'.encode('utf8'), test_service=True, min_instances=5)
+
+    def test_signal_sigterm_valid_service_multiple_instance(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='soft-delete', stdin='1\n'.encode('utf8'), test_service=True, min_instances=2)
+
+    def test_signal_sigkill_valid_service_multiple_instance_two(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='soft-delete', stdin='2\n'.encode('utf8'), test_service=True, min_instances=2)
+
+    def test_signal_sigterm_valid_token_multiple_service_multiple_instance(self):
+        self.__test_signal(lambda _, instances: instances['active-instances'],
+        signal_type='soft-delete', stdin='1\n1\n'.encode('utf8'), multiple_services=True, min_instances=2)
+
