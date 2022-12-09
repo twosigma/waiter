@@ -69,17 +69,20 @@
 
 (defn make-index-entry
   "Factory method for the token index entry."
-  [token-hash deleted last-update-time maintenance]
+  [token-hash deleted last-update-time maintenance reference-type->reference-name]
   {:deleted (true? deleted)
    :etag token-hash
    :last-update-time last-update-time
-   :maintenance (some? maintenance)})
+   :maintenance (some? maintenance)
+   :reference-type->reference-name reference-type->reference-name})
 
 (defn send-internal-index-event
   "Send an internal event to be processed by the tokens-watch-maintainer daemon process"
   [tokens-update-chan token]
   (log/info "sending internal index event" {:token token})
-  (async/put! tokens-update-chan {:cid (cid/get-correlation-id) :token token}))
+  (async/put! tokens-update-chan
+              {:cid (cid/get-correlation-id)
+               :token token}))
 
 (let [token-lock "TOKEN_LOCK"
       token-owners-key "^TOKEN_OWNERS"
@@ -103,7 +106,7 @@
   (defn store-service-description-for-token
     "Store the token mapping of the service description template in the key-value store.
      When token-limit is nil, the token count check is avoided."
-    [synchronize-fn kv-store history-length token-limit ^String token service-parameter-template token-metadata &
+    [synchronize-fn extract-reference-type->reference-name-fn kv-store history-length token-limit ^String token service-parameter-template token-metadata &
      {:keys [version-hash]}]
     (synchronize-fn
       token-lock
@@ -148,16 +151,17 @@
           ; Add token to new owner
           (when owner
             (let [owner-key (ensure-owner-key kv-store owner->owner-key owner)
-                  token-hash' (sd/token-data->token-hash new-token-data)]
+                  token-hash' (sd/token-data->token-hash new-token-data)
+                  reference-type->reference-name (extract-reference-type->reference-name-fn new-token-data)]
               (log/info "inserting" token "into index of" owner)
               (update-kv! kv-store owner-key (fn [index]
-                                               (->> (make-index-entry token-hash' deleted last-update-time maintenance)
+                                               (->> (make-index-entry token-hash' deleted last-update-time maintenance reference-type->reference-name)
                                                     (assoc index token))))))
           (log/info "stored service description template for" token)))))
 
   (defn delete-service-description-for-token
     "Delete a token from the KV"
-    [clock synchronize-fn kv-store history-length token owner authenticated-user &
+    [clock synchronize-fn extract-reference-type->reference-name-fn kv-store history-length token owner authenticated-user &
      {:keys [hard-delete version-hash] :or {hard-delete false}}]
     (synchronize-fn
       token-lock
@@ -184,9 +188,10 @@
             (update-kv! kv-store owner-key (fn [index] (dissoc index token)))
             (when-not hard-delete
               (let [{:strs [last-update-time maintenance] :as token-data} (kv/fetch kv-store token)
-                    token-hash (sd/token-data->token-hash token-data)]
+                    token-hash (sd/token-data->token-hash token-data)
+                    reference-type->reference-name (extract-reference-type->reference-name-fn token-data)]
                 (update-kv! kv-store owner-key (fn [index]
-                                                 (->> (make-index-entry token-hash true last-update-time maintenance)
+                                                 (->> (make-index-entry token-hash true last-update-time maintenance reference-type->reference-name)
                                                       (assoc index token))))))))
 
         ; Don't bother removing owner from token-owners, even if they have no tokens now
@@ -240,19 +245,20 @@
 
   (defn get-token-index
     "Given a token, determine the correct index entry of the token. Returns nil if token doesn't exist."
-    [kv-store token & {:keys [refresh] :or {refresh false}}]
+    [extract-reference-type->reference-name-fn kv-store token & {:keys [refresh] :or {refresh false}}]
     (timers/start-stop-time!
       (metrics/waiter-timer "core" "token" "get-token-index" (get-refresh-metric-name refresh))
-      (let [{:strs [deleted last-update-time maintenance owner] :as token-data} (kv/fetch kv-store token :refresh refresh)
-            token-hash (sd/token-data->token-hash token-data)]
+      (let [{:strs [deleted last-update-time maintenance owner] :as token-data} (kv/fetch kv-store token :refresh refresh)]
         (when token-data
-          (-> (make-index-entry token-hash deleted last-update-time maintenance)
-              (assoc :owner owner :token token))))))
+          (let [reference-type->reference-name (extract-reference-type->reference-name-fn token-data)
+                token-hash (sd/token-data->token-hash token-data)]
+            (-> (make-index-entry token-hash deleted last-update-time maintenance reference-type->reference-name)
+                (assoc :owner owner :token token)))))))
 
   (defn reindex-tokens
     "Reindex all tokens. `tokens` is a sequence of token maps.  Remove existing index entries.
      Writes new entries before deleting old ones to avoid intervening index queries from reading empty results."
-    [synchronize-fn kv-store tokens]
+    [synchronize-fn extract-reference-type->reference-name-fn kv-store tokens]
     (synchronize-fn
       token-lock
       (fn inner-reindex-tokens []
@@ -267,7 +273,7 @@
               owner->index-entries (pc/map-vals
                                      (fn [tokens]
                                        (pc/map-from-keys
-                                         #(-> (get-token-index kv-store %)
+                                         #(-> (get-token-index extract-reference-type->reference-name-fn kv-store %)
                                               (dissoc :owner :token))
                                          tokens))
                                      owner->tokens)
@@ -340,8 +346,8 @@
 
 (defn- handle-delete-token-request
   "Deletes the token configuration if found."
-  [clock synchronize-fn kv-store history-length waiter-hostnames entitlement-manager make-peer-requests-fn tokens-update-chan
-   {:keys [headers] :as request}]
+  [clock synchronize-fn extract-reference-type->reference-name-fn kv-store history-length waiter-hostnames entitlement-manager make-peer-requests-fn
+   tokens-update-chan {:keys [headers] :as request}]
   (let [{:keys [token]} (sd/retrieve-token-from-service-description-or-hostname headers headers waiter-hostnames)
         authenticated-user (get request :authorization/user)
         request-params (-> request ru/query-params-request :query-params)
@@ -373,7 +379,7 @@
                                  :user authenticated-user
                                  :log-level :warn}))))
             (delete-service-description-for-token
-              clock synchronize-fn kv-store history-length token token-owner authenticated-user
+              clock synchronize-fn extract-reference-type->reference-name-fn kv-store history-length token token-owner authenticated-user
               :hard-delete hard-delete :version-hash version-hash)
             ; notify peers of token delete and ask them to refresh their caches
             (make-peer-requests-fn "tokens/refresh"
@@ -438,7 +444,7 @@
 (defn- handle-post-token-request
   "Validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
-  [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames
+  [clock synchronize-fn extract-reference-type->reference-name-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames
    make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn tokens-update-chan validator
    {:keys [headers] :as request}]
   (let [request-params (-> request ru/query-params-request :query-params)
@@ -521,7 +527,7 @@
             (when (contains? overridden-token-data "maintenance")
               (log/info "stopping maintenance mode for token" {:token token})))
           (store-service-description-for-token
-            synchronize-fn kv-store history-length token-limit token new-service-parameter-template new-token-metadata
+            synchronize-fn extract-reference-type->reference-name-fn kv-store history-length token-limit token new-service-parameter-template new-token-metadata
             :version-hash version-hash)
           ; notify peers of token update
           (make-peer-requests-fn "tokens/refresh"
@@ -553,16 +559,16 @@
 
    If handling POST, validates that the user is the creator of the token if it already exists.
    Then, updates the configuration for the token in the database using the newest password."
-  [clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames
+  [clock synchronize-fn extract-reference-type->reference-name-fn kv-store cluster-calculator token-root history-length limit-per-owner waiter-hostnames
    entitlement-manager make-peer-requests-fn validate-service-description-fn attach-service-defaults-fn
    tokens-update-chan validator {:keys [request-method] :as request}]
   (try
     (case request-method
-      :delete (handle-delete-token-request clock synchronize-fn kv-store history-length waiter-hostnames entitlement-manager
-                                           make-peer-requests-fn tokens-update-chan request)
+      :delete (handle-delete-token-request clock synchronize-fn extract-reference-type->reference-name-fn kv-store history-length waiter-hostnames
+                                           entitlement-manager make-peer-requests-fn tokens-update-chan request)
       :get (handle-get-token-request kv-store cluster-calculator token-root waiter-hostnames request)
-      :post (handle-post-token-request clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
-                                       waiter-hostnames make-peer-requests-fn validate-service-description-fn
+      :post (handle-post-token-request clock synchronize-fn extract-reference-type->reference-name-fn kv-store cluster-calculator token-root
+                                       history-length limit-per-owner waiter-hostnames make-peer-requests-fn validate-service-description-fn
                                        attach-service-defaults-fn tokens-update-chan validator request)
       (throw (ex-info "Invalid request method" {:log-level :info :request-method request-method :status http-405-method-not-allowed})))
     (catch Exception ex
@@ -589,8 +595,10 @@
                                               (map metadata-transducer-fn)))
                     :EVENTS
                     (assoc event :object (->> object
-                                              (filter (fn [{:keys [object]}]
-                                                        (index-filter-fn object)))
+                                              (filter (fn [{:keys [object reference-type]}]
+                                                        (-> object
+                                                            (update :reference-type #(or % reference-type))
+                                                            (index-filter-fn))))
                                               (map (fn [{:keys [type] :as entry}]
                                                      (if (= type :UPDATE)
                                                        (update entry :object metadata-transducer-fn)
@@ -679,6 +687,7 @@
                  include-service-id (utils/param-contains? request-params "include" "service-id")
                  include-cluster (utils/param-contains? request-params "include" "cluster")
                  should-watch? (utils/request-flag request-params "watch")
+                 include-reference-updates? (utils/request-flag request-params "reference-updates")
                  should-filter-maintenance? (contains? request-params "maintenance")
                  maintenance-active? (utils/request-flag request-params "maintenance")
                  include-run-as-requester (when (contains? request-params "run-as-requester")
@@ -702,6 +711,8 @@
                  (every-pred
                    (fn list-tokens-delete-predicate [entry]
                      (or include-deleted (not (:deleted entry))))
+                   (fn list-tokens-reference-update-predicate [{:keys [reference-type]}]
+                     (or include-reference-updates? (contains? #{nil :token} reference-type)))
                    (fn list-tokens-maintenance-predicate [entry]
                      (or (not should-filter-maintenance?)
                          (= (-> entry :maintenance true?) maintenance-active?)))
@@ -719,7 +730,7 @@
                             (or (nil? include-requires-parameters)
                                 (= include-requires-parameters (sd/requires-parameters? token-parameters)))))))
                  metadata-transducer-fn
-                 (fn metadata-predicate [{:keys [deleted token] :as entry}]
+                 (fn list-tokens-metadata-transducer-fn [{:keys [deleted token] :as entry}]
                    (cond-> entry
                      show-metadata
                      (update :last-update-time tc/from-long)
@@ -740,7 +751,7 @@
                                                      (not (sd/requires-parameters? service-description-template)))
                                             (try
                                               (let [{:keys [latest-descriptor]} (retrieve-descriptor-fn run-as-user token)]
-                                                (:service-id latest-descriptor))
+                                                (get latest-descriptor :service-id))
                                               (catch Exception ex
                                                 (log/info ex "unable to retrieve service id for token" token))))))))]
              (if should-watch?
@@ -798,11 +809,11 @@
 
 (defn handle-reindex-tokens-request
   "Load all tokens and re-index them."
-  [synchronize-fn make-peer-requests-fn kv-store list-tokens-fn {:keys [request-method] :as req}]
+  [synchronize-fn make-peer-requests-fn extract-reference-type->reference-name-fn kv-store list-tokens-fn {:keys [request-method] :as req}]
   (try
     (case request-method
       :post (let [tokens (list-tokens-fn)]
-              (reindex-tokens synchronize-fn kv-store tokens)
+              (reindex-tokens synchronize-fn extract-reference-type->reference-name-fn kv-store tokens)
               (make-peer-requests-fn "tokens/refresh"
                                      :method :post
                                      :body (utils/clj->json {:index true}))

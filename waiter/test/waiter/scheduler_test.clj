@@ -53,6 +53,10 @@
     (locking lock
       (f))))
 
+(defn- extract-reference-type->reference-name-helper
+  [_]
+  {})
+
 (deftest test-record-Service
   (let [test-instance-1 (->Service "service1-id" 100 100 {:running 0, :healthy 0, :unhealthy 0, :staged 0})
         test-instance-2 (make-Service {:id "service2-id" :instances 200 :task-count 200})
@@ -1207,7 +1211,7 @@
   "Helper function for tests to store a service-description for token in provided 'kv-store'"
   [kv-store token service-desc token-metadata]
   (tk/store-service-description-for-token
-    synchronize-fn kv-store history-length limit-per-owner token service-desc token-metadata))
+    synchronize-fn extract-reference-type->reference-name-helper kv-store history-length limit-per-owner token service-desc token-metadata))
 
 (deftest test-make-token-is-not-run-as-requester-or-parameterized?-fn
   (let [correlation-id (cid/get-correlation-id)

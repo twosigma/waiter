@@ -1415,52 +1415,85 @@
                                                                  "watch" "true"}}}]
   (let [{:keys [body error headers] :as response}
         (make-request router-url "/tokens" :async? true :cookies cookies :query-params query-params)
-        _ (assert-response-status response 200)
+        _ (assert-response-status response http-200-ok)
         {:strs [x-cid]} headers
         json-objects (utils/chan-to-json-seq!! body)
-        token->index-atom (atom {})
-        initial-event-time-epoch-ms-atom (atom nil)
-        query-state-fn (fn []
-                         {:initial-event-time-epoch-ms @initial-event-time-epoch-ms-atom
-                          :token->index @token->index-atom})
-        exit-fn (fn []
-                  (async/close! body))
+        sanitize-index (fn [index] (dissoc index "service-id"))
+        state-atom (atom {:initial-event-time-epoch-ms nil
+                          :token->index {}
+                          :token->reference-type->event-time {}
+                          :token->service-id {}})
+        query-state-fn (fn [] @state-atom)
+        exit-fn (fn [] (async/close! body))
         go-chan
         (async/go
           (try
             (doseq [msg json-objects
                     :when (some? msg)]
-              (log/info "received msg from token watch" {:current-token->index @token->index-atom
+              (log/info "received msg from token watch" {:current-state @state-atom
                                                          :msg msg
                                                          :watch-cid x-cid})
               (let [{:strs [object type]} msg
-                    token->index @token->index-atom
                     event-time-ms (System/currentTimeMillis)
-                    new-token->index (case type
-                                       "INITIAL"
-                                       (do
-                                         (reset! initial-event-time-epoch-ms-atom event-time-ms)
-                                         (reduce
-                                           (fn [token->index index]
-                                             (assoc token->index (get index "token") index))
-                                           {}
-                                           object))
+                    cur-state @state-atom
+                    new-state (case type
+                                "INITIAL"
+                                (-> cur-state
+                                    (assoc :initial-event-time-epoch-ms event-time-ms)
+                                    (assoc :token->index (reduce
+                                                           (fn [token->index {:strs [token] :as index}]
+                                                             (assoc token->index token (sanitize-index index)))
+                                                           {}
+                                                           object))
+                                    (assoc :token->service-id (reduce
+                                                                (fn [token->service-id {:strs [token service-id]}]
+                                                                  (assoc token->service-id token service-id))
+                                                                {}
+                                                                object)))
 
-                                       "EVENTS"
-                                       (reduce
-                                         (fn [token->index {:strs [object type]}]
-                                           (case type
-                                             "UPDATE"
-                                             (assoc token->index (get object "token") object)
-                                             "DELETE"
-                                             (dissoc token->index (get object "token"))
-                                             (throw (ex-info "Unknown event type received in EVENTS object" {:event object}))))
-                                         token->index
-                                         object)
-                                       (throw (ex-info "Unknown event type received from watch" {:event msg})))]
-                (log/info "diff token->index" {:diff-token->index (data/diff token->index new-token->index)
-                                               :watch-cid x-cid})
-                (reset! token->index-atom new-token->index)))
+                                "EVENTS"
+                                (-> cur-state
+                                    (update :token->index
+                                            (fn [token->index]
+                                              (reduce
+                                                (fn [token->index {:strs [object type]}]
+                                                  (let [{:strs [token]} object]
+                                                    (case type
+                                                      "UPDATE" (assoc token->index token (sanitize-index object))
+                                                      "DELETE" (dissoc token->index token)
+                                                      (throw (ex-info "Unknown event type received in EVENTS object" {:event object})))))
+                                                token->index
+                                                object)))
+                                    (update :token->reference-type->event-time
+                                            (fn [token->reference-type->event-time]
+                                              (reduce
+                                                (fn [token->reference-type->event-time {:strs [object reference-type type]}]
+                                                  (let [{:strs [token]} object]
+                                                    (case type
+                                                      "UPDATE" (cond-> token->reference-type->event-time
+                                                                 reference-type (assoc-in [token reference-type] event-time-ms))
+                                                      "DELETE" (dissoc token->reference-type->event-time token)
+                                                      (throw (ex-info "Unknown event type received in EVENTS object" {:event object})))))
+                                                token->reference-type->event-time
+                                                object)))
+                                    (update :token->service-id
+                                            (fn [token->service-id]
+                                              (reduce
+                                                (fn [token->service-id {:strs [object type]}]
+                                                  (let [{:strs [token service-id]} object]
+                                                    (case type
+                                                      "UPDATE" (assoc token->service-id token service-id)
+                                                      "DELETE" (dissoc token->service-id token)
+                                                      (throw (ex-info "Unknown event type received in EVENTS object" {:event object})))))
+                                                token->service-id
+                                                object))))
+
+                                (throw (ex-info "Unknown event type received from watch" {:event msg})))]
+                (doseq [state-key [:token->index :token->reference-type->event-time :token->service-id]]
+                  (log/info "diff" (name state-key)
+                            {:diff (data/diff (get cur-state state-key) (get new-state state-key))
+                             :watch-cid x-cid}))
+                (reset! state-atom new-state)))
             (catch Exception e
               (exit-fn)
               (log/error e "Error in test watch-chan" {:router-url router-url}))))]

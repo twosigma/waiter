@@ -872,6 +872,14 @@
     "Returns a map of reference type to stale function for references of the specified type.
      The values are functions that have the following signature (fn reference-entry)")
 
+  (extract-reference-type->reference-name [this service-description]
+    "Returns a map of reference type to reference name for references used in the service-description.
+     The values are names of the references that are independently tracked for updates by separate subsystems.")
+
+  (handle-reference-update! [this reference-event]
+    "Acts as a listener for reference update events.
+     Returns true when the notification is handled successfully.")
+
   (state [this include-flags]
     "Returns the global (i.e. non-service-specific) state the service description builder is maintaining")
 
@@ -1021,6 +1029,16 @@
 
   (retrieve-reference-type->stale-info-fn [_ {:keys [token->token-hash token->token-parameters]}]
     {:token (fn [{:keys [sources]}] (retrieve-token-stale-info token->token-hash token->token-parameters sources))})
+
+  (extract-reference-type->reference-name [_ service-description]
+    (let [waiter-token (get-in service-description waiter-config-token-path)]
+      (cond-> {}
+        waiter-token (assoc :token waiter-token))))
+
+  (handle-reference-update!
+    [_ {:keys [reference-type] :as reference-event}]
+    (log/info "handled reference update event" reference-event)
+    (= :token reference-type))
 
   (state [_ _]
     {})

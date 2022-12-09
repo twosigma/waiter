@@ -51,6 +51,10 @@
     (locking lock
       (f))))
 
+(defn- extract-reference-type->reference-name-helper
+  [_]
+  {})
+
 (defn- public-entitlement-manager
   []
   (reify authz/EntitlementManager
@@ -86,7 +90,7 @@
                                                                :host->cluster {}})
         validator (token-validator/create-default-token-validator {:entitlement-manager entitlement-manager
                                                                    :kv-store kv-store})]
-    (handle-token-request clock synchronize-fn kv-store cluster-calculator token-root history-length limit-per-owner
+    (handle-token-request clock synchronize-fn extract-reference-type->reference-name-helper kv-store cluster-calculator token-root history-length limit-per-owner
                           waiter-hostnames entitlement-manager make-peer-requests-fn validate-service-description-fn
                           attach-service-defaults-fn (au/latest-chan) validator request)))
 
@@ -200,7 +204,7 @@
                    :headers {"x-waiter-token" token}
                    :request-method :delete})]
             (is (= http-200-ok status))
-            (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"success\":true"]))
+            (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\"") "\"success\":true"]))
             (is (= (assoc service-description-1
                      "deleted" true
                      "last-update-time" (clock-millis)
@@ -224,7 +228,7 @@
                    :query-params {"hard-delete" "false"}
                    :request-method :delete})]
             (is (= http-200-ok status))
-            (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\""), "\"success\":true"]))
+            (is (every? #(str/includes? body (str %)) [(str "\"delete\":\"" token "\"") "\"success\":true"]))
             (is (= (assoc service-description-1
                      "deleted" true
                      "last-update-time" (clock-millis)
@@ -397,6 +401,7 @@
                    "last-update-time" (-> last-update-time tc/from-long du/date-to-str)
                    "maintenance" false
                    "owner" "tu1"
+                   "reference-type->reference-name" {}
                    "token" token}]
                  (json/read-str body)))
           (is (nil? (async/poll! token-watch-channels-update-chan)))))
@@ -1075,11 +1080,12 @@
       (testing "post:new-service-description:token-limit-not-validated-for-admin-mode"
         (let [kv-store (kv/->LocalKeyValueStore (atom {}))
               test-user "test-user"
+              extract-reference-type->reference-name-fn (constantly {})
               _ (dotimes [n limit-per-owner]
                   (let [test-token (str token "-" n)]
                     (is (nil? (kv/fetch kv-store test-token)))
                     (store-service-description-for-token
-                      synchronize-fn kv-store history-length limit-per-owner test-token
+                      synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner test-token
                       {"cmd" "tc1" "cpus" 1 "mem" 200} {"owner" test-user})
                     (is (kv/fetch kv-store test-token))))
               token "test-token-sync-limit"
@@ -1384,6 +1390,7 @@
                                             (sd/validate-schema service-description {s/Str s/Any} profile->defaults nil))
           attach-service-defaults-fn (fn [{:strs [profile] :as template}]
                                        (sd/compute-service-defaults template profile->defaults profile))
+          extract-reference-type->reference-name-fn (constantly {})
           token "test-token"
           token-root "test-token-root"
           waiter-hostname "waiter-hostname.app.example.com"
@@ -2133,7 +2140,7 @@
               service-description-2 {"cpus" 4 "mem" 1024 "token" token}
               _ (dotimes [n limit-per-owner]
                   (store-service-description-for-token
-                    synchronize-fn kv-store history-length limit-per-owner (str token "-" n)
+                    synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner (str token "-" n)
                     {"cmd" "tc1" "cpus" 1 "mem" 200} {"owner" test-user}))
               {:keys [body status]}
               (run-handle-token-request
@@ -2249,7 +2256,8 @@
                      (sd/token->service-parameter-template kv-store token))))))))))
 
 (deftest test-store-service-description
-  (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+  (let [extract-reference-type->reference-name-fn (constantly {})
+        kv-store (kv/->LocalKeyValueStore (atom {}))
         token "test-token"
         service-description-1 (walk/stringify-keys
                                 {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
@@ -2261,7 +2269,7 @@
                           "owner" "test-user"}]
 
     (testing "basic creation"
-      (store-service-description-for-token synchronize-fn kv-store history-length limit-per-owner token
+      (store-service-description-for-token synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner token
                                            service-description-1 token-metadata-1)
       (let [token-description (kv/fetch kv-store token)]
         (is (= service-description-1 (select-keys token-description sd/service-parameter-keys)))
@@ -2274,7 +2282,7 @@
       (testing "basic update with valid etag"
         (let [token-data (kv/fetch kv-store token)
               token-hash (sd/token-data->token-hash token-data)]
-          (store-service-description-for-token synchronize-fn kv-store history-length limit-per-owner token
+          (store-service-description-for-token synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner token
                                                service-description-2 token-metadata-2
                                                :version-hash token-hash)
           (let [token-description (kv/fetch kv-store token)]
@@ -2286,7 +2294,7 @@
         (let [{:strs [last-update-time]} (kv/fetch kv-store token)]
           (is (thrown-with-msg?
                 ExceptionInfo #"Cannot modify stale token"
-                (store-service-description-for-token synchronize-fn kv-store history-length limit-per-owner token
+                (store-service-description-for-token synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner token
                                                      service-description-3 token-metadata-1
                                                      :version-hash (- last-update-time 1000))))
           (let [token-description (kv/fetch kv-store token)]
@@ -2295,7 +2303,8 @@
             (is (= (merge service-description-2 token-metadata-2) token-description))))))))
 
 (deftest test-store-service-description-limits-per-owner
-  (let [token-prefix "test-token"
+  (let [extract-reference-type->reference-name-fn (constantly {})
+        token-prefix "test-token"
         service-description (walk/stringify-keys
                               {:cmd "tc1" :cpus 1 :mem 200 :version "a1b2c3" :run-as-user "tu1"
                                :permitted-user "tu2" :name token-prefix :min-instances 2 :max-instances 10})
@@ -2309,14 +2318,14 @@
         (dotimes [n limit-per-owner]
           (let [token (str token-prefix "-" n)]
             (store-service-description-for-token
-              synchronize-fn kv-store history-length limit-per-owner token
+              synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner token
               service-description token-metadata)
             (is (kv/fetch kv-store token))))
         (let [token (str token-prefix "-" limit-per-owner)]
           (is (thrown?
                 ExceptionInfo #"You have reached the limit of number of tokens allowed"
                 (store-service-description-for-token
-                  synchronize-fn kv-store history-length limit-per-owner token service-description token-metadata)))
+                  synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner token service-description token-metadata)))
           (is (nil? (kv/fetch kv-store token))))))
 
     (testing "token limits ignored when nil passed"
@@ -2328,7 +2337,7 @@
         (dotimes [n (* 2 limit-per-owner)]
           (let [token (str token-prefix "-" n)]
             (store-service-description-for-token
-              synchronize-fn kv-store history-length nil token service-description token-metadata)
+              synchronize-fn extract-reference-type->reference-name-fn kv-store history-length nil token service-description token-metadata)
             (is (kv/fetch kv-store token))))))
 
     (testing "limit per owner not reached on deleted tokens"
@@ -2340,20 +2349,21 @@
         (dotimes [n limit-per-owner]
           (let [token (str token-prefix "-" n)]
             (store-service-description-for-token
-              synchronize-fn kv-store history-length limit-per-owner token service-description token-metadata)
+              synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner token service-description token-metadata)
             (is (kv/fetch kv-store token))))
         (dotimes [n (min 2 limit-per-owner)]
           (let [token (str token-prefix "-" n)]
             (delete-service-description-for-token
-              clock synchronize-fn kv-store history-length token test-user test-user)
+              clock synchronize-fn extract-reference-type->reference-name-fn kv-store history-length token test-user test-user)
             (is (get (kv/fetch kv-store token) "deleted"))))
         (let [token (str token-prefix "-" limit-per-owner)]
           (store-service-description-for-token
-            synchronize-fn kv-store history-length limit-per-owner token service-description token-metadata)
+            synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner token service-description token-metadata)
           (is (kv/fetch kv-store token)))))))
 
 (deftest test-delete-service-description-for-token
-  (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+  (let [extract-reference-type->reference-name-fn (constantly {})
+        kv-store (kv/->LocalKeyValueStore (atom {}))
         token "test-token"
         owner "test-user"
         auth-user "auth-user"
@@ -2366,7 +2376,7 @@
     (testing "valid soft delete"
       (kv/store kv-store token token-description)
       (is (= token-description (kv/fetch kv-store token)))
-      (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user)
+      (delete-service-description-for-token clock synchronize-fn extract-reference-type->reference-name-fn kv-store history-length token owner auth-user)
       (is (= (assoc token-description
                "deleted" true
                "last-update-time" current-time
@@ -2374,9 +2384,10 @@
                "previous" token-description)
              (kv/fetch kv-store token)))
       (is (= {:deleted true
+              :etag nil
               :last-update-time current-time
               :maintenance false
-              :etag nil}
+              :reference-type->reference-name {}}
              (-> (list-index-entries-for-owner kv-store owner)
                  (get token)))))
 
@@ -2384,7 +2395,7 @@
       (kv/store kv-store token token-description)
       (is (= token-description (kv/fetch kv-store token)))
       (let [token-hash (sd/token-data->token-hash token-description)]
-        (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
+        (delete-service-description-for-token clock synchronize-fn extract-reference-type->reference-name-fn kv-store history-length token owner auth-user
                                               :version-hash token-hash))
       (is (= (assoc token-description
                "deleted" true
@@ -2393,9 +2404,10 @@
                "previous" token-description)
              (kv/fetch kv-store token)))
       (is (= {:deleted true
+              :etag nil
               :last-update-time current-time
               :maintenance false
-              :etag nil}
+              :reference-type->reference-name {}}
              (-> (list-index-entries-for-owner kv-store owner)
                  (get token)))))
 
@@ -2404,14 +2416,14 @@
       (is (= token-description (kv/fetch kv-store token)))
       (is (thrown-with-msg?
             ExceptionInfo #"Cannot modify stale token"
-            (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
+            (delete-service-description-for-token clock synchronize-fn extract-reference-type->reference-name-fn kv-store history-length token owner auth-user
                                                   :version-hash (- current-time 5000))))
       (is (= token-description (kv/fetch kv-store token))))
 
     (testing "valid hard delete"
       (kv/store kv-store token token-description)
       (is (= token-description (kv/fetch kv-store token)))
-      (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
+      (delete-service-description-for-token clock synchronize-fn extract-reference-type->reference-name-fn kv-store history-length token owner auth-user
                                             :hard-delete true)
       (is (nil? (kv/fetch kv-store token)))
       (is (nil? (-> (list-index-entries-for-owner kv-store owner)
@@ -2421,7 +2433,7 @@
       (kv/store kv-store token token-description)
       (is (= token-description (kv/fetch kv-store token)))
       (let [token-hash (sd/token-data->token-hash token-description)]
-        (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
+        (delete-service-description-for-token clock synchronize-fn extract-reference-type->reference-name-fn kv-store history-length token owner auth-user
                                               :hard-delete true :version-hash token-hash))
       (is (nil? (kv/fetch kv-store token)))
       (is (nil? (-> (list-index-entries-for-owner kv-store owner)
@@ -2432,26 +2444,27 @@
       (is (= token-description (kv/fetch kv-store token)))
       (is (thrown-with-msg?
             ExceptionInfo #"Cannot modify stale token"
-            (delete-service-description-for-token clock synchronize-fn kv-store history-length token owner auth-user
+            (delete-service-description-for-token clock synchronize-fn extract-reference-type->reference-name-fn kv-store history-length token owner auth-user
                                                   :hard-delete true :version-hash (- current-time 5000))))
       (is (= token-description (kv/fetch kv-store token))))))
 
 (deftest test-deleted-token-with-new-owner-index
-  (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+  (let [extract-reference-type->reference-name-fn (constantly {})
+        kv-store (kv/->LocalKeyValueStore (atom {}))
         token "test-token"
         service-parameter-template {"cpus" 1}
         owner-1 "foo"
         token-metadata {"owner" owner-1}
         token-data (merge service-parameter-template token-metadata)]
     (store-service-description-for-token
-      synchronize-fn kv-store history-length limit-per-owner token service-parameter-template token-metadata)
+      synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner token service-parameter-template token-metadata)
 
     (is (= token-data (kv/fetch kv-store token)))
-    (is (= {token {:deleted false :etag (sd/token-data->token-hash token-data) :last-update-time nil :maintenance false}}
+    (is (= {token {:deleted false :etag (sd/token-data->token-hash token-data) :last-update-time nil :maintenance false :reference-type->reference-name {}}}
            (list-index-entries-for-owner kv-store owner-1)))
 
     (delete-service-description-for-token
-      clock synchronize-fn kv-store history-length token owner-1 owner-1)
+      clock synchronize-fn extract-reference-type->reference-name-fn kv-store history-length token owner-1 owner-1)
 
     (let [deleted-token-data (assoc token-data
                                "deleted" true
@@ -2459,7 +2472,7 @@
                                "last-update-user" owner-1
                                "previous" token-data)]
       (is (= deleted-token-data (kv/fetch kv-store token)))
-      (is (= {token {:deleted true :etag (sd/token-data->token-hash deleted-token-data) :last-update-time (clock-millis) :maintenance false}}
+      (is (= {token {:deleted true :etag (sd/token-data->token-hash deleted-token-data) :last-update-time (clock-millis) :maintenance false :reference-type->reference-name {}}}
              (list-index-entries-for-owner kv-store owner-1))))
 
     (let [service-parameter-template {"cpus" 2}
@@ -2467,22 +2480,23 @@
           token-metadata {"owner" owner-2}
           token-data (merge service-parameter-template token-metadata)]
       (store-service-description-for-token
-        synchronize-fn kv-store history-length limit-per-owner token service-parameter-template token-metadata)
+        synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner token service-parameter-template token-metadata)
 
       (is (= token-data (kv/fetch kv-store token)))
-      (is (= {token {:deleted false :etag (sd/token-data->token-hash token-data) :last-update-time nil :maintenance false}}
+      (is (= {token {:deleted false :etag (sd/token-data->token-hash token-data) :last-update-time nil :maintenance false :reference-type->reference-name {}}}
              (list-index-entries-for-owner kv-store owner-2)))
       (is (empty? (list-index-entries-for-owner kv-store owner-1))))))
 
 (deftest test-soft-delete-loses-history
-  (let [kv-store (kv/->LocalKeyValueStore (atom {}))
+  (let [extract-reference-type->reference-name-fn (constantly {})
+        kv-store (kv/->LocalKeyValueStore (atom {}))
         token "test-token"
         service-description-1 {"cpus" 200 "version" "foo-bar-1"}
         token-metadata-1 {"last-update-time" (clock-millis) "owner" "test-user-1"}
         token-data-1 (merge service-description-1 token-metadata-1)]
 
     (store-service-description-for-token
-      synchronize-fn kv-store history-length limit-per-owner token service-description-1 token-metadata-1)
+      synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner token service-description-1 token-metadata-1)
     (is (= token-data-1
            (kv/fetch kv-store token)))
 
@@ -2490,7 +2504,7 @@
           token-metadata-2 {"last-update-time" (clock-millis) "owner" "test-user-2"}
           token-data-2 (merge service-description-2 token-metadata-2)]
       (store-service-description-for-token
-        synchronize-fn kv-store history-length limit-per-owner token service-description-2 token-metadata-2)
+        synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner token service-description-2 token-metadata-2)
       (is (= (assoc token-data-2 "previous" token-data-1)
              (kv/fetch kv-store token)))
 
@@ -2498,14 +2512,14 @@
             token-metadata-3 {"last-update-time" (clock-millis) "owner" "test-user-3"}
             token-data-3 (merge service-description-3 token-metadata-3)]
         (store-service-description-for-token
-          synchronize-fn kv-store history-length limit-per-owner token service-description-3 token-metadata-3)
+          synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner token service-description-3 token-metadata-3)
         (is (= (->> token-data-1
                     (assoc token-data-2 "previous")
                     (assoc token-data-3 "previous"))
                (kv/fetch kv-store token)))
 
         (delete-service-description-for-token
-          clock synchronize-fn kv-store history-length token "test-user-3" "test-auth-3")
+          clock synchronize-fn extract-reference-type->reference-name-fn kv-store history-length token "test-user-3" "test-auth-3")
 
         (is (= (assoc token-data-3
                  "deleted" true
@@ -2519,7 +2533,7 @@
               token-metadata-4 {"last-update-time" (clock-millis) "owner" "test-user-4"}
               token-data-4 (merge service-description-4 token-metadata-4)]
           (store-service-description-for-token
-            synchronize-fn kv-store history-length limit-per-owner token service-description-4 token-metadata-4)
+            synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner token service-description-4 token-metadata-4)
           (is (= token-data-4
                  (kv/fetch kv-store token))))))))
 
@@ -2528,21 +2542,22 @@
         synchronize-fn (fn [_ f]
                          (locking lock
                            (f)))
+        extract-reference-type->reference-name-fn (constantly {})
         tokens {"token1" {"last-update-time" 1000 "owner" "owner1"}
                 "token2" {"owner" "owner1"}
                 "token3" {"last-update-time" 3000 "owner" "owner2" "maintenance" {"message" "custom maintenance message"}}}
         kv-store (kv/->LocalKeyValueStore (atom {}))
         token-owners-key "^TOKEN_OWNERS"
         token1-etag (sd/token-data->token-hash (get tokens "token1"))
-        token1-index-entry (make-index-entry token1-etag false 1000 nil)
+        token1-index-entry (make-index-entry token1-etag false 1000 nil {})
         token2-etag (sd/token-data->token-hash (get tokens "token2"))
-        token2-index-entry (make-index-entry token2-etag false nil nil)
+        token2-index-entry (make-index-entry token2-etag false nil nil {})
         token3-etag (sd/token-data->token-hash (get tokens "token3"))
-        token3-index-entry (make-index-entry token3-etag false 3000 true)
-        bad-token-entry (make-index-entry "E-123456" true 2000 true)]
+        token3-index-entry (make-index-entry token3-etag false 3000 true {})
+        bad-token-entry (make-index-entry "E-123456" true 2000 true {})]
     (doseq [[token token-data] tokens]
       (kv/store kv-store token token-data))
-    (reindex-tokens synchronize-fn kv-store (keys tokens))
+    (reindex-tokens synchronize-fn extract-reference-type->reference-name-fn kv-store (keys tokens))
     (is (= #{"owner1" "owner2"}
            (-> (kv/fetch kv-store token-owners-key) keys set)))
     (is (= {"token1" token1-index-entry
@@ -2563,7 +2578,7 @@
             "token-bad" bad-token-entry}
            (list-index-entries-for-owner kv-store "owner2")))
     ;; validate re-index cleans the index
-    (reindex-tokens synchronize-fn kv-store (keys tokens))
+    (reindex-tokens synchronize-fn extract-reference-type->reference-name-fn kv-store (keys tokens))
     (is (= #{"owner1" "owner2"}
            (-> (kv/fetch kv-store token-owners-key) keys set)))
     (is (= {"token1" token1-index-entry
@@ -2572,7 +2587,7 @@
     (is (= {"token3" token3-index-entry}
            (list-index-entries-for-owner kv-store "owner2")))
     ;; validate re-index drops user
-    (reindex-tokens synchronize-fn kv-store (keys (dissoc tokens "token3")))
+    (reindex-tokens synchronize-fn extract-reference-type->reference-name-fn kv-store (keys (dissoc tokens "token3")))
     (is (= #{"owner1"}
            (-> (kv/fetch kv-store token-owners-key) keys set)))
     (is (= {"token1" token1-index-entry
@@ -2585,6 +2600,7 @@
         synchronize-fn (fn [_ f]
                          (locking lock
                            (f)))
+        extract-reference-type->reference-name-fn (constantly {})
         kv-store (kv/->LocalKeyValueStore (atom {}))
         list-tokens-fn (fn [] ["token1" "token2" "token3"])]
     (let [inter-router-request-fn-called (atom nil)
@@ -2594,7 +2610,7 @@
                                       (is index)
                                       (reset! inter-router-request-fn-called true)))
           {:keys [body status]} (handle-reindex-tokens-request
-                                  synchronize-fn inter-router-request-fn kv-store list-tokens-fn
+                                  synchronize-fn inter-router-request-fn extract-reference-type->reference-name-fn kv-store list-tokens-fn
                                   {:request-method :post})
           json-response (json/read-str body)]
       (is (= http-200-ok status))
@@ -2604,7 +2620,7 @@
     (let [inter-router-request-fn-called (atom nil)
           inter-router-request-fn (fn [] (reset! inter-router-request-fn-called true))
           {:keys [body status]} (handle-reindex-tokens-request
-                                  synchronize-fn inter-router-request-fn kv-store list-tokens-fn
+                                  synchronize-fn inter-router-request-fn extract-reference-type->reference-name-fn kv-store list-tokens-fn
                                   {:headers {"accept" "application/json"} :request-method :get})
           json-response (json/read-str body)]
       (is (= http-405-method-not-allowed status))
@@ -2616,6 +2632,7 @@
         synchronize-fn (fn [_ f]
                          (locking lock
                            (f)))
+        extract-reference-type->reference-name-fn (constantly {})
         retrieve-descriptor-fn (fn [run-as-user token]
                                  (let [service-id (str "s-" token "-" run-as-user)]
                                    {:descriptor {:service-id service-id}
@@ -2629,39 +2646,39 @@
         streaming-timeout-ms 20000
         token-watch-channels-update-chan (async/chan)]
     (store-service-description-for-token
-      synchronize-fn kv-store history-length limit-per-owner "token1"
+      synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner "token1"
       {"cpus" 1 "idle-timeout-mins" 0 "mem" 1024 "run-as-user" "t1"}
       {"cluster" "c1" "last-update-time" (- last-update-time-seed 1000) "owner" "owner1"})
     (store-service-description-for-token
-      synchronize-fn kv-store history-length limit-per-owner "token2"
+      synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner "token2"
       {"cpus" 2 "idle-timeout-mins" 9 "image" "test-image" "mem" 2048 "run-as-user" "t2"}
       {"cluster" "c1" "last-update-time" (- last-update-time-seed 2000) "owner" "owner1"})
     (store-service-description-for-token
-      synchronize-fn kv-store history-length limit-per-owner "token3"
+      synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner "token3"
       {"cpus" 3 "idle-timeout-mins" 5 "mem" 2048 "run-as-user" "t3"}
       {"cluster" "c2" "last-update-time" (- last-update-time-seed 3000) "owner" "owner2"})
     (store-service-description-for-token
-      synchronize-fn kv-store history-length limit-per-owner "token4"
+      synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner "token4"
       {"cpus" 4 "idle-timeout-mins" 0 "mem" 2048 "run-as-user" "t4"}
       {"cluster" "c2" "deleted" true "last-update-time" (- last-update-time-seed 3000) "owner" "owner2"})
     (store-service-description-for-token
-      synchronize-fn kv-store history-length limit-per-owner "token5"
+      synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner "token5"
       {"cpus" 4 "env" {"V1" "e1"} "mem" 2048 "metadata" {"f1" "m1"} "permitted-user" "*" "run-as-user" "*"}
       {"cluster" "c1" "last-update-time" (- last-update-time-seed 3000) "owner" "owner3"})
     (store-service-description-for-token
-      synchronize-fn kv-store history-length limit-per-owner "token6"
+      synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner "token6"
       {"cpus" 4 "idle-timeout-mins" 0 "mem" 2048 "permitted-user" "u1" "run-as-user" "*"}
       {"cluster" "c1" "last-update-time" (- last-update-time-seed 3000) "owner" "owner3"})
     (store-service-description-for-token
-      synchronize-fn kv-store history-length limit-per-owner "token7"
+      synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner "token7"
       {"allowed-params" #{"P1" "P2"} "cpus" 4 "mem" 1024 "run-as-user" "t7"}
       {"cluster" "c1" "last-update-time" (- last-update-time-seed 3000) "owner" "owner3"})
     (store-service-description-for-token
-      synchronize-fn kv-store history-length limit-per-owner "token8"
+      synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner "token8"
       {"allowed-params" #{"P1" "P2"} "env" {"E1" "v0" "P1" "v1"} "cpus" 4 "mem" 1024 "run-as-user" "t8"}
       {"cluster" "c1" "last-update-time" (- last-update-time-seed 3000) "owner" "owner3"})
     (store-service-description-for-token
-      synchronize-fn kv-store history-length limit-per-owner "token9"
+      synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner "token9"
       {"allowed-params" #{"P1" "P2"} "env" {"E1" "v0" "P1" "v1" "P2" "v2"} "cpus" 4 "mem" 1024 "run-as-user" "t9"}
       {"cluster" "c1" "last-update-time" (- last-update-time-seed 3000) "maintenance" {"message" "msg1"} "owner" "owner3"})
     (let [request {:query-string "include=metadata" :request-method :get}
@@ -2672,48 +2689,56 @@
                 "last-update-time" (-> (- last-update-time-seed 1000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner1"
+                "reference-type->reference-name" {}
                 "token" "token1"}
                {"deleted" false
                 "etag" (token->token-hash "token2")
                 "last-update-time" (-> (- last-update-time-seed 2000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner1"
+                "reference-type->reference-name" {}
                 "token" "token2"}
                {"deleted" false
                 "etag" (token->token-hash "token3")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner2"
+                "reference-type->reference-name" {}
                 "token" "token3"}
                {"deleted" false
                 "etag" (token->token-hash "token5")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner3"
+                "reference-type->reference-name" {}
                 "token" "token5"}
                {"deleted" false
                 "etag" (token->token-hash "token6")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner3"
+                "reference-type->reference-name" {}
                 "token" "token6"}
                {"deleted" false
                 "etag" (token->token-hash "token7")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner3"
+                "reference-type->reference-name" {}
                 "token" "token7"}
                {"deleted" false
                 "etag" (token->token-hash "token8")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner3"
+                "reference-type->reference-name" {}
                 "token" "token8"}
                {"deleted" false
                 "etag" (token->token-hash "token9")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
                 "maintenance" true
                 "owner" "owner3"
+                "reference-type->reference-name" {}
                 "token" "token9"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
@@ -2725,68 +2750,77 @@
                 "last-update-time" (-> (- last-update-time-seed 1000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner1"
+                "reference-type->reference-name" {}
                 "token" "token1"}
                {"deleted" false
                 "etag" (token->token-hash "token2")
                 "last-update-time" (-> (- last-update-time-seed 2000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner1"
+                "reference-type->reference-name" {}
                 "token" "token2"}
                {"deleted" false
                 "etag" (token->token-hash "token3")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner2"
+                "reference-type->reference-name" {}
                 "token" "token3"}
                {"deleted" true
                 "etag" (token->token-hash "token4")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner2"
+                "reference-type->reference-name" {}
                 "token" "token4"}
                {"deleted" false
                 "etag" (token->token-hash "token5")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner3"
+                "reference-type->reference-name" {}
                 "token" "token5"}
                {"deleted" false
                 "etag" (token->token-hash "token6")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner3"
+                "reference-type->reference-name" {}
                 "token" "token6"}
                {"deleted" false
                 "etag" (token->token-hash "token7")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner3"
+                "reference-type->reference-name" {}
                 "token" "token7"}
                {"deleted" false
                 "etag" (token->token-hash "token8")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner3"
+                "reference-type->reference-name" {}
                 "token" "token8"}
                {"deleted" false
                 "etag" (token->token-hash "token9")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
                 "maintenance" true
                 "owner" "owner3"
+                "reference-type->reference-name" {}
                 "token" "token9"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
-               {"maintenance" false "owner" "owner1" "token" "token2"}
-               {"maintenance" false "owner" "owner2" "token" "token3"}
-               {"maintenance" false "owner" "owner3" "token" "token5"}
-               {"maintenance" false "owner" "owner3" "token" "token6"}
-               {"maintenance" false "owner" "owner3" "token" "token7"}
-               {"maintenance" false "owner" "owner3" "token" "token8"}
-               {"maintenance" true "owner" "owner3" "token" "token9"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token1"}
+               {"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token2"}
+               {"maintenance" false "owner" "owner2" "reference-type->reference-name" {} "token" "token3"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token7"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token8"}
+               {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [entitlement-manager (reify authz/EntitlementManager
@@ -2796,53 +2830,53 @@
       (let [request {:query-string "can-manage-as-user=owner" :request-method :get}
             {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
         (is (= http-200-ok status))
-        (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
-                 {"maintenance" false "owner" "owner1" "token" "token2"}
-                 {"maintenance" false "owner" "owner2" "token" "token3"}
-                 {"maintenance" false "owner" "owner3" "token" "token5"}
-                 {"maintenance" false "owner" "owner3" "token" "token6"}
-                 {"maintenance" false "owner" "owner3" "token" "token7"}
-                 {"maintenance" false "owner" "owner3" "token" "token8"}
-                 {"maintenance" true "owner" "owner3" "token" "token9"}}
+        (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token1"}
+                 {"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token2"}
+                 {"maintenance" false "owner" "owner2" "reference-type->reference-name" {} "token" "token3"}
+                 {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5"}
+                 {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}
+                 {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token7"}
+                 {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token8"}
+                 {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9"}}
                (set (json/read-str body))))
         (is (nil? (async/poll! token-watch-channels-update-chan))))
       (let [request {:query-string "can-manage-as-user=owner&include=cluster" :request-method :get}
             {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
         (is (= http-200-ok status))
-        (is (= #{{"maintenance" false, "owner" "owner1", "token" "token1", "cluster" "c1"}
-                 {"maintenance" false, "owner" "owner1", "token" "token2", "cluster" "c1"}
-                 {"maintenance" false, "owner" "owner2", "token" "token3", "cluster" "c2"}
-                 {"maintenance" false, "owner" "owner3", "token" "token5", "cluster" "c1"}
-                 {"maintenance" false, "owner" "owner3", "token" "token6", "cluster" "c1"}
-                 {"maintenance" false, "owner" "owner3", "token" "token7", "cluster" "c1"}
-                 {"maintenance" false, "owner" "owner3", "token" "token8", "cluster" "c1"}
-                 {"maintenance" true, "owner" "owner3", "token" "token9", "cluster" "c1"}}
+        (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token1" "cluster" "c1"}
+                 {"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token2" "cluster" "c1"}
+                 {"maintenance" false "owner" "owner2" "reference-type->reference-name" {} "token" "token3" "cluster" "c2"}
+                 {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5" "cluster" "c1"}
+                 {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6" "cluster" "c1"}
+                 {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token7" "cluster" "c1"}
+                 {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token8" "cluster" "c1"}
+                 {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9" "cluster" "c1"}}
                (set (json/read-str body))))
         (is (nil? (async/poll! token-watch-channels-update-chan))))
       (let [request {:query-string "can-manage-as-user=owner&include=service-id" :request-method :get}
             {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
         (is (= http-200-ok status))
-        (is (= #{{"maintenance" false, "owner" "owner1", "token" "token1", "service-id" "s-token1-t1"}
-                 {"maintenance" false, "owner" "owner1", "token" "token2", "service-id" "s-token2-t2"}
-                 {"maintenance" false, "owner" "owner2", "token" "token3", "service-id" "s-token3-t3"}
-                 {"maintenance" false, "owner" "owner3", "token" "token5", "service-id" nil}
-                 {"maintenance" false, "owner" "owner3", "token" "token6", "service-id" nil}
-                 {"maintenance" false, "owner" "owner3", "token" "token7", "service-id" nil}
-                 {"maintenance" false, "owner" "owner3", "token" "token8", "service-id" nil}
-                 {"maintenance" true, "owner" "owner3", "token" "token9", "service-id" "s-token9-t9"}}
+        (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token1" "service-id" "s-token1-t1"}
+                 {"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token2" "service-id" "s-token2-t2"}
+                 {"maintenance" false "owner" "owner2" "reference-type->reference-name" {} "token" "token3" "service-id" "s-token3-t3"}
+                 {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5" "service-id" nil}
+                 {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6" "service-id" nil}
+                 {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token7" "service-id" nil}
+                 {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token8" "service-id" nil}
+                 {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9" "service-id" "s-token9-t9"}}
                (set (json/read-str body))))
         (is (nil? (async/poll! token-watch-channels-update-chan))))
       (let [request {:query-string "can-manage-as-user=owner1" :request-method :get}
             {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
         (is (= http-200-ok status))
-        (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
-                 {"maintenance" false "owner" "owner1" "token" "token2"}}
+        (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token1"}
+                 {"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token2"}}
                (set (json/read-str body))))
         (is (nil? (async/poll! token-watch-channels-update-chan))))
       (let [request {:query-string "can-manage-as-user=owner2" :request-method :get}
             {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
         (is (= http-200-ok status))
-        (is (= #{{"maintenance" false "owner" "owner2" "token" "token3"}}
+        (is (= #{{"maintenance" false "owner" "owner2" "reference-type->reference-name" {} "token" "token3"}}
                (set (json/read-str body)))))
       (let [request {:query-string "can-manage-as-user=test" :request-method :get}
             {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
@@ -2852,8 +2886,8 @@
     (let [request {:query-string "owner=owner1" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
-               {"maintenance" false "owner" "owner1" "token" "token2"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token1"}
+               {"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token2"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:query-string "owner=owner1&include=metadata" :request-method :get}
@@ -2864,12 +2898,14 @@
                 "last-update-time" (-> (- last-update-time-seed 1000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner1"
+                "reference-type->reference-name" {}
                 "token" "token1"}
                {"deleted" false
                 "etag" (token->token-hash "token2")
                 "last-update-time" (-> (- last-update-time-seed 2000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner1"
+                "reference-type->reference-name" {}
                 "token" "token2"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
@@ -2882,6 +2918,7 @@
                 "last-update-time" (-> (- last-update-time-seed 1000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner1"
+                "reference-type->reference-name" {}
                 "service-id" "s-token1-t1"
                 "token" "token1"}
                {"cluster" "c1"
@@ -2890,6 +2927,7 @@
                 "last-update-time" (-> (- last-update-time-seed 2000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner1"
+                "reference-type->reference-name" {}
                 "service-id" "s-token2-t2"
                 "token" "token2"}}
              (set (json/read-str body))))
@@ -2916,6 +2954,7 @@
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner2"
+                "reference-type->reference-name" {}
                 "token" "token3"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
@@ -2927,164 +2966,166 @@
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner2"
+                "reference-type->reference-name" {}
                 "token" "token3"}
                {"deleted" true
                 "etag" (token->token-hash "token4")
                 "last-update-time" (-> (- last-update-time-seed 3000) tc/from-long du/date-to-str)
                 "maintenance" false
                 "owner" "owner2"
+                "reference-type->reference-name" {}
                 "token" "token4"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "cpus=1"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token1"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "mem=2048"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner1" "token" "token2"}
-               {"maintenance" false "owner" "owner2" "token" "token3"}
-               {"maintenance" false "owner" "owner3" "token" "token5"}
-               {"maintenance" false "owner" "owner3" "token" "token6"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token2"}
+               {"maintenance" false "owner" "owner2" "reference-type->reference-name" {} "token" "token3"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "cluster=c1&mem=2048"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner1" "token" "token2"}
-               {"maintenance" false "owner" "owner3" "token" "token5"}
-               {"maintenance" false "owner" "owner3" "token" "token6"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token2"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "cluster=c2&mem=2048"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner2" "token" "token3"}}
+      (is (= #{{"maintenance" false "owner" "owner2" "reference-type->reference-name" {} "token" "token3"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "include=deleted&mem=2048"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner1" "token" "token2"}
-               {"maintenance" false "owner" "owner2" "token" "token3"}
-               {"maintenance" false "owner" "owner2" "token" "token4"}
-               {"maintenance" false "owner" "owner3" "token" "token5"}
-               {"maintenance" false "owner" "owner3" "token" "token6"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token2"}
+               {"maintenance" false "owner" "owner2" "reference-type->reference-name" {} "token" "token3"}
+               {"maintenance" false "owner" "owner2" "reference-type->reference-name" {} "token" "token4"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "idle-timeout-mins=0"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
-               {"maintenance" false "owner" "owner3" "token" "token6"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token1"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "run-as-user=*"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner3" "token" "token5"}
-               {"maintenance" false "owner" "owner3" "token" "token6"}}
+      (is (= #{{"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "run-as-user=t.*"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
-               {"maintenance" false "owner" "owner1" "token" "token2"}
-               {"maintenance" false "owner" "owner2" "token" "token3"}
-               {"maintenance" false "owner" "owner3" "token" "token7"}
-               {"maintenance" false "owner" "owner3" "token" "token8"}
-               {"maintenance" true "owner" "owner3" "token" "token9"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token1"}
+               {"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token2"}
+               {"maintenance" false "owner" "owner2" "reference-type->reference-name" {} "token" "token3"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token7"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token8"}
+               {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "permitted-user=*&owner=owner3"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner3" "token" "token5"}}
+      (is (= #{{"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "permitted-user=u1&owner=owner3"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner3" "token" "token6"}}
+      (is (= #{{"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "permitted-user=&owner=owner3"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner3" "token" "token7"}
-               {"maintenance" false "owner" "owner3" "token" "token8"}
-               {"maintenance" true "owner" "owner3" "token" "token9"}}
+      (is (= #{{"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token7"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token8"}
+               {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "permitted-user=*&permitted-user=u1&owner=owner3"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner3" "token" "token5"}
-               {"maintenance" false "owner" "owner3" "token" "token6"}}
+      (is (= #{{"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "permitted-user=&permitted-user=*&owner=owner3"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner3" "token" "token5"}
-               {"maintenance" false "owner" "owner3" "token" "token7"}
-               {"maintenance" false "owner" "owner3" "token" "token8"}
-               {"maintenance" true "owner" "owner3" "token" "token9"}}
+      (is (= #{{"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token7"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token8"}
+               {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "idle-timeout-mins=0&include=deleted"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
-               {"maintenance" false "owner" "owner2" "token" "token4"}
-               {"maintenance" false "owner" "owner3" "token" "token6"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token1"}
+               {"maintenance" false "owner" "owner2" "reference-type->reference-name" {} "token" "token4"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "cluster=c1&idle-timeout-mins=0"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
-               {"maintenance" false "owner" "owner3" "token" "token6"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token1"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "run-as-requester=true"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner3" "token" "token5"}
-               {"maintenance" false "owner" "owner3" "token" "token6"}}
+      (is (= #{{"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "run-as-requester=false"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
-               {"maintenance" false "owner" "owner1" "token" "token2"}
-               {"maintenance" false "owner" "owner2" "token" "token3"}
-               {"maintenance" false "owner" "owner3" "token" "token7"}
-               {"maintenance" false "owner" "owner3" "token" "token8"}
-               {"maintenance" true "owner" "owner3" "token" "token9"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token1"}
+               {"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token2"}
+               {"maintenance" false "owner" "owner2" "reference-type->reference-name" {} "token" "token3"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token7"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token8"}
+               {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "requires-parameters=true"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner3" "token" "token7"}
-               {"maintenance" false "owner" "owner3" "token" "token8"}}
+      (is (= #{{"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token7"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token8"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "requires-parameters=false"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
-               {"maintenance" false "owner" "owner1" "token" "token2"}
-               {"maintenance" false "owner" "owner2" "token" "token3"}
-               {"maintenance" false "owner" "owner3" "token" "token5"}
-               {"maintenance" false "owner" "owner3" "token" "token6"}
-               {"maintenance" true "owner" "owner3" "token" "token9"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token1"}
+               {"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token2"}
+               {"maintenance" false "owner" "owner2" "reference-type->reference-name" {} "token" "token3"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}
+               {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "cluster=c2&idle-timeout-mins=0"}
@@ -3095,7 +3136,7 @@
     (let [request {:request-method :get :query-string "idle-timeout-mins=5"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner2" "token" "token3"}}
+      (is (= #{{"maintenance" false "owner" "owner2" "reference-type->reference-name" {} "token" "token3"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:headers {"accept" "application/json"}
@@ -3107,38 +3148,38 @@
     (let [request {:request-method :get :query-string "maintenance=true"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" true "owner" "owner3" "token" "token9"}}
+      (is (= #{{"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "maintenance=false"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner1" "token" "token1"}
-               {"maintenance" false "owner" "owner1" "token" "token2"}
-               {"maintenance" false "owner" "owner2" "token" "token3"}
-               {"maintenance" false "owner" "owner3" "token" "token5"}
-               {"maintenance" false "owner" "owner3" "token" "token6"}
-               {"maintenance" false "owner" "owner3" "token" "token7"}
-               {"maintenance" false "owner" "owner3" "token" "token8"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token1"}
+               {"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token2"}
+               {"maintenance" false "owner" "owner2" "reference-type->reference-name" {} "token" "token3"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token7"}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token8"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "env.E1=v0"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false, "owner" "owner3", "token" "token8"}
-               {"maintenance" true, "owner" "owner3", "token" "token9"}}
+      (is (= #{{"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token8"}
+               {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "env.P2=v2"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" true, "owner" "owner3", "token" "token9"}}
+      (is (= #{{"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "env.V1=e1&metadata.f1=m1"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false, "owner" "owner3", "token" "token5"}}
+      (is (= #{{"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))))
 
@@ -3148,7 +3189,8 @@
         no-change-transducer-fn (fn [x] x)
         metadata-transducer-fn (fn [x] (assoc x :test-metadata-changed "changed!"))
         error-fn (fn [] (throw (ex-info "forced test error" {})))
-        token-entry-1 (assoc (make-index-entry "hash" false (clock) false) :token "token-1" :owner "owner-1")
+        token-entry-1 (assoc (make-index-entry "hash" false (clock) false {}) :token "token-1" :owner "owner-1")
+        token-entry-2 (assoc (make-index-entry "hash" false (clock) false {}) :token "token-2" :owner "owner-2")
         initial-event (token-watch/make-index-event :INITIAL [token-entry-1])
         empty-initial-event (token-watch/make-index-event :INITIAL [])
         aggregate-event (token-watch/make-index-event :EVENTS [(token-watch/make-index-event :UPDATE token-entry-1)])
@@ -3229,6 +3271,24 @@
         (async/put! watch-chan daemon-event)
         (is (= (utils/clj->json expected-event)
                (async/<!! body)))))
+
+    (testing "index-filter-fn skips reference type updates in :EVENTS event object list elements' object entry with type UPDATE"
+      (let [index-filter-fn (fn [entry] (contains? #{nil :token} (get entry :reference-type)))
+            expected-delete-event (token-watch/make-index-event :DELETE {:owner "owner" :token "token1"})
+            expected-update-event (token-watch/make-index-event :UPDATE (metadata-transducer-fn token-entry-1))
+            skipped-delete-event (token-watch/make-index-event :DELETE {:owner "owner" :token "token2"} :reference-type :version)
+            expected-event (token-watch/make-index-event :EVENTS [expected-delete-event expected-update-event])
+            daemon-update-event-1 (token-watch/make-index-event :UPDATE token-entry-1)
+            daemon-update-event-2 (token-watch/make-index-event :UPDATE token-entry-2 :reference-type :version)
+            daemon-event (token-watch/make-index-event :EVENTS [expected-delete-event skipped-delete-event daemon-update-event-1 daemon-update-event-2])
+            tokens-watch-channels-update-chan (async/chan)
+            {:keys [body status]}
+            (handle-list-tokens-watch streaming-timeout-ms index-filter-fn metadata-transducer-fn tokens-watch-channels-update-chan {:ctrl (async/chan)})
+            watch-chan (async/poll! tokens-watch-channels-update-chan)]
+        (is (= http-200-ok status))
+        (is (au/chan? watch-chan))
+        (async/put! watch-chan daemon-event)
+        (is (= (utils/clj->json expected-event) (async/<!! body)))))
 
     (testing "when tokens-watch-channels-update-chan is closed an error is thrown and ctrl is closed"
       (let [ctrl-chan (async/chan)

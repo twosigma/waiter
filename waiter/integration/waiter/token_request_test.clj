@@ -1672,6 +1672,7 @@
                     "etag" nil
                     "maintenance" true
                     "owner" (retrieve-username)
+                    "reference-type->reference-name" {}
                     "token" token}
                    (dissoc token-index "last-update-time")))))
 

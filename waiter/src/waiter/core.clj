@@ -114,6 +114,7 @@
                      "metrics" {"" :metrics-request-handler-fn
                                 "/external" :external-metrics-handler-fn}
                      (subs oidc/oidc-callback-uri 1) :oidc-callback-handler-fn
+                     "reference/notify" :reference-notify-handler-fn
                      "service-id" :service-id-handler-fn
                      "profiles" :profile-list-handler-fn
                      "settings" :display-settings-handler-fn
@@ -651,9 +652,11 @@
                                              :context {:waiter-request?-fn waiter-request?-fn*}))
    :custom-components (pc/fnk [[:curator synchronize-fn]
                                [:settings custom-components]
-                               kv-store-factory leader?-fn]
+                               kv-store-factory leader?-fn reference-update-chan router-id]
                         (let [context {:kv-store-factory kv-store-factory
                                        :leader?-fn leader?-fn
+                                       :reference-update-chan reference-update-chan
+                                       :router-id router-id
                                        :synchronize-fn synchronize-fn}]
                           (pc/map-vals
                             (fn [{:keys [factory-fn] :as component-config}]
@@ -787,6 +790,9 @@
                             (select-keys defaults sd/service-parameter-keys)))
                         profile->defaults*)
    :query-service-maintainer-chan (pc/fnk [] (au/latest-chan)) ; TODO move to service-chan-maintainer
+   :reference-listener-chan (pc/fnk [] (au/sliding-buffer-chan 2048))
+   :reference-update-chan (pc/fnk [] (au/sliding-buffer-chan 2048))
+   :reference-update-mult-chan (pc/fnk [reference-update-chan] (async/mult reference-update-chan))
    :router-metrics-agent (pc/fnk [router-id] (metrics-sync/new-router-metrics-agent router-id {}))
    :router-id (pc/fnk [[:settings router-id-prefix]]
                 (cond->> (utils/unique-identifier)
@@ -1067,6 +1073,10 @@
                                     (fn enable-work-stealing-support? [service-id]
                                       (let [{:strs [distribution-scheme]} (service-id->service-description-fn service-id)]
                                         (contains? supported-distribution-schemes distribution-scheme))))
+   :extract-reference-type->reference-name-fn (pc/fnk [[:state service-description-builder]]
+                                                (fn extract-reference-type->reference-name-fn [service-description]
+                                                  (-> (sd/extract-reference-type->reference-name service-description-builder service-description)
+                                                      (dissoc :token))))
    :generate-log-url-fn (pc/fnk [prepend-waiter-url]
                           (partial handler/generate-log-url prepend-waiter-url))
    :list-tokens-fn (pc/fnk [[:curator curator]
@@ -1403,6 +1413,10 @@
                                                    scheduler router-id async-request-store-atom make-http-request-fn auth-params-map
                                                    populate-maintainer-chan! user-agent response descriptor instance
                                                    reason-map request-properties location query-string))))
+   :reference-update-notifier (pc/fnk [[:routines make-inter-router-requests-async-fn]
+                                       [:state reference-update-mult-chan router-id]]
+                                (let [reference-update-chan (async/tap reference-update-mult-chan (au/sliding-buffer-chan 2048))]
+                                  (token-watch/watch-for-reference-updates make-inter-router-requests-async-fn reference-update-chan router-id)))
    :router-list-maintainer (pc/fnk [[:settings router-syncer]
                                     [:state discovery]]
                              (let [{:keys [delay-ms interval-ms]} router-syncer
@@ -1517,14 +1531,17 @@
    :thread-dump (pc/fnk [[:settings [:debug-options thread-dump]]]
                   (thread-dump/start-thread-dump-daemon thread-dump))
    :token-watch-maintainer (pc/fnk
-                             [[:settings
+                             [[:routines extract-reference-type->reference-name-fn]
+                              [:settings
                                [:watch-config
                                 [:tokens channels-update-chan-buffer-size tokens-update-chan-buffer-size
                                  watch-refresh-timeout-ms]]]
-                              [:state clock kv-store]]
-                             (let [watch-refresh-timer-chan (au/timer-chan watch-refresh-timeout-ms)]
+                              [:state clock kv-store reference-update-mult-chan]]
+                             (let [watch-refresh-timer-chan (au/timer-chan watch-refresh-timeout-ms)
+                                   reference-update-chan (async/tap reference-update-mult-chan (au/sliding-buffer-chan 2048))]
                                (token-watch/start-token-watch-maintainer
-                                 kv-store clock tokens-update-chan-buffer-size channels-update-chan-buffer-size watch-refresh-timer-chan)))})
+                                 extract-reference-type->reference-name-fn kv-store clock tokens-update-chan-buffer-size
+                                 channels-update-chan-buffer-size reference-update-chan watch-refresh-timer-chan)))})
 
 (def request-handlers
   {:app-name-handler-fn (pc/fnk [[:routines wrap-service-discovery-fn]
@@ -1743,6 +1760,14 @@
                               (wrap-secure-request-fn
                                 (fn profile-list-handler-fn [request]
                                   (handler/display-profiles-handler profile->defaults request))))
+   :reference-notify-handler-fn (pc/fnk [[:state reference-listener-chan reference-update-chan router-id service-description-builder]
+                                         wrap-router-auth-fn]
+                                  (let [pre-notify-fn (fn handle-reference-update! [reference-event]
+                                                        (sd/handle-reference-update! service-description-builder reference-event))]
+                                    (token-watch/start-reference-notify-forwarder reference-listener-chan reference-update-chan pre-notify-fn))
+                                  (wrap-router-auth-fn
+                                    (fn reference-notify-handler-fn [request]
+                                      (token-watch/reference-notify-handler reference-listener-chan router-id request))))
    :render-image-handler-fn (pc/fnk [[:state image-cache]]
                               (fn render-image-handler-fn [request]
                                 (handler/handle-render-image image-cache request)))
@@ -2035,7 +2060,7 @@
                           (handler/status-handler drain-mode?-fn request)))
    :token-handler-fn (pc/fnk [[:curator synchronize-fn]
                               [:daemons token-watch-maintainer]
-                              [:routines attach-service-defaults-fn make-inter-router-requests-sync-fn validate-service-description-fn
+                              [:routines attach-service-defaults-fn extract-reference-type->reference-name-fn make-inter-router-requests-sync-fn validate-service-description-fn
                                wrap-service-discovery-fn]
                               [:settings [:token-config history-length limit-per-owner]]
                               [:state clock entitlement-manager kv-store token-cluster-calculator token-root token-validator waiter-hostnames]
@@ -2043,12 +2068,12 @@
                        (let [{:keys [tokens-update-chan]} token-watch-maintainer]
                          (-> (fn token-handler-fn [request]
                                (token/handle-token-request
-                                clock synchronize-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
-                                waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
-                                attach-service-defaults-fn tokens-update-chan token-validator request))
-                           wrap-secure-request-fn
-                           wrap-ignore-disabled-auth-fn
-                           wrap-service-discovery-fn)))
+                                 clock synchronize-fn extract-reference-type->reference-name-fn kv-store token-cluster-calculator token-root history-length limit-per-owner
+                                 waiter-hostnames entitlement-manager make-inter-router-requests-sync-fn validate-service-description-fn
+                                 attach-service-defaults-fn tokens-update-chan token-validator request))
+                             wrap-secure-request-fn
+                             wrap-ignore-disabled-auth-fn
+                             wrap-service-discovery-fn)))
    :token-history-fn (pc/fnk [[:routines attach-service-defaults-fn attach-token-defaults-fn assoc-run-as-user-approved?]
                               [:state service-id-prefix kv-store waiter-hostnames service-description-builder] wrap-secure-request-fn]
                              (wrap-secure-request-fn
@@ -2080,13 +2105,14 @@
                                    (fn token-refresh-handler-fn [request]
                                      (token/handle-refresh-token-request kv-store tokens-update-chan request)))))
    :token-reindex-handler-fn (pc/fnk [[:curator synchronize-fn]
-                                      [:routines list-tokens-fn make-inter-router-requests-sync-fn]
+                                      [:routines extract-reference-type->reference-name-fn list-tokens-fn make-inter-router-requests-sync-fn]
                                       [:state kv-store]
                                       wrap-secure-request-fn]
                                (wrap-secure-request-fn
                                  (fn token-handler-fn [request]
-                                   (token/handle-reindex-tokens-request synchronize-fn make-inter-router-requests-sync-fn
-                                                                        kv-store list-tokens-fn request))))
+                                   (token/handle-reindex-tokens-request
+                                     synchronize-fn make-inter-router-requests-sync-fn extract-reference-type->reference-name-fn
+                                     kv-store list-tokens-fn request))))
    :waiter-acknowledge-consent-handler-fn (pc/fnk [[:routines request->consent-service-id token->service-description-template
                                                     wrap-service-discovery-fn token->token-metadata]
                                                    [:settings consent-expiry-days]

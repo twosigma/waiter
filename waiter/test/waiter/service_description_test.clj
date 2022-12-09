@@ -2878,6 +2878,17 @@
       (is (thrown-with-msg? Exception #"Command type invalid is not supported"
                             (validate (create-default-service-description-builder {}) {"cmd-type" "invalid"} {}))))))
 
+(deftest test-extract-reference-type->reference-name
+  (let [builder (create-default-service-description-builder {})]
+    (is (= {} (extract-reference-type->reference-name builder {})))
+    (is (= {} (extract-reference-type->reference-name builder {"env" {"FOO" "bar"}})))
+    (is (= {:token "foo"} (extract-reference-type->reference-name builder {"env" {"WAITER_CONFIG_TOKEN" "foo"}})))))
+
+(deftest test-handle-reference-update!
+  (let [builder (create-default-service-description-builder {})]
+    (is (true? (handle-reference-update! builder {:reference-type :token})))
+    (is (false? (handle-reference-update! builder {:reference-type :unknown})))))
+
 (deftest test-consent-cookie-value
   (let [current-time (t/now)
         current-time-ms (.getMillis ^DateTime current-time)
