@@ -90,6 +90,18 @@ def ping_on_cluster(cluster, timeout, wait_for_request, token_name, service_exis
             print(f'Service is currently {format_status(service_status)}.')
     return succeeded
 
+def check_ssl(token_name, timeout_seconds):
+    """Returns true if a request to the token's DNS name doesn't encounter an SSL error"""
+    timeout_millis = timeout_seconds * 1000
+    try:
+        http_util.__get(f"https://{token_name}", read_timeout=timeout_millis)
+    # Any exception indicates an issue connecting to or handshaking the backend service
+    # This exception is the base exception type that requests.get throws for connection, timeout or SSL related errors
+    except requests.exceptions.RequestException as e:
+        print(f'Request to {token_name} failed with exception {e}')
+        return False
+    return True
+
 
 def token_has_current_service(cluster, token_name, current_token_etag):
     """If the given token has a "current" service, returns that service else None"""
