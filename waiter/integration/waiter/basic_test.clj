@@ -1717,45 +1717,40 @@
        (is (contains? details "name"))
        (is (contains? details "port"))))))
 
-(defn test-signal-instance [signal-type]
-  (testing-using-waiter-url
-    (let [headers {:x-waiter-name (rand-name)
-                   :x-waiter-min-instances 2}
-          _ (log/info "making canary request...")
-          {:keys [cookies instance-id service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-      (with-service-cleanup
-        service-id
-        (testing "Call signal sigkill endpoint"
+(defn test-signal-instance-kill
+  "Helper function that tests signalling instance for soft/force kills."
+  [waiter-url signal-type]
+  (let [headers {:x-waiter-min-instances 2 :x-waiter-name (rand-name)}
+        _ (log/info "making canary request...")
+        {:keys [service-id] :as canary-response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+    (assert-response-status canary-response http-200-ok)
+    (with-service-cleanup
+      service-id
+      (testing (str "Call signal " signal-type " endpoint")
+        (let [{:keys [cookies instance-id]} canary-response]
           (assert-service-on-all-routers waiter-url service-id cookies)
-          (let [service-settings (service-settings waiter-url service-id)
-                active-instances (get-in service-settings [:instances :active-instances])
-                num-active-instances (count (get-in service-settings [:instances :active-instances]))
-                active-instance-ids (set (map #(get % :id) active-instances))]
-            (is (<= 1 num-active-instances))
-            (is (contains? active-instance-ids instance-id)))
-          (let [signal-response {:success true :message (str signal-type " successfully sent to " instance-id) :status 200}]
-            (let [{:keys [body] :as response}
-                  (make-request waiter-url (str "/apps/" service-id "/instance/" instance-id "/" signal-type) :method :post :query-params {"timeout"  10000})]
-              (assert-response-status response http-200-ok)
-              (let [response-data (-> body str try-parse-json walk/keywordize-keys)]
-                (is (= signal-response (:signal-response response-data)))))
-            (is (wait-for #(->> (get-in (service-settings waiter-url service-id) [:instances :killed-instances])
-                                (map :id) set seq)
-                          :interval 2 :timeout 10000)
-                (str "No killed instances found for " service-id))
-            (is (wait-for #(->> (= 0 (count (get-in (service-settings waiter-url service-id) [:instances :active-instances]))))
-                          :interval 2 :timeout 10000)
-                (str "No active instances found for " service-id))
-            (let [service-settings (service-settings waiter-url service-id)
-                  killed-instances (get-in service-settings [:instances :killed-instances])
-                  active-instances (get-in service-settings [:instances :active-instances])
-                  killed-instance-ids (set (map #(get % :id) killed-instances))
-                  active-instance-ids (set (map #(get % :id) active-instances))]
-              (is (contains? killed-instance-ids instance-id))
-              (is (not (contains? active-instance-ids instance-id))))))))))
+          (let [{:keys [instances]} (service-settings waiter-url service-id)
+                {:keys [active-instances]} instances
+                num-active-instances (count active-instances)
+                active-instance-ids (->> active-instances (map :id) (set))
+                assertion-msg (str {:active-instances active-instances :service-id service-id})]
+            (is (pos? num-active-instances) assertion-msg)
+            (is (contains? active-instance-ids instance-id) assertion-msg))
+          (let [signal-endpoint (str "/apps/" service-id "/instance/" instance-id "/" signal-type)
+                signal-timeout-ms 10000
+                signal-query-params {"timeout" signal-timeout-ms}
+                {:keys [body] :as response} (make-request waiter-url signal-endpoint :method :post :query-params signal-query-params)]
+            (assert-response-status response http-200-ok)
+            (let [actual-data (some-> body (str) (try-parse-json) (walk/keywordize-keys))
+                  expected-data {:message (str signal-type " successfully sent to " instance-id)
+                                 :status http-200-ok
+                                 :success true}]
+              (is (= expected-data (get actual-data :signal-response))))))))))
 
-(deftest ^:parallel ^:integration-fast test-signal-sigkill-instance
-  (test-signal-instance "sigkill"))
+(deftest ^:parallel ^:integration-fast test-signal-soft-kill-instance
+  (testing-using-waiter-url
+    (test-signal-instance-kill waiter-url "sigterm")))
 
-(deftest ^:parallel ^:integration-fast test-signal-sigkill-instance
-  (test-signal-instance "sigterm"))
+(deftest ^:parallel ^:integration-fast test-signal-force-kill-instance
+  (testing-using-waiter-url
+    (test-signal-instance-kill waiter-url "sigkill")))
