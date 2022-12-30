@@ -1735,7 +1735,7 @@
             (is (contains? active-instance-ids instance-id)))
           (let [signal-response {:success true :message (str signal-type " successfully sent to " instance-id) :status 200}]
             (let [{:keys [body] :as response}
-                  (make-request waiter-url (str "/apps/" service-id "/signal/" instance-id "/" signal-type) :method :post :query-params {"timeout"  10000})]
+                  (make-request waiter-url (str "/apps/" service-id "/instance/" instance-id "/" signal-type) :method :post :query-params {"timeout"  10000})]
               (assert-response-status response http-200-ok)
               (let [response-data (-> body str try-parse-json walk/keywordize-keys)]
                 (is (= signal-response (:signal-response response-data)))))
