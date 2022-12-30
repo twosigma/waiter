@@ -34,7 +34,6 @@ def get_instances_from_service_id(clusters, service_id, include_active_instances
 
 
 def select_from_instance_id(clusters, instance_id):
-
     service_id = get_service_id_from_instance_id(instance_id)
     instances = get_instances_from_service_id(clusters, service_id, True, True, True)
     if instances is False:
@@ -51,7 +50,7 @@ def select_from_instance_id(clusters, instance_id):
 
 
 def select_from_service_id(clusters, service_id, skip_prompts, include_active_instances,
-                   include_failed_instances, include_killed_instances):
+                           include_failed_instances, include_killed_instances):
     instances = get_instances_from_service_id(clusters, service_id, include_active_instances, include_failed_instances,
                                               include_killed_instances)
     if instances is False:
@@ -66,13 +65,13 @@ def select_from_service_id(clusters, service_id, skip_prompts, include_active_in
         column_names = ['Instance Id', 'Host', 'Status']
         tabular_output = tabulate_service_instances(instances, show_index=True, column_names=column_names)
         selected_instance = get_user_selection(instances, tabular_output)
-    if selected_instance != None:
+    if selected_instance is not None:
         return selected_instance.get('id', None)
     return None
 
 
 def select_from_token(clusters, enforce_cluster, token, skip_prompts, include_active_instances,
-              include_failed_instances, include_killed_instances):
+                      include_failed_instances, include_killed_instances):
     if skip_prompts:
         cluster = get_target_cluster_from_token(clusters, token, enforce_cluster)
         query_result = get_services_on_cluster(cluster, token)
@@ -104,17 +103,19 @@ def select_from_token(clusters, enforce_cluster, token, skip_prompts, include_ac
         selected_service_id = selected_service['service-id']
         clusters = [clusters_by_name[selected_service['cluster']]]
     return select_from_service_id(clusters, selected_service_id, skip_prompts,
-                          include_active_instances, include_failed_instances, include_killed_instances)
+                                  include_active_instances, include_failed_instances, include_killed_instances)
 
 
-def get_instance_id_from_destination(clusters, enforce_cluster, token_or_service_id_or_instance_id, destination, skip_prompts=False,
-                                     include_active_instances=True, include_failed_instances=False, include_killed_instances=False):
+def get_instance_id_from_destination(clusters, enforce_cluster, token_or_service_id_or_instance_id, destination,
+                                     skip_prompts=False, include_active_instances=True, include_failed_instances=False,
+                                     include_killed_instances=False):
     if destination.value == Destination.TOKEN.value:
         return select_from_token(clusters, enforce_cluster, token_or_service_id_or_instance_id,
-                         skip_prompts, include_active_instances, include_failed_instances, include_killed_instances)
+                                 skip_prompts, include_active_instances, include_failed_instances,
+                                 include_killed_instances)
     elif destination.value == Destination.SERVICE_ID.value:
         return select_from_service_id(clusters, token_or_service_id_or_instance_id, skip_prompts,
-                              include_active_instances, include_failed_instances, include_killed_instances)
+                                      include_active_instances, include_failed_instances, include_killed_instances)
     elif destination.value == Destination.INSTANCE_ID.value:
         return select_from_instance_id(clusters, token_or_service_id_or_instance_id)
     else:

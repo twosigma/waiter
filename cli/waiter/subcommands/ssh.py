@@ -3,9 +3,9 @@ import logging
 import os
 
 from waiter import plugins, terminal
+from waiter.instance_select import Destination, get_instance_id_from_destination
 from waiter.querying import get_service_id_from_instance_id, print_no_data, query_service
 from waiter.util import guard_no_cluster, print_info
-from waiter.instance_select import Destination, get_instance_id_from_destination
 
 BASH_PATH = '/bin/bash'
 
@@ -86,6 +86,7 @@ def ssh_instance_id(clusters, instance_id, command, container_name):
         return 1
     return ssh_instance(found_instance, container_name, command)
 
+
 def ssh(clusters, args, _, enforce_cluster):
     guard_no_cluster(clusters)
     token_or_service_id_or_instance_id = args.pop('token-or-service-id-or-instance-id')
@@ -97,11 +98,13 @@ def ssh(clusters, args, _, enforce_cluster):
     container_name = args.pop('container_name', 'waiter-app')
     skip_prompts = args.pop('quick')
 
-    instance_id = get_instance_id_from_destination(clusters, enforce_cluster, token_or_service_id_or_instance_id, ssh_destination,
-                    skip_prompts, include_active_instances, include_failed_instances, include_killed_instances)
+    instance_id = get_instance_id_from_destination(clusters, enforce_cluster, token_or_service_id_or_instance_id,
+                                                   ssh_destination, skip_prompts, include_active_instances,
+                                                   include_failed_instances, include_killed_instances)
     if instance_id is None:
-        return 0
+        return 1
     return ssh_instance_id(clusters, instance_id, command, container_name)
+
 
 def register(add_parser):
     """Adds this sub-command's parser and returns the action function"""
@@ -112,7 +115,7 @@ def register(add_parser):
     parser.add_argument('token-or-service-id-or-instance-id')
     parser.add_argument('--container-name', '-c',
                         help='specify the container name you want to ssh into. Defaults to "waiter-app". Has no '
-                                'effect if instance is not k8s pod.')
+                             'effect if instance is not k8s pod.')
     id_group = parser.add_mutually_exclusive_group(required=False)
     id_group.add_argument('--token', '-t', dest='ssh_destination', action='store_const', const=Destination.TOKEN,
                           default=Destination.TOKEN, help='Default; ssh with token')
