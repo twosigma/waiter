@@ -128,10 +128,10 @@
   (get-services [this]
     "Returns a list of scheduler/Service records")
 
-  (signal-instance [this service-id instance-id signal-type timeout-ms]
+  (signal-instance [this service-id instance-id signal-type options-map]
     "Instructs the scheduler to send specified signal to a specific ServiceInstance.
      Returns a map containing the following structure:
-     {:success <boolean>, :message <string>, :status status-code}")
+     {:message <string>, :status status-code, :success <boolean>}")
 
   (kill-instance [this instance]
     "Instructs the scheduler to kill a specific ServiceInstance.
@@ -1431,3 +1431,17 @@
        :go-chan go-chan
        :query-chan query-chan
        :query-state-fn query-state-fn})))
+
+(defn supported-signal-type?
+  "Returns true if the signal-type is supported."
+  [signal-type]
+  (contains? #{:signal/force-kill :signal/soft-kill} signal-type))
+
+(defn resolve-signal-type
+  "Resolves the signal using provided signal type and options.
+   Returns nil if the signal is not supported."
+  [operation {:strs [force]}]
+  (cond
+    (= :kill operation) (if (-> force (str) (Boolean/valueOf))
+                          :signal/force-kill
+                          :signal/soft-kill)))

@@ -41,9 +41,9 @@
             [waiter.test-helpers :refer :all]
             [waiter.util.date-utils :as du]
             [waiter.util.utils :as utils])
-  (:import [java.io StringBufferInputStream]
-           [java.util.concurrent Executors]
-           [javax.servlet ServletRequest]))
+  (:import (java.io StringBufferInputStream)
+           (java.util.concurrent Executors)
+           (javax.servlet ServletRequest)))
 
 (defn request
   [resource request-method & params]
@@ -174,11 +174,10 @@
             (service-gc-block service-data-atom num-times)
             (is (= (set (keys expected-service-data)) (set (keys @service-data-atom))))))))))
 
-(deftest test-signal-handler
+(deftest test-instance-kill-signal-handler
   (let [user "waiter-user"
         service-id "test-service-1"
-        signal-type "sigkill"
-        instance-id "test-service-1.A"
+        instance-id "test-service-1.test-instance-A"
         waiter-request?-fn (fn [_] true)
         inter-kill-request-wait-time-ms 10
         scaling-timeout-config {:eject-backoff-base-time-ms 10000
@@ -186,51 +185,55 @@
                                 :max-eject-time-ms 60000}
         scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
         signal-instance-result-atom (atom nil)
+        scheduler (reify scheduler/ServiceScheduler
+                    (signal-instance [_ _ _ _ _]
+                      (let [result @signal-instance-result-atom]
+                        (if (instance? Throwable result)
+                          (throw result)
+                          result))))
         configuration {:daemons {:populate-maintainer-chan! {:query-state-fn (constantly {})}
                                  :router-state-maintainer {:maintainer {:notify-instance-killed-fn (constantly {})}}}
                        :routines {:peers-acknowledged-eject-requests-fn (constantly true)
                                   :allowed-to-manage-service?-fn (constantly true)
                                   :service-id->service-description-fn (constantly {})}
-                       :scheduler {:scheduler (reify scheduler/ServiceScheduler
-                                                (signal-instance [_ _ _ _ _]
-                                                  (let [result @signal-instance-result-atom]
-                                                    (if (instance? Throwable result)
-                                                      (throw result)
-                                                      result))))}
+                       :scheduler {:scheduler scheduler}
                        :state {:scaling-timeout-config scaling-timeout-config
                                :scheduler-interactions-thread-pool scheduler-interactions-thread-pool}
                        :wrap-ignore-disabled-auth-fn utils/wrap-identity
                        :wrap-secure-request-fn utils/wrap-identity}
-        handlers {:signal-handler-fn ((:signal-handler-fn request-handlers) configuration)}]
-
+        handlers {:instance-kill-signal-handler-fn ((:instance-kill-signal-handler-fn request-handlers) configuration)}]
 
     (testing "signal-handler:valid-response-including-active-killed"
-      (reset! signal-instance-result-atom {:success true, :message (str "sigkill successfully sent to " instance-id), :status 200})
-      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"name" (str service-id "-name")
+                                                          "run-as-user" user})]
         (let [request {:headers {"accept" "application/json"}
                        :query-string "timeout=5000"
                        :request-method :post
-                       :uri (str "/apps/" service-id "/signal/" instance-id "/" signal-type)}
+                       :uri (str "/apps/" service-id "/instance/" instance-id "/kill")}
+              expected-kill-response {:message (str "sigkill successfully sent to " instance-id)
+                                      :success true}
+              _ (reset! signal-instance-result-atom (assoc expected-kill-response :status http-200-ok))
               {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
           (is (= http-200-ok status))
           (is (= expected-json-response-headers headers))
-          (let [body-json (json/read-str (str body))]
-            (is (= {"success" true, "message" (str "sigkill successfully sent to " instance-id), "status" 200} (get body-json "signal-response")))
-            ))))
+          (is (= (walk/stringify-keys expected-kill-response) (-> body (str) (json/read-str) (get "signal-response")))
+              (str body)))))
 
     (testing "signal-handler:valid-response-active-failed"
-      (reset! signal-instance-result-atom {:success false, :message (str "service does not exist"), :status 500})
-      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"run-as-user" user, "name" (str service-id "-name")})]
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"name" (str service-id "-name")
+                                                          "run-as-user" user})]
         (let [request {:headers {"accept" "application/json"}
                        :query-string "timeout=5000"
                        :request-method :post
-                       :uri (str "/apps/" service-id "/signal/" instance-id "/" signal-type)}
+                       :uri (str "/apps/" service-id "/instance/" instance-id "/kill")}
+              expected-kill-response {:message "service does not exist"
+                                      :success false}
+              _ (reset! signal-instance-result-atom (assoc expected-kill-response :status http-500-internal-server-error))
               {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
-          (is (= http-200-ok status))
+          (is (= http-500-internal-server-error status))
           (is (= expected-json-response-headers headers))
-          (let [body-json (json/read-str (str body))]
-            (is (= {"success" false, "message" (str "service does not exist"), "status" 500} (get body-json "signal-response")))
-            ))))
+          (is (= (walk/stringify-keys expected-kill-response) (-> body (str) (json/read-str) (get "signal-response")))
+              (str body)))))
 
     (.shutdown scheduler-interactions-thread-pool)))
 
@@ -373,8 +376,8 @@
         (is (= http-405-method-not-allowed status))))))
 
 (deftest test-service-view-logs-handler
-  (let [is-admin-user-atom (atom false)
-        can-manage-service-atom (atom true)
+  (let [is-admin-user-atom ( atom false)
+        can-manage-service-atom ( atom true)
         test-service-id "test-service-id"
         test-user "test-user"
         admin-user "admin-user"
@@ -562,8 +565,8 @@
                                   :allowed-to-manage-service?-fn allowed-to-manage-service?
                                   :generate-log-url-fn nil
                                   :make-inter-router-requests-async-fn (fn [& args]
-                                                                         (let [target-fn @make-inter-router-requests-async-fn-atom]
-                                                                           (apply target-fn args)))
+                                                                        (let [target-fn @make-inter-router-requests-async-fn-atom]
+                                                                          (apply target-fn args)))
                                   :retrieve-token-based-fallback-fn (constantly nil)
                                   :router-metrics-helpers {:service-id->metrics-fn (constantly {})}
                                   :service-id->references-fn (constantly [])
@@ -1212,10 +1215,10 @@
            (exec-routes-mapper "/apps")))
     (is (= {:handler :service-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/apps/test-service")))
-    (is (= {:handler :signal-handler-fn, :route-params {:instance-id "test-instance" :service-id "test-service" :signal-type "kill"}}
-           (exec-routes-mapper "/apps/test-service/instance/test-instance/kill")))
     (is (= {:handler :service-await-handler-fn, :route-params {:service-id "test-service" :goal-state "exists"}}
            (exec-routes-mapper "/apps/test-service/await/exists")))
+    (is (= {:handler :instance-kill-signal-handler-fn, :route-params {:instance-id "test-instance" :service-id "test-service"}}
+           (exec-routes-mapper "/apps/test-service/instance/test-instance/kill")))
     (is (= {:handler :service-view-logs-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/apps/test-service/logs")))
     (is (= {:handler :service-override-handler-fn, :route-params {:service-id "test-service"}}
@@ -1444,16 +1447,16 @@
                                           (is (some? request-handler))
                                           (fn [request]
                                             (-> request
-                                                (assoc ::jwt-authenticator
-                                                       (-> request :headers (get "authorization") str (str/starts-with? "Bearer ")))
-                                                request-handler)))
+                                              (assoc ::jwt-authenticator
+                                                     (-> request :headers (get "authorization") str (str/starts-with? "Bearer ")))
+                                              request-handler)))
                   oidc/wrap-auth-handler (fn [in-authenticator request-handler]
                                            (is (= oidc-authenticator-obj in-authenticator))
                                            (is (some? request-handler))
                                            (fn [request]
                                              (-> request
-                                                 (assoc ::oidc-authenticator :oidc-authenticator)
-                                                 request-handler)))]
+                                               (assoc ::oidc-authenticator :oidc-authenticator)
+                                               request-handler)))]
       (doseq [jwt-authenticator [nil jwt-authenticator-obj]]
         (doseq [oidc-authenticator [nil oidc-authenticator-obj]]
           (let [authenticator (reify auth/Authenticator
@@ -1461,8 +1464,8 @@
                                   (is (= standard-handler request-handler))
                                   (fn [request]
                                     (-> request
-                                        (assoc ::authenticator true)
-                                        request-handler))))
+                                      (assoc ::authenticator true)
+                                      request-handler))))
                 {:keys [authentication-method-wrapper-fn]} routines
                 authenticate-request-handler (authentication-method-wrapper-fn {:state {:authenticator authenticator
                                                                                         :jwt-authenticator jwt-authenticator

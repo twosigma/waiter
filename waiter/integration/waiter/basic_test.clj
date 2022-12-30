@@ -1719,14 +1719,14 @@
 
 (defn test-signal-instance-kill
   "Helper function that tests signalling instance for soft/force kills."
-  [waiter-url signal-type]
+  [waiter-url force-delete?]
   (let [headers {:x-waiter-min-instances 2 :x-waiter-name (rand-name)}
         _ (log/info "making canary request...")
         {:keys [service-id] :as canary-response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
     (assert-response-status canary-response http-200-ok)
     (with-service-cleanup
       service-id
-      (testing (str "Call signal " signal-type " endpoint")
+      (testing (str "Call signal kill endpoint, force=" force-delete?)
         (let [{:keys [cookies instance-id]} canary-response]
           (assert-service-on-all-routers waiter-url service-id cookies)
           (let [{:keys [instances]} (service-settings waiter-url service-id)
@@ -1736,21 +1736,21 @@
                 assertion-msg (str {:active-instances active-instances :service-id service-id})]
             (is (pos? num-active-instances) assertion-msg)
             (is (contains? active-instance-ids instance-id) assertion-msg))
-          (let [signal-endpoint (str "/apps/" service-id "/instance/" instance-id "/" signal-type)
+          (let [signal-endpoint (str "/apps/" service-id "/instance/" instance-id "/kill")
                 signal-timeout-ms 10000
-                signal-query-params {"timeout" signal-timeout-ms}
+                signal-query-params {"force" force-delete? "timeout" signal-timeout-ms}
                 {:keys [body] :as response} (make-request waiter-url signal-endpoint :method :post :query-params signal-query-params)]
             (assert-response-status response http-200-ok)
             (let [actual-data (some-> body (str) (try-parse-json) (walk/keywordize-keys))
-                  expected-data {:message (str signal-type " successfully sent to " instance-id)
-                                 :status http-200-ok
+                  kill-type (if force-delete? "force" "soft")
+                  expected-data {:message (str kill-type "-kill successfully sent to " instance-id)
                                  :success true}]
               (is (= expected-data (get actual-data :signal-response))))))))))
 
 (deftest ^:parallel ^:integration-fast test-signal-soft-kill-instance
   (testing-using-waiter-url
-    (test-signal-instance-kill waiter-url "sigterm")))
+    (test-signal-instance-kill waiter-url false)))
 
 (deftest ^:parallel ^:integration-fast test-signal-force-kill-instance
   (testing-using-waiter-url
-    (test-signal-instance-kill waiter-url "sigkill")))
+    (test-signal-instance-kill waiter-url true)))
