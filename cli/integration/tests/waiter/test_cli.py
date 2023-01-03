@@ -813,7 +813,7 @@ class WaiterCliTest(util.WaiterTest):
             self.assertEqual(1, len(util.services_for_token(self.waiter_url, token_name)))
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
-    
+
     def test_ping_alias(self):
         alias_cluster_name = 'weird-cluster'
         # config uses alias cluster name as the locally configured name
@@ -2352,3 +2352,92 @@ class WaiterCliTest(util.WaiterTest):
 
     def test_stop_ping_service_no_kill(self):
         self.run_maintenance_start_test(cli.stop, start_args='--no-kill', ping_token=True)
+
+    def __test_instance_kill(self, get_possible_instances_fn, force, signal_flags=None, stdin=None,
+                             min_instances=1, multiple_services=False,
+                             test_service=False, test_instance=False):
+        token_name = self.token_name()
+        token_fields = util.minimal_service_description()
+        token_fields['min-instances'] = min_instances
+        try:
+            if multiple_services:
+                token_new_fields = util.minimal_service_description()
+                util.post_token(self.waiter_url, token_name, token_new_fields)
+                util.ping_token(self.waiter_url, token_name)
+            util.post_token(self.waiter_url, token_name, token_fields)
+            service_id = util.ping_token(self.waiter_url, token_name, 200)
+            goal_fn = lambda insts: min_instances == len(insts.get('active-instances'))
+            util.wait_until_routers_service(self.waiter_url, service_id, lambda service: goal_fn(service.get('instances')))
+            instances = util.instances_for_service(self.waiter_url, service_id)
+            possible_instances = get_possible_instances_fn(service_id, instances)
+            signal_flags = [signal_flags] if signal_flags else []
+            if test_instance:
+                possible_instances = possible_instances[0:1]
+                signal_dest = possible_instances[0]['id']
+                signal_flags.append('-i')
+            elif test_service:
+                signal_dest = service_id
+                signal_flags.append('-s')
+            else:
+                signal_dest = token_name
+            if force:
+                signal_flags.append('-f')
+            cp = cli.instance_signal('kill', self.waiter_url, signal_dest, signal_flags=' '.join(signal_flags),
+                                     stdin=stdin)
+            stdout = cli.stdout(cp)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn(f'Successfully sent kill to', stdout)
+            cli_output = stdout.split()
+            killed_instance_id = None
+            for i, w in enumerate(cli_output):
+                if w == "instance":
+                    killed_instance_id = cli_output[i + 1]
+            self.assertNotEqual(None, killed_instance_id)
+            kill_fn = lambda insts: (min_instances - 1) == len(insts['active-instances']) and \
+                                    1 >= len(insts['killed-instances'])
+            util.wait_until_routers_service(self.waiter_url, service_id, lambda service: kill_fn(service['instances']))
+            active_instances = util.get_specific_instances_for_service(self.waiter_url, service_id, 'active-instances')
+            active_ids = list(map(lambda active_instance: active_instance.get('id', None), active_instances))
+            self.assertNotIn(killed_instance_id, active_ids, "Assert Failed: killed-instance is in active instances")
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+
+    def test_instance_sigkill_valid_instance(self):
+        self.__test_instance_kill(lambda _, instances: instances['active-instances'],
+                                  True, test_instance=True, min_instances=1)
+
+    def test_instance_sigkill_valid_multiple_instance(self):
+        self.__test_instance_kill(lambda _, instances: instances['active-instances'],
+                                  True, stdin='3\n'.encode('utf8'), test_service=True, min_instances=5)
+
+    def test_instance_sigkill_valid_service_multiple_instance_first(self):
+        self.__test_instance_kill(lambda _, instances: instances['active-instances'],
+                                  True, stdin='1\n'.encode('utf8'), test_service=True, min_instances=2)
+
+    def test_instance_sigkill_valid_service_multiple_instance_second(self):
+        self.__test_instance_kill(lambda _, instances: instances['active-instances'],
+                                  True, stdin='2\n'.encode('utf8'), test_service=True, min_instances=2)
+
+    def test_instance_sigkill_valid_token_multiple_services_multiple_instances(self):
+        self.__test_instance_kill(lambda _, instances: instances['active-instances'],
+                                  True, stdin='1\n1\n'.encode('utf8'), multiple_services=True, min_instances=2)
+
+    def test_instance_sigterm_valid_instance(self):
+        self.__test_instance_kill(lambda _, instances: instances['active-instances'],
+                                  False, test_instance=True, min_instances=1)
+
+    def test_instance_sigterm_valid_multiple_instance(self):
+        self.__test_instance_kill(lambda _, instances: instances['active-instances'],
+                                  False, stdin='3\n'.encode('utf8'), test_service=True, min_instances=5)
+
+    def test_instance_sigterm_valid_service_multiple_instance_first(self):
+        self.__test_instance_kill(lambda _, instances: instances['active-instances'],
+                                  False, stdin='1\n'.encode('utf8'), test_service=True, min_instances=2)
+
+    def test_instance_sigterm_valid_service_multiple_instance_second(self):
+        self.__test_instance_kill(lambda _, instances: instances['active-instances'],
+                                  False, stdin='2\n'.encode('utf8'), test_service=True, min_instances=2)
+
+    def test_instance_sigterm_valid_token_multiple_services_multiple_instances(self):
+        self.__test_instance_kill(lambda _, instances: instances['active-instances'],
+                                  False, stdin='1\n1\n'.encode('utf8'), multiple_services=True, min_instances=2)

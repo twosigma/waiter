@@ -426,3 +426,10 @@ def stop(token_name, waiter_url=None, flags=None, maintenance_flags=None, stdin=
     args = f"stop {token_name} {maintenance_flags or ''}"
     cp = cli(args, waiter_url, flags, stdin, env=env)
     return cp
+
+
+def instance_signal(signal_type, waiter_url=None, identifier=None, signal_flags=None, stdin=None, flags=None):
+    """Signal request for a specific instance using token, service_id, or instance_id via the CLI"""
+    args = f"instance {signal_type} {signal_flags or ''} {identifier or ''}"
+    cp = cli(args, waiter_url, flags, stdin)
+    return cp
