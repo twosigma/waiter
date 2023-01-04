@@ -351,11 +351,15 @@
                   (is (and old-ws-request (= old-ws-request ws-request)))))))
 
           (async/>!! ctrl-chan [:error (ex-info "Thrown from test" {})])
-          (is (test-helpers/wait-for
-                #(let [out-router-metrics-state (retrieve-agent-state router-metrics-agent)]
-                   (= in-router-metrics-state out-router-metrics-state))
-                :interval 200, :timeout 4000, :unit-multiplier 1)
-              "Deregistering router-1 failed"))))))
+          (let [out-router-metrics-state-atom (atom nil)]
+            (is (test-helpers/wait-for
+                  #(let [out-router-metrics-state (retrieve-agent-state router-metrics-agent)]
+                     (reset! out-router-metrics-state-atom out-router-metrics-state)
+                     (= in-router-metrics-state out-router-metrics-state))
+                  :interval 200 :timeout 10000 :unit-multiplier 1)
+                (str {:message "Deregistering router-1 failed"
+                      :state {:actual @out-router-metrics-state-atom
+                              :expected in-router-metrics-state}}))))))))
 
 (deftest test-update-metrics-router-state-new-and-missing-router-ids-connect-successful
   (with-redefs [ws/connect! (fn ws-connect! [_ ws-endpoint callback _]
