@@ -1,12 +1,9 @@
 (ns waiter.token-watch-integration-test
   (:require [clojure.core.async :as async]
-            [clojure.data :as data]
             [clojure.set :as set]
             [clojure.test :refer :all]
-            [clojure.tools.logging :as log]
             [waiter.status-codes :refer :all]
-            [waiter.util.client-tools :refer :all]
-            [waiter.util.utils :as utils]))
+            [waiter.util.client-tools :refer :all]))
 
 (defn- await-goal-response-for-all-routers
   "Returns true if the goal-response-fn was satisfied with the response from request-fn for all routers before
@@ -110,124 +107,7 @@
                           (nil? (get-in state ["token->index" token]))))]
           (is (await-goal-response-for-all-routers goal-fn watch-state-request-fn router_urls)))))))
 
-(defn- start-watch
-  [router-url cookies & {:keys [query-params] :or {query-params {"include" ["deleted" "metadata"]
-                                                                 "watch" "true"}}}]
-  (let [{:keys [body error headers] :as response}
-        (make-request router-url "/tokens" :async? true :cookies cookies :query-params query-params)
-        _ (assert-response-status response 200)
-        {:strs [x-cid]} headers
-        json-objects (utils/chan-to-json-seq!! body)
-        token->index-atom (atom {})
-        initial-event-time-epoch-ms-atom (atom nil)
-        query-state-fn (fn []
-                         {:initial-event-time-epoch-ms @initial-event-time-epoch-ms-atom
-                          :token->index @token->index-atom})
-        exit-fn (fn []
-                  (async/close! body))
-        go-chan
-        (async/go
-          (try
-            (doseq [msg json-objects
-                    :when (some? msg)]
-              (log/info "received msg from token watch" {:current-token->index @token->index-atom
-                                                         :msg msg
-                                                         :watch-cid x-cid})
-              (reset!
-                token->index-atom
-                (let [{:strs [object type]} msg
-                      token->index @token->index-atom
-                      new-token->index
-                      (case type
-                        "INITIAL"
-                        (do
-                          (reset! initial-event-time-epoch-ms-atom (System/currentTimeMillis))
-                          (reduce
-                            (fn [token->index index]
-                              (assoc token->index (get index "token") index))
-                            {}
-                            object))
-
-                        "EVENTS"
-                        (reduce
-                          (fn [token->index {:strs [object type]}]
-                            (case type
-                              "UPDATE"
-                              (assoc token->index (get object "token") object)
-                              "DELETE"
-                              (dissoc token->index (get object "token") object)
-                              (throw (ex-info "Unknown event type received in EVENTS object" {:event object}))))
-                          token->index
-                          object)
-                        (throw (ex-info "Unknown event type received from watch" {:event msg})))]
-                  (log/info "diff token->index" {:diff-token->index (data/diff token->index new-token->index)
-                                                 :watch-cid x-cid})
-                  new-token->index)))
-            (catch Exception e
-              (exit-fn)
-              (log/error e "Error in test watch-chan" {:router-url router-url}))))]
-    {:exit-fn exit-fn
-     :error-chan error
-     :go-chan go-chan
-     :headers headers
-     :query-state-fn query-state-fn
-     :router-url router-url}))
-
-(defn- start-watches
-  [router-urls cookies]
-  (mapv
-    #(start-watch % cookies)
-    router-urls))
-
-(defn- stop-watch
-  [{:keys [exit-fn go-chan]}]
-  (exit-fn)
-  (async/<!! go-chan))
-
-(defn- stop-watches
-  [watches]
-  (doseq [watch watches]
-    (stop-watch watch)))
-
-(defmacro assert-watch-token-index-entry
-  [watch token entry]
-  `(let [watch# ~watch
-         token# ~token
-         entry# ~entry
-         router-url# (:router-url watch#)
-         query-state-fn# (:query-state-fn watch#)
-         get-current-token-entry-fn# #(get (:token->index (query-state-fn#)) token#)]
-     (is (wait-for
-           #(= (get-current-token-entry-fn#)
-               entry#)
-           :interval 1 :timeout 5)
-         (str "watch for " router-url# " token->index entry for token '" token# "' was '" (get-current-token-entry-fn#)
-              "' instead of '" entry# "'"))))
-
-(defmacro assert-watch-token-index-entry-does-not-change
-  [watch token entry]
-  `(let [watch# ~watch
-         token# ~token
-         entry# ~entry
-         router-url# (:router-url watch#)
-         query-state-fn# (:query-state-fn watch#)
-         get-current-token-entry-fn# #(get (:token->index (query-state-fn#)) token#)]
-     (is (not (wait-for
-                #(not= (get-current-token-entry-fn#)
-                       entry#)
-                :interval 1 :timeout 5))
-         (str "watch for " router-url# " token->index entry for token '" token# "' was '" (get-current-token-entry-fn#)
-              "' instead of '" entry# "'"))))
-
-(defmacro assert-watches-token-index-entry
-  [watches token entry]
-  `(let [watches# ~watches
-         token# ~token
-         entry# ~entry]
-     (doseq [watch# watches#]
-       (assert-watch-token-index-entry watch# token# entry#))))
-
-(defn- get-token-index
+(defn get-token-index
   [waiter-url token &
    {:keys [cookies headers query-params] :or {cookies [] headers {} query-params {}}}]
   (let [{:keys [body] :as index-response}
@@ -240,56 +120,57 @@
 
 (deftest ^:parallel ^:integration-fast test-token-watch-maintainer-watches
   (testing-using-waiter-url
-    (let [routers (routers waiter-url)
+    (let [timeout-secs 5
+          routers (routers waiter-url)
           router-urls (vals routers)
           {:keys [cookies]} (make-request waiter-url "/waiter-auth")]
 
       (testing "watch stream gets initial list of tokens"
         (let [token-name (create-token-name waiter-url ".")
               response (post-token waiter-url (assoc (kitchen-params) :token token-name) :cookies cookies)
-              watches (start-watches router-urls cookies)]
+              watches (start-tokens-watches router-urls cookies)]
           (assert-response-status response 200)
           (try
             (let [entry (get-token-index waiter-url token-name :cookies cookies)]
-              (assert-watches-token-index-entry watches token-name entry))
+              (assert-watches-token-index-entry watches timeout-secs token-name entry))
             (finally
-              (stop-watches watches)
+              (stop-tokens-watches watches)
               (delete-token-and-assert waiter-url token-name)))))
 
       (testing "stream receives index UPDATE (create, update, soft-delete) events for all routers"
         (let [token-name (create-token-name waiter-url ".")
-              watches (start-watches router-urls cookies)]
-          (assert-watches-token-index-entry watches token-name nil)
+              watches (start-tokens-watches router-urls cookies)]
+          (assert-watches-token-index-entry watches timeout-secs token-name nil)
           (try
             (let [response (post-token waiter-url (assoc (kitchen-params) :token token-name) :cookies cookies)
                   entry (get-token-index waiter-url token-name :cookies cookies)]
               (assert-response-status response 200)
-              (assert-watches-token-index-entry watches token-name entry))
+              (assert-watches-token-index-entry watches timeout-secs token-name entry))
             (let [response (post-token waiter-url (assoc (kitchen-params) :token token-name
                                                                           :version "updated-version")
                                        :cookies cookies)
                   entry (get-token-index waiter-url token-name :cookies cookies)]
               (assert-response-status response 200)
-              (assert-watches-token-index-entry watches token-name entry))
+              (assert-watches-token-index-entry watches timeout-secs token-name entry))
             (delete-token-and-assert waiter-url token-name :hard-delete false)
             (let [entry (get-token-index waiter-url token-name :cookies cookies)]
-              (assert-watches-token-index-entry watches token-name entry))
+              (assert-watches-token-index-entry watches timeout-secs token-name entry))
             (finally
-              (stop-watches watches)
+              (stop-tokens-watches watches)
               (delete-token-and-assert waiter-url token-name)))))
 
       (testing "stream receives DELETE events for all routers"
         (let [token-name (create-token-name waiter-url ".")
               response (post-token waiter-url (assoc (kitchen-params) :token token-name) :cookies cookies)
-              watches (start-watches router-urls cookies)]
+              watches (start-tokens-watches router-urls cookies)]
           (assert-response-status response 200)
           (try
             (let [entry (get-token-index waiter-url token-name :cookies cookies)]
-              (assert-watches-token-index-entry watches token-name entry)
+              (assert-watches-token-index-entry watches timeout-secs token-name entry)
               (delete-token-and-assert waiter-url token-name)
-              (assert-watches-token-index-entry watches token-name nil))
+              (assert-watches-token-index-entry watches timeout-secs token-name nil))
             (finally
-              (stop-watches watches)))))
+              (stop-tokens-watches watches)))))
 
       (testing "stream does not include soft deleted token events without include=deleted query param"
         (let [token-1 (create-token-name waiter-url ".")
@@ -301,12 +182,12 @@
           (try
             (delete-token-and-assert waiter-url token-1 :hard-delete false)
             (let [entry (get-token-index waiter-url token-2 :cookies cookies)
-                  watch (start-watch waiter-url cookies :query-params {"include" "metadata" "watch" "true"})]
-              (assert-watch-token-index-entry watch token-1 nil)
-              (assert-watch-token-index-entry watch token-2 entry)
+                  watch (start-tokens-watch waiter-url cookies :query-params {"include" "metadata" "watch" "true"})]
+              (assert-watch-token-index-entry watch timeout-secs token-1 nil)
+              (assert-watch-token-index-entry watch timeout-secs token-2 entry)
               (delete-token-and-assert waiter-url token-2 :hard-delete false)
-              (assert-watch-token-index-entry-does-not-change watch token-2 entry)
-              (stop-watch watch))
+              (assert-watch-token-index-entry-does-not-change watch timeout-secs token-2 entry)
+              (stop-tokens-watch watch))
             (finally
               (delete-token-and-assert waiter-url token-1)
               (delete-token-and-assert waiter-url token-2)))))
@@ -319,21 +200,21 @@
           (assert-response-status res-1 200)
           (assert-response-status res-2 200)
           (try
-            (let [watch (start-watch waiter-url cookies :query-params {"watch" "true"})]
-              (assert-watch-token-index-entry watch token-1 {"token" token-1
-                                                             "owner" (retrieve-username)
-                                                             "maintenance" false})
-              (assert-watch-token-index-entry watch token-2 {"token" token-2
-                                                             "owner" (retrieve-username)
-                                                             "maintenance" false})
+            (let [watch (start-tokens-watch waiter-url cookies :query-params {"watch" "true"})]
+              (assert-watch-token-index-entry watch timeout-secs token-1 {"token" token-1
+                                                                          "owner" (retrieve-username)
+                                                                          "maintenance" false})
+              (assert-watch-token-index-entry watch timeout-secs token-2 {"token" token-2
+                                                                          "owner" (retrieve-username)
+                                                                          "maintenance" false})
               (post-token waiter-url (assoc (kitchen-params) :token token-1 :version "update-1"))
-              (assert-watch-token-index-entry-does-not-change watch token-1 {"token" token-1
-                                                                             "owner" (retrieve-username)
-                                                                             "maintenance" false})
-              (assert-watch-token-index-entry-does-not-change watch token-2 {"token" token-2
-                                                                             "owner" (retrieve-username)
-                                                                             "maintenance" false})
-              (stop-watch watch))
+              (assert-watch-token-index-entry-does-not-change watch timeout-secs token-1 {"token" token-1
+                                                                                          "owner" (retrieve-username)
+                                                                                          "maintenance" false})
+              (assert-watch-token-index-entry-does-not-change watch timeout-secs token-2 {"token" token-2
+                                                                                          "owner" (retrieve-username)
+                                                                                          "maintenance" false})
+              (stop-tokens-watch watch))
             (finally
               (delete-token-and-assert waiter-url token-1)
               (delete-token-and-assert waiter-url token-2)))))
@@ -348,17 +229,17 @@
           (assert-response-status res-1 200)
           (assert-response-status res-2 200)
           (try
-            (let [watch (start-watch waiter-url cookies :query-params {"maintenance" "false" "watch" "true"})]
-              (assert-watch-token-index-entry watch token-1 {"token" token-1
-                                                             "owner" (retrieve-username)
-                                                             "maintenance" false})
-              (assert-watch-token-index-entry watch token-2 nil)
+            (let [watch (start-tokens-watch waiter-url cookies :query-params {"maintenance" "false" "watch" "true"})]
+              (assert-watch-token-index-entry watch timeout-secs token-1 {"token" token-1
+                                                                          "owner" (retrieve-username)
+                                                                          "maintenance" false})
+              (assert-watch-token-index-entry watch timeout-secs token-2 nil)
               (post-token waiter-url (assoc (kitchen-params) :token token-1 :maintenance {:message "maintenance message"}))
-              (assert-watch-token-index-entry-does-not-change watch token-1 {"token" token-1
-                                                                             "owner" (retrieve-username)
-                                                                             "maintenance" false})
-              (assert-watch-token-index-entry-does-not-change watch token-2 nil)
-              (stop-watch watch))
+              (assert-watch-token-index-entry-does-not-change watch timeout-secs token-1 {"token" token-1
+                                                                                          "owner" (retrieve-username)
+                                                                                          "maintenance" false})
+              (assert-watch-token-index-entry-does-not-change watch timeout-secs token-2 nil)
+              (stop-tokens-watch watch))
             (finally
               (delete-token-and-assert waiter-url token-1)
               (delete-token-and-assert waiter-url token-2)))))
@@ -373,20 +254,20 @@
           (assert-response-status res-1 200)
           (assert-response-status res-2 200)
           (try
-            (let [watch (start-watch waiter-url cookies :query-params {"maintenance" "true" "watch" "true"})]
-              (assert-watch-token-index-entry watch token-1 nil)
-              (assert-watch-token-index-entry watch token-2 {"token" token-2
-                                                             "owner" (retrieve-username)
-                                                             "maintenance" true})
+            (let [watch (start-tokens-watch waiter-url cookies :query-params {"maintenance" "true" "watch" "true"})]
+              (assert-watch-token-index-entry watch timeout-secs token-1 nil)
+              (assert-watch-token-index-entry watch timeout-secs token-2 {"token" token-2
+                                                                          "owner" (retrieve-username)
+                                                                          "maintenance" true})
               (post-token waiter-url (assoc (kitchen-params) :token token-1 :maintenance {:message "maintenance message"}))
               (post-token waiter-url (assoc (kitchen-params) :token token-2))
-              (assert-watch-token-index-entry watch token-1 {"token" token-1
-                                                             "owner" (retrieve-username)
-                                                             "maintenance" true})
-              (assert-watch-token-index-entry-does-not-change watch token-2 {"token" token-2
-                                                                             "owner" (retrieve-username)
-                                                                             "maintenance" true})
-              (stop-watch watch))
+              (assert-watch-token-index-entry watch timeout-secs token-1 {"token" token-1
+                                                                          "owner" (retrieve-username)
+                                                                          "maintenance" true})
+              (assert-watch-token-index-entry-does-not-change watch timeout-secs token-2 {"token" token-2
+                                                                                          "owner" (retrieve-username)
+                                                                                          "maintenance" true})
+              (stop-tokens-watch watch))
             (finally
               (delete-token-and-assert waiter-url token-1)
               (delete-token-and-assert waiter-url token-2))))))))
@@ -396,10 +277,10 @@
     (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
           streaming-timeout-ms 5000
           {:keys [exit-fn go-chan headers query-state-fn]}
-          (start-watch waiter-url cookies :query-params {"include" ["metadata"]
-                                                         "name" "test-token-watch-streaming-timeout"
-                                                         "streaming-timeout" (str streaming-timeout-ms)
-                                                         "watch" "true"})
+          (start-tokens-watch waiter-url cookies :query-params {"include" ["metadata"]
+                                                                "name" "test-token-watch-streaming-timeout"
+                                                                "streaming-timeout" (str streaming-timeout-ms)
+                                                                "watch" "true"})
           _ (async/alts!! [go-chan (async/timeout (* 2 streaming-timeout-ms))] :priority true)
           end-time-epoch-ms (System/currentTimeMillis)
           {:keys [initial-event-time-epoch-ms token->index]} (query-state-fn)

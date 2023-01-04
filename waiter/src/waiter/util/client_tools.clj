@@ -16,6 +16,7 @@
 (ns waiter.util.client-tools
   (:require [clj-time.core :as t]
             [clojure.core.async :as async]
+            [clojure.data :as data]
             [clojure.data.json :as json]
             [clojure.java.shell :as shell]
             [clojure.string :as str]
@@ -1408,3 +1409,122 @@
   "Makes a request to the start-new-services-maintainer state endpoint."
   [waiter-url cookies]
   (make-request waiter-url "/state/start-new-services-maintainer" :cookies cookies))
+
+(defn start-tokens-watch
+  [router-url cookies & {:keys [query-params] :or {query-params {"include" ["deleted" "metadata"]
+                                                                 "watch" "true"}}}]
+  (let [{:keys [body error headers] :as response}
+        (make-request router-url "/tokens" :async? true :cookies cookies :query-params query-params)
+        _ (assert-response-status response 200)
+        {:strs [x-cid]} headers
+        json-objects (utils/chan-to-json-seq!! body)
+        token->index-atom (atom {})
+        initial-event-time-epoch-ms-atom (atom nil)
+        query-state-fn (fn []
+                         {:initial-event-time-epoch-ms @initial-event-time-epoch-ms-atom
+                          :token->index @token->index-atom})
+        exit-fn (fn []
+                  (async/close! body))
+        go-chan
+        (async/go
+          (try
+            (doseq [msg json-objects
+                    :when (some? msg)]
+              (log/info "received msg from token watch" {:current-token->index @token->index-atom
+                                                         :msg msg
+                                                         :watch-cid x-cid})
+              (let [{:strs [object type]} msg
+                    token->index @token->index-atom
+                    event-time-ms (System/currentTimeMillis)
+                    new-token->index (case type
+                                       "INITIAL"
+                                       (do
+                                         (reset! initial-event-time-epoch-ms-atom event-time-ms)
+                                         (reduce
+                                           (fn [token->index index]
+                                             (assoc token->index (get index "token") index))
+                                           {}
+                                           object))
+
+                                       "EVENTS"
+                                       (reduce
+                                         (fn [token->index {:strs [object type]}]
+                                           (case type
+                                             "UPDATE"
+                                             (assoc token->index (get object "token") object)
+                                             "DELETE"
+                                             (dissoc token->index (get object "token"))
+                                             (throw (ex-info "Unknown event type received in EVENTS object" {:event object}))))
+                                         token->index
+                                         object)
+                                       (throw (ex-info "Unknown event type received from watch" {:event msg})))]
+                (log/info "diff token->index" {:diff-token->index (data/diff token->index new-token->index)
+                                               :watch-cid x-cid})
+                (reset! token->index-atom new-token->index)))
+            (catch Exception e
+              (exit-fn)
+              (log/error e "Error in test watch-chan" {:router-url router-url}))))]
+    {:exit-fn exit-fn
+     :error-chan error
+     :go-chan go-chan
+     :headers headers
+     :query-state-fn query-state-fn
+     :router-url router-url}))
+
+(defn start-tokens-watches
+  [router-urls cookies & {:keys [query-params] :or {query-params {"include" ["deleted" "metadata"]
+                                                                  "watch" "true"}}}]
+  (mapv
+    #(start-tokens-watch % cookies :query-params query-params)
+    router-urls))
+
+(defn stop-tokens-watch
+  [{:keys [exit-fn go-chan]}]
+  (exit-fn)
+  (async/<!! go-chan))
+
+(defn stop-tokens-watches
+  [watches]
+  (doseq [watch watches]
+    (stop-tokens-watch watch)))
+
+(defmacro assert-watch-token-index-entry
+  [watch timeout-secs token entry]
+  `(let [watch# ~watch
+         timeout-secs# ~timeout-secs
+         token# ~token
+         entry# ~entry
+         router-url# (:router-url watch#)
+         query-state-fn# (:query-state-fn watch#)
+         get-current-token-entry-fn# #(get (:token->index (query-state-fn#)) token#)]
+     (is (wait-for
+           #(= (get-current-token-entry-fn#)
+               entry#)
+           :interval 1 :timeout timeout-secs#)
+         (str "watch for " router-url# " token->index entry for token '" token# "' was '" (get-current-token-entry-fn#)
+              "' instead of '" entry# "'"))))
+
+(defmacro assert-watches-token-index-entry
+  [watches timeout-secs token entry]
+  `(let [watches# ~watches
+         timeout-secs# ~timeout-secs
+         token# ~token
+         entry# ~entry]
+     (doseq [watch# watches#]
+       (assert-watch-token-index-entry watch# timeout-secs# token# entry#))))
+
+(defmacro assert-watch-token-index-entry-does-not-change
+  [watch timeout-secs token entry]
+  `(let [watch# ~watch
+         timeout-secs# ~timeout-secs
+         token# ~token
+         entry# ~entry
+         router-url# (:router-url watch#)
+         query-state-fn# (:query-state-fn watch#)
+         get-current-token-entry-fn# #(get (:token->index (query-state-fn#)) token#)]
+     (is (not (wait-for
+                #(not= (get-current-token-entry-fn#)
+                       entry#)
+                :interval 1 :timeout timeout-secs#))
+         (str "watch for " router-url# " token->index entry for token '" token# "' was '" (get-current-token-entry-fn#)
+              "' instead of '" entry# "'"))))
