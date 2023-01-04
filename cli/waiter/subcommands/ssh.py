@@ -1,21 +1,13 @@
 import argparse
 import logging
 import os
-from enum import Enum
 
 from waiter import plugins, terminal
-from waiter.display import get_user_selection, tabulate_service_instances, tabulate_token_services
-from waiter.querying import get_service_id_from_instance_id, get_target_cluster_from_token, print_no_data, \
-    print_no_services, query_service, query_token, get_services_on_cluster, print_no_instances
+from waiter.instance_select import Destination, get_instance_id_from_destination
+from waiter.querying import get_service_id_from_instance_id, print_no_data, query_service
 from waiter.util import guard_no_cluster, print_info
 
 BASH_PATH = '/bin/bash'
-
-
-class Destination(Enum):
-    TOKEN = 'token'
-    SERVICE_ID = 'service_id'
-    INSTANCE_ID = 'instance_id'
 
 
 def map_instances_with_status(instances, status):
@@ -95,61 +87,6 @@ def ssh_instance_id(clusters, instance_id, command, container_name):
     return ssh_instance(found_instance, container_name, command)
 
 
-def ssh_service_id(clusters, service_id, command, container_name, skip_prompts, include_active_instances,
-                   include_failed_instances, include_killed_instances):
-    instances = get_instances_from_service_id(clusters, service_id, include_active_instances, include_failed_instances,
-                                              include_killed_instances)
-    if instances is False:
-        print_no_data(clusters)
-        return 1
-    if len(instances) == 0:
-        print_no_instances(service_id)
-        return 1
-    if skip_prompts:
-        selected_instance = instances[0]
-    else:
-        column_names = ['Instance Id', 'Host', 'Status']
-        tabular_output = tabulate_service_instances(instances, show_index=True, column_names=column_names)
-        selected_instance = get_user_selection(instances, tabular_output)
-    return ssh_instance(selected_instance, container_name, command)
-
-
-def ssh_token(clusters, enforce_cluster, token, command, container_name, skip_prompts, include_active_instances,
-              include_failed_instances, include_killed_instances):
-    if skip_prompts:
-        cluster = get_target_cluster_from_token(clusters, token, enforce_cluster)
-        query_result = get_services_on_cluster(cluster, token)
-        services = [s
-                    for s in query_result.get('services', [])
-                    if s['instance-counts']['healthy-instances'] + s['instance-counts']['unhealthy-instances'] > 0]
-        if len(services) == 0:
-            print_no_services(clusters, token)
-            return 1
-        max_last_request = max(s.get('last-request-time', '') for s in services)
-        selected_service_id = next(s['service-id'] for s in services if s['last-request-time'] == max_last_request)
-    else:
-        query_result = query_token(clusters, token, include_services=True)
-        if query_result['count'] == 0:
-            print_no_data(clusters)
-            return 1
-        clusters_by_name = {c['name']: c for c in clusters}
-        cluster_data = query_result['clusters']
-        services = [{'cluster': cluster, 'etag': data['etag'], **service}
-                    for cluster, data in cluster_data.items()
-                    for service in data['services']]
-        if len(services) == 0:
-            print_no_services(clusters, token)
-            return 1
-        column_names = ['Service Id', 'Cluster', 'Instances', 'In-flight req.', 'Status', 'Last request', 'Current?']
-        tabular_output, sorted_services = tabulate_token_services(services, token, show_index=True, summary_table=False,
-                                                                  column_names=column_names)
-        selected_service = get_user_selection(sorted_services, tabular_output)
-        selected_service_id = selected_service['service-id']
-        clusters = [clusters_by_name[selected_service['cluster']]]
-    return ssh_service_id(clusters, selected_service_id, command, container_name, skip_prompts,
-                          include_active_instances, include_failed_instances, include_killed_instances)
-
-
 def ssh(clusters, args, _, enforce_cluster):
     guard_no_cluster(clusters)
     token_or_service_id_or_instance_id = args.pop('token-or-service-id-or-instance-id')
@@ -160,14 +97,13 @@ def ssh(clusters, args, _, enforce_cluster):
     include_killed_instances = args.pop('include_killed_instances')
     container_name = args.pop('container_name', 'waiter-app')
     skip_prompts = args.pop('quick')
-    if ssh_destination == Destination.TOKEN:
-        return ssh_token(clusters, enforce_cluster, token_or_service_id_or_instance_id, command, container_name,
-                         skip_prompts, include_active_instances, include_failed_instances, include_killed_instances)
-    elif ssh_destination == Destination.SERVICE_ID:
-        return ssh_service_id(clusters, token_or_service_id_or_instance_id, command, container_name, skip_prompts,
-                              include_active_instances, include_failed_instances, include_killed_instances)
-    elif ssh_destination == Destination.INSTANCE_ID:
-        return ssh_instance_id(clusters, token_or_service_id_or_instance_id, command, container_name)
+
+    instance_id = get_instance_id_from_destination(clusters, enforce_cluster, token_or_service_id_or_instance_id,
+                                                   ssh_destination, skip_prompts, include_active_instances,
+                                                   include_failed_instances, include_killed_instances)
+    if instance_id is None:
+        return 1
+    return ssh_instance_id(clusters, instance_id, command, container_name)
 
 
 def register(add_parser):
@@ -179,7 +115,7 @@ def register(add_parser):
     parser.add_argument('token-or-service-id-or-instance-id')
     parser.add_argument('--container-name', '-c',
                         help='specify the container name you want to ssh into. Defaults to "waiter-app". Has no '
-                                'effect if instance is not k8s pod.')
+                             'effect if instance is not k8s pod.')
     id_group = parser.add_mutually_exclusive_group(required=False)
     id_group.add_argument('--token', '-t', dest='ssh_destination', action='store_const', const=Destination.TOKEN,
                           default=Destination.TOKEN, help='Default; ssh with token')
