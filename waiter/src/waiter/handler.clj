@@ -1335,8 +1335,8 @@
       (not= request-method :post)
       (do
         (log/error "unsupported request method" request-method)
-        (utils/clj->json-response {:message "Method not allowed"
-                                   :status http-405-method-not-allowed}))
+        (utils/clj->json-response {:message "Method not allowed"}
+                                  :status http-405-method-not-allowed))
 
       (not (allowed-to-manage-service?-fn service-id auth-user))
       (utils/exception->response
@@ -1350,8 +1350,8 @@
 
       (and (some? (get query-params "timeout"))
            (not (pos-int? (get options-map "timeout"))))
-      (utils/clj->json-response {:message (str "Invalid timeout specified: " (get query-params "timeout"))
-                                 :status http-400-bad-request})
+      (utils/clj->json-response {:message (str "Invalid timeout specified: " (get query-params "timeout"))}
+                                :status http-400-bad-request)
 
       :else
       (async/go
