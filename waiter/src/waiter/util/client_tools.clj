@@ -1141,7 +1141,7 @@
 (defn using-shell?
   "Returns true if Waiter is configured to use Shell Scheduler for scheduling"
   [waiter-url]
-  (= "shell" (retrieve-default-scheduler-name waiter-url)))
+  (str/includes? (retrieve-default-scheduler-name waiter-url) "shell"))
 
 (defn using-raven?
   "Returns true if Waiter is configured to use Kubernetes and the Raven sidecar proxy"

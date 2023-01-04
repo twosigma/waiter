@@ -526,10 +526,12 @@
         service-id
         (if (utils/raven-proxy-response? response)
           (assert-response-status response http-503-service-unavailable)
-          (do
+          (let [expected-error-message (if (using-shell? waiter-url)
+                                         "Request failed to connect to service backend"
+                                         "Request to service backend failed")]
             (assert-response-status response http-502-bad-gateway)
-            (is (str/includes? (-> response :body str) "Request to service backend failed"))
-            (is (str/includes? (-> response :headers (get "server")) "waiter/"))))
+            (is (str/includes? (-> response :body str) expected-error-message) (-> response :body str))
+            (is (str/includes? (-> response :headers (get "server")) "waiter/")) (-> response :headers str)))
         (let [{:keys [service-description]} (service-settings waiter-url service-id)
               {:keys [cmd health-check-port-index ports]} service-description]
           (is (= kitchen-command cmd))
