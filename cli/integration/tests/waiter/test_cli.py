@@ -2366,8 +2366,14 @@ class WaiterCliTest(util.WaiterTest):
                 util.ping_token(self.waiter_url, token_name)
             util.post_token(self.waiter_url, token_name, token_fields)
             service_id = util.ping_token(self.waiter_url, token_name, 200)
-            goal_fn = lambda insts: min_instances == len(insts.get('active-instances'))
-            util.wait_until_routers_service(self.waiter_url, service_id, lambda service: goal_fn(service.get('instances')))
+
+            def await_min_instances_before_kill(service):
+                inner_service_id = service.get('id', 'unknown')
+                inner_active_instances = service.get('instances', {}).get('active-instances')
+                logging.debug(f"Service {inner_service_id} has {len(inner_active_instances)} active instances.")
+                return min_instances == len(inner_active_instances)
+
+            util.wait_until_routers_service(self.waiter_url, service_id, await_min_instances_before_kill)
             instances = util.instances_for_service(self.waiter_url, service_id)
             possible_instances = get_possible_instances_fn(service_id, instances)
             signal_flags = [signal_flags] if signal_flags else []
@@ -2393,9 +2399,19 @@ class WaiterCliTest(util.WaiterTest):
                 if w == "instance":
                     killed_instance_id = cli_output[i + 1]
             self.assertNotEqual(None, killed_instance_id)
-            kill_fn = lambda insts: (min_instances - 1) == len(insts['active-instances']) and \
-                                    1 >= len(insts['killed-instances'])
-            util.wait_until_routers_service(self.waiter_url, service_id, lambda service: kill_fn(service['instances']))
+
+            def await_killed_instance_log(service):
+                inner_service_id = service.get('id', 'unknown')
+                inner_active_instances = service.get('instances', {}).get('active-instances')
+                inner_active_ids = list(map(lambda instance: instance.get('id', None), inner_active_instances))
+                inner_killed_instances = service.get('instances', {}).get('active-instances')
+                inner_killed_ids = list(map(lambda instance: instance.get('id', None), inner_killed_instances))
+                logging.debug(f"Service {inner_service_id} has {len(inner_active_instances)} active instances {inner_active_ids}"
+                              f"and {len(inner_killed_instances)} killed instances {inner_killed_ids}.")
+                return len(inner_killed_instances) >= 1 and killed_instance_id not in inner_active_ids
+
+            util.wait_until_routers_service(self.waiter_url, service_id, await_killed_instance_log)
+
             active_instances = util.get_specific_instances_for_service(self.waiter_url, service_id, 'active-instances')
             active_ids = list(map(lambda active_instance: active_instance.get('id', None), active_instances))
             self.assertNotIn(killed_instance_id, active_ids, "Assert Failed: killed-instance is in active instances")
