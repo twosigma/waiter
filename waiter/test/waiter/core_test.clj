@@ -174,6 +174,69 @@
             (service-gc-block service-data-atom num-times)
             (is (= (set (keys expected-service-data)) (set (keys @service-data-atom))))))))))
 
+(deftest test-instance-kill-signal-handler
+  (let [user "waiter-user"
+        service-id "test-service-1"
+        instance-id "test-service-1.test-instance-A"
+        waiter-request?-fn (fn [_] true)
+        inter-kill-request-wait-time-ms 10
+        scaling-timeout-config {:eject-backoff-base-time-ms 10000
+                                :inter-kill-request-wait-time-ms inter-kill-request-wait-time-ms
+                                :max-eject-time-ms 60000}
+        scheduler-interactions-thread-pool (Executors/newFixedThreadPool 1)
+        signal-instance-result-atom (atom nil)
+        scheduler (reify scheduler/ServiceScheduler
+                    (signal-instance [_ _ _ _ _]
+                      (let [result @signal-instance-result-atom]
+                        (if (instance? Throwable result)
+                          (throw result)
+                          result))))
+        configuration {:daemons {:populate-maintainer-chan! {:query-state-fn (constantly {})}
+                                 :router-state-maintainer {:maintainer {:notify-instance-killed-fn (constantly {})}}}
+                       :routines {:peers-acknowledged-eject-requests-fn (constantly true)
+                                  :allowed-to-manage-service?-fn (constantly true)
+                                  :service-id->service-description-fn (constantly {})}
+                       :scheduler {:scheduler scheduler}
+                       :state {:scaling-timeout-config scaling-timeout-config
+                               :scheduler-interactions-thread-pool scheduler-interactions-thread-pool}
+                       :wrap-ignore-disabled-auth-fn utils/wrap-identity
+                       :wrap-secure-request-fn utils/wrap-identity}
+        handlers {:instance-kill-signal-handler-fn ((:instance-kill-signal-handler-fn request-handlers) configuration)}]
+
+    (testing "signal-handler:valid-response-including-active-killed"
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"name" (str service-id "-name")
+                                                          "run-as-user" user})]
+        (let [request {:headers {"accept" "application/json"}
+                       :query-string "timeout=5000"
+                       :request-method :post
+                       :uri (str "/apps/" service-id "/instance/" instance-id "/kill")}
+              expected-kill-response {:message (str "sigkill successfully sent to " instance-id)
+                                      :success true}
+              _ (reset! signal-instance-result-atom (assoc expected-kill-response :status http-200-ok))
+              {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
+          (is (= http-200-ok status))
+          (is (= expected-json-response-headers headers))
+          (is (= (walk/stringify-keys expected-kill-response) (-> body (str) (json/read-str) (get "signal-response")))
+              (str body)))))
+
+    (testing "signal-handler:valid-response-active-failed"
+      (with-redefs [sd/fetch-core (fn [_ service-id & _] {"name" (str service-id "-name")
+                                                          "run-as-user" user})]
+        (let [request {:headers {"accept" "application/json"}
+                       :query-string "timeout=5000"
+                       :request-method :post
+                       :uri (str "/apps/" service-id "/instance/" instance-id "/kill")}
+              expected-kill-response {:message "service does not exist"
+                                      :success false}
+              _ (reset! signal-instance-result-atom (assoc expected-kill-response :status http-500-internal-server-error))
+              {:keys [body headers status]} (async/<!! ((ring-handler-factory waiter-request?-fn handlers) request))]
+          (is (= http-500-internal-server-error status))
+          (is (= expected-json-response-headers headers))
+          (is (= (walk/stringify-keys expected-kill-response) (-> body (str) (json/read-str) (get "signal-response")))
+              (str body)))))
+
+    (.shutdown scheduler-interactions-thread-pool)))
+
 (deftest test-suspend-or-resume-service-handler
   (let [kv-store (kv/->LocalKeyValueStore (atom {}))
         service-description-defaults {"cmd" "tc", "cpus" 1, "mem" 200, "version" "a1b2c3", "run-as-user" "tu1", "permitted-user" "tu2"}
@@ -1154,6 +1217,8 @@
            (exec-routes-mapper "/apps/test-service")))
     (is (= {:handler :service-await-handler-fn, :route-params {:service-id "test-service" :goal-state "exists"}}
            (exec-routes-mapper "/apps/test-service/await/exists")))
+    (is (= {:handler :instance-kill-signal-handler-fn, :route-params {:instance-id "test-instance" :service-id "test-service"}}
+           (exec-routes-mapper "/apps/test-service/instance/test-instance/kill")))
     (is (= {:handler :service-view-logs-handler-fn, :route-params {:service-id "test-service"}}
            (exec-routes-mapper "/apps/test-service/logs")))
     (is (= {:handler :service-override-handler-fn, :route-params {:service-id "test-service"}}

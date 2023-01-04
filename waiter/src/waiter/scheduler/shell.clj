@@ -102,20 +102,21 @@
   (comment "no return value"))
 
 (defn- kill-process-group!
-  "Kills the process group with group iod pgid."
-  [pgid]
+  "Kills the process group using provided signal with group id pgid."
+  [pgid posix-signal]
   (log/info "killing process group with group" pgid)
-  (sh/sh "pkill" "-9" "-g" (str pgid)))
+  (sh/sh "pkill" (str "-" posix-signal) "-g" (str pgid)))
 
 (defn kill-process!
   "Triggers killing of process and any children processes it spawned"
   [{:keys [:shell-scheduler/process :shell-scheduler/pid extra-ports port] :as instance}
-   port->reservation-atom port-grace-period-ms]
+   port->reservation-atom port-grace-period-ms force?]
   (try
-    (log/info "killing process:" instance)
-    (when process
+    (log/info (when force? "force") "killing process:" instance)
+    (when (and force? process)
       (.destroyForcibly process))
-    (kill-process-group! pid)
+    (let [posix-signal (if force? posix-sigkill posix-sigterm)]
+      (kill-process-group! pid posix-signal))
     (let [reserved-ports (cons port extra-ports)]
       (release-ports! port->reservation-atom reserved-ports port-grace-period-ms))
     (catch Throwable e
@@ -270,7 +271,7 @@
         (if (and instance (active? instance))
           (do
             (log/info "deleting instance" instance-id "process" process)
-            (kill-process! instance port->reservation-atom port-grace-period-ms)
+            (kill-process! instance port->reservation-atom port-grace-period-ms true)
             (deliver completion-promise :deleted)
             (-> id->service
                 (update-in [service-id :service :instances] dec)
@@ -291,6 +292,37 @@
       (deliver completion-promise :failed)
       id->service)))
 
+(defn- send-signal-to-instance
+  "Deletes the instance corresponding to service-id/instance-id and returns if successful"
+  [id->service service-id instance-id message port->reservation-atom port-grace-period-ms signal-type]
+  (try
+    (if (contains? id->service service-id)
+      (let [{:keys [id->instance]} (get id->service service-id)
+            {:keys [:shell-scheduler/process] :as instance} (get id->instance instance-id)]
+        (if (and instance (active? instance))
+          (do
+            (log/info "signaling instance" instance-id "process" process "with signal" (name signal-type))
+            (case signal-type
+              :signal/force-kill (kill-process! instance port->reservation-atom port-grace-period-ms true)
+              :signal/soft-kill (kill-process! instance port->reservation-atom port-grace-period-ms false)
+              (throw (IllegalArgumentException. "Not a supported signal.")))
+            (-> id->service
+                (update-in [service-id :service :instances] dec)
+                (update-in [service-id :id->instance instance-id] assoc
+                           :killed? true
+                           :message message
+                           :shell-scheduler/process nil)))
+          (do
+            (log/info "instance" instance-id "in service" service-id "does not exist")
+            id->service)))
+      (do
+        (log/info "service" service-id "does not exist")
+        id->service))
+    (catch Throwable e
+      (log/error e "error attempting to" (name signal-type) "instance" instance-id)
+      id->service)))
+
+
 (defn- delete-service
   "Deletes the service corresponding to service-id and returns the updated id->service map"
   [id->service service-id port->reservation-atom port-grace-period-ms completion-promise]
@@ -301,7 +333,7 @@
         (let [{:keys [id->instance]} (get id->service service-id)]
           (doseq [[_ instance] id->instance]
             (when (active? instance)
-              (kill-process! instance port->reservation-atom port-grace-period-ms))))
+              (kill-process! instance port->reservation-atom port-grace-period-ms true))))
         (deliver completion-promise :deleted)
         (dissoc id->service service-id))
       (do
@@ -383,7 +415,7 @@
         (do
           (log/info "unhealthy instance exceeded its grace period, killing instance"
                     {:instance instance :start-time started-at :current-time current-time :grace-period-secs grace-period-secs})
-          (kill-process! instance port->reservation-atom port-grace-period-ms)
+          (kill-process! instance port->reservation-atom port-grace-period-ms true)
           (assoc instance
             :failed? true
             :flags #{:never-passed-health-checks}
@@ -401,7 +433,7 @@
           memory-used (pid->memory pid)]
       (if (and memory-used (> memory-used memory-allocated))
         (do (log/info "instance exceeds memory limit, killing instance" {:instance instance :memory-limit memory-allocated :memory-used memory-used})
-            (kill-process! instance port->reservation-atom port-grace-period-ms)
+            (kill-process! instance port->reservation-atom port-grace-period-ms true)
             (assoc instance
               :failed? true
               :flags #{:memory-limit-exceeded}
@@ -607,6 +639,36 @@
     (let [id->service @id->service-agent]
       (map (fn [[_ {:keys [service]}]] service) id->service)))
 
+  (signal-instance [this service-id instance-id signal-type options-map]
+    (let [service-exists? (scheduler/service-exists? this service-id)
+          {:keys [killed?] :as instance} (get-in @id->service-agent [service-id :id->instance instance-id])]
+      (cond
+        (not service-exists?) {:message "service does not exist"
+                               :service-id service-id
+                               :status http-404-not-found
+                               :success false}
+        (nil? instance) {:instance-id instance-id
+                         :message "instance does not exist"
+                         :service-id service-id
+                         :status http-404-not-found
+                         :success false}
+        killed? {:instance-id instance-id
+                 :message "instance has already been killed"
+                 :service-id service-id
+                 :status http-400-bad-request
+                 :success false}
+        (not (scheduler/supported-signal-type? signal-type)) {:message "invalid signal type"
+                                                              :options options-map
+                                                              :status http-400-bad-request
+                                                              :success false}
+        :else (let [message (str "Sent " (name signal-type) " using scheduler API")]
+                (send id->service-agent send-signal-to-instance service-id instance-id message
+                      port->reservation-atom port-grace-period-ms signal-type)
+                (scheduler/log-service-instance instance signal-type :info)
+                {:success true
+                 :message (str (name signal-type) " successfully sent to " instance-id)
+                 :status http-200-ok}))))
+
   (kill-instance [this {:keys [id service-id] :as instance}]
     (if (scheduler/service-exists? this service-id)
       (let [completion-promise (promise)
@@ -780,7 +842,7 @@
     (log/info {:expected-running-pids expected-running-pids
                :orphaned-pids orphaned-pids
                :running-pids running-pids})
-    (run! kill-process-group! orphaned-pids)))
+    (run! #(kill-process-group! % posix-sigkill) orphaned-pids)))
 
 (defn- mark-lost-processes
   "Detects and marks lost processes."

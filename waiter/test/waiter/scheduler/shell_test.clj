@@ -331,7 +331,7 @@
     (testing "should handle exceptions"
       (let [instance (launch-instance "foo" {"backend-proto" "http" "cmd" "ls" "ports" 1 "mem" 32} (work-dir) {} (atom {}) [0 0])]
         (with-redefs [t/plus (fn [_ _] (throw (ex-info "ERROR!" {})))]
-          (kill-process! instance (atom {}) 0))))
+          (kill-process! instance (atom {}) 0 true))))
 
     (testing "should release ports"
       (let [port-reservation-atom (atom {})
@@ -343,7 +343,7 @@
                (vals @port-reservation-atom)))
         (let [current-time (t/now)]
           (with-redefs [t/now (fn [] current-time)]
-            (kill-process! instance port-reservation-atom 0)
+            (kill-process! instance port-reservation-atom 0 true)
             (is (= num-ports (count @port-reservation-atom)))
             (is (= (repeat num-ports {:state :in-grace-period-until-expiry, :expiry-time current-time})
                    (vals @port-reservation-atom)))))))))

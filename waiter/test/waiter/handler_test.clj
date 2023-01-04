@@ -2123,3 +2123,100 @@
         ; expect that even after 1 second, the crash-fn was not called
         (utils/sleep 1100)
         (is (not @crash-fn-called?-atom))))))
+
+(deftest test-signal-handler
+  (let [test-user "test-user"
+        test-service-id "service-1"
+        test-instance-id (str test-service-id ".A")
+        signal-type "sigkill"
+        src-router-id "router-1"
+        notify-instance-chan (async/promise-chan)
+        notify-instance-killed-fn (fn [instance] (async/>!! notify-instance-chan instance))
+        peers-acknowledged-eject-requests-fn (constantly true)
+        allowed-to-manage-service?-fn (fn [service-id user] (and (= test-service-id service-id) (= test-user user)))
+        instance-rpc-chan (async/chan)
+        populate-maintainer-chan! (make-populate-maintainer-chan! instance-rpc-chan)
+        inter-kill-request-wait-time-ms 10
+        timeout-config {:eject-backoff-base-time-ms 10000
+                        :inter-kill-request-wait-time-ms inter-kill-request-wait-time-ms
+                        :max-eject-time-ms 60000}
+        service-id->service-description-fn (constantly {})
+        scale-service-thread-pool (Executors/newFixedThreadPool 1)]
+    (testing "signal-handler:success-true"
+      (let [scheduler (reify scheduler/ServiceScheduler
+                        (signal-instance [_ service-id instance-id _ _]
+                          (is (= test-service-id service-id))
+                          (is (= test-instance-id instance-id))
+                          {:success true
+                           :message (str "sigkill successfully sent to " test-instance-id)
+                           :status 200}))
+            request {:request-method :post
+                     :authorization/user test-user
+                     :route-params {:instance-id test-instance-id :signal-type signal-type :service-id test-service-id}
+                     :basic-authentication {:src-router-id src-router-id}
+                     :query-string (str "timeout=" 1000)}
+            {:keys [body headers status]}
+            (async/<!!
+              (instance-kill-signal-handler notify-instance-killed-fn allowed-to-manage-service?-fn scheduler
+                                            timeout-config service-id->service-description-fn scale-service-thread-pool request))]
+        (is (= http-200-ok status))
+        (is (= "application/json" (get headers "content-type")))
+        (let [body-json (json/read-str (str body))]
+          (is (= {"message" (str "sigkill successfully sent to " test-instance-id) "success" true}
+                 (get body-json "signal-response"))))))
+    (testing "signal-handler:User not Auth"
+      (let [scheduler (reify scheduler/ServiceScheduler
+                        (signal-instance [_ service-id instance-id _ _]
+                          (is (= test-service-id service-id))
+                          (is (= test-instance-id instance-id))
+                          ))
+            request {:request-method :post
+                     :authorization/user "wrong-user"
+                     :route-params {:instance-id test-instance-id :signal-type signal-type :service-id test-service-id}
+                     :basic-authentication {:src-router-id src-router-id}
+                     :query-string (str "timeout=" 1000)}
+            {:keys [body status]}
+            (instance-kill-signal-handler notify-instance-killed-fn allowed-to-manage-service?-fn scheduler
+                                          timeout-config service-id->service-description-fn scale-service-thread-pool request)]
+        (is (= http-403-forbidden status))
+        (is (str/includes? (str body) "User not allowed to send signal to instance"))))
+    (testing "signal-handler:Request Method Not Allowed"
+      (let [scheduler (reify scheduler/ServiceScheduler
+                        (signal-instance [_ service-id instance-id _ _]
+                          (is (= test-service-id service-id))
+                          (is (= test-instance-id instance-id))
+                          {:message "Method not allowed"
+                           :status http-405-method-not-allowed}))
+            request {:request-method :get
+                     :authorization/user test-user
+                     :route-params {:instance-id test-instance-id :signal-type signal-type :service-id test-service-id}
+                     :basic-authentication {:src-router-id src-router-id}
+                     :query-string (str "timeout=" 1000)}
+            signal-handler (core/wrap-error-handling
+                             #(instance-kill-signal-handler notify-instance-killed-fn allowed-to-manage-service?-fn scheduler
+                                                            timeout-config service-id->service-description-fn scale-service-thread-pool %))
+            {:keys [body headers status]} (signal-handler request)]
+        (is (= http-200-ok status))
+        (is (= "application/json" (get headers "content-type")))
+        (is (= {"status" 405, "message" "Method not allowed"} (json/read-str (str body))))))
+    (testing "signal-handler:success-false"
+      (let [scheduler (reify scheduler/ServiceScheduler
+                        (signal-instance [_ service-id instance-id _ _]
+                          (is (= test-service-id service-id))
+                          (is (= test-instance-id instance-id))
+                          {:message :no-instance-killed
+                           :status http-500-internal-server-error}))
+            request {:request-method :post
+                     :authorization/user test-user
+                     :route-params {:instance-id test-instance-id :signal-type signal-type :service-id test-service-id}
+                     :basic-authentication {:src-router-id src-router-id}
+                     :query-string (str "timeout=" 1000)}
+            {:keys [body headers status]}
+            (async/<!!
+              (instance-kill-signal-handler notify-instance-killed-fn allowed-to-manage-service?-fn scheduler
+                                            timeout-config service-id->service-description-fn scale-service-thread-pool request))]
+        (is (= http-500-internal-server-error status))
+        (is (= "application/json" (get headers "content-type")))
+        (let [body-json (json/read-str (str body))]
+          (is (= {"message" "no-instance-killed"} (get body-json "signal-response"))))))
+    (.shutdown scale-service-thread-pool)))

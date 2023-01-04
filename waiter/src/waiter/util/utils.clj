@@ -726,11 +726,16 @@
   (println msg)
   (System/exit status))
 
+(defn parse-boolean
+  "Parses the string argument as a boolean value."
+  [value]
+  (Boolean/parseBoolean (str value)))
+
 (defn request-flag
   "Returns true if and only if flag is present and
   'true' in the provided request params"
   [params flag]
-  (Boolean/parseBoolean (str (get params flag "false"))))
+  (parse-boolean (get params flag "false")))
 
 (defn parse-int
   "Returns either the input as an integer or nil if there was an error in parsing."

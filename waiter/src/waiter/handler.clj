@@ -26,6 +26,7 @@
             [full.async :refer [<?]]
             [metrics.counters :as counters]
             [metrics.meters :as meters]
+            [metrics.timers :as timers]
             [plumbing.core :as pc]
             [ring.middleware.multipart-params :as multipart-params]
             [ring.middleware.ssl :as ssl]
@@ -1282,3 +1283,87 @@
         request))
     (catch Throwable th
       (utils/exception->response th request))))
+
+(defn- execute-signal
+  "Helper function to send signals to instances of a service.
+   The instance will be marked as killed upon success."
+  [notify-instance-killed-fn scheduler timeout-config instance-id service-id signal-type options-map
+   thread-pool response-chan]
+  (let [correlation-id (cid/get-correlation-id)
+        {:keys [eject-backoff-base-time-ms]} timeout-config]
+    (async/go
+      (cid/with-correlation-id
+        correlation-id
+        (try
+          (let [request-id (utils/unique-identifier)] ; new unique identifier for this reservation request
+            (log/info "Attempting to send signal to " instance-id)
+            (do
+              (log/info "sending signal to instance " instance-id service-id)
+              (when (contains? #{:sigkill :sigterm} signal-type)
+                (scheduler/track-kill-candidate! instance-id :prepare-to-kill eject-backoff-base-time-ms))
+              (let [{:keys [success] :as signal-result}
+                    (-> (au/execute
+                          (fn send-signal-to-instance []
+                            (scheduler/signal-instance scheduler service-id instance-id signal-type options-map))
+                          thread-pool)
+                        async/<!
+                        :result)]
+                (when (and success (contains? #{:sigkill :sigterm} signal-type))
+                  (do
+                    (log/info "marking instance" instance-id "as killed")
+                    (scheduler/track-kill-candidate! instance-id :killed eject-backoff-base-time-ms)
+                    (notify-instance-killed-fn {:id instance-id :service-id service-id})))
+                (when response-chan (async/>! response-chan signal-result))
+                success)))
+          (catch Exception ex
+            (log/error ex "unable to send signal" signal-type "to instance" instance-id)
+            (when response-chan
+              (async/>! response-chan {:success false :message (.getMessage ex) :status http-500-internal-server-error}))))))))
+
+(defn instance-kill-signal-handler
+  "Handler that supports sending signals to instances of a particular service on a specific router."
+  [notify-instance-killed-fn allowed-to-manage-service?-fn scheduler timeout-config service-id->service-description-fn scale-service-thread-pool
+   {:keys [request-method route-params] :as request}]
+  (let [{:keys [instance-id service-id]} route-params
+        {:keys [query-params]} (ru/query-params-request request)
+        auth-user (get request :authorization/user)
+        options-map (-> query-params
+                        (update "force" utils/parse-boolean)
+                        (update "timeout" utils/parse-int))]
+    (log/info "received request to kill instance" instance-id "with query parameters" query-params)
+    (cond
+      (not= request-method :post)
+      (do
+        (log/error "unsupported request method" request-method)
+        (utils/clj->json-response {:message "Method not allowed"
+                                   :status http-405-method-not-allowed}))
+
+      (not (allowed-to-manage-service?-fn service-id auth-user))
+      (utils/exception->response
+        (ex-info "User not allowed to send signal to instance"
+                 {:current-user auth-user
+                  :instance-id instance-id
+                  :log-level :info
+                  :service-id service-id
+                  :status http-403-forbidden})
+        request)
+
+      (and (some? (get query-params "timeout"))
+           (not (pos-int? (get options-map "timeout"))))
+      (utils/clj->json-response {:message (str "Invalid timeout specified: " (get query-params "timeout"))
+                                 :status http-400-bad-request})
+
+      :else
+      (async/go
+        (timers/start-stop-time!
+          (metrics/waiter-timer "handler" "signal-handler-duration")
+          (let [signal-type (scheduler/resolve-signal-type :kill options-map)
+                response-chan (async/promise-chan)
+                _ (execute-signal
+                    notify-instance-killed-fn scheduler timeout-config instance-id service-id signal-type options-map
+                    scale-service-thread-pool response-chan)
+                signal-response (async/<! response-chan)]
+            (if (instance? Throwable signal-response)
+              (utils/exception->response signal-response request)
+              (utils/clj->json-response {:signal-response (dissoc signal-response :status)}
+                                        :status (get signal-response :status http-500-internal-server-error)))))))))

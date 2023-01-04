@@ -5,9 +5,9 @@
             [waiter.scheduler.shell :refer :all]
             [waiter.test-helpers :refer :all])
   (:import (java.nio.file Files Paths)
-           java.nio.file.attribute.FileAttribute))
+           (java.nio.file.attribute FileAttribute)))
 
-(deftest ^:parallel ^:integration-fast test-kill-process
+(deftest ^:parallel ^:integration-fast test-kill-process!
   (let [working-dir (Files/createTempDirectory nil
                                                (make-array FileAttribute 0))
         test-cmd (-> (Paths/get "test-files/test-command.sh" (make-array String 0))
@@ -26,6 +26,6 @@
     (is (wait-for #(= 4 (count (str/split (:out (sh/sh "pgrep" "-g" (str pid)))
                                           #"\n")))
                   :interval 1 :timeout 10))
-    (kill-process! instance port->reservation-atom 100)
+    (kill-process! instance port->reservation-atom 100 true)
     (is (wait-for #(= "" (:out (sh/sh "pgrep" "-g" (str pid))))
                   :interval 1 :timeout 10))))

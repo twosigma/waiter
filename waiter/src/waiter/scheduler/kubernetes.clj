@@ -46,7 +46,8 @@
             [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
             [waiter.util.utils :as utils])
-  (:import (java.io InputStreamReader)
+  (:import (clojure.lang ILookup)
+           (java.io InputStreamReader)
            (java.util.concurrent Executors)
            (org.joda.time.format DateTimeFormat)))
 
@@ -767,22 +768,66 @@
   (str api-server-url "/api/v1/namespaces/" namespace "/pods/" pod-name))
 
 (defn hard-delete-service-instance
-  "Force kill the Kubernetes pod corresponding to the given Waiter Service Instance.
+  "Force kills the Kubernetes pod corresponding to the given Waiter Service Instance.
    Does not adjust ReplicaSet replica count; preventing scheduling of a replacement pod must be ensured by the callee.
+   Returns throwable instance on failure, returns the pod object on success."
+  [{:keys [api-server-url] :as scheduler} instance]
+  (try
+    (let [pod-url (instance->pod-url api-server-url instance)]
+      (api-request pod-url scheduler :request-method :delete))
+    (catch Throwable th
+      (log/error th "error in force killing pod")
+      th)))
+
+(defn soft-delete-service-instance
+  [{:keys [api-server-url] :as scheduler} instance timeout-ms]
+  "Gracefully kills the Kubernetes pod corresponding to the given Waiter Service Instance.
+   Does not adjust ReplicaSet replica count; preventing scheduling of a replacement pod must be ensured by the callee.
+   Returns throwable instance on failure, returns the pod object on success."
+  (try
+    (let [pod-url (instance->pod-url api-server-url instance)
+          body-json (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds timeout-ms})]
+      (api-request pod-url scheduler :body body-json :request-method :delete))
+    (catch Throwable th
+      (log/error th "error in gracefully killing pod")
+      th)))
+
+(defn calculate-grace-period-secs-for-delete
+  "Calculates the grace period seconds to use while deleting the pod."
+  [{:keys [pod-bypass service-id->service-description-fn]} service-id]
+  (let [{:keys [force-sigterm-secs sigterm-grace-period-secs]} pod-bypass
+        {:strs [env] :as service-description} (service-id->service-description-fn service-id)
+        bypass-enabled? (sd/service-description-bypass-enabled? service-description)
+        ;; We have to add both of these durations together because K8s gracePeriodSeconds countdown is done
+        ;; in parallel with the preStop hook and issuing the SIGTERM signal.
+        ;; https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination
+        force-sigterm-secs (-> env (get "WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS") (or (str force-sigterm-secs)) (utils/parse-int))
+        sigterm-grace-period-secs (-> env (get "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS") (or (str sigterm-grace-period-secs)) (utils/parse-int))
+        total-bypass-grace-period-secs (+ force-sigterm-secs sigterm-grace-period-secs)
+        default-grace-period-seconds 300]
+    (if bypass-enabled?
+      total-bypass-grace-period-secs
+      default-grace-period-seconds)))
+
+(defn signal-service-instance
+  "Sends specified signal to the Kubernetes pod corresponding to the given Waiter Service Instance.
    Returns nil on success, but throws on failure."
-  [{:keys [api-server-url] :as scheduler} {:keys [service-id] :as instance}]
-  (let [pod-url (instance->pod-url api-server-url instance)]
-    (try
-      (api-request pod-url scheduler :request-method :delete)
-      (catch Throwable t
-        (log/error t "Error force-killing pod")))))
+  [scheduler instance signal-type timeout-ms]
+  (do
+    (scheduler/log-service-instance instance signal-type :info)
+    (case signal-type
+      ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
+      :signal/soft-kill (soft-delete-service-instance scheduler instance timeout-ms)
+      ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
+      ; (note that the pod's default grace period is different from the 300s period set above)
+      :signal/force-kill (hard-delete-service-instance scheduler instance)
+      (throw (IllegalArgumentException. (str "Not a supported signal: " signal-type))))))
 
 (defn kill-service-instance
   "Safely kill the Kubernetes pod corresponding to the given Waiter Service Instance.
    Also adjusts the ReplicaSet replica count to prevent a replacement pod from being started.
    Returns nil on success, but throws on failure."
-  [{:keys [api-server-url service-id->service-description-fn] {:keys [force-sigterm-secs sigterm-grace-period-secs]} :pod-bypass :as scheduler}
-   {:keys [service-id] :as instance} service]
+  [{:keys [api-server-url service-id->service-description-fn] :as scheduler} {:keys [service-id] :as instance} service]
   ;; SAFE DELETION STRATEGY:
   ;; 1) Delete the target pod with a grace period of 5 minutes
   ;;    Since the target pod is currently in the "Terminating" state,
@@ -802,15 +847,9 @@
   ;; to step 3, then the pod was already deleted, and the force-delete is no longer needed.
   ;; The force-delete can fail with a 404 (object not found), but this operation still succeeds.
   (let [pod-url (instance->pod-url api-server-url instance)
-        desc (service-id->service-description-fn service-id)
-        bypass-enabled? (sd/service-description-bypass-enabled? desc)
-        ;; We have to add both of these durations together because K8s gracePeriodSeconds countdown is done
-        ;; in parallel with the preStop hook and issuing the SIGTERM signal.
-        ;; https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination
-        force-sigterm-secs (utils/parse-int (get-in desc ["env" "WAITER_CONFIG_BYPASS_FORCE_SIGTERM_SECS"] (str force-sigterm-secs)))
-        sigterm-grace-period-secs (utils/parse-int (get-in desc ["env" "WAITER_CONFIG_BYPASS_SIGTERM_GRACE_PERIOD_SECS"] (str sigterm-grace-period-secs)))
-        total-bypass-grace-period-secs (+ force-sigterm-secs sigterm-grace-period-secs)
-        grace-period-seconds (if bypass-enabled? total-bypass-grace-period-secs 300)]
+        service-description (service-id->service-description-fn service-id)
+        bypass-enabled? (sd/service-description-bypass-enabled? service-description)
+        grace-period-seconds (calculate-grace-period-secs-for-delete scheduler service-id)]
     (when bypass-enabled?
       (log/info "deleting pod for bypass service" {:grace-period-seconds grace-period-seconds}))
     ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
@@ -861,7 +900,7 @@
         (ss/try+
           (with-retries
             #(api-request request-url scheduler :body rs-spec-json :request-method :post))
-          (catch clojure.lang.ILookup response
+          (catch ILookup response
             ; Don't create deployment error for http-409-conflict (replicaset already exists)
             (when-not (= (:status response) http-409-conflict)
               (let [response->deployment-error-details-fn (fn [k8s-response] {:k8s-response-body (get-in k8s-response [:body])})
@@ -978,6 +1017,50 @@
   (get-services [this]
     (get-services this))
 
+  (signal-instance [this service-id instance-id signal-type options-map]
+    (let [service (service-id->service this service-id)
+          {:keys [killed? pod-name] :as instance} (unpack-instance-id instance-id)]
+      (cond
+        (nil? service) {:message "service does not exist"
+                        :service-id service-id
+                        :status http-404-not-found
+                        :success false}
+        (nil? instance) {:instance-id instance-id
+                         :message "instance does not exist"
+                         :service-id service-id
+                         :status http-404-not-found
+                         :success false}
+        killed? {:instance-id instance-id
+                 :message "instance has already been killed"
+                 :service-id service-id
+                 :status http-400-bad-request
+                 :success false}
+        (not (scheduler/supported-signal-type? signal-type)) {:message "invalid signal type"
+                                                              :options options-map
+                                                              :status http-400-bad-request
+                                                              :success false}
+        :else (try
+                (let [pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])
+                      service-instance (pod->ServiceInstance this pod)
+                      kill-timeout-ms (or (get options-map "timeout")
+                                          (when (= :signal/soft-kill signal-type)
+                                            (calculate-grace-period-secs-for-delete this service-id)))
+                      response-or-throwable (signal-service-instance this service-instance signal-type kill-timeout-ms)]
+                  (if (instance? Throwable response-or-throwable)
+                    (do
+                      (log/error response-or-throwable "error in deleting k8s pod")
+                      {:message (.getMessage response-or-throwable)
+                       :status http-500-internal-server-error
+                       :success false})
+                    {:message (str (name signal-type) " successfully sent to " instance-id)
+                     :status http-200-ok
+                     :success true}))
+                (catch Throwable th
+                  (log/error th "error while signaling instance")
+                  {:message (.getMessage th)
+                   :status http-500-internal-server-error
+                   :success false})))))
+
   (kill-instance [this {:keys [id service-id] :as instance}]
     (ss/try+
       (let [service (service-id->service this service-id)]
@@ -987,7 +1070,7 @@
          :killed? true
          :message "Successfully killed instance"
          :service-id service-id
-         :status http-200-ok })
+         :status http-200-ok})
       (catch [:status http-404-not-found] _
         {:instance-id id
          :killed? false
