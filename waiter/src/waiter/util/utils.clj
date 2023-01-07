@@ -221,6 +221,11 @@
     :key-fn stringify-keys
     :value-fn stringify-elements))
 
+(defn clj->json-stream
+  "Convert the input Clojure data structure into a json string input stream."
+  [data-map]
+  (-> data-map (clj->json) (str) (.getBytes) (ByteArrayInputStream.)))
+
 (defn clj->json-response
   "Convert the input data into a json response."
   [data-map & {:keys [headers status] :or {headers {} status http-200-ok }}]

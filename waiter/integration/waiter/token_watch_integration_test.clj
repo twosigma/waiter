@@ -61,6 +61,7 @@
                               "last-update-time" last-update-time
                               "maintenance" false
                               "owner" (retrieve-username)
+                              "reference-type->reference-name" {}
                               "token" token})))]
           (assert-response-status response 200)
           (is (await-goal-response-for-all-routers goal-fn watch-state-request-fn router_urls))))
@@ -80,6 +81,7 @@
                               "last-update-time" last-update-time
                               "maintenance" false
                               "owner" (retrieve-username)
+                              "reference-type->reference-name" {}
                               "token" token})))]
           (assert-response-status response 200)
           (is (await-goal-response-for-all-routers goal-fn watch-state-request-fn router_urls))))
@@ -96,6 +98,7 @@
                               "etag" nil
                               "maintenance" false
                               "owner" (retrieve-username)
+                              "reference-type->reference-name" {}
                               "token" token})))]
           (is (await-goal-response-for-all-routers goal-fn watch-state-request-fn router_urls))))
 
@@ -203,17 +206,21 @@
             (let [watch (start-tokens-watch waiter-url cookies :query-params {"watch" "true"})]
               (assert-watch-token-index-entry watch timeout-secs token-1 {"token" token-1
                                                                           "owner" (retrieve-username)
-                                                                          "maintenance" false})
+                                                                          "maintenance" false
+                                                                          "reference-type->reference-name" {}})
               (assert-watch-token-index-entry watch timeout-secs token-2 {"token" token-2
                                                                           "owner" (retrieve-username)
-                                                                          "maintenance" false})
+                                                                          "maintenance" false
+                                                                          "reference-type->reference-name" {}})
               (post-token waiter-url (assoc (kitchen-params) :token token-1 :version "update-1"))
               (assert-watch-token-index-entry-does-not-change watch timeout-secs token-1 {"token" token-1
                                                                                           "owner" (retrieve-username)
-                                                                                          "maintenance" false})
+                                                                                          "maintenance" false
+                                                                                          "reference-type->reference-name" {}})
               (assert-watch-token-index-entry-does-not-change watch timeout-secs token-2 {"token" token-2
                                                                                           "owner" (retrieve-username)
-                                                                                          "maintenance" false})
+                                                                                          "maintenance" false
+                                                                                          "reference-type->reference-name" {}})
               (stop-tokens-watch watch))
             (finally
               (delete-token-and-assert waiter-url token-1)
@@ -232,12 +239,14 @@
             (let [watch (start-tokens-watch waiter-url cookies :query-params {"maintenance" "false" "watch" "true"})]
               (assert-watch-token-index-entry watch timeout-secs token-1 {"token" token-1
                                                                           "owner" (retrieve-username)
-                                                                          "maintenance" false})
+                                                                          "maintenance" false
+                                                                          "reference-type->reference-name" {}})
               (assert-watch-token-index-entry watch timeout-secs token-2 nil)
               (post-token waiter-url (assoc (kitchen-params) :token token-1 :maintenance {:message "maintenance message"}))
               (assert-watch-token-index-entry-does-not-change watch timeout-secs token-1 {"token" token-1
                                                                                           "owner" (retrieve-username)
-                                                                                          "maintenance" false})
+                                                                                          "maintenance" false
+                                                                                          "reference-type->reference-name" {}})
               (assert-watch-token-index-entry-does-not-change watch timeout-secs token-2 nil)
               (stop-tokens-watch watch))
             (finally
@@ -258,15 +267,18 @@
               (assert-watch-token-index-entry watch timeout-secs token-1 nil)
               (assert-watch-token-index-entry watch timeout-secs token-2 {"token" token-2
                                                                           "owner" (retrieve-username)
-                                                                          "maintenance" true})
+                                                                          "maintenance" true
+                                                                          "reference-type->reference-name" {}})
               (post-token waiter-url (assoc (kitchen-params) :token token-1 :maintenance {:message "maintenance message"}))
               (post-token waiter-url (assoc (kitchen-params) :token token-2))
               (assert-watch-token-index-entry watch timeout-secs token-1 {"token" token-1
                                                                           "owner" (retrieve-username)
-                                                                          "maintenance" true})
+                                                                          "maintenance" true
+                                                                          "reference-type->reference-name" {}})
               (assert-watch-token-index-entry-does-not-change watch timeout-secs token-2 {"token" token-2
                                                                                           "owner" (retrieve-username)
-                                                                                          "maintenance" true})
+                                                                                          "maintenance" true
+                                                                                          "reference-type->reference-name" {}})
               (stop-tokens-watch watch))
             (finally
               (delete-token-and-assert waiter-url token-1)
