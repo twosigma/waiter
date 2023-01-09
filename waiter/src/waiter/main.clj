@@ -76,9 +76,12 @@
               throughput-meter-global (metrics/waiter-meter "streaming" "request-bytes")
               throughput-iterations-meter-global (metrics/waiter-meter "streaming" "request-iterations")
               complete-request-streaming (fn complete-request-streaming [throwable]
-                                           (if throwable
-                                             (log/debug throwable "error after consuming" @bytes-counter-atom "bytes from request stream")
-                                             (log/debug "successfully consumed" @bytes-counter-atom "bytes from request stream"))
+                                           (let [num-bytes-consumed @bytes-counter-atom
+                                                 bytes-consumed? (pos? num-bytes-consumed)]
+                                             (when bytes-consumed?
+                                               (log/info "consumed" num-bytes-consumed "bytes from request stream"))
+                                             (when throwable
+                                               (log/debug throwable "error consuming bytes from request stream")))
                                            (async/>!! response-ch response))
               buffer-bytes (byte-array buffer-size)]
           (try
