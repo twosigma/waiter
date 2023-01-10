@@ -8,12 +8,12 @@ requirements = [
     'humanfriendly>=4.18',
     'pyyaml>=3.13',
     'requests>=2.20.0',
+    'retrying>=1.3.3',
     'tabulate>=0.8.3'
 ]
 
 test_requirements = [
     'pytest',
-    'retrying'
 ]
 
 extras = {

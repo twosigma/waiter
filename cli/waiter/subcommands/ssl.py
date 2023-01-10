@@ -1,14 +1,21 @@
 
 from waiter.action import check_ssl
-from waiter.util import check_positive
+from waiter.util import check_positive, print_error
 
 
 def ensureSSL(_, args, __, ___):
     """Checks the state of SSL for the provided token."""
+    port=443
     token_name = args.get('token')
     timeout_secs = args.get('timeout', None)
-    ssl_success = check_ssl(token_name, timeout_secs)
-    return 0 if ssl_success else 1
+    try:
+        check_ssl(token_name, port, timeout_secs)
+    # Any exception indicates an issue connecting to or handshaking the backend service
+    except Exception as e:
+        print_error(e)
+        print_error(f'Connection to {token_name}:{port} failed')
+        return 1
+    return 0
 
 
 def register(add_parser):

@@ -1,6 +1,8 @@
 import json
 import logging
 import requests
+import socket
+import ssl
 from urllib.parse import urljoin
 
 from tabulate import tabulate
@@ -91,16 +93,14 @@ def ping_on_cluster(cluster, timeout, wait_for_request, token_name, service_exis
     return succeeded
 
 
-def check_ssl(token_name, timeout_seconds):
-    """Returns true if a request to the token's DNS name doesn't encounter an SSL error"""
+def check_ssl(token_name, port, timeout_seconds):
+    """Returns true when a socket to the token's DNS name doesn't raise an SSL or connection error"""
     timeout_millis = timeout_seconds * 1000
-    try:
-        http_util.__get(f"https://{token_name}", read_timeout=timeout_millis)
-    # Any exception indicates an issue connecting to or handshaking the backend service
-    # This exception is the base exception type that requests.get throws for connection, timeout or SSL related errors
-    except requests.exceptions.RequestException as e:
-        print(f'Request to {token_name} failed with exception {e}')
-        return False
+    context = ssl.create_default_context()
+    with socket.create_connection((token_name, port)) as cleartext_socket:
+        with context.wrap_socket(cleartext_socket, server_hostname=token_name) as tls_socket:
+            tls_version = tls_socket.version()
+            print(f'Successfully connected to {token_name}:{port} using {tls_version}')
     return True
 
 
