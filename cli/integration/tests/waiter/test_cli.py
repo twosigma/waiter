@@ -598,6 +598,24 @@ class WaiterCliTest(util.WaiterTest):
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
 
+    @unittest.skipIf('WAITER_TEST_CLI_TLS' not in os.environ, 'waiter tokens may not support tls.')
+    def test_ready_basic(self):
+        token_name = self.token_name()
+        util.post_token(self.waiter_url, token_name, util.minimal_service_description())
+        try:
+            self.assertEqual(0, len(util.services_for_token(self.waiter_url, token_name)))
+            cp = cli.ready(self.waiter_url, token_name)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn('Pinging token', cli.stdout(cp))
+            self.assertIn('successful', cli.stdout(cp))
+            self.assertIn('Service is currently', cli.stdout(cp))
+            self.assertTrue(any(s in cli.stdout(cp) for s in ['Running', 'Starting']))
+            self.assertIn('Successfully connected to', cli.stdout(cp))
+            self.assertIn(f'{token_name}:443', cli.stdout(cp))
+            util.wait_until_services_for_token(self.waiter_url, token_name, 1)
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+
     def test_kill_token_and_then_ping(self):
         token_name = self.token_name()
         util.post_token(self.waiter_url, token_name, util.minimal_service_description())

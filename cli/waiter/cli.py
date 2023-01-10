@@ -3,7 +3,7 @@ import logging
 from urllib.parse import urlparse
 
 from waiter import configuration, http_util, metrics, version
-from waiter.subcommands import create, delete, init, instance, kill, maintenance, ping, show, ssh, ssl, tokens, update
+from waiter.subcommands import create, delete, init, instance, kill, maintenance, ping, ready, show, ssh, ssl, tokens, update
 import waiter.plugins as waiter_plugins
 
 parser = argparse.ArgumentParser(description='waiter is the Waiter CLI')
@@ -43,6 +43,9 @@ actions = {
     },
     'instance': {
         'run-function': instance.register(subparsers.add_parser)
+    },
+    'ready': {
+        'run-function': ready.register(subparsers.add_parser)
     },
     'show': {
         'run-function': show.register(subparsers.add_parser)

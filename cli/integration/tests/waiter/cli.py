@@ -363,6 +363,17 @@ def ping(waiter_url=None, token_name_or_service_id=None, flags=None, ping_flags=
     return cp
 
 
+def ready(waiter_url=None, token_name=None, flags=None, ready_flags=None):
+    """Checks if a token is ready for traffic via the CLI"""
+    if not ready_flags:
+        ready_flags = ''
+    if '--timeout' not in ready_flags:
+        ready_flags += f' --timeout {int(util.DEFAULT_TIMEOUT_MS/1000)}'
+    args = f'ready {token_name or ""} {ready}'
+    cp = cli(args, waiter_url, flags)
+    return cp
+
+
 def kill(waiter_url=None, token_name_or_service_id=None, flags=None, kill_flags=None):
     """Kills services using a token via the CLI"""
     args = f'kill {token_name_or_service_id} {kill_flags or ""}'
