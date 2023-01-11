@@ -3726,7 +3726,7 @@
     (is (= 250 (retrieve-most-recently-modified-token-update-time descriptor)))))
 
 (deftest test-run-as-requester?
-  (is (false? (run-as-requester? {})))
+  (is (true? (run-as-requester? {})))
   (is (false? (run-as-requester? {"run-as-user" "john.doe*"})))
   (is (false? (run-as-requester? {"run-as-user" "jane.doe*"})))
   (is (true? (run-as-requester? {"run-as-user" "*"})))

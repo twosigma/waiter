@@ -2681,6 +2681,10 @@
       synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner "token9"
       {"allowed-params" #{"P1" "P2"} "env" {"E1" "v0" "P1" "v1" "P2" "v2"} "cpus" 4 "mem" 1024 "run-as-user" "t9"}
       {"cluster" "c1" "last-update-time" (- last-update-time-seed 3000) "maintenance" {"message" "msg1"} "owner" "owner3"})
+    (store-service-description-for-token
+      synchronize-fn extract-reference-type->reference-name-fn kv-store history-length limit-per-owner "token10"
+      {"cpus" 1 "idle-timeout-mins" 10 "mem" 1024}
+      {"cluster" "c1" "last-update-time" last-update-time-seed "owner" "owner10"})
     (let [request {:query-string "include=metadata" :request-method :get}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
@@ -2739,7 +2743,14 @@
                 "maintenance" true
                 "owner" "owner3"
                 "reference-type->reference-name" {}
-                "token" "token9"}}
+                "token" "token9"}
+               {"deleted" false
+                "etag" (token->token-hash "token10")
+                "last-update-time" (-> last-update-time-seed tc/from-long du/date-to-str)
+                "maintenance" false
+                "owner" "owner10"
+                "reference-type->reference-name" {}
+                "token" "token10"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:query-string "include=metadata&include=deleted" :request-method :get}
@@ -2807,7 +2818,14 @@
                 "maintenance" true
                 "owner" "owner3"
                 "reference-type->reference-name" {}
-                "token" "token9"}}
+                "token" "token9"}
+               {"deleted" false
+                "etag" (token->token-hash "token10")
+                "last-update-time" (-> last-update-time-seed tc/from-long du/date-to-str)
+                "maintenance" false
+                "owner" "owner10"
+                "reference-type->reference-name" {}
+                "token" "token10"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get}
@@ -2820,7 +2838,8 @@
                {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}
                {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token7"}
                {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token8"}
-               {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9"}}
+               {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9"}
+               {"maintenance" false "owner" "owner10" "reference-type->reference-name" {} "token" "token10"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [entitlement-manager (reify authz/EntitlementManager
@@ -2837,7 +2856,8 @@
                  {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}
                  {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token7"}
                  {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token8"}
-                 {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9"}}
+                 {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9"}
+                 {"maintenance" false "owner" "owner10" "reference-type->reference-name" {} "token" "token10"}}
                (set (json/read-str body))))
         (is (nil? (async/poll! token-watch-channels-update-chan))))
       (let [request {:query-string "can-manage-as-user=owner&include=cluster" :request-method :get}
@@ -2850,7 +2870,8 @@
                  {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6" "cluster" "c1"}
                  {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token7" "cluster" "c1"}
                  {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token8" "cluster" "c1"}
-                 {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9" "cluster" "c1"}}
+                 {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9" "cluster" "c1"}
+                 {"maintenance" false "owner" "owner10" "reference-type->reference-name" {} "token" "token10" "cluster" "c1"}}
                (set (json/read-str body))))
         (is (nil? (async/poll! token-watch-channels-update-chan))))
       (let [request {:query-string "can-manage-as-user=owner&include=service-id" :request-method :get}
@@ -2863,14 +2884,16 @@
                  {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6" "service-id" nil}
                  {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token7" "service-id" nil}
                  {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token8" "service-id" nil}
-                 {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9" "service-id" "s-token9-t9"}}
+                 {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9" "service-id" "s-token9-t9"}
+                 {"maintenance" false "owner" "owner10" "reference-type->reference-name" {} "token" "token10" "service-id" nil}}
                (set (json/read-str body))))
         (is (nil? (async/poll! token-watch-channels-update-chan))))
       (let [request {:query-string "can-manage-as-user=owner1" :request-method :get}
             {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
         (is (= http-200-ok status))
         (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token1"}
-                 {"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token2"}}
+                 {"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token2"}
+                 {"maintenance" false "owner" "owner10" "reference-type->reference-name" {} "token" "token10"}}
                (set (json/read-str body))))
         (is (nil? (async/poll! token-watch-channels-update-chan))))
       (let [request {:query-string "can-manage-as-user=owner2" :request-method :get}
@@ -2980,7 +3003,8 @@
     (let [request {:request-method :get :query-string "cpus=1"}
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
-      (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token1"}}
+      (is (= #{{"maintenance" false "owner" "owner1" "reference-type->reference-name" {} "token" "token1"}
+               {"maintenance" false "owner" "owner10" "reference-type->reference-name" {} "token" "token10"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "mem=2048"}
@@ -3096,7 +3120,8 @@
           {:keys [body status]} (handle-list-tokens-request retrieve-descriptor-fn kv-store entitlement-manager streaming-timeout-ms token-watch-channels-update-chan request)]
       (is (= http-200-ok status))
       (is (= #{{"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5"}
-               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}
+               {"maintenance" false "owner" "owner10" "reference-type->reference-name" {} "token" "token10"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "run-as-requester=false"}
@@ -3125,7 +3150,8 @@
                {"maintenance" false "owner" "owner2" "reference-type->reference-name" {} "token" "token3"}
                {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5"}
                {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}
-               {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9"}}
+               {"maintenance" true "owner" "owner3" "reference-type->reference-name" {} "token" "token9"}
+               {"maintenance" false "owner" "owner10" "reference-type->reference-name" {} "token" "token10"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "cluster=c2&idle-timeout-mins=0"}
@@ -3160,7 +3186,8 @@
                {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token5"}
                {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token6"}
                {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token7"}
-               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token8"}}
+               {"maintenance" false "owner" "owner3" "reference-type->reference-name" {} "token" "token8"}
+               {"maintenance" false "owner" "owner10" "reference-type->reference-name" {} "token" "token10"}}
              (set (json/read-str body))))
       (is (nil? (async/poll! token-watch-channels-update-chan))))
     (let [request {:request-method :get :query-string "env.E1=v0"}
