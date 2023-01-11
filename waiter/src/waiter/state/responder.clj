@@ -768,7 +768,7 @@
   "Starts the service channel responder."
   [service-id service-description instance-request-properties ejection-config ejection-expiry-tracker]
   (log/debug "[prepare-and-start-service-chan-responder] starting" service-id)
-  (let [{:keys [lingering-request-threshold-ms queue-timeout-ms]} instance-request-properties
+  (let [{:keys [instance-reservation-back-pressure lingering-request-threshold-ms queue-timeout-ms]} instance-request-properties
         timeout-request-fn (fn [service-id c [reason-map resp-chan _ request-queue-timeout-ms]]
                              (async/go
                                (let [timeout-amount-ms (or request-queue-timeout-ms queue-timeout-ms)
@@ -782,12 +782,13 @@
                                                                  (metrics/retrieve-local-stats-for-service service-id)))
                                             (async/put! c {:id reason-map
                                                            :resp-chan resp-chan}))))))
-        in (async/chan 1024)
+        max-in-flight-requests (utils/compute-back-pressure-buffer-size instance-reservation-back-pressure service-description)
+        in (async/chan max-in-flight-requests)
         out (au/timing-out-pipeline
               (str service-id ":timing-out-pipeline")
               (metrics/service-histogram service-id "timing-out-pipeline-buffer-size")
               in
-              1024
+              max-in-flight-requests
               first
               (fn priority-fn [[{:keys [priority]} & _]] priority)
               (partial timeout-request-fn service-id)
@@ -796,7 +797,7 @@
         channel-map {:reserve-instance-chan-in in
                      :reserve-instance-chan out
                      :kill-instance-chan (async/chan 1024)
-                     :release-instance-chan (async/chan 1024)
+                     :release-instance-chan (async/chan max-in-flight-requests)
                      :eject-instance-chan (async/chan 1024)
                      :query-state-chan (async/chan 1024)
                      :scaling-state-chan (au/latest-chan)

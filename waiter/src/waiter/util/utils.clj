@@ -1024,3 +1024,16 @@
   "Computes the delay in milliseconds that will be introduced into an error response."
   [{:keys [max-delay-ms step-delay-ms step-size-per-min]} errors-per-min]
   (-> errors-per-min (/ step-size-per-min) (int) (* step-delay-ms) (min max-delay-ms)))
+
+(defn compute-back-pressure-buffer-size
+  "Returns the back pressure buffer size for the channels used for reserving instances.
+  The calculation does a log-normalization on the concurrency level to avoid a linear growth based on concurrency-level."
+  [{:keys [max-buffer-size min-buffer-size]} {:strs [concurrency-level max-instances]}]
+  (-> concurrency-level
+      (Math/log1p)
+      (Math/ceil)
+      (int)
+      (* max-instances)
+      (int)
+      (min max-buffer-size)
+      (max min-buffer-size)))
