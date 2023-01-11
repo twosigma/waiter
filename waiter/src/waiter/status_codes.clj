@@ -103,6 +103,7 @@
 (def ^:const error-class-prestashed-tickets "waiter.PrestashedTickets")
 (def ^:const error-class-queue-length "waiter.QueueLength")
 (def ^:const error-class-request-timeout "waiter.RequestTimeout")
+(def ^:const error-class-reserve-back-pressure "waiter.ReserveBackPressure")
 (def ^:const error-class-stream-failure "waiter.StreamFailure")
 (def ^:const error-class-stream-timeout "waiter.StreamTimeout")
 (def ^:const error-class-service-forbidden "waiter.ServiceForbidden")

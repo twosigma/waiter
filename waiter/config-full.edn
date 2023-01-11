@@ -904,6 +904,14 @@
                                ;; The HTTP idle timeout (milliseconds) for instance requests:
                                :initial-socket-timeout-ms 900000
 
+                               ;; Provides thresholds for configuring the buffer size while reserving instances.
+                               ;; The buffer size will be in the interval [min-buffer-size, max-buffer-size],
+                               ;; it is computed in waiter.util.utils/compute-back-pressure-buffer-size
+                               :instance-reservation-back-pressure {;; configures the maximum buffer size
+                                                                    :max-buffer-size 4096
+                                                                    ;; configures the minimum buffer size
+                                                                    :min-buffer-size 1024}
+
                                ;; The timeout for in-flight requests to an expired instance after which
                                ;; expired instances will be eligible for killing:
                                :lingering-request-threshold-ms 60000

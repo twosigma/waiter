@@ -80,6 +80,8 @@
                                                                                              (s/required-key :step-delay-ms) schema/positive-int
                                                                                              (s/required-key :step-size-per-min) schema/positive-int}
                                                   (s/required-key :initial-socket-timeout-ms) schema/positive-int
+                                                  (s/required-key :instance-reservation-back-pressure) {(s/required-key :max-buffer-size) schema/positive-int
+                                                                                                        (s/required-key :min-buffer-size) schema/positive-int}
                                                   (s/required-key :lingering-request-threshold-ms) schema/positive-int
                                                   (s/required-key :output-buffer-size) schema/positive-int
                                                   (s/required-key :queue-timeout-ms) schema/positive-int
@@ -355,6 +357,8 @@
                                                            :step-delay-ms 50
                                                            :step-size-per-min 100}
                                  :initial-socket-timeout-ms 900000 ; 15 minutes
+                                 :instance-reservation-back-pressure {:max-buffer-size 4096
+                                                                      :min-buffer-size 1024}
                                  :lingering-request-threshold-ms 60000 ; 1 minute
                                  :output-buffer-size 4096 ;; 4 KiB
                                  :queue-timeout-ms 300000

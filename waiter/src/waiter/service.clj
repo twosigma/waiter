@@ -239,9 +239,10 @@
            (metrics/service-timer ~service-id "reserve-instance")
            (when-not (au/offer! service-chan# [~reason-map instance-resp-chan# ~exclude-ids-set ~timeout-in-millis])
              (throw (ex-info "Unable to request an instance."
-                             {:status http-503-service-unavailable
+                             {:error-class error-class-reserve-back-pressure
+                              :reason-map ~reason-map
                               :service-id ~service-id
-                              :reason-map ~reason-map})))
+                              :status http-503-service-unavailable})))
            (async/<! instance-resp-chan#))))))
 
 (defn get-available-instance
