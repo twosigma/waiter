@@ -895,7 +895,7 @@
 (defn run-as-requester?
   "Returns true if the service description maps to a run-as-requester service."
   [{:strs [run-as-user]}]
-  (= "*" run-as-user))
+  (or (= "*" run-as-user) (nil? run-as-user)))
 
 (defn requires-parameters?
   "Returns true if the service description maps to a parameterized service whose parameters do not have a default value."
