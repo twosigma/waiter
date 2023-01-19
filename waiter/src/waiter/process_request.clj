@@ -1081,7 +1081,7 @@
             new-request (-> request
                           (select-keys [:authorization/principal :authorization/user
                                         :character-encoding :client-protocol :content-type :descriptor :headers
-                                        :internal-protocol :remote-addr :request-id :request-time :router-id
+                                        :internal-protocol :priority :remote-addr :request-id :request-time :router-id
                                         :scheme :server-name :server-port :support-info])
                           (attach-empty-content)
                           (assoc :ctrl ctrl-ch
@@ -1121,7 +1121,10 @@
         (async/go
           (try
             (let [{:keys [core-service-description service-description service-id]} descriptor
-                  request (assoc-in request [:headers "user-agent"] user-agent)
+                  request (-> request
+                              (assoc-in [:headers "user-agent"] user-agent)
+                              ;; allow ping request to jumps the proxy request queue
+                              (assoc :priority 0))
                   idle-timeout-ms (Integer/parseInt (get headers "x-waiter-timeout" "300000"))
                   ping-response (async/<! (make-health-check-request process-request-handler-fn idle-timeout-ms request health-check-accept-header))]
               (let [{:strs [health-check-url]} service-description
