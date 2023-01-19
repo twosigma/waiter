@@ -164,13 +164,12 @@
                 chans (if (< num-pending-requests max-size)
                         (conj chans in)
                         chans)
-                head-request (if (seq regular-requests)
-                               (first regular-requests)
-                               (when (seq prioritized-requests)
-                                 (first (peek prioritized-requests))))
-                chans (if head-request
-                        (conj chans [out (:data head-request)])
-                        chans)
+                ;; prioritized requests get priority over regular requests
+                head-request (if (seq prioritized-requests)
+                               (first (peek prioritized-requests))
+                               (first regular-requests))
+                chans (cond-> chans
+                        head-request (conj [out (:data head-request)]))
                 [v ch] (async/alts! chans :priority true)
                 [regular-requests' prioritized-requests' :as request-queues']
                 (condp = ch
@@ -209,9 +208,10 @@
                   out (let [removed head-request]
                         (log/debug pipeline-id "Closing channel for" removed)
                         (async/close! (:chan removed))
-                        (if (seq regular-requests)
-                          [(subvec regular-requests 1) prioritized-requests]
-                          [regular-requests (pop prioritized-requests)])))]
+                        ;; prioritized requests get priority over regular requests
+                        (if (seq prioritized-requests)
+                          [regular-requests (pop prioritized-requests)]
+                          [(subvec regular-requests 1) prioritized-requests])))]
             (if request-queues'
               (recur regular-requests' prioritized-requests')
               (log/info pipeline-id "Terminating pipeline."))))
