@@ -1060,8 +1060,8 @@
                                             (partial make-kill-instance-request make-inter-router-requests-sync-fn service-id))))
    :determine-priority-fn (pc/fnk []
                             (let [position-generator-atom (atom 0)]
-                              (fn determine-priority-fn [waiter-headers]
-                                (pr/determine-priority position-generator-atom waiter-headers))))
+                              (fn determine-priority-fn [request]
+                                (pr/determine-priority position-generator-atom request))))
    :discover-service-parameters-fn (pc/fnk [[:settings [:instance-request-properties unsupported-headers]]
                                             [:state kv-store waiter-hostnames]
                                             attach-service-defaults-fn attach-token-defaults-fn]

@@ -872,7 +872,7 @@
                   (let [instance-request-properties (prepare-grpc-compliant-request-properties
                                                       instance-request-properties backend-proto passthrough-headers waiter-headers token-metadata)
                         start-new-service-fn (fn start-new-service-in-process [] (start-new-service-fn descriptor))
-                        priority (determine-priority-fn waiter-headers)
+                        priority (determine-priority-fn request)
                         reason-map (cond-> {:reason :serve-request
                                             :state {:initial (metrics/retrieve-local-stats-for-service service-id)}
                                             :time request-time
@@ -1041,10 +1041,9 @@
 (defn determine-priority
   "Retrieves the priority Waiter should use to service this request.
    The position-generator-atom is used to determine how to break ties between equal priority requests.
-   If no priority header has been provided, it returns nil."
-  [position-generator-atom waiter-headers]
-  (when-let [priority (when-let [value (headers/get-waiter-header waiter-headers "priority")]
-                        (Integer/parseInt (str value)))]
+   If no priority has been provided in the request map, it returns nil."
+  [position-generator-atom {:keys [priority]}]
+  (when (int? priority)
     (let [position (swap! position-generator-atom inc)]
       (log/info "associating priority" priority "at position" position "with request")
       [priority (unchecked-negate position)])))

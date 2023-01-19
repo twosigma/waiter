@@ -1151,38 +1151,6 @@
                       :interval 2 :timeout 45)
             (str "No killed instances found for " service-id))))))
 
-(deftest ^:parallel ^:integration-fast test-basic-priority-support
-  (testing-using-waiter-url
-    (let [headers {:x-waiter-concurrency-level 1
-                   :x-waiter-name (rand-name)
-                   :x-waiter-distribution-scheme "simple" ;; disallow work-stealing interference from balanced
-                   :x-waiter-max-instances 1
-                   :x-waiter-min-instances 1}
-          {:keys [cookies service-id]} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
-      (with-service-cleanup
-        service-id
-        (let [router-url (some-router-url-with-assigned-slots waiter-url service-id)
-              response-priorities-atom (atom [])
-              num-threads 15
-              request-priorities-atom (atom num-threads)
-              make-prioritized-request (fn [priority delay-ms]
-                                         (let [request-headers (assoc headers
-                                                                 :x-kitchen-delay-ms delay-ms
-                                                                 :x-waiter-priority priority)]
-                                           (log/info "making kitchen request")
-                                           (make-kitchen-request router-url request-headers :cookies cookies)))]
-          (async/thread ; long request to make the following requests queue up
-            (make-prioritized-request -1 10000))
-          (Thread/sleep 500)
-          (parallelize-requests num-threads 1
-                                (fn []
-                                  (let [priority (swap! request-priorities-atom dec)]
-                                    (make-prioritized-request priority 1000)
-                                    (swap! response-priorities-atom conj priority)))
-                                :verbose true)
-          ;; first item may be processed out of order as it can arrive before at the server
-          (is (= (-> num-threads range reverse) @response-priorities-atom)))))))
-
 (deftest ^:parallel ^:integration-fast ^:explicit test-multiple-ports
   (testing-using-waiter-url
     (let [num-ports 8
