@@ -328,6 +328,8 @@
   [{:keys [details message status] :as data-map}
    {:keys [headers query-string request-method request-time support-info uri waiter-images-url] :as request}]
   (let [{:strs [host x-cid]} headers
+        waiter-token (get-in request [:waiter-discovery :token])
+        service-owner (get-in request [:waiter-discovery :token-metadata "owner"])
         {:keys [authorization/principal descriptor instance]} (merge request details)
         {:keys [service-id]} descriptor
         {:keys [error-class waiter/error-image]} details
@@ -347,8 +349,9 @@
              :timestamp (du/date-to-str request-time)
              :title error-title
              :uri uri}
-      (and waiter-images-url error-image)
-      (assoc :image-url (str waiter-images-url "/" error-image)))))
+      (and waiter-images-url error-image) (assoc :image-url (str waiter-images-url "/" error-image))
+      service-owner (assoc :service-owner service-owner)
+      waiter-token (assoc :waiter-token waiter-token))))
 
 (defn- build-maintenance-context
   "Creates a context from a data map and request.
@@ -361,7 +364,7 @@
 
 (let [html-fn (template/fn
                 [{:keys [cid details host image-url instance-id message principal query-string request-method
-                         service-id status support-info timestamp title uri]}]
+                         service-id service-owner status support-info timestamp title uri waiter-token]}]
                 (slurp (io/resource "web/error.html")))]
   (defn- render-error-html
     "Renders error html"
@@ -370,7 +373,7 @@
 
 (let [text-fn (template/fn
                 [{:keys [cid details host instance-id message principal query-string request-method
-                         service-id status support-info timestamp title uri]}]
+                         service-id service-owner status support-info timestamp title uri waiter-token]}]
                 (slurp (io/resource "web/error.txt")))]
   (defn- render-error-text
     "Renders error text"

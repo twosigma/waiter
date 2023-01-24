@@ -128,9 +128,19 @@
         <td class="field">Principal</td><td class="code"><%= principal %></td>
       </tr>
       <% ) %>
+      <% (when waiter-token %>
+      <tr>
+        <td class="field">Waiter Token</td><td class="code"><%= waiter-token %></td>
+      </tr>
+      <% ) %>
+      <% (when service-owner %>
+      <tr>
+        <td class="field">Service Owner</td><td class="code"><%= service-owner %></td>
+      </tr>
+      <% ) %>
       <% (when service-id %>
       <tr>
-      <td class="field">Service Id</td><td class="code"><%= service-id %></td>
+        <td class="field">Service Id</td><td class="code"><%= service-id %></td>
       </tr>
       <% ) %>
       <% (when instance-id %>
