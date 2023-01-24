@@ -629,10 +629,11 @@
     (is (nil? (determine-priority position-generator-atom nil)))
     (is (nil? (determine-priority position-generator-atom {})))
     (is (nil? (determine-priority position-generator-atom {"foo" 1})))
-    (is (= [1 -101] (determine-priority position-generator-atom {"x-waiter-priority" 1})))
-    (is (= [2 -102] (determine-priority position-generator-atom {"x-waiter-priority" "2"})))
-    (is (= [4 -103] (determine-priority position-generator-atom {"x-waiter-foo" "2", "x-waiter-priority" "4"})))
+    (is (= [1 -101] (determine-priority position-generator-atom {:priority 1})))
+    (is (= [2 -102] (determine-priority position-generator-atom {:priority 2})))
+    (is (= [4 -103] (determine-priority position-generator-atom {:priority 4 :source 2})))
     (is (nil? (determine-priority position-generator-atom {"priority" 1})))
+    (is (nil? (determine-priority position-generator-atom {:priority "1"})))
     (is (= 103 @position-generator-atom))))
 
 (deftest test-classify-error

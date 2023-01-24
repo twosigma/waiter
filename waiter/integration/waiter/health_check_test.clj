@@ -14,14 +14,18 @@
 ;; limitations under the License.
 ;;
 (ns waiter.health-check-test
-  (:require [clojure.data.json :as json]
+  (:require [clj-time.core :as t]
+            [clojure.data.json :as json]
             [clojure.string :as str]
             [clojure.test :refer :all]
+            [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [waiter.status-codes :refer :all]
             [waiter.util.client-tools :refer :all]
+            [waiter.util.date-utils :as du]
             [waiter.util.http-utils :as hu]
-            [waiter.util.utils :as utils]))
+            [waiter.util.utils :as utils])
+  (:import [java.util.concurrent CountDownLatch]))
 
 (defn assert-ping-response
   [waiter-url health-check-protocol idle-timeout service-id response & {:keys [query-params] :or {query-params {}}}]
@@ -356,5 +360,90 @@
             (is (str/includes? (-> ping-response :body str) maintenance-message))
             (is (nil? service-description))
             (is (= {:exists? false :healthy? false :service-id nil :status "Inactive"} service-state))))
+        (finally
+          (delete-token-and-assert waiter-url token))))))
+
+(deftest ^:parallel ^:integration-slow test-ping-with-priority
+  (testing-using-waiter-url
+    (let [{:keys [cookies]} (make-request waiter-url "/waiter-auth")
+          token (rand-name)
+          request-headers {:x-waiter-debug true
+                           :x-waiter-token token}
+          router->endpoint (routers waiter-url)
+          router-urls (vals router->endpoint)
+          num-routers (count router-urls)
+          slots-per-router 2
+          backend-proto "http"
+          concurrency-level (* slots-per-router num-routers)
+          token-description-1 (-> (kitchen-request-headers :prefix "")
+                                  (assoc :backend-proto "http"
+                                         :concurrency-level concurrency-level
+                                         :health-check-url "/status?include=request-info"
+                                         :max-instances 1
+                                         :min-instances 1
+                                         :name token
+                                         :permitted-user "*"
+                                         :run-as-user (retrieve-username)
+                                         :token token))]
+      (try
+        (assert-response-status (post-token waiter-url token-description-1) http-200-ok)
+        (let [ping-response-1a (make-request waiter-url "/waiter-ping" :headers request-headers)
+              service-id (get-in ping-response-1a [:headers "x-waiter-service-id"])
+              request-id->response-time-atom (atom {})
+              num-requests (* 5 concurrency-level)
+              latch (CountDownLatch. num-requests)]
+          (log/info "num-requests:" num-requests)
+          (with-service-cleanup
+            service-id
+            (assert-ping-response waiter-url backend-proto nil service-id ping-response-1a)
+            (assert-service-healthy-on-all-routers waiter-url service-id cookies)
+            (let [request-id (str "req-" token "-canary")
+                  request-headers (assoc request-headers :x-cid request-id)
+                  kitchen-response (make-request waiter-url "/endpoint" :cookies cookies :headers request-headers)]
+              (assert-response-status kitchen-response http-200-ok))
+            (let [counter (atom 0)
+                  kitchen-delay-ms 12000
+                  sleep-delay-ms (/ kitchen-delay-ms 5)
+                  futures (parallelize-requests
+                            num-requests 1
+                            (fn []
+                              ;; distribute request across all routers
+                              (let [request-index (swap! counter inc)
+                                    router-url (nth router-urls (mod request-index num-routers))
+                                    request-id (str "req-" token "-" request-index)
+                                    _ (.countDown latch)
+                                    request-headers (assoc request-headers :x-cid request-id :x-kitchen-delay-ms kitchen-delay-ms)
+                                    kitchen-response (make-request router-url "/endpoint" :cookies cookies :headers request-headers)
+                                    response-time (du/date-to-str (t/now))]
+                                (swap! request-id->response-time-atom assoc request-id response-time)
+                                kitchen-response))
+                            :verbose true
+                            :wait-for-tasks false)]
+              ;; ensure we have made all the proxied requests
+              (.await latch)
+              (utils/sleep sleep-delay-ms)
+              ;; make ping request _after_ queued proxied requests have been made
+              (let [ping-request-id (str "req-" token "-ping-1b")
+                    request-headers (assoc request-headers :x-cid ping-request-id)
+                    ping-response-1b (make-request waiter-url "/waiter-ping" :headers request-headers)
+                    ping-response-time (du/date-to-str (t/now))
+                    endpoint-responses (map #(first (deref %)) futures)
+                    _ (log/info "endpoint-responses:" (count endpoint-responses))
+                    request-id->response-time @request-id->response-time-atom
+                    {later-responses true prior-responses false} (group-by #(pos? (compare % ping-response-time)) (vals request-id->response-time))]
+                (assert-ping-response waiter-url backend-proto nil service-id ping-response-1b)
+                (log/info "ping response time:" ping-response-time)
+                (log/info "later responses:" (count later-responses) later-responses)
+                (log/info "prior responses:" (count prior-responses) prior-responses)
+                (doseq [endpoint-response endpoint-responses]
+                  (assert-response-status endpoint-response http-200-ok))
+                (log/info "request-id->response-time:" request-id->response-time)
+                ;; at most 2 x concurrency-level proxied responses should come before the ping request (which jumps the queue)
+                (is (<= (count prior-responses) (* 2 concurrency-level))
+                    (str {:endpoint-response {:later-responses later-responses
+                                              :prior-responses prior-responses}
+                          :num-requests num-requests
+                          :ping-request {:correlation-id ping-request-id
+                                         :response-time ping-response-time}}))))))
         (finally
           (delete-token-and-assert waiter-url token))))))

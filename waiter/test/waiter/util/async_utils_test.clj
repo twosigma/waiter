@@ -17,7 +17,6 @@
   (:require [clojure.core.async :as async]
             [clojure.test :refer :all]
             [clojure.tools.logging :as log]
-            [full.async :refer [<? <?? go-try]]
             [metrics.histograms :as histograms]
             [waiter.util.async-utils :refer :all])
   (:import (java.util.concurrent Executors)))
@@ -199,21 +198,23 @@
     (async/>!! in {:id 2 :priority 9}) ;; [] and [2]
     (async/>!! in {:id 3}) ;; [3] and [2]
     (async/>!! in {:id 4 :priority 7}) ;; [3] and [4 2]
-    (test-priority-data out 3) ;; [] and [4 2]
-    (test-priority-data out 4) ;; [] and [2]
-    (async/>!! in {:id 5 :priority 3}) ;; [] and [5 2]
-    (async/>!! in {:id 6}) ;; [6] and [5 2]
-    (async/>!! in {:id 7 :priority 7}) ;; [6] and [5 7 2]
-    (async/>!! in {:id 8}) ;; [6 8] and [5 7 2]
-    (test-priority-data out 6) ;; [8] and [5 7 2]
-    (test-priority-data out 8) ;; [] and [5 7 2]
-    (test-priority-data out 5) ;; [] and [7 2]
-    (test-priority-data out 7) ;; [] and [2]
-    (async/>!! in {:id 9 :priority 1}) ;; [] and [9 2]
-    (async/>!! in {:id 10}) ;; [10] and [9 2]
-    (test-priority-data out 10) ;; [] and [9 2]
-    (test-priority-data out 9) ;; [] and [2]
-    (test-priority-data out 2)))
+    (test-priority-data out 4) ;; [3] and [2]
+    (test-priority-data out 2) ;; [3] and []
+    (async/>!! in {:id 5 :priority 3}) ;; [3] and [5]
+    (async/>!! in {:id 6}) ;; [3 6] and [5]
+    (async/>!! in {:id 7 :priority 7}) ;; [3 6] and [5 7]
+    (async/>!! in {:id 8 :priority 6}) ;; [3 6] and [5 8 7]
+    (async/>!! in {:id 9}) ;; [3 6 9] and [5 8 7]
+    (test-priority-data out 5) ;; [3 6 9] and [8 7]
+    (test-priority-data out 8) ;; [3 6 9] and [7]
+    (test-priority-data out 7) ;; [3 6 9] and []
+    (test-priority-data out 3) ;; [6 9] and []
+    (test-priority-data out 6) ;; [9] and []
+    (async/>!! in {:id 10 :priority 1}) ;; [9] and [10]
+    (async/>!! in {:id 11}) ;; [9 11] and [10]
+    (test-priority-data out 10) ;; [9 11] and []
+    (test-priority-data out 9) ;; [11] and []
+    (test-priority-data out 11)))
 
 (deftest test-timing-out-pipeline-regular-and-prioritized-request-timeouts
   (let [in (async/chan 1024)
@@ -240,23 +241,23 @@
     (async/>!! in {:id 2 :priority 9}) ;; [] and [2]
     (async/>!! in {:id 3}) ;; [3] and [2]
     (async/>!! in {:id 4 :priority 7}) ;; [3] and [4 2]
-    (test-priority-data out 3) ;; [] and [4 2]
-    (test-priority-data out 4) ;; [] and [2]
-    (async/>!! in {:id 5 :priority 3}) ;; [] and [5 2]
-    (async/>!! in {:id 6 :resp-chan req6-chan :timeout-ms 1}) ;; [6] and [5 2]
-    (async/>!! in {:id 7 :priority 7 :resp-chan req7-chan :timeout-ms 1}) ;; [6] and [5 7 2]
-    (async/<!! (async/timeout 100)) ;; timeout requests, [] and [5 2]
+    (test-priority-data out 4) ;; [3] and [2]
+    (test-priority-data out 2) ;; [3] and []
+    (async/>!! in {:id 5 :priority 3}) ;; [3] and [5]
+    (async/>!! in {:id 6 :resp-chan req6-chan :timeout-ms 1}) ;; [3 6] and [5]
+    (async/>!! in {:id 7 :priority 7 :resp-chan req7-chan :timeout-ms 1}) ;; [3 6] and [5 7]
+    (async/<!! (async/timeout 100)) ;; timeout requests, [3] and [5]
     (is (nil? (async/<!! req6-chan)))
     (is (nil? (async/<!! req7-chan)))
-    (async/>!! in {:id 8}) ;; [8] and [5 2]
-    (test-priority-data out 8) ;; [8] and [5 2]
-    (test-priority-data out 5) ;; [] and [2]
-    (async/>!! in {:id 9 :priority 1 :resp-chan req9-chan :timeout-ms 1}) ;; [] and [9 2]
-    (async/>!! in {:id 10}) ;; [10] and [9 2]
-    (async/<!! (async/timeout 100)) ;; timeout requests, [10] and [2]
+    (async/>!! in {:id 8}) ;; [3 8] and [5]
+    (test-priority-data out 5) ;; [3 8] and []
+    (test-priority-data out 3) ;; [8] and []
+    (async/>!! in {:id 9 :priority 1 :resp-chan req9-chan :timeout-ms 1}) ;; [8] and [9]
+    (async/>!! in {:id 10}) ;; [8 10] and [9]
+    (async/<!! (async/timeout 100)) ;; timeout requests, [8 10] and []
     (is (nil? (async/<!! req9-chan)))
-    (test-priority-data out 10) ;; [] and [2]
-    (test-priority-data out 2)))
+    (test-priority-data out 8) ;; [10] and []
+    (test-priority-data out 10)))
 
 (deftest test-timing-out-pipeline-equal-priorities
   (let [in (async/chan 1024)
