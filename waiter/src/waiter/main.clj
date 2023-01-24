@@ -143,8 +143,8 @@
    :settings (pc/fnk dummy-symbol-for-fnk-schema-logic :- settings/settings-schema [] settings)
    :state core/state
    :http-server (pc/fnk [[:routines discover-service-parameters-fn generate-log-url-fn waiter-request?-fn]
-                         [:settings cors-config host port server-options support-info websocket-config]
-                         [:state cors-validator router-id server-name waiter-images-url]
+                         [:settings cors-config host port server-options websocket-config]
+                         [:state cors-validator router-id server-name support-info waiter-images-url]
                          handlers] ; Insist that all systems are running before we start server
                   (let [{:keys [websocket-request-acceptor]} handlers
                         {:keys [drain-request-buffer-size]} server-options

@@ -1131,8 +1131,16 @@
             :tls-error "Unable to complete TLS handshake with backend (ensure backend-proto is correctly configured)"}
 
  ;; Support information used to provide user guidance in error messages
- :support-info [{:label "Email Support Team" :link {:type :email :value "support@example.com"}}
-                {:label "Waiter on GitHub" :link {:type :url :value "http://github.com/twosigma/waiter"}}]
+ :support-info [{:label "Email Support Team"
+                 :link {:type :email :value "support@example.com"}
+                 :predicate-fn 'waiter.util.utils/include-waiter-support-info-predicate}
+                {:label "Waiter on GitHub"
+                 :link {:type :url :value "http://github.com/twosigma/waiter"}
+                 :predicate-fn 'waiter.util.utils/include-always-support-info-predicate}
+                {:label "Contact Service Owner"
+                 :predicate-fn 'waiter.util.utils/include-service-error-support-info-predicate}
+                {:label "Client violates CORS access rules"
+                 :predicate-fn 'waiter.util.utils/include-cors-error-support-info-predicate}]
 
  ;; Sets tolerance level for Waiter when declaring deployment errors
  :deployment-error-config {

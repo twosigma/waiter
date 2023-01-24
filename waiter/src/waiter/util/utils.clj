@@ -334,24 +334,74 @@
         {:keys [service-id]} descriptor
         {:keys [error-class waiter/error-image]} details
         error-title (or (error-class->error-title error-class)
-                        (str "Waiter Error " status))]
-    (cond-> {:cid x-cid
-             :details details
-             :host host
-             :instance-id (:id instance)
-             :message message
-             :principal principal
-             :query-string query-string
-             :request-method (-> (or request-method "") name str/upper-case)
-             :service-id service-id
-             :status status
-             :support-info support-info
-             :timestamp (du/date-to-str request-time)
-             :title error-title
-             :uri uri}
-      (and waiter-images-url error-image) (assoc :image-url (str waiter-images-url "/" error-image))
-      service-owner (assoc :service-owner service-owner)
-      waiter-token (assoc :waiter-token waiter-token))))
+                        (str "Waiter Error " status))
+        error-context (cond-> {:cid x-cid
+                               :details details
+                               :host host
+                               :instance-id (:id instance)
+                               :message message
+                               :principal principal
+                               :query-string query-string
+                               :request-method (-> (or request-method "") name str/upper-case)
+                               :service-id service-id
+                               :status status
+                               :timestamp (du/date-to-str request-time)
+                               :title error-title
+                               :uri uri}
+                        (and waiter-images-url error-image) (assoc :image-url (str waiter-images-url "/" error-image))
+                        service-owner (assoc :service-owner service-owner)
+                        waiter-token (assoc :waiter-token waiter-token))
+        support-info (for [{:keys [predicate-fn] :as entry} support-info
+                           :when (predicate-fn error-context)]
+                       (dissoc entry :predicate-fn))]
+    (assoc error-context :support-info support-info)))
+
+(defn include-always-support-info-predicate
+  "Simple predicate for support info items that always returns true."
+  [_]
+  true)
+
+(defn include-error-cause-support-info-predicate
+  "Simple predicate for support info items that always returns true."
+  [include-causes {:keys [details]}]
+  (let [{:keys [error-cause]} details]
+    (contains? include-causes error-cause)))
+
+(defn include-client-error-support-info-predicate
+  "Predicate for including support info items for client-side errors."
+  [error-context]
+  (include-error-cause-support-info-predicate
+    #{error-cause-client-eagerly-closed error-cause-client-error}
+    error-context))
+
+(defn include-cors-error-support-info-predicate
+  "Predicate for including support info items for CORS errors."
+  [error-context]
+  (include-error-cause-support-info-predicate
+    #{error-cause-cors-error}
+    error-context))
+
+(defn include-description-error-support-info-predicate
+  "Predicate for including support info items for service description errors."
+  [error-context]
+  (include-error-cause-support-info-predicate
+    #{error-cause-service-description-error}
+    error-context))
+
+(defn include-service-error-support-info-predicate
+  "Predicate for including support info items for server-side errors."
+  [error-context]
+  (include-error-cause-support-info-predicate
+    #{error-cause-deployment-error error-cause-instance-error error-cause-server-eagerly-closed error-cause-service-error}
+    error-context))
+
+(defn include-waiter-support-info-predicate
+  "Predicate for including contact Waiter support info items for errors."
+  [error-context]
+  (and (not (include-client-error-support-info-predicate error-context))
+       (not (include-cors-error-support-info-predicate error-context))
+       (not (include-description-error-support-info-predicate error-context))
+       (not (include-service-error-support-info-predicate error-context))))
 
 (defn- build-maintenance-context
   "Creates a context from a data map and request.
