@@ -1407,7 +1407,8 @@
     (reduce max 0)))
 
 (let [error-message-map-fn (fn [passthrough-headers waiter-headers]
-                             {:error-class error-class-service-misconfigured
+                             {:error-cause :client-error
+                              :error-class error-class-service-misconfigured
                               :log-level :warn
                               :non-waiter-headers (dissoc passthrough-headers "authorization")
                               :status http-400-bad-request
@@ -1474,11 +1475,13 @@
       (when-not (seq user-service-description)
         (throw (ex-info (utils/message :cannot-identify-service)
                         (-> (error-message-map-fn passthrough-headers waiter-headers)
-                          (assoc :error-class error-class-service-unidentified
+                          (assoc :error-cause :client-error
+                                 :error-class error-class-service-unidentified
                                  :waiter/error-image error-image-400-bad-request)))))
       (when (and (= "*" raw-run-as-user) raw-namespace (not= "*" raw-namespace))
         (throw (ex-info "Cannot use run-as-requester with a specific namespace"
-                        {:error-class error-class-service-misconfigured
+                        {:error-cause :client-error
+                         :error-class error-class-service-misconfigured
                          :log-level :info
                          :namespace raw-namespace
                          :run-as-user raw-run-as-user
@@ -1487,7 +1490,8 @@
       (when-let [idle-timeout-mins-header (get waiter-headers (str headers/waiter-header-prefix "idle-timeout-mins"))]
         (when (zero? idle-timeout-mins-header)
           (throw (ex-info "idle-timeout-mins on-the-fly header configured to a value of zero is not supported"
-                          {:error-class error-class-service-misconfigured
+                          {:error-cause :client-error
+                           :error-class error-class-service-misconfigured
                            :log-level :info
                            :status http-400-bad-request
                            :waiter-headers waiter-headers

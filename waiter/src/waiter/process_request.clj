@@ -322,6 +322,7 @@
   (let [[error-cause message status error-image error-class] (classify-error "handle-response-error" error)
         metrics-map (metrics/retrieve-local-stats-for-service service-id)
         error-map (assoc metrics-map
+                    :error-cause error-cause
                     :error-class error-class
                     :status status
                     :waiter/error-image error-image)]
@@ -956,7 +957,8 @@
   (fn [{{:keys [suspended-state service-id]} :descriptor :as request}]
     (if (get suspended-state :suspended false)
       (let [{:keys [last-updated-by time]} suspended-state
-            response-map (cond-> {:error-class error-class-suspended
+            response-map (cond-> {:error-cause :service-error
+                                  :error-class error-class-suspended
                                   :service-id service-id}
                            time (assoc :suspended-at (du/date-to-str time))
                            (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
@@ -976,7 +978,8 @@
   (fn maintenance-mode-handler [{{:keys [service-description-template token]
                                   {:strs [maintenance owner]} :token-metadata} :waiter-discovery
                                  :as request}]
-    (let [response-map {:error-class error-class-maintenance
+    (let [response-map {:error-cause :service-error
+                        :error-class error-class-maintenance
                         :name (get service-description-template "name")
                         :token token
                         :token-owner owner}]
@@ -1026,6 +1029,7 @@
         (let [outstanding-requests (counters/value (metrics/service-counter service-id "request-counts" "outstanding"))
               queue-length-meter (metrics/service-meter service-id "response-rate" "error" "queue-length")
               response-map {:current-queue-length current-queue-length
+                            :error-cause :service-error
                             :error-class error-class-queue-length
                             :max-queue-length max-queue-length
                             :outstanding-requests outstanding-requests
