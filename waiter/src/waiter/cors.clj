@@ -75,7 +75,7 @@
             (when-not allowed?
               (log/info "cors preflight request not allowed" summary)
               (throw (ex-info "Cross-origin request not allowed" {:cors-checks summary
-                                                                  :error-cause :client-error
+                                                                  :error-cause error-cause-cors-error
                                                                   :error-class error-class-cors-preflight-forbidden
                                                                   :log-level :warn
                                                                   :origin origin
@@ -127,7 +127,7 @@
               (log/info "cors request not allowed" summary)
               (throw (ex-info "Cross-origin request not allowed"
                               {:cors-checks summary
-                               :error-cause :client-error
+                               :error-cause error-cause-cors-error
                                :error-class error-class-cors-request-forbidden
                                :log-level :warn
                                :origin origin

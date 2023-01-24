@@ -403,8 +403,8 @@
         (watch-ctrl-chan request-name ctrl-mult reservation-status-promise request-close-promise-chan on-close-callback)
         (async/>!! ctrl-chan [:qbits.jet.websocket/error exception])
         (ensure-test-timeout-fn request-close-promise-chan)
-        (is (= [:test :generic-error exception nil] (async/<!! request-close-promise-chan)))
-        (is (= :generic-error @reservation-status-promise))
+        (is (= [:test error-cause-generic-error exception nil] (async/<!! request-close-promise-chan)))
+        (is (= error-cause-generic-error @reservation-status-promise))
         (is (= server-termination-on-unexpected-condition @status-callback-atom))))
 
     (testing "generic-error"

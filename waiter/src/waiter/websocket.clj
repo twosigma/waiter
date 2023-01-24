@@ -509,7 +509,7 @@
 
     ;; watch for ctrl-chan events
     (->> (fn client-on-close-callback [status]
-           (deliver reservation-status-promise (if (successful? status) :success :client-error)))
+           (deliver reservation-status-promise (if (successful? status) :success error-cause-client-error)))
          (watch-ctrl-chan :client (-> request :ctrl-mult) reservation-status-promise request-close-promise-chan))
     (->> (fn instance-on-close-callback [status]
            (counters/inc! (metrics/service-counter service-id "response-status" (str status)))

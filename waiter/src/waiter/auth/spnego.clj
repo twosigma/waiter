@@ -77,7 +77,7 @@
   [request]
   (log/info "triggering 401 negotiate for spnego authentication")
   (-> (response-http-401-unauthorized request "for negotiation" false)
-    (assoc :error-cause :client-error
+    (assoc :error-cause error-cause-client-error
            :error-class error-class-kerberos-negotiate)
     (assoc-in [:headers "www-authenticate"] (str/trim negotiate-prefix))))
 

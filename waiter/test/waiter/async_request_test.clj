@@ -43,7 +43,7 @@
             response-chan (monitor-async-request make-http-request complete-async-request request-still-active? status-endpoint
                                                  check-interval-ms request-timeout-ms correlation-id exit-chan)
             monitor-result (async/<!! response-chan)]
-        (is (= [:instance-error] @release-status-atom))
+        (is (= [error-cause-instance-error] @release-status-atom))
         (is (= :make-request-error monitor-result))))
 
     (testing "status-check-timed-out"
@@ -228,8 +228,8 @@
           async-request-store-atom (atom initial-state)
           release-status-atom (atom [])
           release-instance-fn (fn [status] (swap! release-status-atom conj status))]
-      (complete-async-request-locally async-request-store-atom release-instance-fn request-id :instance-error)
-      (is (= [:instance-error] @release-status-atom))
+      (complete-async-request-locally async-request-store-atom release-instance-fn request-id error-cause-instance-error)
+      (is (= [error-cause-instance-error] @release-status-atom))
       (is (= (dissoc initial-state request-id) @async-request-store-atom))))
 
   (testing "invalid-request-id"
@@ -237,7 +237,7 @@
           initial-state {"req-0" :pending, "req-1" :pending, "req-2" :pending}
           async-request-store-atom (atom initial-state)
           release-instance-fn (fn [_] (throw (Exception. "Unexpected call!")))]
-      (complete-async-request-locally async-request-store-atom release-instance-fn request-id :instance-error)
+      (complete-async-request-locally async-request-store-atom release-instance-fn request-id error-cause-instance-error)
       (is (= initial-state @async-request-store-atom)))))
 
 (deftest test-terminate-request

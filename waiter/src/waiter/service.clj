@@ -268,7 +268,7 @@
                 (let [{:keys [service-deployment-error-details service-deployment-error-msg]} instance
                       {:keys [error-map error-message]}
                       (cond->
-                        {:error-map {:error-cause :service-error
+                          {:error-map {:error-cause error-cause-deployment-error
                                      :error-class error-class-deployment-error
                                      :log-level :info
                                      :service-id service-id
@@ -277,7 +277,7 @@
                          :error-message (utils/message instance)}
                         (and service-deployment-error-msg service-deployment-error-details)
                         (-> (assoc :error-message service-deployment-error-msg)
-                            (update :error-map #(merge {:error-cause :service-error
+                            (update :error-map #(merge {:error-cause error-cause-deployment-error
                                                         :error-class error-class-deployment-error}
                                                        service-deployment-error-details %))))]
                   (ex-info (str deployment-error-prefix error-message) error-map))
@@ -298,7 +298,7 @@
                                       " Check that your service is able to start properly!")
                                     (when (and (pos? outstanding-requests) (pos? healthy-instances))
                                       " Check that your service is able to scale properly!"))
-                               {:error-cause :service-error
+                               {:error-cause error-cause-service-error
                                 :error-class error-class-request-timeout
                                 :outstanding-requests outstanding-requests
                                 :requests-waiting-to-stream requests-waiting-to-stream
