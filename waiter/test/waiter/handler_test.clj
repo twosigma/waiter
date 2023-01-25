@@ -2153,8 +2153,8 @@
                      :query-string (str "timeout=" 1000)}
             {:keys [body headers status]}
             (async/<!!
-              (instance-kill-signal-handler notify-instance-killed-fn allowed-to-manage-service?-fn scheduler
-                                            timeout-config service-id->service-description-fn scale-service-thread-pool request))]
+              (instance-signal-handler notify-instance-killed-fn allowed-to-manage-service?-fn scheduler
+                                       timeout-config scale-service-thread-pool :kill request))]
         (is (= http-200-ok status))
         (is (= "application/json" (get headers "content-type")))
         (let [body-json (json/read-str (str body))]
@@ -2172,8 +2172,8 @@
                      :basic-authentication {:src-router-id src-router-id}
                      :query-string (str "timeout=" 1000)}
             {:keys [body status]}
-            (instance-kill-signal-handler notify-instance-killed-fn allowed-to-manage-service?-fn scheduler
-                                          timeout-config service-id->service-description-fn scale-service-thread-pool request)]
+            (instance-signal-handler notify-instance-killed-fn allowed-to-manage-service?-fn scheduler
+                                     timeout-config scale-service-thread-pool :kill request)]
         (is (= http-403-forbidden status))
         (is (str/includes? (str body) "User not allowed to send signal to instance"))))
     (testing "signal-handler:Request Method Not Allowed"
@@ -2188,8 +2188,8 @@
                      :basic-authentication {:src-router-id src-router-id}
                      :query-string (str "timeout=" 1000)}
             signal-handler (core/wrap-error-handling
-                             #(instance-kill-signal-handler notify-instance-killed-fn allowed-to-manage-service?-fn scheduler
-                                                            timeout-config service-id->service-description-fn scale-service-thread-pool %))
+                             #(instance-signal-handler notify-instance-killed-fn allowed-to-manage-service?-fn scheduler
+                                                       timeout-config scale-service-thread-pool :kill %))
             {:keys [body headers status]} (signal-handler request)]
         (is (= http-405-method-not-allowed status))
         (is (= "application/json" (get headers "content-type")))
@@ -2208,8 +2208,8 @@
                      :query-string (str "timeout=" 1000)}
             {:keys [body headers status]}
             (async/<!!
-              (instance-kill-signal-handler notify-instance-killed-fn allowed-to-manage-service?-fn scheduler
-                                            timeout-config service-id->service-description-fn scale-service-thread-pool request))]
+              (instance-signal-handler notify-instance-killed-fn allowed-to-manage-service?-fn scheduler
+                                       timeout-config scale-service-thread-pool :kill request))]
         (is (= http-500-internal-server-error status))
         (is (= "application/json" (get headers "content-type")))
         (let [body-json (json/read-str (str body))]

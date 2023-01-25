@@ -809,6 +809,23 @@
       total-bypass-grace-period-secs
       default-grace-period-seconds)))
 
+(defn annotate-instance
+  "Annotates the pod representing the instances with the provided key value pair.
+
+   Any backslash becomes '~1' so 'waiter/pod-expired' becomes 'waiter~1pod-expired'.
+   Source https://stackoverflow.com/questions/55573724/create-a-patch-to-add-a-kubernetes-annotation
+   Here is the RFC-6901 reference https://www.rfc-editor.org/rfc/rfc6901#section-3"
+  [{:keys [api-server-url] :as scheduler} {:keys [id k8s/pod-name] :as instance} annotation-key annotation-value]
+  (try
+    (let [pod-url (instance->pod-url api-server-url instance)
+          formatted-key (str/replace annotation-key "/" "~1")
+          path-operations [{:op :add :path (str "/metadata/annotations/" formatted-key) :value annotation-value}]]
+      (log/info "pod" pod-name "annotated with" formatted-key annotation-value)
+      (patch-object-json pod-url path-operations scheduler))
+    (catch Throwable th
+      (log/error th "error in gracefully killing pod")
+      th)))
+
 (defn signal-service-instance
   "Sends specified signal to the Kubernetes pod corresponding to the given Waiter Service Instance.
    Returns nil on success, but throws on failure."
@@ -816,6 +833,8 @@
   (do
     (scheduler/log-service-instance instance signal-type :info)
     (case signal-type
+      ; mark pod as expired
+      :signal/expire (annotate-instance scheduler instance "waiter/pod-expired" "true")
       ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
       :signal/soft-kill (soft-delete-service-instance scheduler instance timeout-ms)
       ; "hard" delete the pod (i.e., actually kill, allowing the pod's default grace period expires)
@@ -1040,21 +1059,28 @@
                                                               :status http-400-bad-request
                                                               :success false}
         :else (try
-                (let [pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])
-                      service-instance (pod->ServiceInstance this pod)
-                      kill-timeout-ms (or (get options-map "timeout")
-                                          (when (= :signal/soft-kill signal-type)
-                                            (calculate-grace-period-secs-for-delete this service-id)))
-                      response-or-throwable (signal-service-instance this service-instance signal-type kill-timeout-ms)]
-                  (if (instance? Throwable response-or-throwable)
-                    (do
-                      (log/error response-or-throwable "error in deleting k8s pod")
-                      {:message (.getMessage response-or-throwable)
-                       :status http-500-internal-server-error
-                       :success false})
-                    {:message (str (name signal-type) " successfully sent to " instance-id)
-                     :status http-200-ok
-                     :success true}))
+                (if-let [pod (get-in @watch-state [:service-id->pod-id->pod service-id pod-name])]
+                  (let [service-instance (pod->ServiceInstance this pod)
+                        kill-timeout-ms (or (get options-map "timeout")
+                                            (when (= :signal/soft-kill signal-type)
+                                              (calculate-grace-period-secs-for-delete this service-id)))
+                        response-or-throwable (signal-service-instance this service-instance signal-type kill-timeout-ms)]
+                    (if (instance? Throwable response-or-throwable)
+                      (do
+                        (log/error response-or-throwable "error in signaling k8s pod")
+                        {:message (.getMessage response-or-throwable)
+                         :signal-type signal-type
+                         :status http-500-internal-server-error
+                         :success false})
+                      {:message (str (name signal-type) " successfully sent to " instance-id)
+                       :status http-200-ok
+                       :success true}))
+                  {:instance-id instance-id
+                   :message "instance does not exist"
+                   :pod-name pod-name
+                   :service-id service-id
+                   :status http-404-not-found
+                   :success false})
                 (catch Throwable th
                   (log/error th "error while signaling instance")
                   {:message (.getMessage th)

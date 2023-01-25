@@ -1724,3 +1724,44 @@
 (deftest ^:parallel ^:integration-fast test-signal-force-kill-instance
   (testing-using-waiter-url
     (test-signal-instance-kill waiter-url true)))
+
+(deftest ^:parallel ^:integration-fast test-signal-expire-instance
+  (testing-using-waiter-url
+    (let [start-up-sleep-secs 15
+          start-up-sleep-ms (-> start-up-sleep-secs (t/seconds) (t/in-millis))
+          signal-timeout-ms (-> 10 (t/seconds) (t/in-millis))
+          headers {:x-waiter-cmd (kitchen-cmd (str "-p $PORT0 --start-up-sleep-ms " start-up-sleep-ms))
+                   :x-waiter-grace-period-secs start-up-sleep-secs
+                   :x-waiter-max-instances 1
+                   :x-waiter-min-instances 1
+                   :x-waiter-name (rand-name)}
+          _ (log/info "making canary request...")
+          {:keys [service-id] :as canary-response} (make-request-with-debug-info headers #(make-kitchen-request waiter-url %))]
+      (assert-response-status canary-response http-200-ok)
+      (with-service-cleanup
+        service-id
+        (testing "instance signal expire"
+          (let [{:keys [cookies instance-id]} canary-response]
+            (assert-service-on-all-routers waiter-url service-id cookies)
+            (let [{:keys [instances]} (service-settings waiter-url service-id)
+                  {:keys [active-instances]} instances
+                  num-active-instances (count active-instances)
+                  active-instance-ids (->> active-instances (map :id) (set))
+                  assertion-msg (str {:active-instances active-instances :service-id service-id})]
+              (is (pos? num-active-instances) assertion-msg)
+              (is (contains? active-instance-ids instance-id) assertion-msg))
+            (let [signal-endpoint (str "/apps/" service-id "/instance/" instance-id "/expire")
+                  signal-query-params {"timeout" signal-timeout-ms}
+                  {:keys [body] :as response} (make-request waiter-url signal-endpoint :method :post :query-params signal-query-params)]
+              (assert-response-status response http-200-ok)
+              (let [actual-data (some-> body (str) (try-parse-json) (walk/keywordize-keys))
+                    expected-data {:message (str "expire successfully sent to " instance-id)
+                                   :success true}]
+                (is (= expected-data (get actual-data :signal-response)))))
+            (wait-for (fn []
+                        (let [{:keys [flags]} (->> (active-instances waiter-url service-id :cookies cookies)
+                                                   (filter #(= (get % :id) instance-id))
+                                                   (first))]
+                          (log/info instance-id "flags are" flags)
+                          (contains? (set flags) "expired")))
+                      :interval 1 :timeout start-up-sleep-secs)))))))
