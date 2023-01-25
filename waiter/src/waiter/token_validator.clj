@@ -94,6 +94,8 @@
                             existing-editor
                             (authz/run-as? entitlement-manager authenticated-user existing-editor))]
 
+          (when current-owner?
+            (log/info "applying owner privileges to operation" {:authenticated-user authenticated-user :owner existing-owner}))
           (when editing?
             (log/info "applying editor privileges to operation" {:editor authenticated-user :owner existing-owner})
             (let [existing-token-parameters (sd/token->token-parameters kv-store token :include-deleted false)]
