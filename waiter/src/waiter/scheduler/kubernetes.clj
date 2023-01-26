@@ -509,7 +509,7 @@
   [k8s-obj]
   (utils/dissoc-in k8s-obj [:metadata :managedFields]))
 
-(defn streaming-api-request
+(defn- streaming-api-request
   "Make a long-lived HTTP request to the Kubernetes API server using the configured authentication.
    If data is provided via :body, the application/json content type is added automatically.
    The response payload (if any) is returned as a lazy seq of parsed JSON objects."
@@ -532,16 +532,17 @@
 (defn streaming-watch-api-request
   "Make a long-lived watch connection to the Kubernetes API server via the streaming-api-request function.
    If a Failure error is found in the response object stream, an exception is thrown."
-  [{:keys [auth-str-atom]} resource-name url request-options]
-  (for [update-json (streaming-api-request url @auth-str-atom request-options)]
-    (if (and (= "ERROR" (:type update-json))
-             (= "Failure" (-> update-json :object :status)))
-      (throw (ex-info "k8s watch connection failed"
-                      {:watch-resource resource-name
-                       :watch-response update-json}))
-      ;; Drop managedFields from response objects when present (much too verbose!)
-      ;; https://github.com/kubernetes/kubernetes/issues/90066
-      (update update-json :object drop-managed-fields))))
+  [{:keys [api-server-url auth-str-atom]} resource-name api-endpoint request-options]
+  (let [url (str api-server-url api-endpoint)]
+    (for [update-json (streaming-api-request url @auth-str-atom request-options)]
+      (if (and (= "ERROR" (:type update-json))
+               (= "Failure" (-> update-json :object :status)))
+        (throw (ex-info "k8s watch connection failed"
+                        {:watch-resource resource-name
+                         :watch-response update-json}))
+        ;; Drop managedFields from response objects when present (much too verbose!)
+        ;; https://github.com/kubernetes/kubernetes/issues/90066
+        (update update-json :object drop-managed-fields)))))
 
 (defn- drop-managed-fields-from-k8s-response
   "Drop managedFields from response objects when present (much too verbose!)
@@ -561,45 +562,47 @@
   "Make an HTTP request to the Kubernetes API server using the configured authentication.
    If data is provided via :body, the application/json content type is added automatically.
    The response payload (if any) is automatically parsed to JSON."
-  [url {:keys [auth-str-atom http-client scheduler-name]}
+  [api-endpoint {:keys [api-server-url auth-str-atom http-client scheduler-name]}
    & {:keys [body content-type request-method] :or {request-method :get} :as options}]
-  (scheduler/log "making request to K8s API server:" url request-method body)
-  (ss/try+
-    (let [auth-str @auth-str-atom
-          result (timers/start-stop-time!
-                   (metrics/waiter-timer "scheduler" scheduler-name (name request-method))
-                   (pc/mapply hu/http-request http-client url
-                              :accept "application/json"
-                              (cond-> options
-                                auth-str (assoc-in [:headers "Authorization"] auth-str)
-                                (and (not content-type) body) (assoc :content-type "application/json"))))
-          result (drop-managed-fields-from-k8s-response result)]
-      (scheduler/log "response from K8s API server:" result)
-      result)
-    (catch [:status http-400-bad-request] response
-      (log/error "malformed K8s API request: " url options response)
-      (ss/throw+ response))
-    (catch [:client http-client] response
-      (log/error "request to K8s API server failed: " url options body response)
-      (when (hu/status-5XX? (:status response))
-        (log/warn "received 5XX response from k8s api server request" {:url url :response response})
-        (counters/inc! (metrics/waiter-counter "k8s-api" "5XX")))
-      (ss/throw+ response))))
+  (let [url (str api-server-url api-endpoint)]
+    (scheduler/log "making request to K8s API server:" url request-method body)
+    (ss/try+
+      (let [auth-str @auth-str-atom
+            result (timers/start-stop-time!
+                     (metrics/waiter-timer "scheduler" scheduler-name (name request-method))
+                     (pc/mapply hu/http-request http-client url
+                                :accept "application/json"
+                                (cond-> options
+                                  auth-str (assoc-in [:headers "Authorization"] auth-str)
+                                  (and (not content-type) body) (assoc :content-type "application/json"))))
+            result (drop-managed-fields-from-k8s-response result)]
+        (scheduler/log "response from K8s API server:" result)
+        result)
+      (catch [:status http-400-bad-request] response
+        (log/error "malformed K8s API request: " url options response)
+        (ss/throw+ response))
+      (catch [:client http-client] response
+        (log/error "request to K8s API server failed: " url options body response)
+        (when (hu/status-5XX? (:status response))
+          (log/warn "received 5XX response from k8s api server request" {:url url :response response})
+          (counters/inc! (metrics/waiter-counter "k8s-api" "5XX")))
+        (ss/throw+ response)))))
 
 (defn api-request-async
   "Make an async HTTP request to the Kubernetes API server using the configured authentication.
    If data is provided via :body, the application/json content type is added automatically.
    The returned channel will contain either an automatically parsed JSON response or an exception."
-  [url {:keys [auth-str-atom http-client]}
+  [api-endpoint {:keys [api-server-url auth-str-atom http-client]}
    & {:keys [body content-type request-method] :or {request-method :get} :as options}]
-  (scheduler/log "making async request to K8s API server:" url request-method body)
-   (let [auth-str @auth-str-atom
-         response-chan (pc/mapply hu/http-request-async http-client url
-                                  :accept "application/json"
-                                  (cond-> options
-                                    auth-str (assoc-in [:headers "Authorization"] auth-str)
-                                    (and (not content-type) body) (assoc :content-type "application/json")))]
-     response-chan))
+  (let [url (str api-server-url api-endpoint)]
+    (scheduler/log "making async request to K8s API server:" url request-method body)
+    (let [auth-str @auth-str-atom
+          response-chan (pc/mapply hu/http-request-async http-client url
+                                   :accept "application/json"
+                                   (cond-> options
+                                     auth-str (assoc-in [:headers "Authorization"] auth-str)
+                                     (and (not content-type) body) (assoc :content-type "application/json")))]
+      response-chan)))
 
 (defn- retrieve-service-description
   "Get the corresponding service-description for a service-id."
@@ -692,16 +695,16 @@
 
 (defn- patch-object-json
   "Make a JSON-patch request on a given Kubernetes object."
-  [k8s-object-uri ops scheduler]
-  (api-request k8s-object-uri scheduler
+  [k8s-object-endpoint ops scheduler]
+  (api-request k8s-object-endpoint scheduler
                :body (utils/clj->json ops)
                :content-type "application/json-patch+json"
                :request-method :patch))
 
 (defn- patch-object-replicas
   "Update the replica count in the given Kubernetes object's spec."
-  [k8s-object-uri replicas replicas' scheduler]
-  (patch-object-json k8s-object-uri
+  [k8s-object-endpoint replicas replicas' scheduler]
+  (patch-object-json k8s-object-endpoint
                      [{:op :test :path "/spec/replicas" :value replicas}
                       {:op :replace :path "/spec/replicas" :value replicas'}]
                      scheduler))
@@ -727,25 +730,24 @@
          ~retry-cmd
          (throw (-> patch-result# meta :throw-context :throwable))))))
 
-(defn- build-replicaset-url
+(defn- build-replicaset-endpoint
   "Build the URL for the given Waiter Service's ReplicaSet."
-  [{:keys [api-server-url replicaset-api-version]} {:keys [k8s/app-name k8s/namespace]}]
+  [{:keys [replicaset-api-version]} {:keys [k8s/app-name k8s/namespace]}]
   (when (not-any? str/blank? [namespace app-name])
-    (str api-server-url "/apis/" replicaset-api-version
-         "/namespaces/" namespace "/replicasets/" app-name)))
+    (str "/apis/" replicaset-api-version "/namespaces/" namespace "/replicasets/" app-name)))
 
 (defn- scale-service-up-to
   "Scale the number of instances for a given service to a specific number.
    Only used for upward scaling. No-op if it would result in downward scaling."
   [{:keys [max-patch-retries] :as scheduler} {service-id :id :as service} instances']
-  (let [replicaset-url (build-replicaset-url scheduler service)]
+  (let [replicaset-endpoint (build-replicaset-endpoint scheduler service)]
     (loop [attempt 1
            instances (:instances service)]
       (if (<= instances' instances)
         (log/warn "skipping non-upward scale-up request on" service-id
                   "from" instances "to" instances')
         (k8s-patch-with-retries
-          (patch-object-replicas replicaset-url instances instances' scheduler)
+          (patch-object-replicas replicaset-endpoint instances instances' scheduler)
           (<= attempt max-patch-retries)
           (recur (inc attempt) (get-replica-count scheduler service-id)))))))
 
@@ -753,41 +755,41 @@
   "Scale the number of instances for a given service by a given delta.
    Can scale either upward (positive delta) or downward (negative delta)."
   [{:keys [max-patch-retries] :as scheduler} {service-id :id :as service} instances-delta]
-  (let [replicaset-url (build-replicaset-url scheduler service)]
+  (let [replicaset-endpoint (build-replicaset-endpoint scheduler service)]
     (loop [attempt 1
            instances (:instances service)]
       (let [instances' (+ instances instances-delta)]
         (k8s-patch-with-retries
-          (patch-object-replicas replicaset-url instances instances' scheduler)
+          (patch-object-replicas replicaset-endpoint instances instances' scheduler)
           (<= attempt max-patch-retries)
           (recur (inc attempt) (get-replica-count scheduler service-id)))))))
 
-(defn- instance->pod-url
+(defn- instance->pod-endpoint
   "Returns the pod api server url."
-  [api-server-url {:keys [k8s/namespace k8s/pod-name]}]
-  (str api-server-url "/api/v1/namespaces/" namespace "/pods/" pod-name))
+  [{:keys [k8s/namespace k8s/pod-name]}]
+  (str "/api/v1/namespaces/" namespace "/pods/" pod-name))
 
 (defn hard-delete-service-instance
   "Force kills the Kubernetes pod corresponding to the given Waiter Service Instance.
    Does not adjust ReplicaSet replica count; preventing scheduling of a replacement pod must be ensured by the callee.
    Returns throwable instance on failure, returns the pod object on success."
-  [{:keys [api-server-url] :as scheduler} instance]
+  [scheduler instance]
   (try
-    (let [pod-url (instance->pod-url api-server-url instance)]
-      (api-request pod-url scheduler :request-method :delete))
+    (let [pod-endpoint (instance->pod-endpoint instance)]
+      (api-request pod-endpoint scheduler :request-method :delete))
     (catch Throwable th
       (log/error th "error in force killing pod")
       th)))
 
 (defn soft-delete-service-instance
-  [{:keys [api-server-url] :as scheduler} instance timeout-ms]
+  [scheduler instance timeout-ms]
   "Gracefully kills the Kubernetes pod corresponding to the given Waiter Service Instance.
    Does not adjust ReplicaSet replica count; preventing scheduling of a replacement pod must be ensured by the callee.
    Returns throwable instance on failure, returns the pod object on success."
   (try
-    (let [pod-url (instance->pod-url api-server-url instance)
+    (let [pod-endpoint (instance->pod-endpoint instance)
           body-json (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds timeout-ms})]
-      (api-request pod-url scheduler :body body-json :request-method :delete))
+      (api-request pod-endpoint scheduler :body body-json :request-method :delete))
     (catch Throwable th
       (log/error th "error in gracefully killing pod")
       th)))
@@ -815,13 +817,13 @@
    Any backslash becomes '~1' so 'waiter/pod-expired' becomes 'waiter~1pod-expired'.
    Source https://stackoverflow.com/questions/55573724/create-a-patch-to-add-a-kubernetes-annotation
    Here is the RFC-6901 reference https://www.rfc-editor.org/rfc/rfc6901#section-3"
-  [{:keys [api-server-url] :as scheduler} {:keys [id k8s/pod-name] :as instance} annotation-key annotation-value]
+  [scheduler {:keys [id k8s/pod-name] :as instance} annotation-key annotation-value]
   (try
-    (let [pod-url (instance->pod-url api-server-url instance)
+    (let [pod-endpoint (instance->pod-endpoint instance)
           formatted-key (str/replace annotation-key "/" "~1")
           path-operations [{:op :add :path (str "/metadata/annotations/" formatted-key) :value annotation-value}]]
       (log/info "pod" pod-name "annotated with" formatted-key annotation-value)
-      (patch-object-json pod-url path-operations scheduler))
+      (patch-object-json pod-endpoint path-operations scheduler))
     (catch Throwable th
       (log/error th "error in gracefully killing pod")
       th)))
@@ -846,7 +848,7 @@
   "Safely kill the Kubernetes pod corresponding to the given Waiter Service Instance.
    Also adjusts the ReplicaSet replica count to prevent a replacement pod from being started.
    Returns nil on success, but throws on failure."
-  [{:keys [api-server-url service-id->service-description-fn] :as scheduler} {:keys [service-id] :as instance} service]
+  [{:keys [service-id->service-description-fn] :as scheduler} {:keys [service-id] :as instance} service]
   ;; SAFE DELETION STRATEGY:
   ;; 1) Delete the target pod with a grace period of 5 minutes
   ;;    Since the target pod is currently in the "Terminating" state,
@@ -865,14 +867,14 @@
   ;; doesn't hurt us significantly. If it takes more than 5 minutes to get from step 1
   ;; to step 3, then the pod was already deleted, and the force-delete is no longer needed.
   ;; The force-delete can fail with a 404 (object not found), but this operation still succeeds.
-  (let [pod-url (instance->pod-url api-server-url instance)
+  (let [pod-endpoint (instance->pod-endpoint instance)
         service-description (service-id->service-description-fn service-id)
         bypass-enabled? (sd/service-description-bypass-enabled? service-description)
         grace-period-seconds (calculate-grace-period-secs-for-delete scheduler service-id)]
     (when bypass-enabled?
       (log/info "deleting pod for bypass service" {:grace-period-seconds grace-period-seconds}))
     ; "soft" delete of the pod (i.e., simply transition the pod to "Terminating" state)
-    (api-request pod-url scheduler :request-method :delete
+    (api-request pod-endpoint scheduler :request-method :delete
                  :body (utils/clj->json {:kind "DeleteOptions" :apiVersion "v1" :gracePeriodSeconds grace-period-seconds}))
     ; scale down the replicaset to reflect removal of this instance
     (try
@@ -901,7 +903,7 @@
 (defn create-service
   "Reify a Waiter Service as a Kubernetes ReplicaSet."
   [{:keys [run-as-user-source service-description service-id]}
-   {:keys [api-server-url pdb-api-version pdb-spec-builder-fn replicaset-api-version
+   {:keys [pdb-api-version pdb-spec-builder-fn replicaset-api-version
            response->deployment-error-msg-fn service-id->deployment-error-cache] :as scheduler}]
   (let [{:strs [cmd-type]} service-description]
     (when (= "docker" cmd-type)
@@ -914,11 +916,11 @@
         rs-spec (invoke-replicaset-spec-builder-fn scheduler service-id service-description rs-spec-builder-context)
         rs-spec-json (utils/clj->json rs-spec)
         request-namespace (k8s-object->namespace rs-spec)
-        request-url (str api-server-url "/apis/" replicaset-api-version "/namespaces/" request-namespace "/replicasets")
+        request-endpoint (str "/apis/" replicaset-api-version "/namespaces/" request-namespace "/replicasets")
         response-json
         (ss/try+
           (with-retries
-            #(api-request request-url scheduler :body rs-spec-json :request-method :post))
+            #(api-request request-endpoint scheduler :body rs-spec-json :request-method :post))
           (catch ILookup response
             ; Don't create deployment error for http-409-conflict (replicaset already exists)
             (when-not (= (:status response) http-409-conflict)
@@ -939,12 +941,12 @@
       (let [{:strs [min-instances]} service-description]
         (when (> min-instances 1)
           (let [pdb-spec (pdb-spec-builder-fn pdb-api-version rs-spec replicaset-uid)
-                request-url (str api-server-url "/apis/" pdb-api-version "/namespaces/" request-namespace "/poddisruptionbudgets")
+                request-endpoint (str "/apis/" pdb-api-version "/namespaces/" request-namespace "/poddisruptionbudgets")
                 with-retries (utils/retry-strategy {:delay-multiplier 1.0 :initial-delay-ms 100 :max-attempts 3})]
             (try
               (with-retries
                 (fn create-pdb []
-                  (api-request request-url scheduler
+                  (api-request request-endpoint scheduler
                                :body (utils/clj->json pdb-spec)
                                :request-method :post)))
               (catch Exception ex
@@ -956,15 +958,15 @@
   "Delete the Kubernetes ReplicaSet corresponding to a Waiter Service.
    Owned Pods will be removed asynchronously by the Kubernetes garbage collector."
   [scheduler {:keys [id] :as service}]
-  (let [replicaset-url (build-replicaset-url scheduler service)
+  (let [replicaset-endpoint (build-replicaset-endpoint scheduler service)
         kill-json (utils/clj->json
                     {:kind "DeleteOptions" :apiVersion "v1"
                      :propagationPolicy "Background"})]
-    (when-not replicaset-url
+    (when-not replicaset-endpoint
       (throw (ex-info "could not find service to delete"
                       {:service service
                        :status http-404-not-found})))
-    (api-request replicaset-url scheduler :request-method :delete :body kill-json)
+    (api-request replicaset-endpoint scheduler :request-method :delete :body kill-json)
     {:message (str "Kubernetes deleted ReplicaSet for " id)
      :result :deleted}))
 
@@ -1776,8 +1778,8 @@
 (defn- reset-watch-state!
   "Reset the global state that is used as the basis for applying incremental watch updates."
   [{:keys [watch-state] :as scheduler}
-   {:keys [query-fn resource-key resource-url metadata-key] :as options}]
-  (let [{:keys [version] :as initial-state} (query-fn scheduler options resource-url)]
+   {:keys [query-fn resource-key resource-endpoint metadata-key] :as options}]
+  (let [{:keys [version] :as initial-state} (query-fn scheduler options resource-endpoint)]
     (swap! watch-state assoc
            resource-key (get initial-state resource-key)
            metadata-key {:timestamp {:snapshot (t/now)}
@@ -1810,14 +1812,14 @@
 
 (defn- start-k8s-watch!
   "Start a thread to continuously update the watch-state atom based on watched K8s events."
-  [{:keys [api-server-url scheduler-name watch-state] :as scheduler}
-   {:keys [connect-timeout-ms exit-on-error? insecure? resource-name resource-url socket-timeout-ms
+  [{:keys [scheduler-name] :as scheduler}
+   {:keys [connect-timeout-ms exit-on-error? insecure? resource-name resource-endpoint socket-timeout-ms
            streaming-api-request-fn update-fn watch-retries watch-trigger-chan] :as options}]
   (doto
     (Thread.
       (fn k8s-watch []
         (try
-          (log/info "starting" resource-name "watch at" resource-url)
+          (log/info "starting" resource-name "watch at" resource-endpoint)
           ;; retry getting state updates forever
           (let [resource-name-lower (str/lower-case resource-name)]
             (while true
@@ -1835,9 +1837,9 @@
                           (let [request-options (cond-> {:insecure? insecure?}
                                                   connect-timeout-ms (assoc :conn-timeout connect-timeout-ms)
                                                   socket-timeout-ms (assoc :socket-timeout socket-timeout-ms))
-                                watch-url (str resource-url "&watch=true&resourceVersion=" version)]
+                                watch-endpoint (str resource-endpoint "&watch=true&resourceVersion=" version)]
                             ;; process updates forever (unless there's an exception)
-                            (doseq [json-object (streaming-api-request-fn scheduler resource-name watch-url request-options)]
+                            (doseq [json-object (streaming-api-request-fn scheduler resource-name watch-endpoint request-options)]
                               (when json-object
                                 (if (= "ERROR" (:type json-object))
                                   (log/info "received error update in watch" resource-name json-object)
@@ -1862,18 +1864,18 @@
     (.start)))
 
 (defn- global-state-query
-  [{:keys [scheduler-name] :as  scheduler} {:keys [api-request-fn]} operation-name objects-url]
+  [{:keys [scheduler-name] :as  scheduler} {:keys [api-request-fn]} operation-name objects-endpoint]
   (let [{:keys [items] :as response} (timers/start-stop-time!
                                        (metrics/waiter-timer "scheduler" scheduler-name operation-name)
-                                       (api-request-fn objects-url scheduler))
+                                       (api-request-fn objects-endpoint scheduler))
         resource-version (k8s-object->resource-version response)]
     {:items items
      :version resource-version}))
 
 (defn global-pods-state-query
   "Query K8s for all Waiter-managed Pods"
-  [scheduler options pods-url]
-  (let [{:keys [items version]} (global-state-query scheduler options "get-pod-state" pods-url)
+  [scheduler options pods-endpoint]
+  (let [{:keys [items version]} (global-state-query scheduler options "get-pod-state" pods-endpoint)
         service-id->pod-id->pod (->> items
                                   (group-by k8s-object->service-id)
                                   (pc/map-vals (partial pc/map-from-vals k8s-object->id)))]
@@ -1882,16 +1884,16 @@
 
 (defn start-pods-watch!
   "Start a thread to continuously update the watch-state atom based on watched Pod events."
-  [{:keys [api-server-url cluster-name namespace watch-state] :as scheduler} options]
+  [{:keys [cluster-name namespace watch-state] :as scheduler} options]
   (start-k8s-watch!
     scheduler
     (->
       {:query-fn global-pods-state-query
+       :resource-endpoint (str "/api/v1"
+                               (when namespace (str "/namespaces/" namespace))
+                               "/pods?labelSelector=waiter%2Fcluster=" cluster-name)
        :resource-key :service-id->pod-id->pod
        :resource-name "Pods"
-       :resource-url (str api-server-url "/api/v1"
-                          (when namespace (str "/namespaces/" namespace))
-                          "/pods?labelSelector=waiter%2Fcluster=" cluster-name)
        :metadata-key :pods-metadata
        :update-fn (fn pods-watch-update [{raw-pod :object update-type :type}]
                     (let [now (t/now)
@@ -1919,8 +1921,8 @@
 
 (defn global-rs-state-query
   "Query K8s for all Waiter-managed ReplicaSets"
-  [scheduler options rs-url]
-  (let [{:keys [items version]} (global-state-query scheduler options "get-rs-state" rs-url)
+  [scheduler options rs-endpoint]
+  (let [{:keys [items version]} (global-state-query scheduler options "get-rs-state" rs-endpoint)
         service-id->service (->> items
                               (map replicaset->Service)
                               (filter some?)
@@ -1930,18 +1932,18 @@
 
 (defn start-replicasets-watch!
   "Start a thread to continuously update the watch-state atom based on watched ReplicaSet events."
-  [{:keys [api-server-url cluster-name namespace replicaset-api-version
+  [{:keys [cluster-name namespace replicaset-api-version
            service-id->failed-instances-transient-store watch-state] :as scheduler} options]
   (start-k8s-watch!
     scheduler
     (->
       {:query-fn global-rs-state-query
+       :resource-endpoint (str "/apis/" replicaset-api-version
+                               (when namespace (str "/namespaces/" namespace))
+                               "/replicasets?labelSelector=waiter%2Fcluster="
+                               cluster-name)
        :resource-key :service-id->service
        :resource-name "ReplicaSets"
-       :resource-url (str api-server-url "/apis/" replicaset-api-version
-                          (when namespace (str "/namespaces/" namespace))
-                          "/replicasets?labelSelector=waiter%2Fcluster="
-                          cluster-name)
        :metadata-key :rs-metadata
        :update-fn (fn rs-watch-update [{rs :object update-type :type}]
                     (let [now (t/now)
@@ -1965,10 +1967,10 @@
 (defn- query-events
   "Query K8s for all namespace-scoped events with matching object names. Returns a
    channel containing the response or an exception."
-  [{:keys [api-server-url] :as scheduler} {:keys [api-request-fn]} {:keys [k8s-object-name namespace]}]
+  [scheduler {:keys [api-request-fn]} {:keys [k8s-object-name namespace]}]
   (log/info "fetching events from k8s for" namespace k8s-object-name)
-  (let [events-url (str api-server-url "/api/v1/namespaces/" namespace "/events?fieldSelector=involvedObject.name%3D" k8s-object-name)
-        events-chan (api-request-fn events-url scheduler)]
+  (let [events-endpoint (str "/api/v1/namespaces/" namespace "/events?fieldSelector=involvedObject.name%3D" k8s-object-name)
+        events-chan (api-request-fn events-endpoint scheduler)]
     events-chan))
 
 (defn get-cached-events-chan

@@ -1623,8 +1623,8 @@
               expected-api-call-count 2 ;; should make one request for deleting the pod and one request for update the replicas count
               pod-delete-grace-period-atom (atom nil)
               expected-delete-grace-period 150 ;; should be the pod-bypass-force-sigterm-secs + pod-bypass-sigterm-grace-period-secs
-              actual (with-redefs [api-request (fn mock-api-request [resource-url _ & {:keys [body]}]
-                                                 (when (some-> resource-url (str/includes? "/pods/"))
+              actual (with-redefs [api-request (fn mock-api-request [resource-endpoint _ & {:keys [body]}]
+                                                 (when (some-> resource-endpoint (str/includes? "/pods/"))
                                                    (some->> body
                                                             ct/try-parse-json
                                                             walk/keywordize-keys
@@ -1648,8 +1648,8 @@
               expected-api-call-count 2 ;; should make one request for deleting the pod and one request for update the replicas count
               pod-delete-grace-period-atom (atom nil)
               expected-delete-grace-period 7 ;; should be the pod-bypass-force-sigterm-secs + pod-bypass-sigterm-grace-period-secs (env variables overrides 3 + 4)
-              actual (with-redefs [api-request (fn mock-api-request [resource-url _ & {:keys [body]}]
-                                                 (when (some-> resource-url (str/includes? "/pods/"))
+              actual (with-redefs [api-request (fn mock-api-request [resource-endpoint _ & {:keys [body]}]
+                                                 (when (some-> resource-endpoint (str/includes? "/pods/"))
                                                    (some->> body
                                                             ct/try-parse-json
                                                             walk/keywordize-keys
@@ -1810,12 +1810,11 @@
              dummy-scheduler (:service-id service) k8s-error-message)))
 
         (testing "successful create"
-          (let [apis-url "https://k8s-api.example//apis"
-                make-api-request (fn [api-calls-atom]
-                                   (fn [url _ & {:keys [body request-method] :or {request-method :get}}]
-                                     (swap! api-calls-atom conj {:kind (-> body json/read-str (get "kind"))
-                                                                 :request-method request-method
-                                                                 :url url})
+          (let [make-api-request (fn [api-calls-atom]
+                                   (fn [endpoint _ & {:keys [body request-method] :or {request-method :get}}]
+                                     (swap! api-calls-atom conj {:endpoint endpoint
+                                                                 :kind (-> body json/read-str (get "kind"))
+                                                                 :request-method request-method})
                                      service))]
 
             (testing "removes previously created deployment error"
@@ -1826,9 +1825,9 @@
                     api-calls @api-calls-atom
                     services (scheduler/get-services dummy-scheduler)]
                 (is (= 1 (count api-calls)))
-                (is (= {:kind "ReplicaSet"
-                        :request-method :post
-                        :url (str apis-url "/apps/v1/namespaces/waiter/replicasets")}
+                (is (= {:endpoint "/apis/apps/v1/namespaces/waiter/replicasets"
+                        :kind "ReplicaSet"
+                        :request-method :post}
                        (first api-calls)))
                 (is (= service actual))
                 (is (= [] services))))
@@ -1850,9 +1849,9 @@
                 (is (= 3 (count api-calls)))
                 (is (= {:error "FAILURE"} res1))
                 (is (= {:error "FAILURE"} res2))
-                (is (= {:kind "ReplicaSet"
-                        :request-method :post
-                        :url (str apis-url "/apps/v1/namespaces/waiter/replicasets")}
+                (is (= {:endpoint "/apis/apps/v1/namespaces/waiter/replicasets"
+                        :kind "ReplicaSet"
+                        :request-method :post}
                        res3))
                 (is (= service actual))
                 (is (= [] services))))
@@ -1864,9 +1863,9 @@
                              (scheduler/create-service-if-new dummy-scheduler descriptor))
                     api-calls @api-calls-atom]
                 (is (= 1 (count api-calls)))
-                (is (= {:kind "ReplicaSet"
-                        :request-method :post
-                        :url (str apis-url "/apps/v1/namespaces/waiter/replicasets")}
+                (is (= {:endpoint "/apis/apps/v1/namespaces/waiter/replicasets"
+                        :kind "ReplicaSet"
+                        :request-method :post}
                        (first api-calls)))
                 (is (= service actual)))
 
@@ -1878,9 +1877,9 @@
                              (scheduler/create-service-if-new dummy-scheduler descriptor))
                     api-calls @api-calls-atom]
                 (is (= 1 (count api-calls)))
-                (is (= {:kind "ReplicaSet"
-                        :request-method :post
-                        :url (str apis-url "/apps/v1/namespaces/waiter/replicasets")}
+                (is (= {:endpoint "/apis/apps/v1/namespaces/waiter/replicasets"
+                        :kind "ReplicaSet"
+                        :request-method :post}
                        (first api-calls)))
                 (is (= service actual))))
 
@@ -1892,13 +1891,13 @@
                              (scheduler/create-service-if-new dummy-scheduler descriptor))
                     api-calls @api-calls-atom]
                 (is (= 2 (count api-calls)))
-                (is (= {:kind "ReplicaSet"
-                        :request-method :post
-                        :url (str apis-url "/apps/v1/namespaces/waiter/replicasets")}
+                (is (= {:endpoint "/apis/apps/v1/namespaces/waiter/replicasets"
+                        :kind "ReplicaSet"
+                        :request-method :post}
                        (first api-calls)))
-                (is (= {:kind "PodDisruptionBudget"
-                        :request-method :post
-                        :url (str apis-url "/policy/v1beta1/namespaces/waiter/poddisruptionbudgets")}
+                (is (= {:endpoint "/apis/policy/v1beta1/namespaces/waiter/poddisruptionbudgets"
+                        :kind "PodDisruptionBudget"
+                        :request-method :post}
                        (second api-calls)))
                 (is (= service actual))))))))))
 
@@ -1963,8 +1962,8 @@
         dummy-scheduler (assoc (make-dummy-scheduler [service-id]) :watch-state service-state)]
     (with-redefs [service-id->service (constantly service)]
       (testing "successful-scale"
-        (with-redefs [api-request (fn [url _ & {:keys [body content-type request-method]}]
-                                    (is (= "https://k8s-api.example//apis/apps/v1/namespaces/myself/replicasets/test-service-id" url))
+        (with-redefs [api-request (fn [endpoint _ & {:keys [body content-type request-method]}]
+                                    (is (= "/apis/apps/v1/namespaces/myself/replicasets/test-service-id" endpoint))
                                     (is (= "application/json-patch+json" content-type))
                                     (is (= :patch request-method))
                                     (is (= [{"op" "test" "path" "/spec/replicas" "value" 1}
