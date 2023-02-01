@@ -191,16 +191,13 @@
                         (if (instance? Throwable result)
                           (throw result)
                           result))))
-        configuration {:daemons {:populate-maintainer-chan! {:query-state-fn (constantly {})}
-                                 :router-state-maintainer {:maintainer {:notify-instance-killed-fn (constantly {})}}}
-                       :routines {:peers-acknowledged-eject-requests-fn (constantly true)
-                                  :allowed-to-manage-service?-fn (constantly true)
-                                  :service-id->service-description-fn (constantly {})}
-                       :scheduler {:scheduler scheduler}
-                       :state {:scaling-timeout-config scaling-timeout-config
-                               :scheduler-interactions-thread-pool scheduler-interactions-thread-pool}
-                       :wrap-ignore-disabled-auth-fn utils/wrap-identity
-                       :wrap-secure-request-fn utils/wrap-identity}
+        notify-instance-killed-fn (constantly {})
+        allowed-to-manage-service?-fn (constantly true)
+        configuration {:instance-signal-handler-factory (fn instance-signal-handler-factory-fn [operation]
+                                                          (fn instance-signal-handler-fn [request]
+                                                            (handler/instance-signal-handler
+                                                              notify-instance-killed-fn allowed-to-manage-service?-fn scheduler scaling-timeout-config
+                                                              scheduler-interactions-thread-pool operation request)))}
         handlers {:instance-kill-signal-handler-fn ((:instance-kill-signal-handler-fn request-handlers) configuration)}]
 
     (testing "signal-handler:valid-response-including-active-killed"
@@ -1217,6 +1214,8 @@
            (exec-routes-mapper "/apps/test-service")))
     (is (= {:handler :service-await-handler-fn, :route-params {:service-id "test-service" :goal-state "exists"}}
            (exec-routes-mapper "/apps/test-service/await/exists")))
+    (is (= {:handler :instance-expire-signal-handler-fn, :route-params {:instance-id "test-instance" :service-id "test-service"}}
+           (exec-routes-mapper "/apps/test-service/instance/test-instance/expire")))
     (is (= {:handler :instance-kill-signal-handler-fn, :route-params {:instance-id "test-instance" :service-id "test-service"}}
            (exec-routes-mapper "/apps/test-service/instance/test-instance/kill")))
     (is (= {:handler :service-view-logs-handler-fn, :route-params {:service-id "test-service"}}

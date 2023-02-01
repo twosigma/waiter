@@ -1285,44 +1285,42 @@
       (utils/exception->response th request))))
 
 (defn- execute-signal
-  "Helper function to send signals to instances of a service.
+  "Helper function to send signals to an instance of a service.
    The instance will be marked as killed upon success."
   [notify-instance-killed-fn scheduler timeout-config instance-id service-id signal-type options-map
    thread-pool response-chan]
   (let [correlation-id (cid/get-correlation-id)
-        {:keys [eject-backoff-base-time-ms]} timeout-config]
+        {:keys [eject-backoff-base-time-ms]} timeout-config
+        kill? (scheduler/kill-signal-type? signal-type)]
     (async/go
       (cid/with-correlation-id
         correlation-id
         (try
-          (let [request-id (utils/unique-identifier)] ; new unique identifier for this reservation request
-            (log/info "Attempting to send signal to " instance-id)
-            (do
-              (log/info "sending signal to instance " instance-id service-id)
-              (when (contains? #{:sigkill :sigterm} signal-type)
-                (scheduler/track-kill-candidate! instance-id :prepare-to-kill eject-backoff-base-time-ms))
-              (let [{:keys [success] :as signal-result}
-                    (-> (au/execute
-                          (fn send-signal-to-instance []
-                            (scheduler/signal-instance scheduler service-id instance-id signal-type options-map))
-                          thread-pool)
-                        async/<!
-                        :result)]
-                (when (and success (contains? #{:sigkill :sigterm} signal-type))
-                  (do
-                    (log/info "marking instance" instance-id "as killed")
-                    (scheduler/track-kill-candidate! instance-id :killed eject-backoff-base-time-ms)
-                    (notify-instance-killed-fn {:id instance-id :service-id service-id})))
-                (when response-chan (async/>! response-chan signal-result))
-                success)))
+          (log/info "sending signal" (name signal-type) "to instance " instance-id service-id)
+          (when kill?
+            (scheduler/track-kill-candidate! instance-id :prepare-to-kill eject-backoff-base-time-ms))
+          (let [{:keys [success] :as signal-result}
+                (-> (au/execute
+                      (fn send-signal-to-instance []
+                        (scheduler/signal-instance scheduler service-id instance-id signal-type options-map))
+                      thread-pool)
+                    async/<!
+                    :result)]
+            (when (and success kill?)
+              (do
+                (log/info "marking instance" instance-id "as killed")
+                (scheduler/track-kill-candidate! instance-id :killed eject-backoff-base-time-ms)
+                (notify-instance-killed-fn {:id instance-id :service-id service-id})))
+            (when response-chan (async/>! response-chan signal-result))
+            success)
           (catch Exception ex
-            (log/error ex "unable to send signal" signal-type "to instance" instance-id)
+            (log/error ex "unable to send signal" (name signal-type) "to instance" instance-id)
             (when response-chan
               (async/>! response-chan {:success false :message (.getMessage ex) :status http-500-internal-server-error}))))))))
 
-(defn instance-kill-signal-handler
-  "Handler that supports sending signals to instances of a particular service on a specific router."
-  [notify-instance-killed-fn allowed-to-manage-service?-fn scheduler timeout-config service-id->service-description-fn scale-service-thread-pool
+(defn instance-signal-handler
+  "Handler that supports sending specific signals to an instance of a particular service on a specific router."
+  [notify-instance-killed-fn allowed-to-manage-service?-fn scheduler timeout-config scale-service-thread-pool operation
    {:keys [request-method route-params] :as request}]
   (let [{:keys [instance-id service-id]} route-params
         {:keys [query-params]} (ru/query-params-request request)
@@ -1345,6 +1343,7 @@
                   :instance-id instance-id
                   :log-level :info
                   :service-id service-id
+                  :signal operation
                   :status http-403-forbidden})
         request)
 
@@ -1356,8 +1355,8 @@
       :else
       (async/go
         (timers/start-stop-time!
-          (metrics/waiter-timer "handler" "signal-handler-duration")
-          (let [signal-type (scheduler/resolve-signal-type :kill options-map)
+          (metrics/waiter-timer "handler" (name operation) "signal-duration")
+          (let [signal-type (scheduler/resolve-signal-type operation options-map)
                 response-chan (async/promise-chan)
                 _ (execute-signal
                     notify-instance-killed-fn scheduler timeout-config instance-id service-id signal-type options-map

@@ -1435,6 +1435,16 @@
 (defn supported-signal-type?
   "Returns true if the signal-type is supported."
   [signal-type]
+  (contains? #{:signal/expire :signal/force-kill :signal/soft-kill} signal-type))
+
+(defn expire-signal-type?
+  "Returns true if the signal-type represents an expire operation."
+  [signal-type]
+  (contains? #{:signal/expire} signal-type))
+
+(defn kill-signal-type?
+  "Returns true if the signal-type represents a kill operation."
+  [signal-type]
   (contains? #{:signal/force-kill :signal/soft-kill} signal-type))
 
 (defn resolve-signal-type
@@ -1444,4 +1454,5 @@
   (cond
     (= :kill operation) (if (-> force (str) (Boolean/valueOf))
                           :signal/force-kill
-                          :signal/soft-kill)))
+                          :signal/soft-kill)
+    (= :expire operation) :signal/expire))

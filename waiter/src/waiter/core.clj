@@ -100,6 +100,7 @@
                              ["/" "instances"] :instances-list-handler-fn
                              ["/" :service-id] :service-handler-fn
                              ["/" :service-id "/await/" :goal-state] :service-await-handler-fn
+                             ["/" :service-id "/instance/" :instance-id "/expire"] :instance-expire-signal-handler-fn
                              ["/" :service-id "/instance/" :instance-id "/kill"] :instance-kill-signal-handler-fn
                              ["/" :service-id "/logs"] :service-view-logs-handler-fn
                              ["/" :service-id "/override"] :service-override-handler-fn
@@ -1659,18 +1660,22 @@
                                       (instance-tracker/handle-list-instances-request
                                         instance-watch-channels-update-chan service-id->service-description-fn
                                         streaming-timeout-ms request)))))
-   :instance-kill-signal-handler-fn (pc/fnk [[:daemons router-state-maintainer]
-                                             [:routines allowed-to-manage-service?-fn service-id->service-description-fn]
+   :instance-expire-signal-handler-fn (pc/fnk [instance-signal-handler-factory]
+                                        (instance-signal-handler-factory :expire))
+   :instance-kill-signal-handler-fn (pc/fnk [instance-signal-handler-factory]
+                                      (instance-signal-handler-factory :kill))
+   :instance-signal-handler-factory (pc/fnk [[:daemons router-state-maintainer]
+                                             [:routines allowed-to-manage-service?-fn]
                                              [:scheduler scheduler]
                                              [:state scaling-timeout-config scheduler-interactions-thread-pool]
                                              wrap-secure-request-fn]
                                       (let [{{:keys [notify-instance-killed-fn]} :maintainer} router-state-maintainer]
-                                        (wrap-secure-request-fn
-                                          (fn instance-kill-signal-handler-fn [request]
-                                            (handler/instance-kill-signal-handler
-                                              notify-instance-killed-fn allowed-to-manage-service?-fn
-                                              scheduler scaling-timeout-config service-id->service-description-fn
-                                              scheduler-interactions-thread-pool request)))))
+                                        (fn instance-signal-handler-factory-fn [operation]
+                                          (wrap-secure-request-fn
+                                            (fn instance-signal-handler-fn [request]
+                                              (handler/instance-signal-handler
+                                                notify-instance-killed-fn allowed-to-manage-service?-fn scheduler scaling-timeout-config
+                                                scheduler-interactions-thread-pool operation request))))))
    :kill-instance-handler-fn (pc/fnk [[:daemons populate-maintainer-chan! router-state-maintainer]
                                       [:routines peers-acknowledged-eject-requests-fn]
                                       [:scheduler scheduler]

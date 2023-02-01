@@ -298,20 +298,26 @@
   (try
     (if (contains? id->service service-id)
       (let [{:keys [id->instance]} (get id->service service-id)
-            {:keys [:shell-scheduler/process] :as instance} (get id->instance instance-id)]
+            {:keys [:shell-scheduler/process] :as instance} (get id->instance instance-id)
+            expire? (scheduler/expire-signal-type? signal-type)
+            kill? (scheduler/kill-signal-type? signal-type)]
         (if (and instance (active? instance))
           (do
             (log/info "signaling instance" instance-id "process" process "with signal" (name signal-type))
             (case signal-type
+              :signal/expire (comment "processed below")
               :signal/force-kill (kill-process! instance port->reservation-atom port-grace-period-ms true)
               :signal/soft-kill (kill-process! instance port->reservation-atom port-grace-period-ms false)
               (throw (IllegalArgumentException. "Not a supported signal.")))
-            (-> id->service
-                (update-in [service-id :service :instances] dec)
-                (update-in [service-id :id->instance instance-id] assoc
-                           :killed? true
-                           :message message
-                           :shell-scheduler/process nil)))
+            (cond-> id->service
+              expire? (update-in [service-id :id->instance instance-id :flags]
+                                 (fnil conj #{}) :expired)
+              kill? (->
+                      (update-in [service-id :service :instances] dec)
+                      (update-in [service-id :id->instance instance-id] assoc
+                                 :killed? true
+                                 :message message
+                                 :shell-scheduler/process nil))))
           (do
             (log/info "instance" instance-id "in service" service-id "does not exist")
             id->service)))
