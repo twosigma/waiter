@@ -93,6 +93,17 @@
 (def ^:const envoy-upstream-connection-termination "UC")
 (def ^:const envoy-upstream-request-timeout "UT")
 
+;; waiter error cause constants
+(def ^:const error-cause-client-eagerly-closed :client-eagerly-closed)
+(def ^:const error-cause-client-error :client-error)
+(def ^:const error-cause-cors-error :cors-error)
+(def ^:const error-cause-deployment-error :deployment-error)
+(def ^:const error-cause-generic-error :generic-error)
+(def ^:const error-cause-instance-error :instance-error)
+(def ^:const error-cause-server-eagerly-closed :server-eagerly-closed)
+(def ^:const error-cause-service-description-error :service-description-error)
+(def ^:const error-cause-service-error :service-error)
+
 ;; waiter error class constants
 (def ^:const error-class-cors-preflight-forbidden "waiter.CorsPreflightForbidden")
 (def ^:const error-class-cors-request-forbidden "waiter.CorsRequestForbidden")
@@ -126,5 +137,3 @@
 (def ^:const error-image-503-maintenance "http-503-maintenance.png")
 (def ^:const error-image-503-service-overloaded "http-503-service-overloaded.png")
 (def ^:const error-image-504-gateway-timeout "http-504-gateway-timeout.png")
-
-

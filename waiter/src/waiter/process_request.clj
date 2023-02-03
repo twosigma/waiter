@@ -84,16 +84,16 @@
                                      error-cause (or (-> error ex-data :error-cause) error-cause)]
                                  [error-cause message status error-image error-class])
                                (let [error-status (or (-> error ex-data :status) http-500-internal-server-error)
-                                     error-cause (or (-> error ex-data :error-cause) :generic-error)
+                                     error-cause (or (-> error ex-data :error-cause) error-cause-generic-error)
                                      error-image (or (-> error ex-data :waiter/error-image)
                                                      (cond
                                                        (= http-400-bad-request error-status) error-image-400-bad-request
                                                        (= http-500-internal-server-error error-status) error-image-500-internal-server-error))]
                                  [error-cause error-message error-status error-image error-class]))
                              (and (instance? IllegalStateException error) (= "session closed" error-message))
-                             [:generic-error "Internal error: session already closed" http-500-internal-server-error error-image-500-internal-server-error error-class]
+                             [error-cause-generic-error "Internal error: session already closed" http-500-internal-server-error error-image-500-internal-server-error error-class]
                              (instance? IllegalStateException error)
-                             [:generic-error error-message http-400-bad-request error-image-400-bad-request error-class]
+                             [error-cause-generic-error error-message http-400-bad-request error-image-400-bad-request error-class]
                              ;; internal_error due to reset stream for http/1 requests means client send bad data to server
                              ;; TODO shams verify http/1 request
                              (and (instance? IOException error)
@@ -101,33 +101,33 @@
                                   (when-let [^StackTraceElement stack-element (some-> error (.getStackTrace) (seq) (first))]
                                     (and (str/ends-with? (.getClassName stack-element) "HttpReceiverOverHTTP2")
                                          (= (.getMethodName stack-element) "onReset"))))
-                             [:client-error "Client send invalid data to HTTP/2 backend" http-400-bad-request error-image-400-bad-request error-class]
+                             [error-cause-client-error "Client send invalid data to HTTP/2 backend" http-400-bad-request error-image-400-bad-request error-class]
                              ;; cancel_stream_error is used to indicate that the stream is no longer needed
                              (and (instance? IOException error) (= "cancel_stream_error" error-message))
-                             [:client-error "Client action means stream is no longer needed" http-400-bad-request error-image-400-bad-request error-class]
+                             [error-cause-client-error "Client action means stream is no longer needed" http-400-bad-request error-image-400-bad-request error-class]
                              ;; no_error is used to indicate that the stream is no longer needed
                              ;; HTTP2 spec: The associated condition is not a result of an error...indicate graceful shutdown of a connection.
                              (and (instance? IOException error) (= "no_error" error-message))
-                             [:server-eagerly-closed "Connection eagerly closed by server" http-400-bad-request error-image-400-bad-request error-class]
+                             [error-cause-server-eagerly-closed "Connection eagerly closed by server" http-400-bad-request error-image-400-bad-request error-class]
                              ;; connection has already been closed by the client
                              (and (instance? EofException error) (= "reset" error-message))
-                             [:client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request error-image-400-bad-request error-class]
+                             [error-cause-client-eagerly-closed "Connection eagerly closed by client" http-400-bad-request error-image-400-bad-request error-class]
                              (instance? EofException error)
-                             [:client-error "Connection unexpectedly closed while streaming request" http-400-bad-request error-image-400-bad-request error-class]
+                             [error-cause-client-error "Connection unexpectedly closed while streaming request" http-400-bad-request error-image-400-bad-request error-class]
                              (instance? TimeoutException error)
                              (if (some->> error (.getSuppressed) (map #(.getMessage %)) (some #(str/includes? % "HttpInput idle timeout")))
-                               [:client-error "Timeout receiving bytes from client" http-408-request-timeout error-image-408-request-timeout error-class]
-                               [:instance-error (utils/message :backend-request-timed-out) http-504-gateway-timeout error-image-504-gateway-timeout error-class])
+                               [error-cause-client-error "Timeout receiving bytes from client" http-408-request-timeout error-image-408-request-timeout error-class]
+                               [error-cause-instance-error (utils/message :backend-request-timed-out) http-504-gateway-timeout error-image-504-gateway-timeout error-class])
                              (instance? UpgradeException error)
                              (let [response-status-code (.getResponseStatusCode error)
                                    status-code (if (pos? response-status-code) response-status-code http-400-bad-request)
                                    error-image (when (= http-400-bad-request status-code) error-image-400-bad-request)]
-                               [:client-error "Failed to upgrade to websocket connection" status-code error-image error-class])
+                               [error-cause-client-error "Failed to upgrade to websocket connection" status-code error-image error-class])
                              (or (instance? ConnectException error)
                                  (and (instance? SocketTimeoutException error) (= (.getMessage error) "Connect Timeout")))
-                             [:instance-error (utils/message :backend-connect-error) http-502-bad-gateway error-image-502-connection-failed error-class]
+                             [error-cause-instance-error (utils/message :backend-connect-error) http-502-bad-gateway error-image-502-connection-failed error-class]
                              :else
-                             [:instance-error (utils/message :backend-request-failed) http-502-bad-gateway error-image-502-connection-failed error-class])
+                             [error-cause-instance-error (utils/message :backend-request-failed) http-502-bad-gateway error-image-502-connection-failed error-class])
         error-cause (first classification)]
     (log/info error-class error-message "identified as" error-cause "for" label)
     classification))
@@ -136,14 +136,14 @@
   "Classifies the error into one of :client-eagerly-closed or :client-error"
   [error]
   (let [[error-cause] (classify-error "determine-client-error" error)]
-    (or (get #{:client-eagerly-closed :client-error} error-cause)
-        :client-error)))
+    (or (get #{error-cause-client-eagerly-closed error-cause-client-error} error-cause)
+        error-cause-client-error)))
 
 (defn- eagerly-closed?
   "True when error-cause is :client-eagerly-closed or :server-eagerly-closed."
   [error-cause]
-  (or (= :client-eagerly-closed error-cause)
-      (= :server-eagerly-closed error-cause)))
+  (or (= error-cause-client-eagerly-closed error-cause)
+      (= error-cause-server-eagerly-closed error-cause)))
 
 (defn confirm-live-connection-factory
   "Confirms that the connection to the client is live by checking the ctrl channel, else it throws an exception."
@@ -295,15 +295,15 @@
                             correlation-id
                             (log/debug "request-state-chan closed")
                             ; assume request did not process successfully if no value in promise
-                            (deliver reservation-status-promise :generic-error)
+                            (deliver reservation-status-promise error-cause-generic-error)
                             (let [status @reservation-status-promise
                                   reservation-result {:cid correlation-id :request-id request-id :status status}]
                               (log/info "done processing request" status)
                               (when (= :success status)
                                 (counters/inc! (metrics/service-counter service-id "request-counts" "successful")))
-                              (when (contains? #{:client-error :generic-error :instance-error} status)
+                              (when (contains? #{error-cause-client-error error-cause-generic-error error-cause-instance-error} status)
                                 (counters/inc! (metrics/service-counter service-id "request-counts" (name status))))
-                              (when (= :generic-error status)
+                              (when (= error-cause-generic-error status)
                                 (log/error "there was a generic error in processing the request;"
                                            "if this is a client or server related issue, the code needs to be updated."))
                               (when (not= :success-async status)
@@ -322,6 +322,7 @@
   (let [[error-cause message status error-image error-class] (classify-error "handle-response-error" error)
         metrics-map (metrics/retrieve-local-stats-for-service service-id)
         error-map (assoc metrics-map
+                    :error-cause error-cause
                     :error-class error-class
                     :status status
                     :waiter/error-image error-image)]
@@ -448,14 +449,14 @@
                     (when (and (utils/non-neg? bytes-read) (.isReady input-stream))
                       (recur)))))
               (catch Throwable throwable
-                (let [ex (ex-info "error reading available data" {:error-cause :client-error} throwable)]
+                (let [ex (ex-info "error reading available data" {:error-cause error-cause-client-error} throwable)]
                   (complete-request-streaming "there was error in streaming data" ex))
                 (throw throwable))))
           (onError [_ throwable]
-            (let [ex (ex-info "error in frontend request" {:error-cause :client-error} throwable)]
+            (let [ex (ex-info "error in frontend request" {:error-cause error-cause-client-error} throwable)]
               (complete-request-streaming "there was error in request data stream" ex)))))
       (catch Throwable throwable
-        (let [ex (ex-info "error in registering read listener on request stream" {:error-cause :generic-error} throwable)]
+        (let [ex (ex-info "error in registering read listener on request stream" {:error-cause error-cause-generic-error} throwable)]
           (complete-request-streaming "there was error in registering read listener" ex))))
     body-ch))
 
@@ -602,11 +603,11 @@
                                                      :bytes-pending bytes-read
                                                      :bytes-streamed bytes-streamed
                                                      :correlation-id (cid/get-correlation-id)
-                                                     :error-cause :client-error
+                                                     :error-cause error-cause-client-error
                                                      :error-class error-class-stream-failure}
                                                     error)]
                                     (meters/mark! stream-back-pressure)
-                                    (deliver reservation-status-promise :client-error)
+                                    (deliver reservation-status-promise error-cause-client-error)
                                     (request-abort-callback (IOException. ^Exception ex))
                                     (when waiter-debug-enabled?
                                       (log/info "unable to stream, back pressure in resp-chan"))
@@ -956,7 +957,8 @@
   (fn [{{:keys [suspended-state service-id]} :descriptor :as request}]
     (if (get suspended-state :suspended false)
       (let [{:keys [last-updated-by time]} suspended-state
-            response-map (cond-> {:error-class error-class-suspended
+            response-map (cond-> {:error-cause error-cause-service-error
+                                  :error-class error-class-suspended
                                   :service-id service-id}
                            time (assoc :suspended-at (du/date-to-str time))
                            (not (str/blank? last-updated-by)) (assoc :last-updated-by last-updated-by))]
@@ -976,7 +978,8 @@
   (fn maintenance-mode-handler [{{:keys [service-description-template token]
                                   {:strs [maintenance owner]} :token-metadata} :waiter-discovery
                                  :as request}]
-    (let [response-map {:error-class error-class-maintenance
+    (let [response-map {:error-cause error-cause-service-error
+                        :error-class error-class-maintenance
                         :name (get service-description-template "name")
                         :token token
                         :token-owner owner}]
@@ -1026,6 +1029,7 @@
         (let [outstanding-requests (counters/value (metrics/service-counter service-id "request-counts" "outstanding"))
               queue-length-meter (metrics/service-meter service-id "response-rate" "error" "queue-length")
               response-map {:current-queue-length current-queue-length
+                            :error-cause error-cause-service-error
                             :error-class error-class-queue-length
                             :max-queue-length max-queue-length
                             :outstanding-requests outstanding-requests

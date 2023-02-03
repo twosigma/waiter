@@ -23,6 +23,7 @@
             [waiter.metrics :as metrics]
             [waiter.state.ejection-expiry :as ejection-expiry]
             [waiter.state.responder :refer :all]
+            [waiter.status-codes :refer :all]
             [waiter.test-helpers :refer :all]
             [waiter.util.utils :as utils])
   (:import (clojure.lang PersistentQueue)
@@ -1238,7 +1239,7 @@
         (let [start-time (t/now)
               current-time-atom (atom start-time)]
           (with-redefs [t/now (fn [] @current-time-atom)]
-            (release-instance-fn release-instance-chan "s1.h1" 1 :instance-error)
+            (release-instance-fn release-instance-chan "s1.h1" 1 error-cause-instance-error)
             (release-instance-fn release-instance-chan "s1.h3" 4 :instance-busy)
             (release-instance-fn release-instance-chan "s1.h3" 8 :instance-busy)
             (check-state-fn query-state-chan
@@ -1653,7 +1654,7 @@
         (let [start-time (t/now)
               current-time-atom (atom start-time)]
           (with-redefs [t/now (fn [] @current-time-atom)]
-            (release-instance-fn release-instance-chan "s1.h1" 15 :instance-error)
+            (release-instance-fn release-instance-chan "s1.h1" 15 error-cause-instance-error)
             (check-state-fn query-state-chan
                             {:instance-id->eject-expiry-time {"s1.h1" (t/plus start-time (t/millis (* (Math/pow 2 (dec 2)) eject-backoff-base-time-ms)))}
                              :instance-id->request-id->use-reason-map {"s1.h2" {"req-16" {:cid "cid-16" :request-id "req-16" :reason :serve-request}}
@@ -2218,7 +2219,7 @@
                                                :work-stealing-queue (make-queue [])})]
         (let [current-time (t/now)]
           (with-redefs [t/now (fn [] current-time)]
-            (release-instance-fn release-instance-chan "s1.h2" 19 :instance-error)
+            (release-instance-fn release-instance-chan "s1.h2" 19 error-cause-instance-error)
             (check-state-fn query-state-chan
                             {:id->instance id->instance-data
                              :instance-id->eject-expiry-time {"s1.h2" (t/plus current-time (t/millis eject-backoff-base-time-ms))}
@@ -2231,7 +2232,7 @@
                              :request-id->work-stealer {"req-18" (make-work-stealing-data "cid-15" "s1.h1" response-chan-1 "test-router-1")}
                              :sorted-instance-ids ["s1.h1" "s1.h2" "s1.h3" "s1.u3"]
                              :work-stealing-queue (make-queue [])})
-            (is (= :instance-error (async/<!! response-chan-2))))
+            (is (= error-cause-instance-error (async/<!! response-chan-2))))
           (with-redefs [t/now (fn [] (t/plus current-time (t/millis (* 8 max-eject-time-ms))))]
             (check-state-fn query-state-chan nil)))
         (exit-service-chan-responder responder-chans)))
@@ -2931,7 +2932,7 @@
             (launch-service-chan-responder 19 initial-state :ejection-expiry-tracker ejection-expiry-tracker)]
         (let [current-time (t/now)]
           (with-redefs [t/now (fn [] current-time)]
-            (release-instance-fn release-instance-chan "s1.h1" 11 :instance-error)
+            (release-instance-fn release-instance-chan "s1.h1" 11 error-cause-instance-error)
             (check-state-fn query-state-chan
                             (-> initial-state
                               (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-11"])
@@ -2939,7 +2940,7 @@
                               (update :instance-id->consecutive-failures assoc "s1.h1" 1)
                               (update :instance-id->eject-expiry-time assoc "s1.h1" (t/plus current-time (t/millis eject-backoff-base-time-ms)))))
 
-            (release-instance-fn release-instance-chan "s1.h1" 12 :instance-error)
+            (release-instance-fn release-instance-chan "s1.h1" 12 error-cause-instance-error)
             (check-state-fn query-state-chan
                             (-> initial-state
                               (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-11"])
@@ -2949,7 +2950,7 @@
                               (update :instance-id->eject-expiry-time assoc "s1.h1" (t/plus current-time (t/millis (* 2 eject-backoff-base-time-ms))))))
             (is (= {} @service-id->instance-ids-atom))
 
-            (release-instance-fn release-instance-chan "s1.h1" 13 :instance-error)
+            (release-instance-fn release-instance-chan "s1.h1" 13 error-cause-instance-error)
             (check-state-fn query-state-chan
                             (-> initial-state
                               (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-11"])
@@ -2960,7 +2961,7 @@
                               (update :instance-id->eject-expiry-time assoc "s1.h1" (t/plus current-time (t/millis (* 4 eject-backoff-base-time-ms))))))
             (is (= {"s1" #{"s1.h1"}} @service-id->instance-ids-atom))
 
-            (release-instance-fn release-instance-chan "s1.h1" 14 :instance-error)
+            (release-instance-fn release-instance-chan "s1.h1" 14 error-cause-instance-error)
             (check-state-fn query-state-chan
                             (-> initial-state
                               (utils/dissoc-in [:instance-id->request-id->use-reason-map "s1.h1" "req-11"])

@@ -268,7 +268,8 @@
                 (let [{:keys [service-deployment-error-details service-deployment-error-msg]} instance
                       {:keys [error-map error-message]}
                       (cond->
-                        {:error-map {:error-class error-class-deployment-error
+                          {:error-map {:error-cause error-cause-deployment-error
+                                     :error-class error-class-deployment-error
                                      :log-level :info
                                      :service-id service-id
                                      :status http-503-service-unavailable
@@ -276,7 +277,9 @@
                          :error-message (utils/message instance)}
                         (and service-deployment-error-msg service-deployment-error-details)
                         (-> (assoc :error-message service-deployment-error-msg)
-                            (update :error-map #(merge {:error-class error-class-deployment-error} service-deployment-error-details %))))]
+                            (update :error-map #(merge {:error-cause error-cause-deployment-error
+                                                        :error-class error-class-deployment-error}
+                                                       service-deployment-error-details %))))]
                   (ex-info (str deployment-error-prefix error-message) error-map))
                 (if-not (t/before? (t/now) expiry-time)
                   (do
@@ -295,7 +298,8 @@
                                       " Check that your service is able to start properly!")
                                     (when (and (pos? outstanding-requests) (pos? healthy-instances))
                                       " Check that your service is able to scale properly!"))
-                               {:error-class error-class-request-timeout
+                               {:error-cause error-cause-service-error
+                                :error-class error-class-request-timeout
                                 :outstanding-requests outstanding-requests
                                 :requests-waiting-to-stream requests-waiting-to-stream
                                 :service-id service-id

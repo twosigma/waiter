@@ -38,6 +38,7 @@
         auth-principal "user@test.com"
         standard-request {}
         standard-401-response {:body "Unauthorized"
+                               :error-cause error-cause-client-error
                                :error-class error-class-kerberos-negotiate
                                :headers {"content-type" "text/plain"
                                          "www-authenticate" "Negotiate"}
