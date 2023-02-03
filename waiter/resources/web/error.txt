@@ -27,5 +27,4 @@ Additional Info
 <% ) %><% (when (seq support-info) %>Getting Help
 ============
 <% (doseq [{label :label {:keys [value]} :link} support-info] %>
-  <%= label %>: <%= value %> <% ) %>
-<% ) %>
+  <%= label %><% (when value %>: <%= value %><% ))) %>

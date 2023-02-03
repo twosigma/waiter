@@ -168,9 +168,9 @@
     <ul>
       <% (doseq [{label :label {:keys [type value]} :link} support-info] %>
       <li>
-        <%= label %>:
+        <%= label %><%(when value %>:
         <% (when (= type :url) %> <a href="<%= value %>"><%= value %></a><% ) %>
-        <% (when (= type :email) %> <a href="mailto:<%= value %>"><%= value %></a><% ) %>
+        <% (when (= type :email) %> <a href="mailto:<%= value %>"><%= value %></a><% )) %>
       </li>
       <% ) %>
     </ul>

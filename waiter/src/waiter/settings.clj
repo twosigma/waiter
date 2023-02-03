@@ -204,8 +204,9 @@
                                           (or dd-agent (and host port)))
                                         "either a :dd-agent map or a statsd :host + :port pair is required"))
    (s/required-key :support-info) [{(s/required-key :label) schema/non-empty-string
-                                    (s/required-key :link) {(s/required-key :type) s/Keyword
-                                                            (s/required-key :value) schema/non-empty-string}}]
+                                    (s/optional-key :link) {(s/required-key :type) s/Keyword
+                                                            (s/required-key :value) schema/non-empty-string}
+                                    (s/optional-key :predicate-fn) s/Symbol}]
    (s/required-key :token-config) {(s/required-key :cluster-calculator) (s/constrained
                                                                           {:kind s/Keyword
                                                                            s/Keyword schema/require-symbol-factory-fn}

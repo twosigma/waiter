@@ -834,6 +834,15 @@
    :start-service-cache (pc/fnk []
                           (cu/cache-factory {:threshold 100
                                              :ttl (-> 1 t/minutes t/in-millis)}))
+   :support-info (pc/fnk [[:settings support-info]]
+                   (->> support-info
+                        (map (fn [entry]
+                               (update entry :predicate-fn
+                                       (fn resolve-support-info-predicate [predicate-fn]
+                                         (if predicate-fn
+                                           (utils/resolve-symbol! predicate-fn)
+                                           utils/include-always-support-info-predicate)))))
+                        (vec)))
    :token-cluster-calculator (pc/fnk [[:settings [:cluster-config name] [:token-config cluster-calculator]]]
                                (utils/create-component
                                  cluster-calculator :context {:default-cluster name}))
