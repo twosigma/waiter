@@ -998,3 +998,35 @@
     (is (= max-buffer-size (compute-back-pressure-buffer-size instance-reservation-back-pressure {"concurrency-level" 10 "max-instances" 10000})))
     (is (= max-buffer-size (compute-back-pressure-buffer-size instance-reservation-back-pressure {"concurrency-level" 100 "max-instances" 10000})))
     (is (= max-buffer-size (compute-back-pressure-buffer-size instance-reservation-back-pressure {"concurrency-level" 1000 "max-instances" 10000})))))
+
+(deftest test-calculate-support-info
+  (let [error-context {:details {:error-cause error-cause-deployment-error}
+                       :service-owner "owner1"
+                       :waiter-token "token.twosigma.com"}
+        always-allow (constantly true)
+        support-info [{:label "Label-1"
+                       :link {:type :email :value "support@example.com"}
+                       :predicate-fn always-allow}
+                      {:label "Label-2a"
+                       :link {:type :url :value "http://example.com/twosigma/waiter"}
+                       :predicate-fn include-service-error-support-info-predicate}
+                      {:label "Label-2b"
+                       :link {:type :url :value "http://skipped.com/twosigma/waiter"}
+                       :predicate-fn include-description-error-support-info-predicate}
+                      {:label "Label-3a"
+                       :link {:type :email :value "{service-owner}@example.com"}
+                       :predicate-fn include-service-error-support-info-predicate
+                       :variables [:service-owner]}
+                      {:label "Label-3b"
+                       :link {:type :email :value "{service-owner}@skipped.com"}
+                       :predicate-fn include-description-error-support-info-predicate
+                       :variables [:service-owner]}
+                      {:label "Label-4"
+                       :link {:type :link :value "http://contact.com/{waiter-token}/{service-owner}"}
+                       :predicate-fn always-allow
+                       :variables [:service-owner :waiter-token]}]
+        expected-support-info [{:label "Label-1" :link {:type :email :value "support@example.com"}}
+                               {:label "Label-2a" :link {:type :url :value "http://example.com/twosigma/waiter"}}
+                               {:label "Label-3a" :link {:type :email :value "owner1@example.com"},}
+                               {:label "Label-4" :link {:type :link :value "http://contact.com/token.twosigma.com/owner1"}}]]
+    (is (= expected-support-info (calculate-support-info support-info error-context)))))

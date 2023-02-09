@@ -1265,10 +1265,17 @@
         (is (= "application/json" (get headers "content-type")))
         (is (= (:not-found messages) (get waiter-error "message")))
         (is waiter-error (str "Could not find waiter-error element in body " body))
-        (let [{:strs [status]} waiter-error]
+        (let [{:strs [status]} waiter-error
+              filtered-support-info (->> support-info
+                                         (remove (fn [{:keys [predicate-fn variables]}]
+                                                   (or (some? predicate-fn) (seq variables))))
+                                         (set))
+              actual-support-info (-> (get waiter-error "support-info")
+                                      (walk/keywordize-keys)
+                                      (set))]
           (is (= http-404-not-found status))
-          (is (= support-info (-> (get waiter-error "support-info")
-                                  (walk/keywordize-keys)))))))))
+          (is (seq filtered-support-info))
+          (is (set/subset? filtered-support-info actual-support-info)))))))
 
 (deftest ^:parallel ^:integration-fast test-welcome-page
   (testing-using-waiter-url
