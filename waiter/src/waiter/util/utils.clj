@@ -322,6 +322,28 @@
    error-class-suspended "Service Suspended"
    error-class-unsupported-auth "Unsupported Authentication Method"})
 
+(defn format-support-info-entry-link-value
+  "Formats the link value in a support-info entry by replacing the placeholders for the provided variables."
+  [entry variables error-context]
+  (let [value-path [:link :value]
+        value-string (loop [[variable & rem-variables] variables
+                            template-string (get-in entry value-path)]
+                       (let [match-string (str "{" (name variable) "}")
+                             replacement-value (str (get error-context variable))
+                             template-string' (str/replace template-string match-string replacement-value)]
+                         (if (nil? rem-variables)
+                           template-string'
+                           (recur rem-variables template-string'))))]
+    (assoc-in entry value-path value-string)))
+
+(defn calculate-support-info
+  "Filters and formats support-info entries based on the provided error context."
+  [support-info error-context]
+  (for [{:keys [predicate-fn variables] :as entry} support-info
+        :when (predicate-fn error-context)]
+    (cond-> (dissoc entry :predicate-fn :variables)
+      variables (format-support-info-entry-link-value variables error-context))))
+
 (defn- build-error-context
   "Creates a context from a data map and a request.
    The data map is expected to contain the following keys: details, message, and status."
@@ -351,9 +373,7 @@
                         (and waiter-images-url error-image) (assoc :image-url (str waiter-images-url "/" error-image))
                         service-owner (assoc :service-owner service-owner)
                         waiter-token (assoc :waiter-token waiter-token))
-        support-info (for [{:keys [predicate-fn] :as entry} support-info
-                           :when (predicate-fn error-context)]
-                       (dissoc entry :predicate-fn))]
+        support-info (calculate-support-info support-info error-context)]
     (assoc error-context :support-info support-info)))
 
 (defn include-always-support-info-predicate
