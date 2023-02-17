@@ -2421,9 +2421,9 @@ class WaiterCliTest(util.WaiterTest):
             def await_killed_instance_log(service):
                 inner_service_id = service.get('id', 'unknown')
                 inner_active_instances = service.get('instances', {}).get('active-instances')
-                inner_active_ids = list(map(lambda instance: instance.get('id', None), inner_active_instances))
-                inner_killed_instances = service.get('instances', {}).get('active-instances')
-                inner_killed_ids = list(map(lambda instance: instance.get('id', None), inner_killed_instances))
+                inner_active_ids = [instance.get('id', None) for instance in inner_active_instances]
+                inner_killed_instances = service.get('instances', {}).get('killed-instances')
+                inner_killed_ids = [instance.get('id', None) for instance in inner_killed_instances]
                 logging.debug(f"Service {inner_service_id} has {len(inner_active_instances)} active instances {inner_active_ids}"
                               f"and {len(inner_killed_instances)} killed instances {inner_killed_ids}.")
                 return len(inner_killed_instances) >= 1 and killed_instance_id not in inner_active_ids
@@ -2431,7 +2431,7 @@ class WaiterCliTest(util.WaiterTest):
             util.wait_until_routers_service(self.waiter_url, service_id, await_killed_instance_log)
 
             active_instances = util.get_specific_instances_for_service(self.waiter_url, service_id, 'active-instances')
-            active_ids = list(map(lambda active_instance: active_instance.get('id', None), active_instances))
+            active_ids = [instance.get('id', None) for instance in active_instances]
             self.assertNotIn(killed_instance_id, active_ids, "Assert Failed: killed-instance is in active instances")
         finally:
             util.delete_token(self.waiter_url, token_name, kill_services=True)
@@ -2475,3 +2475,88 @@ class WaiterCliTest(util.WaiterTest):
     def test_instance_sigterm_valid_token_multiple_services_multiple_instances(self):
         self.__test_instance_kill(lambda _, instances: instances['active-instances'],
                                   False, stdin='1\n1\n'.encode('utf8'), multiple_services=True, min_instances=2)
+
+    def __test_instance_expire(self, get_possible_instances_fn, signal_flags=None, stdin=None,
+                               min_instances=1, multiple_services=False, test_service=False, test_instance=False):
+        token_name = self.token_name()
+        command = f'{util.default_cmd()} --start-up-sleep-ms 30000'
+
+        token_fields = util.minimal_service_description(cmd=command)
+        token_fields['grace-period-secs'] = 45
+        token_fields['min-instances'] = min_instances
+        try:
+            if multiple_services:
+                token_new_fields = util.minimal_service_description(cmd=command)
+                token_new_fields['grace-period-secs'] = 45
+                token_new_fields['min-instances'] = min_instances
+
+                util.post_token(self.waiter_url, token_name, token_new_fields)
+                util.ping_token(self.waiter_url, token_name)
+
+            util.post_token(self.waiter_url, token_name, token_fields)
+            service_id = util.ping_token(self.waiter_url, token_name, 200)
+
+            def await_min_instances_before_expire(service):
+                inner_service_id = service.get('id', 'unknown')
+                inner_active_instances = service.get('instances', {}).get('active-instances')
+                logging.debug(f"Service {inner_service_id} has {len(inner_active_instances)} active instances.")
+                return min_instances == len(inner_active_instances)
+
+            util.wait_until_routers_service(self.waiter_url, service_id, await_min_instances_before_expire)
+            instances = util.instances_for_service(self.waiter_url, service_id)
+            possible_instances = get_possible_instances_fn(service_id, instances)
+            signal_flags = [signal_flags] if signal_flags else []
+            if test_instance:
+                possible_instances = possible_instances[0:1]
+                signal_dest = possible_instances[0]['id']
+                signal_flags.append('-i')
+            elif test_service:
+                signal_dest = service_id
+                signal_flags.append('-s')
+            else:
+                signal_dest = token_name
+            cp = cli.instance_signal('expire', self.waiter_url, signal_dest, signal_flags=' '.join(signal_flags),
+                                     stdin=stdin)
+            stdout = cli.stdout(cp)
+            self.assertEqual(0, cp.returncode, cp.stderr)
+            self.assertIn(f'Successfully sent expire to', stdout)
+            cli_output = stdout.split()
+            expired_instance_id = None
+            for i, w in enumerate(cli_output):
+                if w == "instance":
+                    expired_instance_id = cli_output[i + 1]
+            self.assertNotEqual(None, expired_instance_id)
+
+            def await_expired_instance_log(service):
+                inner_service_id = service.get('id', 'unknown')
+                inner_active_instances = service.get('instances', {}).get('active-instances')
+                inner_active_ids = [instance.get('id', None) for instance in inner_active_instances]
+                inner_expired_instances = [i for i in inner_active_instances if 'expired' in i.get('flags', [])]
+                inner_expired_ids = [instance.get('id', None) for instance in inner_expired_instances]
+                logging.debug(f"Service {inner_service_id} has {len(inner_active_instances)} active instances {inner_active_ids}"
+                              f"and {len(inner_expired_instances)} expired instances {inner_expired_ids}.")
+                return len(inner_expired_instances) >= 1 and expired_instance_id in inner_expired_ids
+
+            util.wait_until_routers_service(self.waiter_url, service_id, await_expired_instance_log)
+        finally:
+            util.delete_token(self.waiter_url, token_name, kill_services=True)
+
+    def test_instance_expire_valid_instance(self):
+        self.__test_instance_expire(lambda _, instances: instances['active-instances'],
+                                    test_instance=True, min_instances=1)
+
+    def test_instance_expire_valid_multiple_instance(self):
+        self.__test_instance_expire(lambda _, instances: instances['active-instances'],
+                                    stdin='3\n'.encode('utf8'), test_service=True, min_instances=5)
+
+    def test_instance_expire_valid_service_multiple_instance_first(self):
+        self.__test_instance_expire(lambda _, instances: instances['active-instances'],
+                                    stdin='1\n'.encode('utf8'), test_service=True, min_instances=2)
+
+    def test_instance_expire_valid_service_multiple_instance_second(self):
+        self.__test_instance_expire(lambda _, instances: instances['active-instances'],
+                                    stdin='2\n'.encode('utf8'), test_service=True, min_instances=2)
+
+    def test_instance_expire_valid_token_multiple_services_multiple_instances(self):
+        self.__test_instance_expire(lambda _, instances: instances['active-instances'],
+                                    stdin='1\n1\n'.encode('utf8'), multiple_services=True, min_instances=2)

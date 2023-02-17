@@ -1328,7 +1328,7 @@
         options-map (-> query-params
                         (update "force" utils/parse-boolean)
                         (update "timeout" utils/parse-int))]
-    (log/info "received request to kill instance" instance-id "with query parameters" query-params)
+    (log/info "received request to" (name operation) "instance" instance-id "with query parameters" query-params)
     (cond
       (not= request-method :post)
       (do
@@ -1338,7 +1338,7 @@
 
       (not (allowed-to-manage-service?-fn service-id auth-user))
       (utils/exception->response
-        (ex-info "User not allowed to send signal to instance"
+        (ex-info (str "User not allowed to " (name operation) " instance")
                  {:current-user auth-user
                   :instance-id instance-id
                   :log-level :info
