@@ -2138,6 +2138,7 @@
                         :max-eject-time-ms 60000}
         service-id->service-description-fn (constantly {})
         scale-service-thread-pool (Executors/newFixedThreadPool 1)]
+
     (testing "signal-handler:success-true"
       (let [scheduler (reify scheduler/ServiceScheduler
                         (signal-instance [_ service-id instance-id _ _]
@@ -2160,6 +2161,7 @@
         (let [body-json (json/read-str (str body))]
           (is (= {"message" (str "kill successfully sent to " test-instance-id) "success" true}
                  (get body-json "signal-response"))))))
+
     (testing "signal-handler:User not Auth"
       (let [scheduler (reify scheduler/ServiceScheduler
                         (signal-instance [_ service-id instance-id _ _]
@@ -2175,7 +2177,8 @@
             (instance-signal-handler notify-instance-killed-fn allowed-to-manage-service?-fn scheduler
                                      timeout-config scale-service-thread-pool :kill request)]
         (is (= http-403-forbidden status))
-        (is (str/includes? (str body) "User not allowed to send signal to instance"))))
+        (is (str/includes? (str body) "User not allowed to kill instance"))))
+
     (testing "signal-handler:Request Method Not Allowed"
       (let [scheduler (reify scheduler/ServiceScheduler
                         (signal-instance [_ service-id instance-id _ _]
@@ -2194,6 +2197,7 @@
         (is (= http-405-method-not-allowed status))
         (is (= "application/json" (get headers "content-type")))
         (is (= {"message" "Method not allowed"} (json/read-str (str body))))))
+
     (testing "signal-handler:success-false"
       (let [scheduler (reify scheduler/ServiceScheduler
                         (signal-instance [_ service-id instance-id _ _]
