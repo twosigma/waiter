@@ -25,9 +25,15 @@ actions = {
     'delete': {
         'run-function': delete.register(subparsers.add_parser)
     },
+    'ensure-ssl': {
+        'run-function': ssl.register(subparsers.add_parser)
+    },
     'init': {
         'run-function': init.register(subparsers.add_parser),
         'implicit-args-function': init.add_implicit_arguments
+    },
+    'instance': {
+        'run-function': instance.register(subparsers.add_parser)
     },
     'kill': {
         'run-function': kill.register(subparsers.add_parser)
@@ -37,12 +43,6 @@ actions = {
     },
     'ping': {
         'run-function': ping.register(subparsers.add_parser)
-    },
-    'ensure-ssl': {
-        'run-function': ssl.register(subparsers.add_parser)
-    },
-    'instance': {
-        'run-function': instance.register(subparsers.add_parser)
     },
     'ready': {
         'run-function': ready.register(subparsers.add_parser)
