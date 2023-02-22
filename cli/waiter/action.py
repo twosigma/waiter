@@ -12,7 +12,26 @@ from waiter.format import format_last_request_time
 from waiter.format import format_status
 from waiter.querying import get_service, get_service_id_from_instance_id, get_services_using_token
 from waiter.querying import print_no_data, query_service, query_services, query_token
-from waiter.util import is_service_current, str2bool, response_message, print_error, wait_until
+from waiter.util import get_in, is_service_current, str2bool, response_message, print_error, wait_until
+
+
+def print_ping_error(response_json):
+    ping_error = ''
+
+    try:
+        response_error = response_message(response_json, default_message='')
+        ping_error = f'{response_error} '
+
+        ping_response_body = get_in(response_json, ['ping-response', 'body']) or "{}"
+        ping_response_json = json.loads(ping_response_body)
+        ping_response_error = response_message(ping_response_json, default_message='')
+        ping_error = f'{ping_response_error}'
+    except json.JSONDecodeError:
+        logging.debug('Ping response is not in json format, cannot display waiter-error message.')
+
+    if ping_error:
+        print_error(ping_error.strip())
+    return None
 
 
 def ping_on_cluster(cluster, timeout, wait_for_request, token_name, service_exists_fn):
@@ -33,10 +52,10 @@ def ping_on_cluster(cluster, timeout, wait_for_request, token_name, service_exis
             read_timeout = timeout_seconds if wait_for_request else (timeout_seconds + 5)
             resp = http_util.get(cluster, '/waiter-ping', headers=headers, read_timeout=read_timeout)
             logging.debug(f'Response status code: {resp.status_code}')
-            resp_json = resp.json()
+            response_json = resp.json()
             if resp.status_code == 200:
-                status = resp_json.get('service-state', {}).get('status')
-                ping_response = resp_json['ping-response']
+                status = response_json.get('service-state', {}).get('status')
+                ping_response = response_json['ping-response']
                 ping_response_result = ping_response['result']
                 if ping_response_result in ['descriptor-error', 'received-response']:
                     ping_response_status = ping_response['status']
@@ -45,30 +64,26 @@ def ping_on_cluster(cluster, timeout, wait_for_request, token_name, service_exis
                         result = True
                     else:
                         print_error(f'Ping responded with non-200 status {ping_response_status}.')
-                        try:
-                            ping_response_waiter_error = json.loads(ping_response['body'])['waiter-error']['message']
-                            print_error(ping_response_waiter_error)
-                        except json.JSONDecodeError:
-                            logging.debug('Ping response is not in json format, cannot display waiter-error message.')
-                        except KeyError:
-                            logging.debug('Ping response body does not contain waiter-error message.')
+                        print_ping_error(response_json)
                         result = False
                 elif ping_response_result == 'timed-out':
                     if wait_for_request:
                         print_error('Ping request timed out.')
+                        print_ping_error(response_json)
                         result = False
                     else:
                         logging.debug('ignoring ping request timeout due to --no-wait')
                         result = True
                 else:
                     print_error(f'Encountered unknown ping result: {ping_response_result}.')
+                    print_ping_error(response_json)
                     result = False
             else:
-                print_error(response_message(resp_json))
+                print_ping_error(response_json)
                 result = False
-        except Exception:
+        except Exception as ex:
             result = False
-            message = f'Encountered error while pinging in {cluster_name}.'
+            message = f'Encountered error while pinging in {cluster_name}: {ex}.'
             logging.exception(message)
             if wait_for_request:
                 print_error(message)
