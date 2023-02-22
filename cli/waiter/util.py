@@ -75,14 +75,14 @@ def str2bool(v):
         return None
 
 
-def response_message(resp_json):
+def response_message(resp_json, default_message='Encountered unexpected error.'):
     """Pulls the error message out of a Waiter response"""
     if 'waiter-error' in resp_json and 'message' in resp_json['waiter-error']:
         message = resp_json['waiter-error']['message']
         if not message.endswith('.'):
             message = f'{message}.'
     else:
-        message = 'Encountered unexpected error.'
+        message = default_message
     return message
 
 
