@@ -531,20 +531,23 @@
             :version-hash version-hash)
           ; notify peers of token update
           (make-peer-requests-fn "tokens/refresh"
-                                 :method :post
-                                 :body (utils/clj->json {:token token, :owner owner}))
+                                 :body (utils/clj->json {:token token, :owner owner})
+                                 :config {:headers {"x-cid" (cid/get-correlation-id)}}
+                                 :method :post)
           (send-internal-index-event tokens-update-chan token)
           (let [creation-mode
                 (if (and (seq existing-token-metadata)
                          (not (get existing-token-metadata "deleted")))
                   "updated"
-                  "created")]
+                  "created")
+                token-description {:service-parameter-template new-service-parameter-template
+                                   :token-metadata new-token-metadata}
+                token-hash (token-description->token-hash token-description)]
+            (log/info "token description" token-description "maps to" token-hash)
             (-> (utils/clj->json-response
                   {:message (str "Successfully " creation-mode " " token)
                    :service-description new-service-parameter-template}
-                  :headers {"etag" (token-description->token-hash
-                                     {:service-parameter-template new-service-parameter-template
-                                      :token-metadata new-token-metadata})
+                  :headers {"etag" token-hash
                             ; add the result to header for differentiating between create and update operations in structured logs
                             "x-waiter-operation-result" (str "token-" creation-mode)})
               (assoc :waiter/token token))))))))
@@ -801,9 +804,12 @@
         (refresh-token-index kv-store))
       (when token
         (log/info src-router-id "is force refreshing token" token)
-        (refresh-token kv-store token owner)
+        (let [refreshed-token-data (refresh-token kv-store token owner)
+              token-hash (sd/token-data->token-hash refreshed-token-data)]
+          (log/info "refreshed token data" refreshed-token-data "maps to" token-hash))
         (send-internal-index-event tokens-update-chan token))
-      (utils/clj->json-response {:success true}))
+      (-> (utils/clj->json-response {:success true})
+        (assoc :waiter/token token)))
     (catch Exception ex
       (utils/exception->response ex req))))
 
