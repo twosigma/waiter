@@ -6,6 +6,7 @@ from waiter.util import check_positive, guard_no_cluster, print_error
 
 _default_timeout = 300
 
+
 def ready(clusters, args, _, __):
     """Ensure the Waiter service is ready for traffic."""
     guard_no_cluster(clusters)
@@ -14,8 +15,17 @@ def ready(clusters, args, _, __):
     token_host = f'{token_name}:{port}'
     ping_timeout_secs = args.get('ping_timeout', _default_timeout)
     ssl_timeout_secs = args.get('connect_timeout', _default_timeout)
+
+    expected_image = args.get('image')
+    expected_version = args.get('version')
+    expected_parameters = {}
+    if expected_image is not None:
+        expected_parameters['image'] = expected_image
+    if expected_version is not None:
+        expected_parameters['version'] = expected_version
+
     wait_secs = 10 if ssl_timeout_secs > 10 else 1
-    if not process_ping_request(clusters, token_name, False, ping_timeout_secs, True):
+    if not process_ping_request(clusters, token_name, False, expected_parameters, ping_timeout_secs, True):
         return 1
     retry_options = {
         'retry_on_result': lambda r: not r,
@@ -44,5 +54,9 @@ def register(add_parser):
     parser.add_argument('--connect-timeout', help=f'timeout (in seconds) for tls connection to service'
                         f' (default is {_default_timeout} seconds)',
                         type=check_positive, default=_default_timeout)
+    # CLI arguments for configuring expected parameters
+    parser.add_argument('--image', help='Expected image parameter of the service, default is to ignore matching')
+    parser.add_argument('--version', help='Expected version parameter of the service, default is to ignore matching')
+
     return ready
 
