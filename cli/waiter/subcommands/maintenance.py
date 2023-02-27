@@ -113,7 +113,9 @@ def stop_maintenance(clusters, args, _, enforce_cluster):
     if return_code == 0:
         if ping_token:
             if token_etag:
-                success = ping_token_on_cluster(cluster, token_name, timeout, wait_for_ping, token_etag)
+                expected_parameters = {}
+                success = ping_token_on_cluster(cluster, token_name, expected_parameters,
+                                                timeout, wait_for_ping, token_etag)
                 return 0 if success else 1
             else:
                 logging.debug(f'Not pinging token {token_name} in {cluster} as token ETag is missing.')
