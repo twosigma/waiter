@@ -44,6 +44,8 @@
         (is (not (str/blank? (get-in ping-response [:instance :host]))) (str ping-response))
         (is (not (str/blank? (get-in ping-response [:instance :id]))) (str ping-response))
         (is (number? (get-in ping-response [:instance :port])) (str ping-response))
+        (when (using-k8s? waiter-url)
+          (is (not (str/blank? (get-in ping-response [:instance :k8s/hostname]))) (str ping-response)))
         (if (utils/param-contains? query-params "exclude" "service-state")
           (is (= {:result "excluded" :service-id service-id} service-state))
           (is (= {:exists? true :healthy? true :service-id service-id :status "Running"} service-state))))

@@ -1188,9 +1188,7 @@
               {:ping-response (cond-> (-> ping-response
                                           (select-keys [:body :headers :status])
                                           (assoc :result response-result))
-                                response-instance (assoc :instance {:host (:host response-instance)
-                                                                    :id (:id response-instance)
-                                                                    :port (:port response-instance)}))
+                                response-instance (assoc :instance (select-keys response-instance [:host :id :k8s/hostname :port])))
                :service-description core-service-description
                :service-state service-state}
               :headers (if redirect-ping? (:headers redirect-response) {})

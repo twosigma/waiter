@@ -407,9 +407,10 @@
                     (get-in pod [:spec :containers 0 :ports 0 :containerPort]))
           port->protocol (some-> pod-annotations :waiter/port-onto-protocol (utils/try-parse-json keyword))
           raven-mode (get pod-labels :waiter/raven "disabled")
+          pod-namespace (k8s-object->namespace pod)
           run-as-user (or (get-in pod [:metadata :labels :waiter/user])
                           ;; falling back to namespace for legacy pods missing the waiter/user label
-                          (k8s-object->namespace pod))
+                          pod-namespace)
           ;; pod phase documentation: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase
           {:keys [phase] :as pod-status} (:status pod)
           init-container-statuses (get pod-status :initContainerStatuses)
@@ -464,7 +465,8 @@
                               :id instance-id
                               :k8s/api-server-url api-server-url
                               :k8s/app-name (get-in pod [:metadata :labels :app])
-                              :k8s/namespace (k8s-object->namespace pod)
+                              :k8s/hostname (str pod-name ".p." pod-namespace ".svc." (get-in scheduler [:custom-options :cluster-domain]))
+                              :k8s/namespace pod-namespace
                               :k8s/pod-name pod-name
                               :k8s/port->protocol port->protocol
                               :k8s/raven raven-mode
