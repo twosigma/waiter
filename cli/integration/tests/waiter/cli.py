@@ -367,9 +367,9 @@ def ready(waiter_url=None, token_name=None, flags=None, ready_flags=None):
     """Checks if a token is ready for traffic via the CLI"""
     if not ready_flags:
         ready_flags = ''
-    if '--timeout' not in ready_flags:
-        ready_flags += f' --timeout {int(util.DEFAULT_TIMEOUT_MS/1000)}'
-    args = f'ready {token_name or ""} {ready}'
+    if '--ping-timeout' not in ready_flags:
+        ready_flags += f' --ping-timeout {int(util.DEFAULT_TIMEOUT_MS/1000)}'
+    args = f'ready {token_name or ""} {ready_flags}'
     cp = cli(args, waiter_url, flags)
     return cp
 

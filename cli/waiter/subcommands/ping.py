@@ -10,8 +10,9 @@ def ping(clusters, args, _, __):
     is_service_id = args.get('is-service-id', False)
     timeout_secs = args.get('timeout', None)
     wait_for_request = args.get('wait', True)
+    expected_parameters = {}
     ping_success = process_ping_request(clusters, token_name_or_service_id, is_service_id,
-                                        timeout_secs, wait_for_request)
+                                        expected_parameters, timeout_secs, wait_for_request)
     return 0 if ping_success else 1
 
 

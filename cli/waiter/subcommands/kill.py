@@ -15,8 +15,9 @@ def kill(clusters, args, _, __):
     if success and ping_token_name_or_service_id:
         ping_timeout_secs = args.get('ping_timeout')
         ping_wait = args.get('ping_wait', True)
+        expected_parameters = {}
         ping_success = process_ping_request(clusters, token_name_or_service_id, is_service_id,
-                                            ping_timeout_secs, ping_wait)
+                                            expected_parameters, ping_timeout_secs, ping_wait)
         return 0 if ping_success else 1
     else:
         return 0 if success else 1

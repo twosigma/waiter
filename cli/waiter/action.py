@@ -3,6 +3,7 @@ import logging
 import requests
 import socket
 import ssl
+import time
 from urllib.parse import urljoin
 
 from tabulate import tabulate
@@ -15,6 +16,18 @@ from waiter.querying import print_no_data, query_service, query_services, query_
 from waiter.util import get_in, is_service_current, str2bool, response_message, print_error, wait_until
 
 
+_second_to_millis = 1000
+
+
+class CustomPingResponse:
+    def __init__(self, json_data, status_code):
+        self.json_data = json_data
+        self.status_code = status_code
+
+    def json(self):
+        return self.json_data
+
+
 def print_ping_error(response_json):
     ping_error = ''
 
@@ -25,7 +38,7 @@ def print_ping_error(response_json):
         ping_response_body = get_in(response_json, ['ping-response', 'body']) or "{}"
         ping_response_json = json.loads(ping_response_body)
         ping_response_error = response_message(ping_response_json, default_message='')
-        ping_error = f'{ping_response_error}'
+        ping_error = f'{ping_error} {ping_response_error}'
     except json.JSONDecodeError:
         logging.debug('Ping response is not in json format, cannot display waiter-error message.')
 
@@ -34,26 +47,97 @@ def print_ping_error(response_json):
     return None
 
 
-def ping_on_cluster(cluster, timeout, wait_for_request, token_name, service_exists_fn):
+def make_ping_request(cluster, timeout, wait_for_request, token_name, expected_parameters):
+
+    correlation_id = f'waiter-ping-{time.time()}'
+
+    def make_ping_request_helper(queue_timeout_ms, timeout_ms, read_timeout_secs):
+        request_headers = {
+            'X-CID': correlation_id,
+            'X-Waiter-Queue-Timeout': str(queue_timeout_ms),
+            'X-Waiter-Token': token_name,
+            'X-Waiter-Timeout': str(timeout_ms)
+        }
+        ping_response = http_util.get(cluster, '/waiter-ping', headers=request_headers, read_timeout=read_timeout_secs)
+        logging.debug(f'Response status code: {ping_response.status_code}')
+        return ping_response
+
+    expected_parameters_empty = len(expected_parameters) == 0
+    timeout_seconds = timeout if wait_for_request else 5
+    timeout_millis = timeout_seconds * 1000
+    if expected_parameters_empty:
+        default_queue_timeout_millis = 300000
+        queue_timeout_millis = max(default_queue_timeout_millis, timeout_millis)
+        read_timeout = timeout_seconds if wait_for_request else (timeout_seconds + 5)
+        response = make_ping_request_helper(queue_timeout_millis, timeout_millis, read_timeout)
+        return response
+    else:
+        iter_timeout_secs = 2
+        iter_timeout_millis = iter_timeout_secs * 1000
+        iter_queue_timeout_millis = iter_timeout_secs * 1000
+        iter_read_timeout = iter_timeout_secs if wait_for_request else (iter_timeout_secs + 5)
+        logging.debug(f'iter_timeout_millis: {iter_timeout_millis}, '
+                      f'iter_queue_timeout_millis: {iter_queue_timeout_millis}, '
+                      f'iter_read_timeout: {iter_read_timeout}')
+
+        result_response = None
+        start_time = time.time()
+        error_message = ''
+        while True:
+            iter_start_time = time.time()
+            try:
+                response = make_ping_request_helper(iter_queue_timeout_millis, iter_timeout_millis, iter_read_timeout)
+                response_json = response.json()
+                service_description = get_in(response_json, ['service-description'])
+                all_params_match = True
+                for param_name, param_value in expected_parameters.items():
+                    actual_value = get_in(service_description, [param_name])
+                    if param_value != actual_value:
+                        error_message = f'{param_name} has value of "{actual_value}", require it to be "{param_value}"'
+                        logging.debug(error_message)
+                        all_params_match = False
+                if all_params_match:
+                    logging.debug(f'Service description reports expected parameters: {expected_parameters}')
+                    result_response = response
+                    break
+            except Exception as ex:
+                error_message = f'Error in pinging {token_name}: {ex}'
+                logging.debug(error_message)
+            iter_end_time = time.time()
+
+            total_elapsed_millis = (iter_end_time - start_time) * 1000
+            if total_elapsed_millis >= timeout_millis:
+                logging.debug(f'Ping timed out while waiting for expected parameters')
+                break
+            else:
+                remaining_secs = (timeout_millis - total_elapsed_millis) / 1000
+                logging.debug(f'Ping has another {remaining_secs} seconds before timing out')
+
+            iter_elapsed_millis = (iter_end_time - iter_start_time) * 1000
+            if iter_elapsed_millis < iter_timeout_millis:
+                iter_sleep_secs = (iter_timeout_millis - iter_elapsed_millis) / 1000.0
+                logging.debug(f'Sleeping for {iter_sleep_secs} seconds before retrying ping')
+                time.sleep(iter_sleep_secs)
+
+        if result_response is None:
+            if not error_message:
+                error_message = f'Unable to ping service with parameters {expected_parameters}'
+            json_data = {'waiter-error': {'message': error_message}}
+            result_response = CustomPingResponse(json_data, 400)
+
+        return result_response
+
+
+def ping_on_cluster(cluster, timeout, wait_for_request, token_name, expected_parameters, service_exists_fn):
     """Pings using the given token name (or ^SERVICE-ID#) in the given cluster."""
     cluster_name = cluster['name']
 
     def perform_ping():
         status = None
         try:
-            default_queue_timeout_millis = 300000
-            timeout_seconds = timeout if wait_for_request else 5
-            timeout_millis = timeout_seconds * 1000
-            headers = {
-                'X-Waiter-Queue-Timeout': str(max(default_queue_timeout_millis, timeout_millis)),
-                'X-Waiter-Token': token_name,
-                'X-Waiter-Timeout': str(timeout_millis)
-            }
-            read_timeout = timeout_seconds if wait_for_request else (timeout_seconds + 5)
-            resp = http_util.get(cluster, '/waiter-ping', headers=headers, read_timeout=read_timeout)
-            logging.debug(f'Response status code: {resp.status_code}')
-            response_json = resp.json()
-            if resp.status_code == 200:
+            response = make_ping_request(cluster, timeout, wait_for_request, token_name, expected_parameters)
+            response_json = response.json()
+            if response.status_code == 200:
                 status = response_json.get('service-state', {}).get('status')
                 ping_response = response_json['ping-response']
                 ping_response_result = ping_response['result']
@@ -131,14 +215,14 @@ def token_has_current_service(cluster, token_name, current_token_etag):
         return None
 
 
-def ping_token_on_cluster(cluster, token_name, timeout, wait_for_request,
+def ping_token_on_cluster(cluster, token_name, expected_parameters, timeout, wait_for_request,
                           current_token_etag):
     """Pings the token with the given token name in the given cluster."""
     cluster_name = cluster['name']
     print(f'Pinging token {terminal.bold(token_name)} '
           f'in {terminal.bold(cluster_name)}...')
-    return ping_on_cluster(cluster, timeout, wait_for_request,
-                           token_name, lambda: token_has_current_service(cluster, token_name, current_token_etag))
+    return ping_on_cluster(cluster, timeout, wait_for_request, token_name, expected_parameters,
+                           lambda: token_has_current_service(cluster, token_name, current_token_etag))
 
 
 def service_is_active(cluster, service_id):
@@ -147,13 +231,13 @@ def service_is_active(cluster, service_id):
     return service if (service and service.get('status') != 'Inactive') else None
 
 
-def ping_service_on_cluster(cluster, service_id, timeout, wait_for_request):
+def ping_service_on_cluster(cluster, service_id, expected_parameters, timeout, wait_for_request):
     """Pings the service with the given service id in the given cluster."""
     cluster_name = cluster['name']
     print(f'Pinging service {terminal.bold(service_id)} '
           f'in {terminal.bold(cluster_name)}...')
-    return ping_on_cluster(cluster, timeout, wait_for_request,
-                           f'^SERVICE-ID#{service_id}', lambda: service_is_active(cluster, service_id))
+    return ping_on_cluster(cluster, timeout, wait_for_request, f'^SERVICE-ID#{service_id}', expected_parameters,
+                           lambda: service_is_active(cluster, service_id))
 
 
 def kill_service_on_cluster(cluster, service_id, timeout_seconds):
@@ -280,7 +364,8 @@ def token_explicitly_created_on_cluster(cluster, token_cluster_name):
     return created_on_this_cluster
 
 
-def process_ping_request(clusters, token_name_or_service_id, is_service_id, timeout_secs, wait_for_request):
+def process_ping_request(clusters, token_name_or_service_id, is_service_id, expected_parameters,
+                         timeout_secs, wait_for_request):
     """Pings the service using the given token name or service-id.
     Returns False if the ping request fails or times out.
     Returns True if the ping request completes successfully."""
@@ -300,14 +385,15 @@ def process_ping_request(clusters, token_name_or_service_id, is_service_id, time
     for cluster_name, data in cluster_data_pairs:
         cluster = clusters_by_name[cluster_name]
         if is_service_id:
-            success = ping_service_on_cluster(cluster, token_name_or_service_id, timeout_secs, wait_for_request)
+            success = ping_service_on_cluster(cluster, token_name_or_service_id, expected_parameters,
+                                              timeout_secs, wait_for_request)
         else:
             token_data = data['token']
             token_etag = data['etag']
             token_cluster_name = token_data['cluster'].upper()
             if len(clusters) == 1 or token_explicitly_created_on_cluster(cluster, token_cluster_name):
-                success = ping_token_on_cluster(cluster, token_name_or_service_id, timeout_secs,
-                                                wait_for_request, token_etag)
+                success = ping_token_on_cluster(cluster, token_name_or_service_id, expected_parameters,
+                                                timeout_secs, wait_for_request, token_etag)
             else:
                 print(f'Not pinging token {terminal.bold(token_name_or_service_id)} '
                       f'in {terminal.bold(cluster_name)} '
