@@ -1,3 +1,7 @@
+*We've decided to archive the Waiter project — it will remain available on GitHub in archive mode, but active development has ceased. We're pleased to have had the opportunity to share Waiter with the OSS community over the last five years, and are grateful for your contributions.*
+
+*We continue to support other OSS programs. You can find out more about our other projects and contributions at <https://www.twosigma.com/open-source/>.*
+
 <img src="./waiter.svg" align="right" width="250px" height="250px">
 
 # Waiter
