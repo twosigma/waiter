@@ -37,13 +37,13 @@
                  ;; resolve the cheshire dependency used by buddy and jet
                  [cheshire "5.10.0"]
                  [twosigma/courier "1.5.19"
-                  :exclusions [com.google.guava/guava io.grpc/grpc-core]
+                  :exclusions [com.google.errorprone/error_prone_annotations com.google.guava/guava io.grpc/grpc-core]
                   :scope "test"]
                  ;; avoids the following:
                  ;; WARNING!!! version ranges found for:
                  ;; [com.twosigma.waiter/courier ...] -> [io.grpc/grpc-netty-shaded "1.20.0"] -> [io.grpc/grpc-core "[1.20.0,1.20.0]"]
                  [io.grpc/grpc-core "1.20.0"
-                  :exclusions [com.google.guava/guava]
+                  :exclusions [com.google.errorprone/error_prone_annotations com.google.guava/guava]
                   :scope "test"]
                  [twosigma/jet "0.7.10-20220829_161214-g1f873ca"
                   :exclusions [org.mortbay.jetty.alpn/alpn-boot]]
@@ -52,7 +52,7 @@
                  [clj-time "0.15.2"
                   :exclusions [joda-time]]
                  [com.datadoghq/java-dogstatsd-client "2.9.0"] ;; metrics-datadog dependency prevents upgrade to newer version
-                 [com.google.guava/guava "20.0"] ;; apache curator dependency prevents upgrade to newer versions
+                 [com.google.guava/guava "27.0.1-jre"] ;; apache curator dependency prevents upgrade to newer versions
                  [com.taoensso/nippy "2.14.0"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
                  [comb "0.1.1"
@@ -72,15 +72,16 @@
                                metrics-clojure
                                org.clojure/clojure
                                org.slf4j/slf4j-api]]
-                 [org.apache.curator/curator-framework "2.11.0"
-                  :exclusions [io.netty/netty org.slf4j/slf4j-api]]
-                 [org.apache.curator/curator-recipes "2.11.0"
-                  :exclusions [io.netty/netty org.slf4j/slf4j-api]]
-                 [org.apache.curator/curator-test "2.11.0"
-                  :exclusions [com.google.guava/guava
-                               io.netty/netty]]
-                 [org.apache.curator/curator-x-discovery "2.11.0"
-                  :exclusions [io.netty/netty org.slf4j/slf4j-api]]
+                 [org.apache.curator/curator-framework "4.2.0"
+                  :exclusions [io.netty/netty org.apache.zookeeper/zookeeper org.slf4j/slf4j-api]]
+                 [org.apache.curator/curator-recipes "4.2.0"
+                  :exclusions [io.netty/netty org.apache.zookeeper/zookeeper org.slf4j/slf4j-api]]
+                 [org.apache.curator/curator-test "2.12.0"
+                  :exclusions [com.google.guava/guava io.netty/netty org.apache.zookeeper/zookeeper]]
+                 [org.apache.curator/curator-x-discovery "4.2.0"
+                  :exclusions [io.netty/netty org.apache.zookeeper/zookeeper org.slf4j/slf4j-api]]
+                 [org.apache.zookeeper/zookeeper "3.4.10"
+                  :exclusions [org.slf4j/slf4j-api]]
                  [org.clojure/clojure "1.10.3"]
                  [org.clojure/core.async "1.5.648"
                   :exclusions [org.clojure/clojure org.clojure/tools.reader]]
